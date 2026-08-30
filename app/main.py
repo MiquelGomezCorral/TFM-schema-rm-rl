@@ -7,6 +7,8 @@ import dotenv
 from maikol_utils.other_utils import args_to_dataclass
 from scripts import generate_rm
 from src.config import Configuration
+from src.models import PRIORITY_CHOICES
+
 
 
 def cmd_generate_rm(args: argparse.Namespace) -> int:
@@ -23,7 +25,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
         prog="schema-rm-rl",
-        description="Compile reviewed instructions into a Reward Machine",
+        description="Compile reviewed instructions into Reward Machines",
+        epilog=f"generate-rm --priority options: {', '.join(PRIORITY_CHOICES)}",
     )
     parser.add_argument("--seed", type=int, default=42, help="Random seed (default: 42)")
 
@@ -34,7 +37,7 @@ if __name__ == "__main__":
     # ======================================================================================
     generate_parser = subparsers.add_parser(
         "generate-rm",
-        help="Generate a Reward Machine",
+        help="Generate Reward Machines",
     )
     generate_parser.add_argument("--environment", required=True, type=Path)
     generate_parser.add_argument(
@@ -46,7 +49,17 @@ if __name__ == "__main__":
     )
     generate_parser.add_argument(
         "--model",
-        help="OpenAI model (defaults to OPENAI_MODEL)",
+        help="LLM model (defaults to the selected provider's model variable)",
+    )
+    generate_parser.add_argument(
+        "--priority",
+        dest="priorities",
+        action="append",
+        choices=PRIORITY_CHOICES,
+        help=(
+            "Instruction priority; repeat once per instruction when used "
+            "(default: infer each priority)"
+        ),
     )
     generate_parser.add_argument("--output", required=True, type=Path)
     generate_parser.add_argument(

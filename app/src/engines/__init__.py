@@ -1,5 +1,15 @@
 """External proposal engines."""
 
-from .openai_engine import OpenAIEngine, ProposalSelection, ProposalValidationError
+from .openai_engine import (
+    OpenAIEngine,
+    OpenCodeEngine,
+    ProposalSelection,
+    ProposalValidationError,
+)
 
-__all__ = ["OpenAIEngine", "ProposalSelection", "ProposalValidationError"]
+__all__ = [
+    "OpenAIEngine",
+    "OpenCodeEngine",
+    "ProposalSelection",
+    "ProposalValidationError",
+]

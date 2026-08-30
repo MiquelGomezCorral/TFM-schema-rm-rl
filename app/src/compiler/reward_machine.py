@@ -1,33 +1,46 @@
-"""Normalize and serialize FL-AT Reward Machines."""
+"""Normalize MONA DFAs and serialize compact executable Reward Machines."""
 
-import math
 import re
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from itertools import product
 
+from src.models import PriorityLevel, completion_rewards
+
 
 TOKEN = re.compile(r"\s*([a-z_][a-z0-9_]*|[!~&|()])", re.IGNORECASE)
+Valuation = tuple[bool, ...]
 
 
 @dataclass(frozen=True)
 class Transition:
-    """One disjoint Reward Machine transition."""
+    """One disjoint executable Reward Machine transition."""
 
-    source: str
-    guard: str
-    destination: str
+    source: int
+    destination: int
+    condition: tuple[str, ...]
     reward: float
 
 
 @dataclass(frozen=True)
 class RewardMachineStructure:
-    """Deterministically named Reward Machine structure."""
+    """A numeric Reward Machine with one success final state."""
 
-    states: tuple[str, ...]
-    initial_state: str
-    accepting_states: tuple[str, ...]
+    states: tuple[int, ...]
+    initial_state: int
+    final_state: int
+    rejecting_states: tuple[int, ...]
     transitions: tuple[Transition, ...]
+
+
+@dataclass(frozen=True)
+class _NormalizedDFA:
+    propositions: tuple[str, ...]
+    valuations: tuple[Valuation, ...]
+    states: tuple[int, ...]
+    initial_state: int
+    final_state: int
+    transitions: dict[tuple[int, Valuation], int]
 
 
 class _GuardParser:
@@ -117,138 +130,361 @@ def _evaluate(expression, valuation: dict[str, bool]) -> bool:
     raise ValueError(f"Unsupported Boolean operator '{operator}'")
 
 
-def _expand_guard(guard: str, proposition_ids: tuple[str, ...]) -> tuple[str, ...]:
-    expression = _GuardParser(guard.lower(), set(proposition_ids)).parse()
-    conjunctions = []
-    for values in product((False, True), repeat=len(proposition_ids)):
-        valuation = dict(zip(proposition_ids, values, strict=True))
-        if _evaluate(expression, valuation):
-            conjunctions.append(
-                "&".join(
-                    proposition if value else f"!{proposition}"
-                    for proposition, value in valuation.items()
-                )
-                or "true"
-            )
-    return tuple(conjunctions)
-
-
 def normalize_reward_machine(
-    flat_reward_machine: dict,
+    dfa: dict,
+    pattern: str,
     proposition_ids: tuple[str, ...],
+    priority: PriorityLevel,
 ) -> RewardMachineStructure:
-    """Expand guards and rename reachable states in breadth-first order."""
-    if len(set(proposition_ids)) != len(proposition_ids):
-        raise ValueError("Proposition identifiers must be unique")
-    alphabet = {str(symbol).lower() for symbol in flat_reward_machine.get("alphabet", ())}
-    undeclared = alphabet - set(proposition_ids)
-    if undeclared:
-        raise ValueError(
-            f"FL-AT produced undeclared proposition(s): {', '.join(sorted(undeclared))}"
-        )
+    """Minimize one DFA and add one-time completion rewards."""
+    if pattern not in {"Existence", "ExistenceTwo", "Precedence"}:
+        raise ValueError(f"Unsupported executable DECLARE pattern: {pattern!r}")
+    if pattern in {"Existence", "ExistenceTwo"}:
+        if len(proposition_ids) != 1:
+            raise ValueError(f"{pattern} requires exactly one proposition")
+        if priority is not PriorityLevel.NONE:
+            raise ValueError(f"{pattern} requires priority 'none'")
+    elif len(proposition_ids) != 2:
+        raise ValueError("Precedence requires exactly two propositions")
 
-    initial_state = str(flat_reward_machine.get("initial_state", ""))
-    if not initial_state:
-        raise ValueError("FL-AT Reward Machine has no initial state")
+    normalized = _normalize_dfa(dfa, proposition_ids)
+    rejecting_states = _states_without_path_to_final(normalized)
+    preferred_state = None
+    reverse_state = None
 
-    raw_transitions: list[tuple[str, str, str, float]] = []
-    deterministic_rows: dict[tuple[str, str], tuple[str, float]] = {}
-    all_states = {str(state) for state in flat_reward_machine.get("states", ())}
-    all_states.add(initial_state)
-    for key, value in flat_reward_machine.get("transitions", {}).items():
-        if not isinstance(key, tuple) or len(key) != 2:
-            raise ValueError("FL-AT returned a malformed transition key")
-        if not isinstance(value, tuple) or len(value) != 2:
-            raise ValueError("FL-AT returned a malformed transition value")
-        source, guard = str(key[0]), str(key[1])
-        destination, reward = str(value[0]), value[1]
-        if (
-            isinstance(reward, bool)
-            or not isinstance(reward, (int, float))
-            or not math.isfinite(reward)
-        ):
-            raise ValueError("FL-AT returned a non-finite transition reward")
-        all_states.update((source, destination))
-        for conjunction in _expand_guard(guard, proposition_ids):
-            row_key = (source, conjunction)
-            row_value = (destination, float(reward))
-            previous = deterministic_rows.get(row_key)
-            if previous is not None and previous != row_value:
-                raise ValueError(
-                    f"FL-AT produced ambiguous transitions from {source} on {conjunction}"
+    if pattern == "Precedence" and priority is PriorityLevel.HARD:
+        _validate_hard_precedence(normalized, rejecting_states)
+    else:
+        if rejecting_states:
+            raise ValueError("A non-hard completion DFA cannot contain a rejecting state")
+        if pattern == "Existence":
+            _validate_existence(normalized)
+        elif pattern == "ExistenceTwo":
+            _validate_existence_two(normalized)
+        else:
+            preferred_state, reverse_state = _validate_non_hard_precedence(normalized)
+
+    rewards = completion_rewards(priority)
+    transitions = []
+    for source in normalized.states:
+        for valuation in normalized.valuations:
+            destination = normalized.transitions[(source, valuation)]
+            reward = 0.0
+            if source != normalized.final_state and destination == normalized.final_state:
+                if pattern in {"Existence", "ExistenceTwo"} or priority is PriorityLevel.HARD:
+                    reward = 1.0
+                elif source == normalized.initial_state and all(valuation):
+                    reward = rewards.simultaneous
+                elif source == preferred_state and valuation[1]:
+                    reward = rewards.preferred
+                elif source == reverse_state and valuation[0]:
+                    reward = rewards.reverse
+                else:
+                    raise ValueError("Could not classify a precedence completion transition")
+
+            if reward is None:
+                raise ValueError("Rejecting precedence transitions cannot carry rewards")
+            if destination != source or reward != 0:
+                transitions.append(
+                    Transition(
+                        source=source,
+                        destination=destination,
+                        condition=_condition(normalized.propositions, valuation),
+                        reward=reward,
+                    )
                 )
-            deterministic_rows[row_key] = row_value
 
-    for (source, guard), (destination, reward) in deterministic_rows.items():
-        raw_transitions.append((source, guard, destination, reward))
+    return RewardMachineStructure(
+        states=normalized.states,
+        initial_state=normalized.initial_state,
+        final_state=normalized.final_state,
+        rejecting_states=tuple(sorted(rejecting_states)),
+        transitions=tuple(transitions),
+    )
 
-    outgoing = defaultdict(list)
-    for transition in raw_transitions:
-        outgoing[transition[0]].append(transition)
 
-    state_names = {initial_state: "u0"}
+def _normalize_dfa(dfa: dict, proposition_ids: tuple[str, ...]) -> _NormalizedDFA:
+    propositions = tuple(proposition.lower() for proposition in proposition_ids)
+    if len(set(propositions)) != len(propositions):
+        raise ValueError("Instruction proposition identifiers must be unique")
+
+    alphabet = {str(symbol).lower() for symbol in dfa.get("alphabet", ())}
+    if alphabet != set(propositions):
+        missing = set(propositions) - alphabet
+        unexpected = alphabet - set(propositions)
+        details = []
+        if missing:
+            details.append(f"missing {', '.join(sorted(missing))}")
+        if unexpected:
+            details.append(f"unexpected {', '.join(sorted(unexpected))}")
+        raise ValueError(f"DFA alphabet does not match the instruction ({'; '.join(details)})")
+
+    states = {str(state) for state in dfa.get("states", ())}
+    initial_state = str(dfa.get("initial_state", ""))
+    accepting_states = {str(state) for state in dfa.get("accepting_states", ())}
+    if not initial_state or initial_state not in states:
+        raise ValueError("DFA has no declared initial state")
+    if not accepting_states or not accepting_states <= states:
+        raise ValueError("DFA has invalid accepting states")
+
+    outgoing: dict[str, list[tuple[object, str]]] = defaultdict(list)
+    for key, raw_destination in dfa.get("transitions", {}).items():
+        if not isinstance(key, tuple) or len(key) != 2:
+            raise ValueError("DFA returned a malformed transition key")
+        source, guard = str(key[0]), str(key[1])
+        destination = str(raw_destination)
+        if source not in states or destination not in states:
+            raise ValueError("DFA transition references an undeclared state")
+        expression = _GuardParser(guard.lower(), set(propositions)).parse()
+        outgoing[source].append((expression, destination))
+
+    valuations = tuple(product((False, True), repeat=len(propositions)))
+    complete_transitions: dict[tuple[str, Valuation], str] = {}
+    for state in states:
+        for valuation in valuations:
+            values = dict(zip(propositions, valuation, strict=True))
+            destinations = [
+                destination
+                for expression, destination in outgoing[state]
+                if _evaluate(expression, values)
+            ]
+            if len(destinations) != 1:
+                condition = ",".join(_condition(propositions, valuation))
+                raise ValueError(
+                    f"DFA must have one transition from {state} on {condition}; "
+                    f"found {len(destinations)}"
+                )
+            complete_transitions[(state, valuation)] = destinations[0]
+
+    reachable = {initial_state}
     queue = deque([initial_state])
     while queue:
         source = queue.popleft()
-        for _, guard, destination, reward in sorted(
-            outgoing[source], key=lambda item: (item[1], item[2], item[3])
-        ):
-            if destination not in state_names:
-                state_names[destination] = f"u{len(state_names)}"
+        for valuation in valuations:
+            destination = complete_transitions[(source, valuation)]
+            if destination not in reachable:
+                reachable.add(destination)
                 queue.append(destination)
-    for state in sorted(all_states - set(state_names)):
-        state_names[state] = f"u{len(state_names)}"
 
-    state_order = {state: index for index, state in enumerate(state_names)}
-    transitions = tuple(
-        Transition(
-            state_names[source],
-            guard,
-            state_names[destination],
-            reward,
-        )
-        for source, guard, destination, reward in sorted(
-            raw_transitions,
-            key=lambda item: (
-                state_order[item[0]],
-                item[1],
-                state_order[item[2]],
-                item[3],
-            ),
-        )
+    reachable_transitions = {
+        (source, valuation): destination
+        for (source, valuation), destination in complete_transitions.items()
+        if source in reachable
+    }
+    reachable_accepting = accepting_states & reachable
+    return _minimize_dfa(
+        propositions,
+        valuations,
+        reachable,
+        initial_state,
+        reachable_accepting,
+        reachable_transitions,
     )
-    accepting_states = tuple(
-        state_names[str(state)]
-        for state in sorted(
-            flat_reward_machine.get("accepting_states", ()),
-            key=lambda state: state_order[str(state)],
-        )
+
+
+def _minimize_dfa(
+    propositions: tuple[str, ...],
+    valuations: tuple[Valuation, ...],
+    states: set[str],
+    initial_state: str,
+    accepting_states: set[str],
+    transitions: dict[tuple[str, Valuation], str],
+) -> _NormalizedDFA:
+    partitions = [
+        frozenset(partition)
+        for partition in (accepting_states, states - accepting_states)
+        if partition
+    ]
+    while True:
+        state_to_partition = {
+            state: index
+            for index, partition in enumerate(partitions)
+            for state in partition
+        }
+        refined = []
+        for partition in partitions:
+            groups: dict[tuple[int, ...], list[str]] = defaultdict(list)
+            for state in sorted(partition):
+                signature = tuple(
+                    state_to_partition[transitions[(state, valuation)]]
+                    for valuation in valuations
+                )
+                groups[signature].append(state)
+            refined.extend(
+                frozenset(group)
+                for _, group in sorted(groups.items(), key=lambda item: item[1][0])
+            )
+        if refined == partitions:
+            break
+        partitions = refined
+
+    state_to_partition = {
+        state: index
+        for index, partition in enumerate(partitions)
+        for state in partition
+    }
+    initial_partition = state_to_partition[initial_state]
+    partition_transitions = {
+        (index, valuation): state_to_partition[
+            transitions[(next(iter(partition)), valuation)]
+        ]
+        for index, partition in enumerate(partitions)
+        for valuation in valuations
+    }
+
+    names = {initial_partition: 0}
+    queue = deque([initial_partition])
+    while queue:
+        source = queue.popleft()
+        for valuation in valuations:
+            destination = partition_transitions[(source, valuation)]
+            if destination not in names:
+                names[destination] = len(names)
+                queue.append(destination)
+
+    accepting_partitions = {
+        state_to_partition[state] for state in accepting_states
+    }
+    accepting = {names[partition] for partition in accepting_partitions}
+    if len(accepting) != 1:
+        raise ValueError("Executable DFA must minimize to one success state")
+    final_state = next(iter(accepting))
+    minimized_transitions = {
+        (names[source], valuation): names[destination]
+        for (source, valuation), destination in partition_transitions.items()
+    }
+    states_by_name = tuple(range(len(names)))
+    for valuation in valuations:
+        if minimized_transitions[(final_state, valuation)] != final_state:
+            raise ValueError("Executable DFA success state must be absorbing")
+
+    return _NormalizedDFA(
+        propositions=propositions,
+        valuations=valuations,
+        states=states_by_name,
+        initial_state=0,
+        final_state=final_state,
+        transitions=minimized_transitions,
     )
-    return RewardMachineStructure(
-        tuple(state_names.values()),
-        "u0",
-        accepting_states,
-        transitions,
+
+
+def _states_without_path_to_final(dfa: _NormalizedDFA) -> set[int]:
+    predecessors: dict[int, set[int]] = defaultdict(set)
+    for (source, _), destination in dfa.transitions.items():
+        predecessors[destination].add(source)
+
+    can_reach_final = {dfa.final_state}
+    queue = deque([dfa.final_state])
+    while queue:
+        destination = queue.popleft()
+        for source in predecessors[destination]:
+            if source not in can_reach_final:
+                can_reach_final.add(source)
+                queue.append(source)
+    return set(dfa.states) - can_reach_final
+
+
+def _validate_existence(dfa: _NormalizedDFA) -> None:
+    if dfa.transitions[(dfa.initial_state, (False,))] != dfa.initial_state:
+        raise ValueError("Existence DFA must ignore non-occurrences")
+    if dfa.transitions[(dfa.initial_state, (True,))] != dfa.final_state:
+        raise ValueError("Existence DFA must complete on the first occurrence")
+
+
+def _validate_existence_two(dfa: _NormalizedDFA) -> None:
+    if dfa.transitions[(dfa.initial_state, (False,))] != dfa.initial_state:
+        raise ValueError("ExistenceTwo DFA must ignore non-occurrences")
+    progress_state = dfa.transitions[(dfa.initial_state, (True,))]
+    if progress_state in {dfa.initial_state, dfa.final_state}:
+        raise ValueError("ExistenceTwo DFA must retain the first occurrence")
+    if dfa.transitions[(progress_state, (False,))] != progress_state:
+        raise ValueError("ExistenceTwo DFA must retain progress between occurrences")
+    if dfa.transitions[(progress_state, (True,))] != dfa.final_state:
+        raise ValueError("ExistenceTwo DFA must complete on the second occurrence")
+
+
+def _validate_non_hard_precedence(dfa: _NormalizedDFA) -> tuple[int, int]:
+    a_only = (True, False)
+    b_only = (False, True)
+    both = (True, True)
+    preferred_state = dfa.transitions[(dfa.initial_state, a_only)]
+    reverse_state = dfa.transitions[(dfa.initial_state, b_only)]
+    if preferred_state in {dfa.initial_state, dfa.final_state}:
+        raise ValueError("Precedence DFA did not retain preferred-order progress")
+    if reverse_state in {dfa.initial_state, dfa.final_state, preferred_state}:
+        raise ValueError("Precedence DFA did not retain reverse-order progress")
+    if dfa.transitions[(dfa.initial_state, both)] != dfa.final_state:
+        raise ValueError("Non-hard simultaneous precedence must complete")
+    if dfa.transitions[(preferred_state, b_only)] != dfa.final_state:
+        raise ValueError("Preferred precedence order does not complete")
+    if dfa.transitions[(reverse_state, a_only)] != dfa.final_state:
+        raise ValueError("Reverse precedence order does not complete")
+    return preferred_state, reverse_state
+
+
+def _validate_hard_precedence(
+    dfa: _NormalizedDFA,
+    rejecting_states: set[int],
+) -> None:
+    if len(rejecting_states) != 1:
+        raise ValueError("Hard precedence requires exactly one rejecting sink")
+    rejecting_state = next(iter(rejecting_states))
+    if any(
+        dfa.transitions[(rejecting_state, valuation)] != rejecting_state
+        for valuation in dfa.valuations
+    ):
+        raise ValueError("Hard precedence rejecting state must be a sink")
+
+    a_only = (True, False)
+    b_only = (False, True)
+    both = (True, True)
+    if dfa.transitions[(dfa.initial_state, b_only)] != rejecting_state:
+        raise ValueError("Reverse hard precedence must enter the rejecting sink")
+    if dfa.transitions[(dfa.initial_state, both)] != rejecting_state:
+        raise ValueError("Simultaneous hard precedence must enter the rejecting sink")
+    preferred_state = dfa.transitions[(dfa.initial_state, a_only)]
+    if preferred_state in {dfa.initial_state, dfa.final_state, rejecting_state}:
+        raise ValueError("Hard precedence did not retain preferred-order progress")
+    if dfa.transitions[(preferred_state, b_only)] != dfa.final_state:
+        raise ValueError("Preferred hard precedence order does not complete")
+
+
+def _condition(
+    propositions: tuple[str, ...],
+    valuation: Valuation,
+) -> tuple[str, ...]:
+    return tuple(
+        proposition if value else f"!{proposition}"
+        for proposition, value in zip(propositions, valuation, strict=True)
     )
 
 
 def serialize_reward_machine(reward_machine: RewardMachineStructure) -> str:
-    """Serialize exactly the reference section-based Reward Machine format."""
+    """Serialize the current TFM numeric semicolon format."""
+    non_final_states = tuple(
+        state for state in reward_machine.states if state != reward_machine.final_state
+    )
     lines = [
-        "REWARD_MACHINE:",
-        f"STATES: {', '.join(reward_machine.states)}",
-        f"INITIAL_STATE: {reward_machine.initial_state}",
-        "TRANSITION_FUNCTION:",
+        f"s: {', '.join(str(state) for state in non_final_states)}",
+        f"i: {reward_machine.initial_state}",
+        f"f: {reward_machine.final_state}",
+        "r: 0",
     ]
     lines.extend(
-        f"({transition.source}, {transition.guard}) -> {transition.destination}"
+        "; ".join(
+            (
+                str(transition.source),
+                str(transition.destination),
+                ",".join(transition.condition),
+                _format_reward(transition.reward),
+            )
+        )
         for transition in reward_machine.transitions
-    )
-    lines.append("REWARD_FUNCTION:")
-    lines.extend(
-        f"({transition.source}, {transition.guard}, {transition.destination}) "
-        f"-> {transition.reward}"
-        for transition in reward_machine.transitions
-        if transition.reward != 0
     )
     return "\n".join(lines) + "\n"
+
+
+def _format_reward(reward: float) -> str:
+    if reward == 0:
+        return "0"
+    return f"{reward:.2f}"
