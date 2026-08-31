@@ -2,7 +2,12 @@
 
 ## Setup
 
-Keep `nl2ltl`, `Flat`, and `schema-rm-rl` as sibling working copies. Use Python 3.13.
+Clone the repository with its pinned dependencies and use Python 3.13.
+
+```bash
+git clone --recurse-submodules https://github.com/MiquelGomezCorral/TFM-schema-rm-rl.git
+cd TFM-schema-rm-rl
+```
 
 ```bash
 uv pip install -r requirements.txt
@@ -10,6 +15,10 @@ pip install -e .
 ```
 
 Build and install MONA separately, then ensure `mona` is on `PATH`.
+
+For dependency development, switch the detached submodule to its maintained feature
+branch, synchronize the original project through `upstream`, push the dependency to
+its fork `origin`, and then commit the updated gitlink in this repository.
 
 ## Readiness
 
@@ -27,4 +36,6 @@ Live validation is pending explicit user approval. It requires `mona`, `OPENAI_A
 
 ## Commit And Publish
 
-Do not commit, push, publish, or redistribute the modified sibling repositories unless explicitly requested. FL-AT has no declared upstream license.
+Do not commit or push unless explicitly requested. The public Flat adaptation was
+published by explicit user authorization, but upstream still has no declared license;
+the license request is tracked at `https://github.com/Jamidd/Flat/issues/1`.
