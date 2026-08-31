@@ -10,15 +10,19 @@ V1 ends after Reward Machine generation. It does not train or evaluate an RL age
 
 ## Local setup
 
-Use Python 3.13 and keep the three working copies as siblings:
+Use Python 3.13 and clone the dependency submodules recursively:
 
-```text
-nl2ltl/
-Flat/
-schema-rm-rl/
+```bash
+git clone --recurse-submodules \
+  https://github.com/MiquelGomezCorral/TFM-schema-rm-rl.git
+cd TFM-schema-rm-rl
+
+# For an existing clone:
+git submodule update --init --recursive
 ```
 
-Install the sibling projects editably, then this package:
+The parent repository pins exact fork commits under `dependencies/nl2ltl` and
+`dependencies/Flat`. Install those editable dependencies, then this package:
 
 ```bash
 conda create --name TFM_2_env python=3.13 -y
@@ -32,9 +36,27 @@ uv pip install ipykernel
 python -m ipykernel install --user --name=TFM_2_env --display-name "Python (TFM_2_env)"
 ```
 
-The local `nl2ltl` checkout removes its obsolete mandatory OpenAI pin while retaining
-`pylogics`. The local FL-AT checkout is packaged only to expose the compiler API used
-here.
+The pinned `nl2ltl` fork removes its obsolete mandatory OpenAI pin while retaining
+`pylogics`. The pinned FL-AT fork exposes the compiler API used here.
+
+### Editing a dependency
+
+Submodules are normally checked out at detached commits. Before editing one, create a
+local branch that tracks its adaptation branch and add the original repository as
+`upstream`:
+
+```bash
+cd dependencies/nl2ltl
+git switch -c feat/python3-packaging --track origin/feat/python3-packaging
+git remote add upstream https://github.com/IBM/nl2ltl.git
+
+cd ../Flat
+git switch -c feat/flat-packaging-dfa --track origin/feat/flat-packaging-dfa
+git remote add upstream https://github.com/Jamidd/Flat.git
+```
+
+In both submodules, `origin` is the maintained fork and `upstream` is the original
+project. Push dependency commits before updating and committing the parent gitlink.
 
 ## Install MONA from source
 
@@ -145,9 +167,9 @@ strict preferred order; reverse and simultaneous order enter the rejecting sink.
   than assigned ambiguous rewards.
 - Structured output requires a compatible provider model. An unsupported model is an
   API error and is not silently retried or downgraded.
-- The upstream FL-AT checkout does not contain a license file. Keep the modified
-  checkout local for research use; do not publish or redistribute it without explicit
-  permission from its owner.
+- The upstream FL-AT repository does not declare a license. Its public adaptation fork
+  is maintained at the project owner's accepted publication risk while the
+  [license request](https://github.com/Jamidd/Flat/issues/1) remains unresolved.
 
 ## How the pipeline uses the formal tools
 
@@ -237,5 +259,6 @@ The local MONA source contains several subsystems:
 MONA does not read natural language, call an LLM, select propositions, assign rewards,
 write the final RM format, or train an RL agent. Its responsibility is narrower: given
 the formal meaning of an approved instruction, produce the corresponding deterministic
-automaton. FL-AT invokes it in `Flat/LTLf/Translator.py`, and this project then converts
-the returned DFA into the compact Reward Machine consumed by the TFM runtime.
+automaton. FL-AT invokes it in `dependencies/Flat/LTLf/Translator.py`, and this project
+then converts the returned DFA into the compact Reward Machine consumed by the TFM
+runtime.
