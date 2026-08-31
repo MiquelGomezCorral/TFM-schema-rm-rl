@@ -61,7 +61,13 @@ if __name__ == "__main__":
             "(default: infer each priority)"
         ),
     )
-    generate_parser.add_argument("--output", required=True, type=Path)
+    generate_parser.add_argument(
+        "--output",
+        required=True,
+        type=Path,
+        metavar="NAME",
+        help="Output file name under Configuration.OUTPUT_PATH",
+    )
     generate_parser.add_argument(
         "--overwrite",
         action="store_true",

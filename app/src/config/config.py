@@ -3,6 +3,9 @@
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import ClassVar
+
+from maikol_utils.file_utils import make_dirs
 
 from src.models import PriorityLevel
 
@@ -10,9 +13,11 @@ from src.models import PriorityLevel
 @dataclass
 class Configuration:
     """Configuration class for the project."""
-    DATA_PATH: str = os.path.join('..', 'data')
-    OUTPUT_PATH: str = os.path.join('..', 'outputs')
-    MODELS_PATH: str = os.path.join('..', 'models')
+
+    WORKSPACE_PATH: ClassVar[Path] = Path(__file__).resolve().parents[4]
+    DATA_PATH: ClassVar[Path] = WORKSPACE_PATH / "data"
+    OUTPUT_PATH: ClassVar[Path] = WORKSPACE_PATH / "outputs"
+    MODELS_PATH: ClassVar[Path] = WORKSPACE_PATH / "models"
 
     environment: Path | None = None
     instructions: list[str] = field(default_factory=list)
@@ -28,10 +33,14 @@ class Configuration:
 
     def __post_init__(self) -> None:
         """Normalize paths and resolve optional environment configuration."""
+        make_dirs([self.DATA_PATH, self.OUTPUT_PATH, self.MODELS_PATH])
+
         if self.environment is not None:
             self.environment = Path(self.environment)
         if self.output is not None:
             self.output = Path(self.output)
+            if self.output.name != str(self.output):
+                raise ValueError("--output must be a file name without a directory")
         self.priorities = [priority.lower() for priority in (self.priorities or [])]
         priority_choices = {"infer", *(priority.value for priority in PriorityLevel)}
         invalid_priorities = set(self.priorities) - priority_choices

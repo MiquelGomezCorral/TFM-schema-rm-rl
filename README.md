@@ -84,8 +84,10 @@ and launch
 
 python app/main.py generate-rm \
   --environment examples/multitaxi/environment.md \
-  --instruction "Eventually deliver passenger 1 and eventually deliver passenger 2" \
+  --instruction "Eventually deliver passenger 1" \
+  --instruction "Eventually deliver passenger 2" \
   --instruction "Deliver passenger 1 before passenger 2" \
+  --priority none \
   --priority none \
   --priority hard \
   --output multitaxi.rm \
@@ -101,11 +103,12 @@ The command displays every instruction, selected pattern, grounded propositions,
 priority, generated LTLf formula, and effective reward behavior. It asks once for
 approval of all proposals. Declining does not call MONA and writes nothing.
 
-After approval, every instruction is compiled independently through MONA. A single
-instruction preserves the exact `--output` path. Multiple instructions number the
-stem, so the example writes `multitaxi-1.rm`, `multitaxi-2.rm`, and
-`multitaxi-3.rm`. All target paths are checked before compilation, and existing files
-are rejected unless `--overwrite` is supplied.
+After approval, every instruction is compiled independently through MONA. `--output`
+is a file name, not a path; files are always written under `Configuration.OUTPUT_PATH`.
+Multiple instructions number the stem, so the example writes `multitaxi-1.rm`,
+`multitaxi-2.rm`, and `multitaxi-3.rm` under that directory. All target paths are
+checked before compilation, and existing files are rejected unless `--overwrite` is
+supplied.
 
 The output uses the current TFM runtime's numeric semicolon format. For example, a
 hard `d1`-before-`d2` machine has one success final state and a declared rejecting
@@ -145,3 +148,94 @@ strict preferred order; reverse and simultaneous order enter the rejecting sink.
 - The upstream FL-AT checkout does not contain a license file. Keep the modified
   checkout local for research use; do not publish or redistribute it without explicit
   permission from its owner.
+
+## How the pipeline uses the formal tools
+
+```mermaid
+flowchart TD
+    A["Input<br/>environment.md + instruction"]
+    B["Validate input<br/>fix the allowed proposition vocabulary"]
+    C["LLM<br/>only natural-language interpretation step"]
+    D{"Human approval"}
+    X["Stop<br/>write nothing"]
+    E["IBM nl2ltl templates + our priority rules<br/>build the formal formula"]
+    F["FL-AT + MONA<br/>compile the formula into an automaton"]
+    G["Our RM compiler<br/>minimize + assign one-time rewards"]
+    H["One executable .rm file"]
+
+    A -->|"description + proposition declarations + instruction"| B
+    B -->|"validated description + fixed proposition IDs"| C
+    C -->|"pattern + proposition IDs + priority"| D
+    D -- Reject --> X
+    D -->|"Approved interpretation"| E
+    E -->|"LTLf formula"| F
+    F -->|"DFA"| G
+    G -->|"compact Reward Machine"| H
+```
+
+Input validation is not another interpretation step. It only checks that the Markdown
+contains one valid proposition section, that proposition IDs are unique and safe for
+the formal tools, and that later stages can use only that fixed vocabulary. This stops
+the LLM from inventing events that the environment cannot emit.
+
+There is only one NLP step in the current pipeline. The OpenCode or OpenAI model reads
+the instruction and chooses a constrained pattern, proposition IDs, and priority. IBM
+`nl2ltl` is not running a second language model here: we use its deterministic DECLARE
+template classes to turn the approved choice into a `pylogics` LTLf formula. The LLM
+does not generate LTLf, automaton states, transitions, numeric rewards, or output files.
+Everything after approval is deterministic code and formal compilation.
+
+The main ownership boundary is: **FL-AT and MONA compile the approved LTLf formula
+into the formal DFA; `schema-rm-rl` converts that DFA into the executable Reward
+Machine.** The current pipeline calls FL-AT's `compile_dfa()` entry point, not its
+original `compile_reward_machine()` path.
+
+| Tool | What this project uses | What this project does not use, and why |
+|---|---|---|
+| IBM `nl2ltl` | The `Existence`, `ExistenceTwo`, and `Precedence` DECLARE templates, their argument checks, and `pylogics` formula objects. `Existence` and `ExistenceTwo` use the template's `to_ltlf()` method. | Its GPT and Rasa engines, grounding, filters, confidence ranking, and generic `translate()` wrapper are unnecessary because this project has a schema-constrained provider engine and a human review step. PPLTL is unused because FL-AT receives LTLf. Other DECLARE templates are rejected until their executable reward and violation semantics are defined. |
+| FL-AT | The LTLf lexer, parser, translation to MONA logic, MONA process invocation, and DFA output parser exposed through `flat_tool.compile_dfa()`. | PDDL3, PLTL, and regular-expression inputs are outside the current LTLf pipeline. FL-AT's old CLI, automata composition, reward assignment, and RM serializer are unused because this project creates one RM per instruction and owns its one-time reward and compact runtime semantics. |
+| `schema-rm-rl` | Environment parsing, LLM request validation, priority semantics, human approval, LTLf serialization, DFA normalization and minimization, reward assignment, and RM serialization. | It does not invent formal automaton topology; MONA remains responsible for compiling the approved formula. |
+
+For precedence, the IBM template supplies the constrained pattern and argument order,
+but this project builds the final formula itself. Non-hard priorities require both
+events while allowing either order. Hard priority requires strict preferred ordering
+and rejects reverse or simultaneous completion.
+
+## MONA's role
+
+MONA is a formal logic compiler and decision procedure, not an AI model. FL-AT
+translates an approved LTLf formula into MONA's logic, and MONA constructs the
+deterministic finite automaton that recognizes traces satisfying that formula.
+
+```mermaid
+flowchart LR
+    A["LTLf formula"]
+    B["FL-AT<br/>translate for MONA"]
+    C["MONA<br/>construct the DFA"]
+    D["Our compiler<br/>construct the RM"]
+    E["Executable .rm file"]
+
+    A -->|"LTLf text"| B
+    B -->|"MONA logic"| C
+    C -->|"DFA"| D
+    D -->|"states + sparse transitions + rewards"| E
+```
+
+After MONA runs, the modified FL-AT adapter parses its DFA text and removes a proven
+event-ignoring preamble when present. It then passes the parsed DFA to our RM compiler.
+
+The local MONA source contains several subsystems:
+
+| MONA component | Purpose in MONA | Use in this project |
+|---|---|---|
+| `Front/` | Parses and processes logical formulas. | Used indirectly through the `mona` executable. |
+| `BDD/` | Represents Boolean conditions efficiently. | Used internally by MONA. |
+| `DFA/` | Builds and manipulates automata over finite strings. | This is the automaton output the pipeline needs. |
+| `GTA/` | Builds tree automata. | Not used because the pipeline handles finite event traces, not trees. |
+| `Lib/` | Provides supporting automata operations and output utilities. | Used only as internal support for the executable. |
+
+MONA does not read natural language, call an LLM, select propositions, assign rewards,
+write the final RM format, or train an RL agent. Its responsibility is narrower: given
+the formal meaning of an approved instruction, produce the corresponding deterministic
+automaton. FL-AT invokes it in `Flat/LTLf/Translator.py`, and this project then converts
+the returned DFA into the compact Reward Machine consumed by the TFM runtime.

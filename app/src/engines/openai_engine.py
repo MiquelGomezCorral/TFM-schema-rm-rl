@@ -12,6 +12,7 @@ from nl2ltl.declare.declare import (
     Precedence,
 )
 from nl2ltl.engines import Engine
+from maikol_utils.print_utils import print_error
 from openai import OpenAI
 from pylogics.syntax.base import Formula
 from pylogics.syntax.ltl import Atomic
@@ -100,32 +101,49 @@ class OpenAIEngine(Engine):
             self.environment,
             priority_override,
         )
-        response = self.client.responses.create(
-            model=self.model,
-            input=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_input},
-            ],
-            text={
-                "format": {
-                    "type": "json_schema",
-                    "name": "declare_proposal",
-                    "strict": True,
-                    "schema": schema,
-                }
-            },
-        )
-        response_text = _extract_response_text(response)
-        try:
-            output = json.loads(response_text)
-        except (TypeError, json.JSONDecodeError) as error:
-            raise ProposalValidationError("OpenAI returned malformed structured output") from error
-        return _validate_selection(
-            output,
-            self.environment,
-            instruction,
-            priority_override,
-        )
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_input},
+        ]
+        response_format = {
+            "type": "json_schema",
+            "name": "declare_proposal",
+            "strict": True,
+            "schema": schema,
+        }
+        for attempt in range(2):
+            response = self.client.responses.create(
+                model=self.model,
+                input=list(messages),
+                text={"format": response_format},
+            )
+            response_text = _extract_response_text(response)
+            try:
+                return _parse_and_validate_selection(
+                    response_text,
+                    self.environment,
+                    instruction,
+                    priority_override,
+                    provider_name="OpenAI",
+                )
+            except ProposalValidationError as error:
+                if attempt == 1:
+                    raise _corrected_proposal_error(error, response_text) from error
+                _report_invalid_proposal(error, response_text)
+                messages.extend(
+                    (
+                        {"role": "assistant", "content": response_text},
+                        {
+                            "role": "user",
+                            "content": _build_correction_message(
+                                priority_override,
+                                error,
+                            ),
+                        },
+                    )
+                )
+
+        raise AssertionError("Proposal retry loop exited unexpectedly")
 
 
 class OpenCodeEngine(OpenAIEngine):
@@ -163,34 +181,51 @@ class OpenCodeEngine(OpenAIEngine):
             self.environment,
             priority_override,
         )
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_input},
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "declare_proposal",
-                    "strict": True,
-                    "schema": schema,
-                },
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_input},
+        ]
+        response_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "declare_proposal",
+                "strict": True,
+                "schema": schema,
             },
-        )
-        response_text = _extract_chat_completion_text(response)
-        try:
-            output = json.loads(response_text)
-        except (TypeError, json.JSONDecodeError) as error:
-            raise ProposalValidationError(
-                "OpenCode returned malformed structured output"
-            ) from error
-        return _validate_selection(
-            output,
-            self.environment,
-            instruction,
-            priority_override,
-        )
+        }
+        for attempt in range(2):
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=list(messages),
+                response_format=response_format,
+            )
+            response_text = _extract_chat_completion_text(response)
+            try:
+                return _parse_and_validate_selection(
+                    response_text,
+                    self.environment,
+                    instruction,
+                    priority_override,
+                    provider_name="OpenCode",
+                )
+            except ProposalValidationError as error:
+                if attempt == 1:
+                    raise _corrected_proposal_error(error, response_text) from error
+                _report_invalid_proposal(error, response_text)
+                messages.extend(
+                    (
+                        {"role": "assistant", "content": response_text},
+                        {
+                            "role": "user",
+                            "content": _build_correction_message(
+                                priority_override,
+                                error,
+                            ),
+                        },
+                    )
+                )
+
+        raise AssertionError("Proposal retry loop exited unexpectedly")
 
 
 def _build_proposal_request(
@@ -246,6 +281,69 @@ def _allowed_priorities(priority_override: str) -> list[str]:
         return [PriorityLevel(normalized).value]
     except ValueError as error:
         raise ValueError(f"Unsupported priority override: {priority_override!r}") from error
+
+
+def _parse_and_validate_selection(
+    response_text: str,
+    environment: EnvironmentDescription,
+    instruction: str,
+    priority_override: str,
+    provider_name: str,
+) -> ProposalSelection:
+    """Parse and locally validate one retryable structured proposal."""
+    try:
+        output = json.loads(response_text)
+    except (TypeError, json.JSONDecodeError) as error:
+        raise ProposalValidationError(
+            f"{provider_name} returned malformed structured output: {error}"
+        ) from error
+    return _validate_selection(
+        output,
+        environment,
+        instruction,
+        priority_override,
+    )
+
+
+def _build_correction_message(
+    priority_override: str,
+    validation_error: ProposalValidationError,
+) -> str:
+    """Build focused feedback for the single corrective request."""
+    template_arities = ", ".join(
+        f"{name}={arity}"
+        for name, (_, arity) in SUPPORTED_TEMPLATES.items()
+    )
+    priority_values = ", ".join(priority.value for priority in PriorityLevel)
+    return (
+        "Correct the rejected proposal and return only JSON matching the same schema.\n"
+        f"Supported template arities: {template_arities}.\n"
+        "Priority restrictions: Existence and ExistenceTwo require 'none'; "
+        f"Precedence accepts {priority_values}. In inferred mode, 'before' wording "
+        "requires Precedence and unsoftened categorical 'before' requires 'hard'.\n"
+        f"Requested priority override: {priority_override!r}.\n"
+        f"Validation error: {validation_error}"
+    )
+
+
+def _report_invalid_proposal(
+    validation_error: ProposalValidationError,
+    response_text: str,
+) -> None:
+    print_error(
+        f"Invalid structured proposal: {validation_error}\n"
+        f"Rejected output: {response_text!r}"
+    )
+
+
+def _corrected_proposal_error(
+    validation_error: ProposalValidationError,
+    response_text: str,
+) -> ProposalValidationError:
+    return ProposalValidationError(
+        "Corrected proposal remained invalid: "
+        f"{validation_error}. Rejected output: {response_text!r}"
+    )
 
 
 def _extract_response_text(response) -> str:
