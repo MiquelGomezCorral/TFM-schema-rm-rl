@@ -8,9 +8,9 @@ topology; the model never invents numeric rewards, LTL, or transitions.
 
 V1 ends after Reward Machine generation. It does not train or evaluate an RL agent.
 
-## Local setup
+## Quick start
 
-Use Python 3.13 and clone the dependency submodules recursively:
+Install Git and Conda, then clone the repository with its pinned dependencies:
 
 ```bash
 git clone --recurse-submodules \
@@ -22,16 +22,31 @@ git submodule update --init --recursive
 ```
 
 The parent repository pins exact fork commits under `dependencies/nl2ltl` and
-`dependencies/Flat`. Install those editable dependencies, then this package:
+`dependencies/Flat`. Create the Python 3.13 environment and install the complete
+project:
 
 ```bash
 conda create --name TFM_2_env python=3.13 -y
 conda activate TFM_2_env
 
-# pip install uv
+python -m pip install uv
 uv pip install -r requirements.txt
-pip install -e .
+uv pip install -e .
 
+cp example.env .env
+```
+
+Open `.env`, set `OPENCODE_API_KEY`, and keep or change the configured model. Install
+MONA as described below, then verify the local installation without calling an LLM:
+
+```bash
+mona -v
+python app/main.py --help
+```
+
+Jupyter support is optional:
+
+```bash
 uv pip install ipykernel
 python -m ipykernel install --user --name=TFM_2_env --display-name "Python (TFM_2_env)"
 ```
@@ -92,18 +107,19 @@ Identifiers must match `^[a-z_][a-z0-9_]*$`, be unique, and cannot be `true` or
 
 ## Generate a Reward Machine
 
-Copy `example.env` to `.env`, add the OpenCode key, and either keep its default model
-or pass `--model`:
+Configure OpenCode in `.env`. The generated example already contains these values
+except for the API key:
 
 ```bash
 LLM_PROVIDER=opencode
 OPENCODE_API_KEY="..."
 OPENCODE_BASE_URL=https://opencode.ai/zen/v1
-OPENCODE_MODEL=big-pickle
+OPENCODE_MODEL=nemotron-3.5-lightning-free
 ```
-and launch
-```bash
 
+Run the compiler from the repository root:
+
+```bash
 python app/main.py generate-rm \
   --environment examples/multitaxi/environment.md \
   --instruction "Eventually deliver passenger 1" \
