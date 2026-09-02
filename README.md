@@ -54,24 +54,26 @@ python -m ipykernel install --user --name=TFM_2_env --display-name "Python (TFM_
 The pinned `nl2ltl` fork removes its obsolete mandatory OpenAI pin while retaining
 `pylogics`. The pinned FL-AT fork exposes the compiler API used here.
 
-### Editing a dependency
+### Editing a dependency fork
 
-Submodules are normally checked out at detached commits. Before editing one, create a
-local branch that tracks its adaptation branch and add the original repository as
-`upstream`:
+Submodules are normally checked out at detached commits. Before editing one, switch to
+the fork's default branch and add the original repository as `upstream`:
 
 ```bash
 cd dependencies/nl2ltl
-git switch -c feat/python3-packaging --track origin/feat/python3-packaging
+git switch main
+git pull --ff-only origin main
 git remote add upstream https://github.com/IBM/nl2ltl.git
 
 cd ../Flat
-git switch -c feat/flat-packaging-dfa --track origin/feat/flat-packaging-dfa
+git switch master
+git pull --ff-only origin master
 git remote add upstream https://github.com/Jamidd/Flat.git
 ```
 
 In both submodules, `origin` is the maintained fork and `upstream` is the original
-project. Push dependency commits before updating and committing the parent gitlink.
+project. Commit and push dependency changes on `main` or `master`, then return to the
+parent repository and commit the updated submodule gitlink.
 
 ## Install MONA from source
 

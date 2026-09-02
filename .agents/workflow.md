@@ -16,9 +16,9 @@ pip install -e .
 
 Build and install MONA separately, then ensure `mona` is on `PATH`.
 
-For dependency development, switch the detached submodule to its maintained feature
-branch, synchronize the original project through `upstream`, push the dependency to
-its fork `origin`, and then commit the updated gitlink in this repository.
+For dependency development, switch the detached submodule to the fork's default branch
+(`main` for `nl2ltl` or `master` for Flat), synchronize the original project through
+`upstream`, push to the fork `origin`, and then commit the updated gitlink here.
 
 ## Readiness
 
