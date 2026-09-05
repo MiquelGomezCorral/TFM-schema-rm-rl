@@ -149,8 +149,8 @@ class RunController:
         rm_critic: bool = True,
     ) -> None:
         """Start one run using submitted Markdown and UI values."""
-        if not task_critic and not rm_critic:
-            raise ValueError("At least one critic must be enabled")
+        # if not task_critic and not rm_critic:
+        #     raise ValueError("At least one critic must be enabled")
         request = _RunRequest(
             environment_markdown=environment_markdown,
             environment_filename=environment_filename,

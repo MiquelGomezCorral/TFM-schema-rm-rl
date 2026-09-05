@@ -89,8 +89,8 @@ def create_app() -> Dash:
         if not output_name:
             return "Enter a base output filename."
         critic_options = critic_options or []
-        if not critic_options:
-            return "Select at least one critic."
+        #if not critic_options:
+        #    return "Select at least one critic."
         source_filename = _resolve_environment_filename(
             markdown,
             upload_contents,

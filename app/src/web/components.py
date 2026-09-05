@@ -509,15 +509,15 @@ def output_controls() -> html.Aside:
             dcc.Tabs(
                 id="run-tabs",
                 value="steps",
-                className="run-tabs min-h-40 flex-1",
+                className="run-tabs flex-1",
                 children=[
                     dcc.Tab(
                         label="Steps",
                         value="steps",
                         className="run-tab border-b border-border px-2 py-2 text-[0.76rem] font-bold text-muted",
                         selected_className="run-tab-selected border-accent text-accent",
-                        style={"backgroundColor": "#101a2b", "color": "#a7b7ce"},
-                        selected_style={"backgroundColor": "#17243a", "color": "#38bdf8"},
+                        style={"backgroundColor": "#101a2b", "color": "#a7b7ce", "padding": "8px"},
+                        selected_style={"backgroundColor": "#17243a", "color": "#38bdf8", "padding": "8px"},
                         children=html.Div(
                             [
                                 "No run yet.",
@@ -526,7 +526,7 @@ def output_controls() -> html.Aside:
                                 html.Button(id={"type": "task-dot", "index": 0}, n_clicks=0, className="hidden placeholder-button"),
                             ],
                             id="run-steps",
-                            className="steps-empty min-h-40 text-[0.8rem] text-muted",
+                            className="steps-empty text-[0.8rem] text-muted",
                         ),
                     ),
                     dcc.Tab(
@@ -534,13 +534,13 @@ def output_controls() -> html.Aside:
                         value="log",
                         className="run-tab border-b border-border px-2 py-2 text-[0.76rem] font-bold text-muted",
                         selected_className="run-tab-selected border-accent text-accent",
-                        style={"backgroundColor": "#101a2b", "color": "#a7b7ce"},
-                        selected_style={"backgroundColor": "#17243a", "color": "#38bdf8"},
+                        style={"backgroundColor": "#101a2b", "color": "#a7b7ce", "padding": "8px"},
+                        selected_style={"backgroundColor": "#17243a", "color": "#38bdf8", "padding": "8px"},
                         children=html.Pre(
                             "No run yet.",
                             id="run-log",
                             className=(
-                                "run-log m-0 h-full min-h-40 max-h-[34rem] overflow-auto whitespace-pre-wrap "
+                                "run-log m-0 h-full max-h-[34rem] overflow-auto whitespace-pre-wrap "
                                 "rounded-[0.55rem] border border-border bg-[#0c1626] p-3 font-mono "
                                 "text-[0.76rem] leading-[1.5] text-muted "
                                 "[scrollbar-color:var(--color-border-strong)_transparent]"
@@ -771,9 +771,10 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                 elements=[],
                 layout={
                     "name": "cola",
-                    "fit": True,
-                    "nodeSpacing": 40,
-                    "edgeLength": 120,
+                    "fit": False,
+                    "infinite": True,
+                    "nodeSpacing": 50,
+                    "edgeLength": 100,
                     "avoidOverlap": True,
                 },
                 stylesheet=stylesheet or [],

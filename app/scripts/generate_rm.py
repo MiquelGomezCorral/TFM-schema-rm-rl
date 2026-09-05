@@ -23,6 +23,7 @@ from src.compiler import (
 from src.config import Configuration
 from src.engines import (
     GenericEngine,
+    AntigravityEngine,
     ImmediateEngineError,
     OpenAIEngine,
     OpenCodeEngine,
@@ -490,8 +491,8 @@ def _validate_configuration(config: Configuration) -> None:
         raise ValueError("At least one task is required")
     if any(not isinstance(task, str) or not task.strip() for task in config.tasks):
         raise ValueError("Tasks must be nonempty")
-    if not config.task_critic and not config.rm_critic:
-        raise ValueError("At least one critic must be enabled")
+    # if not config.task_critic and not config.rm_critic:
+    #     raise ValueError("At least one critic must be enabled")
 
 
 def _proposal_json(
@@ -564,9 +565,12 @@ def _get_engine(
     config: Configuration,
     environment: EnvironmentDescription,
 ) -> GenericEngine:
-    if config.llm_provider == "opencode":
-        return OpenCodeEngine(environment, config.model)
-    return OpenAIEngine(environment, config.model)
+    engine_types = {
+        "openai": OpenAIEngine,
+        "opencode": OpenCodeEngine,
+        "antigravity": AntigravityEngine,
+    }
+    return engine_types[config.llm_provider](environment, config.model)
 
 
 def _save_results(
