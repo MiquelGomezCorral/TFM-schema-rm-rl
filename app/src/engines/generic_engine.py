@@ -1,11 +1,8 @@
-"""Shared workflow and OpenAI-compatible engine adapters."""
+"""Shared workflow for provider-backed structured-output engines."""
 
-import os
 from collections.abc import Callable
-from functools import partial
 
 from nl2ltl.engines import Engine
-from openai import OpenAI
 from pylogics.syntax.base import Formula
 
 from src.models import EnvironmentDescription
@@ -15,12 +12,10 @@ from .errors import classify_provider_error
 from .structured import (
     CriticResult,
     ProposalSelection,
-    completion_text,
     critic_schema,
     parse_critic,
     parse_proposal,
     proposal_schema,
-    responses_text,
 )
 
 # ======================================================================================
@@ -116,99 +111,3 @@ class GenericEngine(Engine):
             return self._request(self.model, system, user, schema, name)
         except Exception as error:
             raise classify_provider_error(error) from error
-
-
-# ======================================================================================
-#                                  PROVIDER ADAPTERS
-# ======================================================================================
-
-class OpenAIEngine(GenericEngine):
-    """IBM Engine-compatible backend using OpenAI Structured Outputs."""
-
-    def __init__(
-        self,
-        environment: EnvironmentDescription,
-        model: str | None,
-    ) -> None:
-        model = _required_model(model, "OpenAI")
-        client = OpenAI(api_key=_required_env("OPENAI_API_KEY"), max_retries=0)
-        super().__init__(
-            environment,
-            model,
-            "OpenAI",
-            partial(_request_responses, client),
-        )
-
-
-class OpenCodeEngine(GenericEngine):
-    """IBM Engine-compatible backend using OpenCode's OpenAI-compatible API."""
-
-    def __init__(
-        self,
-        environment: EnvironmentDescription,
-        model: str | None,
-    ) -> None:
-        model = _required_model(model, "OpenCode")
-        client = OpenAI(
-            api_key=_required_env("OPENCODE_API_KEY"),
-            base_url=os.environ.get("OPENCODE_BASE_URL") or "https://opencode.ai/zen/v1",
-            max_retries=0,
-        )
-        super().__init__(
-            environment,
-            model,
-            "OpenCode",
-            partial(_request_chat_completions, client),
-        )
-
-
-# ======================================================================================
-#                                PROVIDER REQUEST HELPERS
-# ======================================================================================
-
-def _required_env(name: str) -> str:
-    value = os.environ.get(name)
-    if not value:
-        raise ValueError(f"{name} is required")
-    return value
-
-
-def _required_model(model: str | None, provider_name: str) -> str:
-    if not model:
-        raise ValueError(f"A {provider_name} model is required")
-    return model
-
-
-def _request_responses(
-    client: OpenAI,
-    model: str,
-    system: str,
-    user: str,
-    schema: dict,
-    name: str,
-) -> str:
-    response = client.responses.create(
-        model=model,
-        input=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-        text={"format": {"type": "json_schema", "name": name, "strict": True, "schema": schema}},
-    )
-    return responses_text(response)
-
-
-def _request_chat_completions(
-    client: OpenAI,
-    model: str,
-    system: str,
-    user: str,
-    schema: dict,
-    name: str,
-) -> str:
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-        response_format={
-            "type": "json_schema",
-            "json_schema": {"name": name, "strict": True, "schema": schema},
-        },
-    )
-    return completion_text(response)

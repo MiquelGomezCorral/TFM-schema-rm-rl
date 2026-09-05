@@ -63,6 +63,7 @@ class Configuration:
         model_variables = {
             "openai": "OPENAI_MODEL",
             "opencode": "OPENCODE_MODEL",
+            "antigravity": "ANTIGRAVITY_MODEL",
         }
         if self.llm_provider not in model_variables:
             raise ValueError(f"Unsupported LLM_PROVIDER: {self.llm_provider!r}")
@@ -71,5 +72,5 @@ class Configuration:
             self.mona_executable or os.environ.get("MONA_EXECUTABLE") or "mona"
         )
 
-        if not self.task_critic and not self.rm_critic:
-            raise ValueError("At least one critic must be enabled")
+        # if not self.task_critic and not self.rm_critic:
+        #     raise ValueError("At least one critic must be enabled")
