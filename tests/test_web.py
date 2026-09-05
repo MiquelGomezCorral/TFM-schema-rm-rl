@@ -51,6 +51,24 @@ class WebTests(unittest.TestCase):
         self.assertNotIn("decline-button", layout)
         self.assertEqual({state.value for state in RunState}, {"idle", "running", "completed", "failed"})
 
+    def test_graph_keeps_a_gentle_live_cola_layout(self):
+        layout = create_layout()
+        pending = [layout]
+        graph = None
+        while pending:
+            component = pending.pop()
+            if getattr(component, "id", None) == "rm-graph":
+                graph = component
+                break
+            children = getattr(component, "children", None)
+            if isinstance(children, (list, tuple)):
+                pending.extend(children)
+            elif hasattr(children, "children"):
+                pending.append(children)
+        self.assertIsNotNone(graph)
+        self.assertTrue(graph.layout["infinite"])
+        self.assertFalse(graph.layout["fit"])
+
     def test_poll_locks_inputs_and_critics_while_running_and_keeps_results(self):
         from src.web.application import create_app
         app = create_app()

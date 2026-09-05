@@ -36,8 +36,20 @@ uv pip install -e .
 cp example.env .env
 ```
 
-Open `.env`, set `OPENCODE_API_KEY`, and keep or change the configured model. Install
-MONA as described below, then verify the local installation without calling an LLM:
+Choose a provider in `.env` and set its model. For OpenCode, set `OPENCODE_API_KEY` and
+keep or change the configured model. To use an Antigravity Google subscription instead,
+run `agy` interactively once to sign in, then set:
+
+```dotenv
+LLM_PROVIDER=antigravity
+ANTIGRAVITY_MODEL=<slug from agy models>
+```
+
+Antigravity uses its local cached account session and subscription quota, so it needs no
+API key. The application starts `agy` in non-interactive mode with no tools and consumes
+the subscription quota for each request. Its own CLI may retain account/session history
+independently of this application's logs. Install MONA as described below, then verify
+the local installation without calling an LLM:
 
 ```bash
 mona -v
@@ -109,8 +121,7 @@ Identifiers must match `^[a-z_][a-z0-9_]*$`, be unique, and cannot be `true` or
 
 ## Generate a Reward Machine
 
-Configure OpenCode in `.env`. The generated example already contains these values
-except for the API key:
+Configure one supported provider in `.env`. OpenCode uses:
 
 ```bash
 LLM_PROVIDER=opencode
@@ -118,6 +129,16 @@ OPENCODE_API_KEY="..."
 OPENCODE_BASE_URL=https://opencode.ai/zen/v1
 OPENCODE_MODEL=nemotron-3.5-lightning-free
 ```
+
+Antigravity uses the cached Google subscription instead of an API key:
+
+```bash
+LLM_PROVIDER=antigravity
+ANTIGRAVITY_MODEL=<slug from agy models>
+```
+
+Authenticate once with `agy` interactively before running the command. The provider is
+invoked headlessly with schema-constrained JSON output and no permission-enabled tools.
 
 Run the compiler from the repository root:
 
@@ -193,10 +214,11 @@ uv pip install -e .
 python app/app.py
 ```
 
-The UI uses the provider configured in `.env` (`LLM_PROVIDER`, its matching API key and
-model, and optional base URL). It does not accept or display credentials. MONA must be
-installed separately and available on `PATH` (or configured through `MONA_EXECUTABLE`),
-just as for the CLI.
+The UI uses the provider configured in `.env` (`LLM_PROVIDER`, its matching model, and
+provider-specific credentials or base URL). Antigravity uses the cached `agy` account
+session and requires no API key. The UI does not accept or display credentials. MONA must
+be installed separately and available on `PATH` (or configured through
+`MONA_EXECUTABLE`), just as for the CLI.
 
 Upload a UTF-8 environment Markdown file or paste it into the editor, add one or more
 tasks, and provide one base output filename. The UI
@@ -222,7 +244,7 @@ or multi-user isolation.
   `NotCoExistence` do not have executable V1 reward semantics and are rejected rather
   than assigned ambiguous rewards.
 - Structured output requires a compatible provider model. An unsupported model is an
-  API error and is not silently retried or downgraded.
+  API or CLI error and is not silently retried or downgraded.
 - The upstream FL-AT repository does not declare a license. Its public adaptation fork
   is maintained at the project owner's accepted publication risk while the
   [license request](https://github.com/Jamidd/Flat/issues/1) remains unresolved.
@@ -256,7 +278,8 @@ contains one valid proposition section, that proposition IDs are unique and safe
 the formal tools, and that later stages can use only that fixed vocabulary. This stops
 the LLM from inventing events that the environment cannot emit.
 
-There is only one NLP step in the current pipeline. The OpenCode or OpenAI model reads
+There is only one NLP step in the current pipeline. The configured OpenCode, OpenAI, or
+Antigravity model reads
 the task and chooses constrained clauses, proposition IDs, and inferred priorities. IBM
 `nl2ltl` is not running a second language model here: we use its deterministic DECLARE
 template classes to turn the accepted choice into a `pylogics` LTLf formula. The LLM

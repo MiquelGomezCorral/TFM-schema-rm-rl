@@ -29,6 +29,11 @@ tasks, while keeping the generator and critic responsibilities stable.
   strict acceptance decision and nonempty feedback, never corrected artifacts.
 - Each task has at most three generator attempts. Either critic may be disabled, but at
   least one remains enabled; both use the configured provider and model.
+- Generator and critic responses use the same provider-neutral structured-output
+  contract regardless of the selected LLM provider.
+- Antigravity is supported through its local `agy` CLI and cached Google account
+  subscription. The adapter is headless, schema-constrained, verifies its selected agent,
+  rejects tool or subagent execution, and has no permission bypass.
 - The packaged prompts include the executable subset of `docs/LTLF_TASK_LANGUAGE.md`.
   They do not load or symlink the full document because it also describes candidate
   patterns that are not executable.
@@ -43,6 +48,11 @@ tasks, while keeping the generator and critic responsibilities stable.
   output; the removed instruction and priority-override interfaces are not aliases.
 - The RM is accepted/finalized only after every enabled critic accepts the same attempt;
   the RM critic necessarily reviews the already compiled candidate.
+- The configured provider and model are used consistently for generation and both
+  critics; provider failures do not silently fall back to another provider.
+- Antigravity requests use the selected `schema-rm-provider` agent, must not bypass tool
+  permissions, and must reject any tool or subagent execution. AGY's advertised tool list
+  is not treated as execution because primary sessions always expose the CLI registry.
 - A reconstruction target in `examples/arm-fm/*/tasks.md` is the input for one task;
   its atomic probes are diagnostic inputs, not an implicit batch to merge.
 
@@ -56,15 +66,21 @@ provider cost for refinement attempts. Conjunctive clause composition gives
 the current compiler a small, deterministic way to express multi-stage objectives while
 avoiding a hidden policy that merges unrelated tasks. The tradeoff is that conjunction
 of the present templates may not reproduce the paper's hand-shaped transition topology
-or reward magnitudes exactly.
+or reward magnitudes exactly. Using an authenticated local Antigravity subscription
+avoids storing an API credential, at the cost of requiring the `agy` CLI, its cached
+account session, per-request process startup, and CLI-owned session history. AGY primary
+sessions advertise their CLI tool registry even when the custom agent requests no tools,
+so the adapter checks executed stream events rather than rejecting the advertised list.
 
 ## Enforcement
 
 - Task and clause boundaries are implemented in `app/src/compiler/pipeline.py` and
   `app/src/compiler/reward_machine.py`.
 - Clause count and proposition grounding are validated in
-  `app/src/engines/openai_engine.py`.
+  `app/src/engines/structured.py`.
 - Bounded refinement, strict critic schemas, and atomic batch output are implemented in
-  `app/scripts/generate_rm.py` and `app/src/engines/openai_engine.py`.
+  `app/scripts/generate_rm.py` and `app/src/engines/generic_engine.py`.
+- Provider adapters in `app/src/engines/provider_engines.py` enforce the selected
+  provider/model contract, selected Antigravity agent, and no-execution boundary.
 - Reusable prompt contracts and rendering functions are packaged under `app/src/prompts`,
   while deterministic compiler ownership remains in `app/src/compiler/`.

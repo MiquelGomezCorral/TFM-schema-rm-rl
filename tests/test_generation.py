@@ -1,4 +1,5 @@
 import unittest
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -9,9 +10,12 @@ from scripts.generate_rm import (
     ProgressEvent,
     StepState,
     _Progress,
+    _get_engine,
     generate_rm,
 )
 from src.config import Configuration
+from src.engines import AntigravityEngine
+from src.models import EnvironmentDescription
 
 
 class GenerationTests(unittest.TestCase):
@@ -27,6 +31,21 @@ class GenerationTests(unittest.TestCase):
     def test_both_critics_cannot_be_disabled(self):
         with self.assertRaises(ValueError):
             Configuration(task_critic=False, rm_critic=False)
+
+    def test_antigravity_configuration_selects_antigravity_engine(self):
+        environment = EnvironmentDescription.from_markdown(
+            "# Demo\n## Propositions\n- `done`: Finished",
+            source="demo.md",
+        )
+        with patch.dict(
+            os.environ,
+            {"LLM_PROVIDER": "antigravity", "ANTIGRAVITY_MODEL": "gemini-model"},
+            clear=True,
+        ):
+            config = Configuration()
+        self.assertEqual(config.llm_provider, "antigravity")
+        self.assertEqual(config.model, "gemini-model")
+        self.assertIsInstance(_get_engine(config, environment), AntigravityEngine)
 
     def test_progress_has_total_and_step_once(self):
         messages = []
