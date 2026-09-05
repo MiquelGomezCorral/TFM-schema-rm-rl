@@ -1,14 +1,18 @@
-"""Proposal and approved Reward Machine compilation orchestration."""
+"""Task proposal and deterministic Reward Machine compilation."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from nl2ltl.declare.base import Template
 from pylogics.syntax.base import And, Formula, Not
 from pylogics.syntax.ltl import Atomic, Eventually, Next, Until
+from flat_tool import compile_dfa
 
-from src.engines import OpenAIEngine
+from src.engines import GenericEngine
+from src.engines.structured import ProposalSelection
 from src.models import (
     EnvironmentDescription,
+    MAX_TASK_CLAUSES,
     PriorityLevel,
     describe_reward_behavior,
 )
@@ -16,16 +20,17 @@ from src.models import (
 from .ltlf import to_flat_syntax
 from .reward_machine import (
     RewardMachineStructure,
+    compose_reward_machines,
     normalize_reward_machine,
     serialize_reward_machine,
 )
 
 
 @dataclass(frozen=True)
-class Proposal:
-    """One reviewed unit from instruction through LTLf."""
+class ClauseProposal:
+    """One critic-validated atomic requirement from normalized language through LTLf."""
 
-    instruction: str
+    normalized_clause: str
     pattern: str
     propositions: tuple[str, ...]
     priority: PriorityLevel
@@ -36,65 +41,64 @@ class Proposal:
 
 
 @dataclass(frozen=True)
+class Proposal:
+    """One natural-language task and its conjunctive clause proposals."""
+
+    task: str
+    clauses: tuple[ClauseProposal, ...]
+
+
+@dataclass(frozen=True)
 class CompilationResult:
-    """Complete in-memory result of an approved compilation."""
+    """Complete in-memory result of a critic-accepted compilation."""
 
     environment: EnvironmentDescription
     proposal: Proposal
-    dfa: dict
+    dfas: tuple[dict, ...]
     reward_machine: RewardMachineStructure
     text: str
 
 
-def propose_instructions(
+def propose_task(
     environment: EnvironmentDescription,
-    instructions: list[str] | tuple[str, ...],
-    engine: OpenAIEngine,
-    priorities: list[str] | tuple[str, ...] | None = None,
-) -> tuple[Proposal, ...]:
-    """Generate constrained proposals without compiling them."""
-    normalized_instructions = tuple(instruction.strip() for instruction in instructions)
-    if not normalized_instructions:
-        raise ValueError("At least one instruction is required")
-    if any(not instruction for instruction in normalized_instructions):
-        raise ValueError("Instructions must be nonempty")
+    task: str,
+    engine: GenericEngine,
+    history: str = "",
+) -> Proposal:
+    """Generate one constrained proposal without compiling it."""
+    task = task.strip()
+    if not task:
+        raise ValueError("Tasks must be nonempty")
     if engine.environment != environment:
-        raise ValueError("The OpenAI engine was configured for a different environment")
-    priority_overrides = tuple(priorities or ())
-    if priority_overrides and len(priority_overrides) != len(normalized_instructions):
-        raise ValueError("Provide exactly one priority value per instruction")
-    if not priority_overrides:
-        priority_overrides = ("infer",) * len(normalized_instructions)
+        raise ValueError("The engine was configured for a different environment")
+    selections = engine.propose_task(task, history=history)
+    if not 1 <= len(selections) <= MAX_TASK_CLAUSES:
+        raise ValueError(f"A task must contain between 1 and {MAX_TASK_CLAUSES} clauses")
+    return materialize_proposal(environment, task, selections)
 
-    proposals = []
-    for instruction, priority_override in zip(
-        normalized_instructions,
-        priority_overrides,
-        strict=True,
-    ):
-        selection = engine.propose(instruction, priority_override)
-        ltlf_ast = _build_ltlf_formula(
-            selection.pattern,
-            selection.propositions,
-            selection.priority,
-            selection.template,
-        )
-        proposals.append(
-            Proposal(
-                instruction=instruction,
-                pattern=selection.pattern,
-                propositions=selection.propositions,
-                priority=selection.priority,
-                reward_behavior=describe_reward_behavior(
-                    selection.pattern,
-                    selection.priority,
-                ),
-                template=selection.template,
-                ltlf_ast=ltlf_ast,
-                ltlf_formula=to_flat_syntax(ltlf_ast),
-            )
-        )
-    return tuple(proposals)
+
+def materialize_proposal(
+    environment: EnvironmentDescription,
+    task: str,
+    selections: Sequence[ProposalSelection],
+) -> Proposal:
+    """Build deterministic DECLARE and LTLf clauses from validated selections."""
+    task = task.strip()
+    if not task:
+        raise ValueError("Tasks must be nonempty")
+    if not 1 <= len(selections) <= MAX_TASK_CLAUSES:
+        raise ValueError(f"A task must contain between 1 and {MAX_TASK_CLAUSES} clauses")
+
+    clauses = []
+    for selection in selections:
+        ltlf_ast = _build_ltlf_formula(selection.pattern, selection.propositions, selection.priority, selection.template)
+        clauses.append(ClauseProposal(
+            normalized_clause=selection.normalized_clause, pattern=selection.pattern,
+            propositions=selection.propositions, priority=selection.priority,
+            reward_behavior=describe_reward_behavior(selection.pattern, selection.priority),
+            template=selection.template, ltlf_ast=ltlf_ast, ltlf_formula=to_flat_syntax(ltlf_ast),
+        ))
+    return Proposal(task=task, clauses=tuple(clauses))
 
 
 def _build_ltlf_formula(
@@ -117,36 +121,34 @@ def _build_ltlf_formula(
     return And(Eventually(preferred), Eventually(second))
 
 
-def compile_approved_proposals(
+def compile_proposal(
     environment: EnvironmentDescription,
-    proposals: tuple[Proposal, ...] | list[Proposal],
+    proposal: Proposal,
     mona_executable: str = "mona",
-) -> tuple[CompilationResult, ...]:
-    """Compile each proposal independently after caller approval."""
-    proposals = tuple(proposals)
-    if not proposals:
-        raise ValueError("At least one approved proposal is required")
-    from flat_tool import compile_dfa
+) -> CompilationResult:
+    """Compile one proposal deterministically."""
+    dfas = compile_dfas(proposal, mona_executable=mona_executable)
+    return build_compilation_result(environment, proposal, dfas)
 
-    results = []
-    for proposal in proposals:
-        dfa = compile_dfa(
-            proposal.ltlf_formula,
-            mona_executable=mona_executable,
-        )
-        reward_machine = normalize_reward_machine(
-            dfa,
-            proposal.pattern,
-            proposal.propositions,
-            proposal.priority,
-        )
-        results.append(
-            CompilationResult(
-                environment=environment,
-                proposal=proposal,
-                dfa=dfa,
-                reward_machine=reward_machine,
-                text=serialize_reward_machine(reward_machine),
-            )
-        )
-    return tuple(results)
+
+def compile_dfas(
+    proposal: Proposal,
+    mona_executable: str = "mona",
+) -> tuple[dict, ...]:
+    """Compile each accepted LTLf clause into one FL-AT/MONA DFA."""
+    return tuple(
+        compile_dfa(clause.ltlf_formula, mona_executable=mona_executable)
+        for clause in proposal.clauses
+    )
+
+
+def build_compilation_result(
+    environment: EnvironmentDescription,
+    proposal: Proposal,
+    dfas: Sequence[dict],
+) -> CompilationResult:
+    """Build and serialize a task-specific Reward Machine from compiled DFAs."""
+    clause_machines = tuple((normalize_reward_machine(dfa, clause.pattern, clause.propositions, clause.priority), clause.propositions) for clause, dfa in zip(proposal.clauses, dfas, strict=True))
+    reward_machine = compose_reward_machines(clause_machines)
+    return CompilationResult(environment=environment, proposal=proposal, dfas=tuple(dfas),
+                             reward_machine=reward_machine, text=serialize_reward_machine(reward_machine))

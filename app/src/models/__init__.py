@@ -2,9 +2,9 @@
 
 from .environment import EnvironmentDescription, EnvironmentValidationError, Proposition
 from .priority import (
-    CompletionRewards,
+    CLAUSE_COMPLETION_REWARD,
+    MAX_TASK_CLAUSES,
     PriorityLevel,
-    completion_rewards,
+    TASK_COMPLETION_REWARD,
     describe_reward_behavior,
-    PRIORITY_CHOICES
 )

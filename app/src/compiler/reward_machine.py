@@ -2,10 +2,15 @@
 
 import re
 from collections import defaultdict, deque
+from collections.abc import Sequence
 from dataclasses import dataclass
 from itertools import product
 
-from src.models import PriorityLevel, completion_rewards
+from src.models import (
+    CLAUSE_COMPLETION_REWARD,
+    TASK_COMPLETION_REWARD,
+    PriorityLevel,
+)
 
 
 TOKEN = re.compile(r"\s*([a-z_][a-z0-9_]*|[!~&|()])", re.IGNORECASE)
@@ -144,8 +149,11 @@ def normalize_reward_machine(
             raise ValueError(f"{pattern} requires exactly one proposition")
         if priority is not PriorityLevel.NONE:
             raise ValueError(f"{pattern} requires priority 'none'")
-    elif len(proposition_ids) != 2:
-        raise ValueError("Precedence requires exactly two propositions")
+    else:
+        if len(proposition_ids) != 2:
+            raise ValueError("Precedence requires exactly two propositions")
+        if priority not in {PriorityLevel.SOFT, PriorityLevel.HARD}:
+            raise ValueError("Precedence requires priority 'soft' or 'hard'")
 
     normalized = _normalize_dfa(dfa, proposition_ids)
     rejecting_states = _states_without_path_to_final(normalized)
@@ -164,7 +172,6 @@ def normalize_reward_machine(
         else:
             preferred_state, reverse_state = _validate_non_hard_precedence(normalized)
 
-    rewards = completion_rewards(priority)
     transitions = []
     for source in normalized.states:
         for valuation in normalized.valuations:
@@ -172,13 +179,13 @@ def normalize_reward_machine(
             reward = 0.0
             if source != normalized.final_state and destination == normalized.final_state:
                 if pattern in {"Existence", "ExistenceTwo"} or priority is PriorityLevel.HARD:
-                    reward = 1.0
+                    reward = CLAUSE_COMPLETION_REWARD
                 elif source == normalized.initial_state and all(valuation):
-                    reward = rewards.simultaneous
+                    reward = 0.0
                 elif source == preferred_state and valuation[1]:
-                    reward = rewards.preferred
+                    reward = CLAUSE_COMPLETION_REWARD
                 elif source == reverse_state and valuation[0]:
-                    reward = rewards.reverse
+                    reward = 0.0
                 else:
                     raise ValueError("Could not classify a precedence completion transition")
 
@@ -203,10 +210,114 @@ def normalize_reward_machine(
     )
 
 
+def compose_reward_machines(
+    clauses: Sequence[tuple[RewardMachineStructure, tuple[str, ...]]],
+) -> RewardMachineStructure:
+    """Compose clause machines conjunctively into one reachable task machine."""
+    clauses = tuple(clauses)
+    if not clauses:
+        raise ValueError("At least one clause Reward Machine is required")
+
+    propositions = tuple(
+        dict.fromkeys(
+            proposition
+            for _, clause_propositions in clauses
+            for proposition in clause_propositions
+        )
+    )
+    valuations = tuple(product((False, True), repeat=len(propositions)))
+    proposition_positions = {name: index for index, name in enumerate(propositions)}
+    transition_maps = tuple(
+        _clause_transition_map(machine, clause_propositions)
+        for machine, clause_propositions in clauses
+    )
+    initial = tuple(machine.initial_state for machine, _ in clauses)
+    final = tuple(machine.final_state for machine, _ in clauses)
+    names: dict[tuple[int, ...] | None, int] = {initial: 0}
+    queue: deque[tuple[int, ...] | None] = deque([initial])
+    transitions = []
+
+    while queue:
+        source = queue.popleft()
+        if source is None or source == final:
+            continue
+        source_name = names[source]
+        for valuation in valuations:
+            destinations = []
+            reward = 0.0
+            rejected = False
+            for index, ((machine, clause_propositions), transition_map) in enumerate(
+                zip(clauses, transition_maps, strict=True)
+            ):
+                clause_valuation = tuple(
+                    valuation[proposition_positions[name]] for name in clause_propositions
+                )
+                destination, clause_reward = transition_map.get(
+                    (source[index], clause_valuation),
+                    (source[index], 0.0),
+                )
+                if destination in machine.rejecting_states:
+                    rejected = True
+                    break
+                destinations.append(destination)
+                reward += clause_reward
+
+            destination_state = None if rejected else tuple(destinations)
+            if destination_state == final:
+                reward += TASK_COMPLETION_REWARD
+            elif rejected:
+                reward = 0.0
+            if destination_state not in names:
+                names[destination_state] = len(names)
+                queue.append(destination_state)
+            destination_name = names[destination_state]
+            if destination_name != source_name or reward != 0:
+                transitions.append(
+                    Transition(
+                        source=source_name,
+                        destination=destination_name,
+                        condition=_condition(propositions, valuation),
+                        reward=reward,
+                    )
+                )
+
+    if final not in names:
+        raise ValueError("Task clauses are incompatible; no accepting state is reachable")
+    rejecting_states = (names[None],) if None in names else ()
+    return RewardMachineStructure(
+        states=tuple(range(len(names))),
+        initial_state=0,
+        final_state=names[final],
+        rejecting_states=rejecting_states,
+        transitions=tuple(transitions),
+    )
+
+
+def _clause_transition_map(
+    machine: RewardMachineStructure,
+    propositions: tuple[str, ...],
+) -> dict[tuple[int, Valuation], tuple[int, float]]:
+    transitions = {}
+    expected = set(propositions)
+    for transition in machine.transitions:
+        values = {
+            literal.removeprefix("!"): not literal.startswith("!")
+            for literal in transition.condition
+        }
+        if set(values) != expected:
+            raise ValueError("Clause transition condition does not match its propositions")
+        valuation = tuple(values[proposition] for proposition in propositions)
+        transitions[(transition.source, valuation)] = (
+            transition.destination,
+            transition.reward,
+        )
+    return transitions
+
+
 def _normalize_dfa(dfa: dict, proposition_ids: tuple[str, ...]) -> _NormalizedDFA:
     propositions = tuple(proposition.lower() for proposition in proposition_ids)
     if len(set(propositions)) != len(propositions):
-        raise ValueError("Instruction proposition identifiers must be unique")
+        raise ValueError("Task proposition identifiers must be unique")
 
     alphabet = {str(symbol).lower() for symbol in dfa.get("alphabet", ())}
     if alphabet != set(propositions):
@@ -217,7 +328,7 @@ def _normalize_dfa(dfa: dict, proposition_ids: tuple[str, ...]) -> _NormalizedDF
             details.append(f"missing {', '.join(sorted(missing))}")
         if unexpected:
             details.append(f"unexpected {', '.join(sorted(unexpected))}")
-        raise ValueError(f"DFA alphabet does not match the instruction ({'; '.join(details)})")
+        raise ValueError(f"DFA alphabet does not match the task ({'; '.join(details)})")
 
     states = {str(state) for state in dfa.get("states", ())}
     initial_state = str(dfa.get("initial_state", ""))

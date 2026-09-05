@@ -1,15 +1,23 @@
 """Formal Reward Machine compilation pipeline."""
 
 from .pipeline import (
+    ClauseProposal,
     CompilationResult,
     Proposal,
-    compile_approved_proposals,
-    propose_instructions,
+    build_compilation_result,
+    compile_dfas,
+    compile_proposal,
+    materialize_proposal,
+    propose_task,
 )
 
 __all__ = [
+    "ClauseProposal",
     "CompilationResult",
     "Proposal",
-    "compile_approved_proposals",
-    "propose_instructions",
+    "build_compilation_result",
+    "compile_dfas",
+    "compile_proposal",
+    "materialize_proposal",
+    "propose_task",
 ]
