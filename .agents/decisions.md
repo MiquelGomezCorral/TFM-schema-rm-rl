@@ -10,13 +10,16 @@ Record closed decisions here. Do not reopen them unless the user explicitly asks
 - Use IBM `nl2ltl` DECLARE templates as the constrained NL-to-LTLf intermediate representation.
 - Use FL-AT and the required MONA executable for formal automata generation and composition.
 - The LLM never writes LTL or Reward Machine topology directly.
-- OpenAI generator responses are schema-constrained to supported patterns, declared
+- Generator responses from the selected provider are schema-constrained to supported patterns, declared
   propositions, and compiler-supported priority semantics for each task clause.
 - Automated task and RM critics replace human approval. Each may be disabled independently,
   at least one must remain enabled, and both use the configured provider/model.
 - A task receives at most three complete generator/critic attempts; outputs are written
   only after every submitted task is accepted.
-- The OpenAI model is required configuration through `--model` or `OPENAI_MODEL`; no model is hardcoded.
+- The selected provider's model is required through `--model` or its provider-specific model
+  environment variable; no model is hardcoded.
+- The Antigravity provider uses the local cached Google account through `agy`, enforces the same
+  structured-output contract, exposes no agent tools, and never falls back to another provider.
 
 ### Packaging And Output
 

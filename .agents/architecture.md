@@ -2,7 +2,9 @@
 
 ## Stack
 
-Python 3.13 package built with setuptools. The compiler uses OpenAI Structured Outputs, IBM `nl2ltl` and `pylogics` for constrained DECLARE/LTLf formulas, FL-AT for automata composition, and the external MONA executable for LTLf-to-DFA compilation.
+Python 3.13 package built with setuptools. The compiler uses schema-constrained LLM
+providers, IBM `nl2ltl` and `pylogics` for constrained DECLARE/LTLf formulas, FL-AT for
+automata composition, and the external MONA executable for LTLf-to-DFA compilation.
 
 ## Layout
 
@@ -10,7 +12,8 @@ Python 3.13 package built with setuptools. The compiler uses OpenAI Structured O
 - `app/app.py`: local Dash web entry point.
 - `app/scripts/`: bounded generator/critic orchestration and timed progress reporting.
 - `app/src/models/environment.py`: strict environment Markdown and proposition parsing.
-- `app/src/engines/openai_engine.py`: constrained proposal generation and structured task/RM critics.
+- `app/src/engines/generic_engine.py`: provider-neutral constrained proposal and critic workflow.
+- `app/src/engines/provider_engines.py`: OpenAI, OpenCode, and no-tools Antigravity CLI adapters.
 - `app/src/compiler/ltlf.py`: `pylogics` AST to FL-AT syntax serialization.
 - `app/src/compiler/pipeline.py`: per-task proposal and deterministic compilation boundaries.
 - `app/src/compiler/reward_machine.py`: guard normalization, state renaming, and text serialization.
@@ -22,7 +25,11 @@ Python 3.13 package built with setuptools. The compiler uses OpenAI Structured O
 
 ## Boundaries
 
-The environment Markdown owns the allowed proposition vocabulary. The OpenAI engine may select only an IBM DECLARE pattern, declared propositions, and a proposed reward. IBM templates own LTLf construction. FL-AT and MONA own DFA and Reward Machine topology. The serializer owns the reference repository's text format.
+The environment Markdown owns the allowed proposition vocabulary. The selected provider may
+select only an IBM DECLARE pattern, declared propositions, and a proposed reward. Antigravity
+uses its cached Google account through a schema-constrained `agy` subprocess whose custom agent
+exposes no tools. IBM templates own LTLf construction. FL-AT and MONA own DFA and Reward Machine
+topology. The serializer owns the reference repository's text format.
 
 The nested packages `dependencies/nl2ltl` and `dependencies/Flat` are editable
 development dependencies pinned by parent gitlinks. Their maintained forks are

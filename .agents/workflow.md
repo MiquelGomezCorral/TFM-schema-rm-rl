@@ -40,12 +40,15 @@ python app/app.py
 
 ## Live Validation
 
-Live validation is pending explicit user approval. It requires `mona`, `OPENAI_API_KEY`,
-and `OPENAI_MODEL` or `--model`. Use the MultiTaxi environment with three tasks, both
-critics enabled, and a fresh output name. Verify that no approval prompt appears, the
-Steps view accurately follows and browses sequential tasks, logs carry `[total … | step
-…]` entries and readable stage artifacts, a local diagnostic file is retained, both
-critics accept within three attempts, and three compatible Reward Machines are written.
+Live validation is pending explicit user approval. It requires `mona` and the selected
+provider's credentials and model. For Antigravity, run `agy` interactively once to cache
+the Google account login, then set `LLM_PROVIDER=antigravity` and `ANTIGRAVITY_MODEL` to
+a slug returned by `agy models`; this consumes subscription quota. Use the MultiTaxi
+environment with three tasks, both critics enabled, and a fresh output name. Verify that
+no approval prompt appears, Antigravity exposes no tools, the Steps view accurately
+follows and browses sequential tasks, logs carry `[total … | step …]` entries and readable
+stage artifacts, a local diagnostic file is retained, both critics accept within three
+attempts, and three compatible Reward Machines are written.
 
 ## Commit And Publish
 
