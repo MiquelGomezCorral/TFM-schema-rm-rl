@@ -16,6 +16,10 @@ Read this file before changing code in this repository.
 - Load only the memory file relevant to the current task.
 - If memory conflicts with current code, trust current code and flag the stale entry.
 - Do not update memory silently. Propose changes unless the user asks to write them.
+- For non-trivial implementation, read `docs/decisions/index.md` and any applicable records before
+  changing code. Report `Decision records: create`, `update`, or `no change` with a short reason.
+- If implementation conflicts with a protected invariant, pause and let the developer choose whether
+  to revise the code, revise the record, or reopen planning; never resolve the mismatch silently.
 
 ## Project Notes
 

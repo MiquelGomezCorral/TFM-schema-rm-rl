@@ -25,14 +25,27 @@ For dependency development, switch the detached submodule to the fork's default 
 The minimum non-live readiness check is:
 
 ```bash
-python app/main.py --help
+PYTHONPATH=app .venv/bin/python -m unittest discover -s tests -v
 ```
 
-It must display `generate-rm` without contacting OpenAI or invoking MONA.
+The suite checks bounded generator/critic orchestration, six-stage progress and persistent
+diagnostics, prompt contracts, atomic output behavior, and web task navigation/critic
+controls. It must not contact an LLM, invoke MONA, or start the web server.
+
+Run the local web UI from the repository root with:
+
+```bash
+python app/app.py
+```
 
 ## Live Validation
 
-Live validation is pending explicit user approval. It requires `mona`, `OPENAI_API_KEY`, and `OPENAI_MODEL` or `--model`. Use the MultiTaxi example with two eventual-delivery instructions and one passenger-ordering instruction, inspect the proposal, and approve it before compilation.
+Live validation is pending explicit user approval. It requires `mona`, `OPENAI_API_KEY`,
+and `OPENAI_MODEL` or `--model`. Use the MultiTaxi environment with three tasks, both
+critics enabled, and a fresh output name. Verify that no approval prompt appears, the
+Steps view accurately follows and browses sequential tasks, logs carry `[total … | step
+…]` entries and readable stage artifacts, a local diagnostic file is retained, both
+critics accept within three attempts, and three compatible Reward Machines are written.
 
 ## Commit And Publish
 

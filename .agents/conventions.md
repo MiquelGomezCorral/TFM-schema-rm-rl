@@ -18,5 +18,6 @@
 
 - Rename states deterministically in breadth-first order from `u0`.
 - Expand Boolean guards into disjoint conjunctions before serialization.
-- Emit only `REWARD_MACHINE`, `STATES`, `INITIAL_STATE`, `TRANSITION_FUNCTION`, and `REWARD_FUNCTION` sections.
-- Write only nonzero reward rows; omitted rewards mean zero.
+- Emit the numeric semicolon format: `s`, `i`, `f`, and `r` headers followed by `source; destination; condition; reward` rows.
+- Exclude the final state from the `s` header and emit state-changing transitions plus any nonzero-reward self-loop.
+- Omitted transitions are zero-reward self-loops.
