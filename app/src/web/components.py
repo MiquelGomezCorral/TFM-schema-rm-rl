@@ -876,7 +876,6 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                         boxSelectionEnabled=False,
                         userPanningEnabled=True,
                         userZoomingEnabled=True,
-                        clearOnUnhover=True,
                         wheelSensitivity=0.15,
                         style={"width": "100%", "height": "100%"},
                         className="graph-canvas min-h-[27rem] h-full w-full flex-1",
@@ -890,7 +889,7 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                                 n_clicks=0,
                                 className=(
                                     "graph-transition-close mt-2 min-h-[2rem] rounded-[0.4rem] border "
-                                    "border-border-strong px-2.5 text-[0.7rem] font-bold text-muted cursor-pointer pointer-events-auto "
+                                    "border-border-strong px-2.5 text-[0.7rem] font-bold text-muted cursor-pointer "
                                     "hover:border-accent hover:text-accent focus-visible:outline-2"
                                 ),
                                 **{"aria-label": "Close transition details"},

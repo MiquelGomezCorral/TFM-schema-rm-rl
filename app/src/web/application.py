@@ -283,7 +283,7 @@ def create_app() -> Dash:
             [{"label": " Task interpretation critic", "value": "task_critic", "disabled": active},
              {"label": " Reward Machine critic", "value": "rm_critic", "disabled": active}],
             options,
-            selected,
+            selected if selected != selected_index else no_update,
             not bool(options),
             render_steps(snapshot.tasks, task_selected),
             next_selection,
@@ -358,30 +358,16 @@ def create_app() -> Dash:
     @app.callback(
         Output("graph-transition-inspector", "className"),
         Output("graph-transition-content", "children"),
-        Input("rm-graph", "mouseoverEdgeData"),
         Input("graph-transition-pin", "data"),
-        Input("output-selector", "value"),
-        Input("imported-reward-machine", "data"),
     )
     def render_transition_inspector(
-        hovered_edge: dict | None,
         pinned_edge: dict | None,
-        _selected_output: int | str | None,
-        _imported_reward_machine: dict[str, str] | None,
     ) -> tuple[str, object]:
-        if {
-            "output-selector.value",
-            "imported-reward-machine.data",
-        } & ctx.triggered_prop_ids.keys():
-            return _transition_inspector_class(False), []
-
-        selected_edge = pinned_edge or hovered_edge
-
-        if not isinstance(selected_edge, dict) or not isinstance(selected_edge.get("cases"), list):
+        if not isinstance(pinned_edge, dict) or not isinstance(pinned_edge.get("cases"), list):
             return _transition_inspector_class(False), []
         return (
             _transition_inspector_class(True),
-            _transition_inspector_children(selected_edge),
+            _transition_inspector_children(pinned_edge),
         )
 
     @app.callback(
@@ -432,7 +418,7 @@ def _transition_inspector_class(visible: bool) -> str:
         "w-[min(28rem,calc(100%_-_1.5rem))] overflow-auto rounded-[0.65rem] border "
         "border-border-strong bg-[#101a2b] p-3 text-text shadow-[0_12px_30px_rgb(0_0_0_/_35%)]"
     )
-    return f"{base} pointer-events-none visible" if visible else f"{base} pointer-events-none invisible"
+    return f"{base} pointer-events-auto visible" if visible else f"{base} pointer-events-none invisible"
 
 
 def _transition_inspector_children(edge: dict) -> list[object]:
