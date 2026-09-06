@@ -18,6 +18,8 @@ diagnostics to reproduce a failed run without changing compilation semantics.
   console, and web Log view share the same timed records and multiline artifact output.
 - Logs are retained locally until manually deleted. There is no automatic rotation or
   run-history UI in V1.
+- Graph focus is a desktop-only reading mode; the focus control is hidden below the
+  desktop breakpoint instead of introducing a separate mobile graph layout.
 
 ## Protected invariants
 

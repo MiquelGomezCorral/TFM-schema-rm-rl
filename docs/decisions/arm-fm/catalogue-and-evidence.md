@@ -11,6 +11,9 @@ details or reconstructed prompts as if they were published artifacts.
   `environment.md` describing its runtime and proposition vocabulary.
 - Every environment has `tasks.md`. It contains paper-reported tasks, source-recovered
   task wording or semantics, and clearly labelled atomic probes.
+- Every environment also has `tasks.json`, a machine-readable companion with exactly
+  `env`, `env_description`, and `tasks` fields. Its task strings mirror the natural-
+  language inputs in `tasks.md`; evidence prose and benchmark metadata are excluded.
 - Add `reward-machines.md` only when a complete RM is printed in the paper or available
   in the released ARM-FM repository. Add `task-rm-pairs.md` only when both task and RM
   evidence exists.
@@ -41,6 +44,8 @@ the corresponding environment files, not duplicated in this record.
 
 - Evidence level is stated for every task–RM association; inferred content is never
   labelled exact.
+- `tasks.json` uses repository-relative paths for `env_description`, and every listed
+  path resolves to the environment's `environment.md`.
 - Missing artifacts remain missing. A task description must not manufacture a finalized
   RM, and a generic RM must not be presented as task-specific when the source does not do
   so.

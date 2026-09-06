@@ -72,6 +72,8 @@ Each environment directory contains only the evidence categories that apply:
 
 - `tasks.md` lists paper-reported or source-recoverable tasks plus small probes for
   the current pipeline.
+- `tasks.json` is the machine-readable companion containing the environment name,
+  repository-relative `environment.md` path, and the same natural-language task list.
 - `reward-machines.md` preserves RMs actually printed in the paper or released in its
   repository. It does not silently repair malformed published machines.
 - `task-rm-pairs.md` links the two and labels the pair as exact, inferred, or merely

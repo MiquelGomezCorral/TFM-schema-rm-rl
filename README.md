@@ -10,35 +10,36 @@ V1 ends after Reward Machine generation. It does not train or evaluate an RL age
 
 ## Quick start
 
-Install Git and Conda, then clone the repository with its pinned dependencies:
+On Linux or macOS, clone the repository and run the bootstrap script:
 
 ```bash
-git clone --recurse-submodules \
-  https://github.com/MiquelGomezCorral/TFM-schema-rm-rl.git
+git clone https://github.com/MiquelGomezCorral/TFM-schema-rm-rl.git
 cd TFM-schema-rm-rl
-
-# For an existing clone:
-git submodule update --init --recursive
+./setup.sh
+source .venv/bin/activate
 ```
 
-The parent repository pins exact fork commits under `dependencies/nl2ltl` and
-`dependencies/Flat`. Create the Python 3.13 environment and install the complete
-project:
-
-```bash
-conda create --name RM_RL_env python=3.13 -y
-conda activate RM_RL_env
-
-python -m pip install uv
-uv pip install -r requirements.txt
-uv pip install -e .
-
-cp example.env .env
-```
+`setup.sh` requires Python 3.13, initializes the two pinned dependency submodules,
+creates `.venv`, installs the project, and creates `.env` from `example.env` if needed.
+It installs MONA through `apt`, `dnf`, or Homebrew when available, then falls back to the
+official source archive. It does not install an LLM provider CLI.
 
 Choose a provider in `.env` and set its model. For OpenCode, set `OPENCODE_API_KEY` and
-keep or change the configured model. To use an Antigravity Google subscription instead,
-run `agy` interactively once to sign in, then set:
+keep or change the configured model.
+
+### Optional: Antigravity (AGY)
+
+AGY is optional and is not installed by `setup.sh`. To use an Antigravity Google
+subscription, install it with the [official macOS/Linux command](https://antigravity.google/docs/cli/install/),
+then run `agy` once and complete the login:
+
+```bash
+curl -fsSL https://antigravity.google/cli/install.sh | bash
+agy
+agy models
+```
+
+Set the provider and one model slug returned by `agy models`:
 
 ```dotenv
 LLM_PROVIDER=antigravity
@@ -48,8 +49,8 @@ ANTIGRAVITY_MODEL=<slug from agy models>
 Antigravity uses its local cached account session and subscription quota, so it needs no
 API key. The application starts `agy` in non-interactive mode with no tools and consumes
 the subscription quota for each request. Its own CLI may retain account/session history
-independently of this application's logs. Install MONA as described below, then verify
-the local installation without calling an LLM:
+independently of this application's logs. Verify the local installation without calling
+an LLM:
 
 ```bash
 mona -v
@@ -59,8 +60,8 @@ python app/main.py --help
 Jupyter support is optional:
 
 ```bash
-uv pip install ipykernel
-python -m ipykernel install --user --name=RM_RL_env --display-name "Python (RM_RL_env)"
+.venv/bin/python -m pip install ipykernel
+.venv/bin/python -m ipykernel install --user --name=RM_RL_env --display-name "Python (RM_RL_env)"
 ```
 
 The pinned `nl2ltl` fork removes its obsolete mandatory OpenAI pin while retaining
@@ -88,6 +89,9 @@ project. Commit and push dependency changes on `main` or `master`, then return t
 parent repository and commit the updated submodule gitlink.
 
 ## Install MONA from source
+
+`setup.sh` installs MONA through an available package manager and falls back to the
+source route below if needed.
 
 Download MONA from <https://www.brics.dk/mona/download.html>, unpack the source, and
 follow its source build:
