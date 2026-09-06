@@ -132,7 +132,9 @@ def _request_chat_completions(
     )
     return completion_text(response)
 
-
+# ======================================================================================
+#                                PROVIDER ANTIGRAVITY
+# ======================================================================================
 def _request_antigravity(
     model: str,
     system: str,
@@ -208,10 +210,15 @@ def _antigravity_exit_message(stderr: str) -> str:
     """Turn private CLI diagnostics into concise actionable application errors."""
     diagnostic = stderr.lower()
     if any(marker in diagnostic for marker in ("login", "auth", "credential", "sign in")):
-        return "Antigravity authentication failed; run 'agy' interactively once to sign in"
-    if "model" in diagnostic:
-        return "Antigravity model is unavailable; choose a slug from 'agy models'"
-    return "Antigravity CLI exited with a nonzero status"
+        hint = "Antigravity authentication failed; run 'agy' interactively once to sign in"
+    elif "not found" in diagnostic and "model" in diagnostic:
+        hint = "Antigravity model is unavailable; choose a slug from 'agy models'"
+    else:
+        hint = "Antigravity CLI exited with a nonzero status"
+    # Always include the raw diagnostic so the real cause is visible.
+    if stderr.strip():
+        return f"{hint} — raw: {stderr.strip()}"
+    return hint
 
 
 def _antigravity_result_error(output: str) -> str:

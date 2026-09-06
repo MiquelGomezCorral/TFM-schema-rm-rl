@@ -58,7 +58,7 @@ class Configuration:
 
         self.llm_provider = (
             self.llm_provider or os.environ.get("LLM_PROVIDER") or "openai"
-        ).lower()
+        ).split("#")[0].strip().lower()
 
         model_variables = {
             "openai": "OPENAI_MODEL",
@@ -67,7 +67,8 @@ class Configuration:
         }
         if self.llm_provider not in model_variables:
             raise ValueError(f"Unsupported LLM_PROVIDER: {self.llm_provider!r}")
-        self.model = self.model or os.environ.get(model_variables[self.llm_provider])
+        raw_model = self.model or os.environ.get(model_variables[self.llm_provider])
+        self.model = raw_model.split("#")[0].strip() if raw_model else None
         self.mona_executable = (
             self.mona_executable or os.environ.get("MONA_EXECUTABLE") or "mona"
         )

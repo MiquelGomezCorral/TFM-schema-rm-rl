@@ -6,5 +6,4 @@ from .priority import (
     MAX_TASK_CLAUSES,
     PriorityLevel,
     TASK_COMPLETION_REWARD,
-    describe_reward_behavior,
 )

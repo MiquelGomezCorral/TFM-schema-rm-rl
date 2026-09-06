@@ -1,5 +1,6 @@
 """Normalize MONA DFAs and serialize compact executable Reward Machines."""
 
+import math
 import re
 from collections import defaultdict, deque
 from collections.abc import Sequence
@@ -593,6 +594,113 @@ def serialize_reward_machine(reward_machine: RewardMachineStructure) -> str:
         for transition in reward_machine.transitions
     )
     return "\n".join(lines) + "\n"
+
+
+def parse_reward_machine(text: str) -> RewardMachineStructure:
+    """Parse the current numeric semicolon Reward Machine format."""
+    if not isinstance(text, str):
+        raise ValueError("Reward Machine content must be text")
+
+    lines = text.splitlines()
+    if len(lines) < 4:
+        raise ValueError("Reward Machine must contain s, i, f, and r headers")
+    headers = {}
+    for expected, line in zip(("s", "i", "f", "r"), lines[:4], strict=True):
+        match = re.fullmatch(rf"{expected}:[ \t]*(.*)", line)
+        if match is None:
+            raise ValueError(f"Reward Machine must start with an '{expected}:' header")
+        headers[expected] = match.group(1).strip()
+
+    if headers["r"] != "0":
+        raise ValueError("Reward Machine reward header must be 'r: 0'")
+
+    non_final_states = _parse_state_list(headers["s"])
+    final_state = _parse_state(headers["f"], "final")
+    initial_state = _parse_state(headers["i"], "initial")
+    if final_state in non_final_states:
+        raise ValueError("Final state must not be listed in the non-final state header")
+    states = tuple(non_final_states) + (final_state,)
+    if initial_state not in states:
+        raise ValueError("Initial state is not declared")
+    if initial_state == final_state:
+        raise ValueError("Initial and final states must differ")
+
+    transitions: list[Transition] = []
+    seen_conditions: set[tuple[int, frozenset[str]]] = set()
+    declared_states = set(states)
+    for line_number, line in enumerate(lines[4:], start=5):
+        if not line.strip():
+            continue
+        fields = [field.strip() for field in line.split(";")]
+        if len(fields) != 4 or any(field == "" for field in fields[:2] + fields[3:]):
+            raise ValueError(f"Malformed transition on line {line_number}")
+        source = _parse_state(fields[0], f"transition source on line {line_number}")
+        destination = _parse_state(fields[1], f"transition destination on line {line_number}")
+        if source not in declared_states or destination not in declared_states:
+            raise ValueError(f"Transition on line {line_number} references an undeclared state")
+        condition = _parse_condition(fields[2], line_number)
+        condition_key = (source, frozenset(condition))
+        if condition_key in seen_conditions:
+            raise ValueError(f"Duplicate transition condition on line {line_number}")
+        seen_conditions.add(condition_key)
+        reward = _parse_reward(fields[3], line_number)
+        transitions.append(Transition(source, destination, condition, reward))
+
+    predecessors: dict[int, set[int]] = defaultdict(set)
+    for transition in transitions:
+        predecessors[transition.destination].add(transition.source)
+    can_reach_final = {final_state}
+    queue = deque([final_state])
+    while queue:
+        destination = queue.popleft()
+        for source in predecessors[destination]:
+            if source not in can_reach_final:
+                can_reach_final.add(source)
+                queue.append(source)
+    rejecting_states = tuple(sorted(declared_states - can_reach_final))
+    return RewardMachineStructure(
+        states=states,
+        initial_state=initial_state,
+        final_state=final_state,
+        rejecting_states=rejecting_states,
+        transitions=tuple(transitions),
+    )
+
+
+def _parse_state_list(value: str) -> tuple[int, ...]:
+    if not value:
+        return ()
+    states = tuple(_parse_state(item.strip(), "state") for item in value.split(","))
+    if len(set(states)) != len(states):
+        raise ValueError("Reward Machine state header contains duplicates")
+    return states
+
+
+def _parse_state(value: str, description: str) -> int:
+    if not re.fullmatch(r"[0-9]+", value):
+        raise ValueError(f"Invalid {description} state")
+    return int(value)
+
+
+def _parse_condition(value: str, line_number: int) -> tuple[str, ...]:
+    if not value:
+        return ()
+    literals = tuple(literal.strip() for literal in value.split(","))
+    if any(not re.fullmatch(r"!?[a-z_][a-z0-9_]*", literal) for literal in literals):
+        raise ValueError(f"Invalid guard on line {line_number}")
+    propositions = {literal.removeprefix("!") for literal in literals}
+    if len(propositions) != len(literals):
+        raise ValueError(f"Guard repeats a proposition on line {line_number}")
+    return literals
+
+
+def _parse_reward(value: str, line_number: int) -> float:
+    if not re.fullmatch(r"[-+]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?", value):
+        raise ValueError(f"Invalid reward on line {line_number}")
+    reward = float(value)
+    if not math.isfinite(reward):
+        raise ValueError(f"Reward on line {line_number} must be finite")
+    return reward
 
 
 def _format_reward(reward: float) -> str:
