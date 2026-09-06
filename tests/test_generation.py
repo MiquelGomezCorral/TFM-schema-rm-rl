@@ -4,14 +4,14 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from scripts.generate_rm import (
+from scripts.generate_rm import generate_rm
+from src.utils import _get_engine
+from src.utils.gen_pipeline import (
     GenerationHooks,
     PipelineStep,
+    Progress,
     ProgressEvent,
     StepState,
-    _Progress,
-    _get_engine,
-    generate_rm,
 )
 from src.config import Configuration
 from src.engines import AntigravityEngine
@@ -49,8 +49,8 @@ class GenerationTests(unittest.TestCase):
 
     def test_progress_has_total_and_step_once(self):
         messages = []
-        with patch("scripts.generate_rm.time.monotonic", side_effect=[10.0, 11.234, 12.5]):
-            progress = _Progress(GenerationHooks(progress=messages.append))
+        with patch("src.utils.gen_pipeline.time.monotonic", side_effect=[10.0, 11.234, 12.5]):
+            progress = Progress(GenerationHooks(progress=messages.append))
             self.assertEqual(progress("first"), "[total 1.234s | step 1.234s] first")
             self.assertEqual(progress("second"), "[total 2.500s | step 1.266s] second")
         self.assertEqual(messages[0].count("[total"), 1)
@@ -59,7 +59,7 @@ class GenerationTests(unittest.TestCase):
         messages = []
         events = []
         with TemporaryDirectory() as directory:
-            progress = _Progress(
+            progress = Progress(
                 GenerationHooks(progress=messages.append, event=events.append),
                 Path(directory),
             )
@@ -90,7 +90,7 @@ class GenerationTests(unittest.TestCase):
     def test_generate_rm_closes_handlers_if_run_started_raises(self):
         progress_instances = []
 
-        class TrackingProgress(_Progress):
+        class TrackingProgress(Progress):
             def __init__(self, *args, **kwargs):
                 super().__init__(*args, **kwargs)
                 progress_instances.append(self)
@@ -99,7 +99,7 @@ class GenerationTests(unittest.TestCase):
             raise RuntimeError("start hook failed")
 
         config = Configuration(environment="demo.md", tasks=["finish"], output="out.rm")
-        with patch("scripts.generate_rm._Progress", TrackingProgress):
+        with patch("scripts.generate_rm.Progress", TrackingProgress):
             with self.assertRaises(RuntimeError):
                 generate_rm(config, GenerationHooks(run_started=fail_on_start))
 

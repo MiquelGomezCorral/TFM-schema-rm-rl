@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from src.web.components import create_layout, render_steps
 from src.web.runner import RunController, RunState, StepSnapshot, TaskSnapshot
-from scripts.generate_rm import PipelineStep, ProgressEvent, StepState
+from src.utils.gen_pipeline import PipelineStep, ProgressEvent, StepState
 from src.compiler.reward_machine import RewardMachineStructure
 
 
