@@ -21,6 +21,46 @@ STATUS_CLASSES = {
     "failed": f"{STATUS_BASE} status-error text-[#fda4af]",
 }
 
+INPUT_REGION_CLASS = (
+    "input-region grid items-start gap-3.5 [grid-area:input] "
+    "grid-cols-2 max-[1200px]:grid-cols-1"
+)
+RUN_SIDEBAR_CLASS = (
+    "run-sidebar control-card sticky top-4 self-stretch [grid-area:sidebar] "
+    "flex min-w-0 flex-col gap-3 rounded-[0.85rem] border border-border "
+    "bg-surface p-[0.95rem] max-[900px]:static"
+)
+OUTPUT_REGION_CLASS = (
+    "output-region grid min-h-[34rem] gap-3.5 [grid-area:output] "
+    "grid-cols-2 max-[1200px]:grid-cols-1 max-[800px]:min-h-0"
+)
+WORKSPACE_CLASS = (
+    "workspace grid items-start gap-3.5 "
+    "[grid-template-areas:'sidebar_input'_'sidebar_output'] "
+    "[grid-template-columns:19rem_minmax(0,1fr)] "
+    "max-[900px]:grid-cols-1 "
+    "max-[900px]:[grid-template-areas:'input'_'sidebar'_'output']"
+)
+FOCUS_WORKSPACE_CLASS = (
+    "workspace grid items-start gap-3.5 "
+    "[grid-template-areas:'output'] [grid-template-columns:minmax(0,1fr)]"
+)
+FOCUS_OUTPUT_REGION_CLASS = (
+    "output-region grid min-h-[34rem] gap-3.5 [grid-area:output] "
+    "[grid-template-columns:19rem_minmax(0,1fr)] max-[800px]:min-h-0"
+)
+SECTION_ICON_CLASS = (
+    "section-number grid h-[1.65rem] w-[1.65rem] flex-none place-items-center "
+    "rounded-[0.45rem] border border-border-strong bg-[rgb(56_189_248_/_8%)] text-accent"
+)
+GRAPH_TOOLBAR_BUTTON_CLASS = (
+    "inline-flex min-h-[2.15rem] shrink-0 cursor-pointer items-center justify-center "
+    "rounded-[0.45rem] border border-border-strong bg-surface-hover px-2.5 text-[0.72rem] "
+    "font-bold text-muted transition duration-150 ease-out hover:border-accent hover:text-accent "
+    "focus-visible:outline-3 focus-visible:outline-offset-2 "
+    "focus-visible:outline-[rgba(56,189,248,0.35)]"
+)
+
 
 def _icon(name: str, class_name: str) -> html.Span:
     """Render one local SVG icon using the surrounding text color."""
@@ -33,6 +73,11 @@ def _icon(name: str, class_name: str) -> html.Span:
         },
         **{"aria-hidden": "true"},
     )
+
+
+def _section_icon(name: str) -> html.Span:
+    """Render a boxed section icon with the shared panel treatment."""
+    return html.Span(_icon(name, "size-[0.95rem]"), className=SECTION_ICON_CLASS)
 
 
 STEP_LABELS = {
@@ -146,17 +191,38 @@ def render_steps(tasks: tuple[TaskSnapshot, ...], selected_index: int = 0) -> ht
             [
                 html.Div(
                     [
-                        html.H3(task.task, className="run-task-title min-w-0 text-[0.86rem] font-bold text-text"),
-                        html.P(status, className="run-task-status mt-1 text-[0.74rem] text-muted"),
+                        html.Div(
+                            [
+                                html.H3(
+                                    task.task,
+                                    title=task.task,
+                                    className=(
+                                        "run-task-title min-w-0 overflow-hidden text-ellipsis "
+                                        "whitespace-nowrap text-[0.86rem] font-bold text-text"
+                                    ),
+                                ),
+                                html.Span(
+                                    task.state.value.capitalize(),
+                                    className=(
+                                        "run-task-state shrink-0 rounded-full border px-2 py-1 text-[0.68rem] "
+                                        f"font-bold {STEP_STATUS_CLASSES[task.state]}"
+                                    ),
+                                ),
+                            ],
+                            className="run-task-title-row flex min-w-0 items-center justify-between gap-2",
+                        ),
+                        html.P(
+                            status,
+                            className=(
+                                "run-task-status mt-1 w-full overflow-hidden text-ellipsis whitespace-nowrap "
+                                "text-[0.74rem] text-muted"
+                            ),
+                        ),
                     ],
-                    className="run-task-heading min-w-0 flex-1",
-                ),
-                html.Span(
-                    task.state.value.capitalize(),
-                    className=f"run-task-state shrink-0 rounded-full border px-2 py-1 text-[0.68rem] font-bold {STEP_STATUS_CLASSES[task.state]}",
+                    className="run-task-heading min-w-0 w-full",
                 ),
             ],
-            className="run-task-header flex items-start justify-between gap-3",
+            className="run-task-header min-w-0",
         ),
         html.Div(
             [_step_row(step) for step in task.steps],
@@ -185,14 +251,7 @@ def environment_input() -> html.Section:
         [
             html.Div(
                 [
-                    html.Span(
-                        _icon("file-text", "environment-icon size-[0.95rem]"),
-                        className=(
-                            "section-number grid h-[1.65rem] w-[1.65rem] flex-none "
-                            "place-items-center rounded-[0.45rem] border border-border-strong "
-                            "bg-[rgb(56_189_248_/_8%)] text-accent"
-                        ),
-                    ),
+                    _section_icon("file-text"),
                     html.Div(
                         [
                             html.H2(
@@ -335,14 +394,7 @@ def task_input() -> html.Section:
         [
             html.Div(
                 [
-                    html.Span(
-                        _icon("list-todo", "tasks-icon size-[0.95rem]"),
-                        className=(
-                            "section-number grid h-[1.65rem] w-[1.65rem] flex-none "
-                            "place-items-center rounded-[0.45rem] border border-border-strong "
-                            "bg-[rgb(56_189_248_/_8%)] text-accent"
-                        ),
-                    ),
+                    _section_icon("list-todo"),
                     html.Div(
                         [
                             html.H2(
@@ -395,14 +447,7 @@ def output_controls() -> html.Aside:
         [
             html.Div(
                 [
-                    html.Span(
-                        _icon("wand-sparkles", "generate-icon size-[0.95rem]"),
-                        className=(
-                            "section-number grid h-[1.65rem] w-[1.65rem] flex-none "
-                            "place-items-center rounded-[0.45rem] border border-border-strong "
-                            "bg-[rgb(56_189_248_/_8%)] text-accent"
-                        ),
-                    ),
+                    _section_icon("wand-sparkles"),
                     html.Div(
                         [
                             html.H2(
@@ -550,11 +595,8 @@ def output_controls() -> html.Aside:
                 ],
             ),
         ],
-        className=(
-            "run-sidebar control-card sticky top-4 self-stretch [grid-area:sidebar] "
-            "flex min-w-0 flex-col gap-3 rounded-[0.85rem] border border-border "
-            "bg-surface p-[0.95rem] max-[900px]:static"
-        ),
+        id="run-sidebar",
+        className=RUN_SIDEBAR_CLASS,
     )
 
 
@@ -568,13 +610,55 @@ def result_panel() -> html.Section:
         [
             html.Div(
                 [
-                    _icon("file-code", "output-icon size-[1.05rem] text-accent"),
-                    html.H2(
-                        "Compiled Reward Machine",
-                        className="panel-title text-[0.98rem] font-semibold tracking-[-0.015em]",
+                    _section_icon("file-code"),
+                    html.Div(
+                        [
+                            html.H2(
+                                "Compiled Reward Machine",
+                                className="panel-title text-[0.98rem] font-semibold tracking-[-0.015em]",
+                            ),
+                            html.P(
+                                "Import a processed Reward Machine or select a completed output.",
+                                className="section-description mt-[0.18rem] text-[0.76rem] leading-[1.4] text-muted",
+                            ),
+                        ]
                     ),
                 ],
-                className="panel-heading flex flex-col gap-[0.2rem]",
+                className="section-heading flex items-start gap-[0.7rem]",
+            ),
+            html.Label(
+                [
+                    html.Span(
+                        "Import processed Reward Machine",
+                        className="field-label text-[0.7rem] font-[750] uppercase tracking-[0.06em] text-muted",
+                    ),
+                    dcc.Upload(
+                        id="reward-machine-upload",
+                        children=html.Div(
+                            [
+                                _icon("upload", "upload-icon size-[1.05rem]"),
+                                html.Span("Choose an .rm file or drop it here"),
+                            ],
+                            className="upload-content flex items-center justify-center gap-2",
+                        ),
+                        accept=".rm,text/plain",
+                        multiple=False,
+                        disabled=False,
+                        className=(
+                            "upload-control grid min-h-[3.3rem] cursor-pointer place-items-center "
+                            "border border-dashed border-border-strong p-3 text-center text-[0.8rem] "
+                            "text-accent transition duration-150 ease-out hover:border-accent "
+                            "hover:bg-surface-hover focus-visible:outline-3 focus-visible:outline-offset-2 "
+                            "focus-visible:outline-[rgba(56,189,248,0.35)]"
+                        ),
+                    ),
+                ],
+                className="field flex min-w-0 flex-col gap-[0.35rem]",
+            ),
+            html.Div(
+                "No imported Reward Machine.",
+                id="reward-machine-upload-status",
+                className="field-hint text-[0.76rem] leading-[1.4] text-muted",
             ),
             html.Label(
                 [
@@ -650,31 +734,32 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                 [
                     html.Div(
                         [
-                            _icon("network", "graph-icon size-[1.05rem] text-accent"),
+                            _section_icon("network"),
                             html.H2(
                                 "State graph",
                                 className="panel-title text-[0.98rem] font-semibold tracking-[-0.015em]",
                             ),
                         ],
-                        className="panel-heading flex flex-col gap-[0.2rem]",
+                        className="panel-heading flex min-w-0 items-center gap-2 justify-self-start",
+                    ),
+                    html.Button(
+                        "Focus graph",
+                        id="graph-focus-toggle",
+                        n_clicks=0,
+                        className=f"graph-focus-toggle {GRAPH_TOOLBAR_BUTTON_CLASS} justify-self-center max-[800px]:hidden",
+                        **{"aria-label": "Focus graph", "aria-pressed": False},
                     ),
                     html.Details(
                         [
                             html.Summary(
                                 "Graph legend",
-                                className=(
-                                    "graph-legend-summary list-inside cursor-pointer rounded-[0.4rem] "
-                                    "border border-transparent px-[0.35rem] py-1 text-[0.76rem] "
-                                    "font-[750] text-muted transition duration-150 ease-out "
-                                    "hover:border-border-strong hover:bg-surface-hover hover:text-text "
-                                    "focus-visible:border-accent focus-visible:outline-3 "
-                                    "focus-visible:outline-offset-2 "
-                                    "focus-visible:outline-[rgba(56,189,248,0.35)]"
-                                ),
+                                className=f"graph-legend-summary {GRAPH_TOOLBAR_BUTTON_CLASS} list-none",
                             ),
-                            html.Ul(
+                            html.Div(
                                 [
-                                    html.Li(
+                                    html.Ul(
+                                        [
+                                            html.Li(
                                         [
                                             html.Span(
                                                 className=(
@@ -687,8 +772,8 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                                             html.Span("Default state"),
                                         ],
                                         className="legend-row flex items-center gap-2 text-[0.72rem] text-muted",
-                                    ),
-                                    html.Li(
+                                            ),
+                                            html.Li(
                                         [
                                             html.Span(
                                                 className=(
@@ -701,8 +786,8 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                                             html.Span("Initial state"),
                                         ],
                                         className="legend-row flex items-center gap-2 text-[0.72rem] text-muted",
-                                    ),
-                                    html.Li(
+                                            ),
+                                            html.Li(
                                         [
                                             html.Span(
                                                 className=(
@@ -715,8 +800,8 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                                             html.Span("Accepting state"),
                                         ],
                                         className="legend-row flex items-center gap-2 text-[0.72rem] text-muted",
-                                    ),
-                                    html.Li(
+                                            ),
+                                            html.Li(
                                         [
                                             html.Span(
                                                 className=(
@@ -729,13 +814,13 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                                             html.Span("Rejecting state"),
                                         ],
                                         className="legend-row flex items-center gap-2 text-[0.72rem] text-muted",
-                                    ),
-                                    html.Li(
+                                            ),
+                                            html.Li(
                                         [
                                             html.Span(
                                                 className=(
                                                     "legend-swatch-transition legend-swatch inline-block h-0 "
-                                                    "w-[1.2rem] flex-none rounded-none border-0 border-t-2 "
+                                                    "w-4 flex-none rounded-none border-0 border-t-2 "
                                                     "border-[#7189ad] bg-transparent"
                                                 ),
                                                 **{"aria-hidden": "true"},
@@ -743,50 +828,88 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                                             html.Span("Explicit transition"),
                                         ],
                                         className="legend-row flex items-center gap-2 text-[0.72rem] text-muted",
+                                            ),
+                                        ],
+                                        className=(
+                                            "legend-list m-[0.55rem_0_0] grid list-none "
+                                            "gap-[0.35rem] p-0"
+                                        ),
+                                    ),
+                                    html.P(
+                                        "Only explicit transitions are shown. Omitted transitions are zero-reward self-loops.",
+                                        className=(
+                                            "graph-explanation mt-[0.55rem] max-w-[25rem] whitespace-normal break-words "
+                                            "text-[0.76rem] leading-[1.4] text-muted max-[560px]:m-0 max-[560px]:text-left"
+                                        ),
                                     ),
                                 ],
                                 className=(
-                                    "legend-list m-[0.55rem_0_0] grid list-none "
-                                    "gap-[0.35rem] p-0"
-                                ),
-                            ),
-                            html.P(
-                                "Only explicit transitions are shown. Omitted transitions are zero-reward self-loops.",
-                                className=(
-                                    "graph-explanation mt-[0.55rem] max-w-[25rem] text-[0.76rem] "
-                                    "leading-[1.4] text-muted max-[560px]:m-0 max-[560px]:text-left"
+                                    "graph-legend-panel absolute right-0 top-full z-20 mt-1 max-h-[calc(100dvh_-_7rem)] "
+                                    "w-[18rem] max-w-[calc(100vw_-_2rem)] overflow-auto whitespace-normal rounded-[0.6rem] "
+                                    "border border-border-strong bg-[#101a2b] p-2 text-text shadow-[0_12px_30px_rgb(0_0_0_/_35%)]"
                                 ),
                             ),
                         ],
-                        className="graph-legend min-w-[10rem] flex-none text-text",
+                        className="graph-legend relative justify-self-end",
                     ),
                 ],
                 className=(
-                    "graph-toolbar flex flex-none items-start justify-between gap-4 pb-1 "
-                    "max-[560px]:flex-col max-[560px]:items-stretch"
+                    "graph-toolbar relative grid flex-none grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] "
+                    "items-center gap-4 pb-1"
                 ),
             ),
-            cyto.Cytoscape(
-                id="rm-graph",
-                elements=[],
-                layout={
-                    "name": "cola",
-                    "fit": False,
-                    "infinite": True,
-                    "nodeSpacing": 50,
-                    "edgeLength": 100,
-                    "avoidOverlap": True,
-                },
-                stylesheet=stylesheet or [],
-                responsive=True,
-                boxSelectionEnabled=False,
-                userPanningEnabled=True,
-                userZoomingEnabled=True,
-                className="graph-canvas min-h-[27rem] w-full flex-1",
+            html.Div(
+                [
+                    cyto.Cytoscape(
+                        id="rm-graph",
+                        elements=[],
+                        layout={
+                            "name": "cola",
+                            "fit": False,
+                            "infinite": False,
+                            "nodeSpacing": 16,
+                            "edgeLength": 130,
+                            "avoidOverlap": True,
+                        },
+                        stylesheet=stylesheet or [],
+                        responsive=True,
+                        boxSelectionEnabled=False,
+                        userPanningEnabled=True,
+                        userZoomingEnabled=True,
+                        clearOnUnhover=True,
+                        wheelSensitivity=0.15,
+                        style={"width": "100%", "height": "100%"},
+                        className="graph-canvas min-h-[27rem] h-full w-full flex-1",
+                    ),
+                    html.Div(
+                        [
+                            html.Div(id="graph-transition-content", className="grid gap-2"),
+                            html.Button(
+                                "Close",
+                                id="graph-transition-close",
+                                n_clicks=0,
+                                className=(
+                                    "graph-transition-close mt-2 min-h-[2rem] rounded-[0.4rem] border "
+                                    "border-border-strong px-2.5 text-[0.7rem] font-bold text-muted cursor-pointer pointer-events-auto "
+                                    "hover:border-accent hover:text-accent focus-visible:outline-2"
+                                ),
+                                **{"aria-label": "Close transition details"},
+                            ),
+                        ],
+                        id="graph-transition-inspector",
+                        className=(
+                            "graph-transition-inspector pointer-events-none invisible absolute left-3 top-3 "
+                            "z-10 max-h-[calc(100%_-_1.5rem)] w-[min(28rem,calc(100%_-_1.5rem))] "
+                            "overflow-auto rounded-[0.65rem] border border-border-strong bg-[#101a2b] "
+                            "p-3 text-text shadow-[0_12px_30px_rgb(0_0_0_/_35%)]"
+                        ),
+                    ),
+                ],
+                className="graph-stage relative min-h-0 flex-1",
             ),
         ],
         className=(
-            "graph-panel flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden "
+            "graph-panel relative flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden "
             "rounded-[0.85rem] border border-border bg-[#0c1626] p-[0.95rem] "
             "max-[800px]:min-h-[30rem]"
         ),
@@ -838,30 +961,24 @@ def create_layout(stylesheet: list[dict] | None = None) -> html.Main:
                 [
                     html.Div(
                         [environment_input(), task_input()],
-                        className=(
-                            "input-region grid items-start gap-3.5 [grid-area:input] "
-                            "grid-cols-2 max-[1200px]:grid-cols-1"
-                        ),
+                        id="input-region",
+                        className=INPUT_REGION_CLASS,
                     ),
                     output_controls(),
                     html.Div(
                         [result_panel(), graph_panel(stylesheet)],
-                        className=(
-                            "output-region grid min-h-[34rem] gap-3.5 [grid-area:output] "
-                            "grid-cols-2 max-[1200px]:grid-cols-1 max-[800px]:min-h-0"
-                        ),
+                        id="output-region",
+                        className=OUTPUT_REGION_CLASS,
                     ),
                 ],
-                className=(
-                    "workspace grid items-start gap-3.5 "
-                    "[grid-template-areas:'sidebar_input'_'sidebar_output'] "
-                    "[grid-template-columns:19rem_minmax(0,1fr)] "
-                    "max-[900px]:grid-cols-1 "
-                    "max-[900px]:[grid-template-areas:'input'_'sidebar'_'output']"
-                ),
+                id="workspace",
+                className=WORKSPACE_CLASS,
             ),
             dcc.Interval(id="poll-interval", interval=500, n_intervals=0),
             dcc.Store(id="task-selection", data={"selected": 0, "last_active": None, "run_id": 0}),
+            dcc.Store(id="imported-reward-machine", data=None),
+            dcc.Store(id="graph-transition-pin", data=None),
+            dcc.Store(id="graph-focus-state", data=False),
         ],
         className=(
             "app-shell flex min-h-dvh w-full flex-col gap-4 "

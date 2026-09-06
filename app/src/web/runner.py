@@ -7,15 +7,15 @@ import tempfile
 from threading import Lock, Thread
 from typing import Sequence
 
-from scripts.generate_rm import (
+from scripts.generate_rm import generate_rm
+from src.compiler import CompilationResult
+from src.config import Configuration
+from src.utils.generation_logging import (
     GenerationHooks,
     PipelineStep,
     ProgressEvent,
     StepState,
-    generate_rm,
 )
-from src.compiler import CompilationResult
-from src.config import Configuration
 
 
 class RunState(StrEnum):

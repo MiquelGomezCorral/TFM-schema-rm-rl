@@ -1,15 +1,33 @@
 """Dash application factory and focused callback registration."""
 
 import base64
+import re
 from pathlib import Path
 
-from dash import ALL, Dash, Input, Output, State, ctx, no_update
+from dash import ALL, Dash, Input, Output, State, ctx, html, no_update
 from dash.exceptions import PreventUpdate
 import dash_cytoscape as cyto
 
-from .components import STATUS_CLASSES, create_layout, render_steps, task_row
+from src.config import Configuration
+from src.compiler.reward_machine import parse_reward_machine
+
+from .components import (
+    FOCUS_OUTPUT_REGION_CLASS,
+    FOCUS_WORKSPACE_CLASS,
+    INPUT_REGION_CLASS,
+    OUTPUT_REGION_CLASS,
+    RUN_SIDEBAR_CLASS,
+    STATUS_CLASSES,
+    WORKSPACE_CLASS,
+    create_layout,
+    render_steps,
+    task_row,
+)
 from .runner import RunController, RunState
-from .visualization import CYTOSCAPE_STYLESHEET, reward_machine_to_elements
+from .visualization import CYTOSCAPE_STYLESHEET, format_reward_label, reward_machine_to_elements
+
+
+IMPORTED_RM_VALUE = "imported"
 
 
 def create_app() -> Dash:
@@ -23,18 +41,53 @@ def create_app() -> Dash:
     @app.callback(
         Output("environment-markdown", "value"),
         Output("upload-status", "children"),
+        Output("output-filename", "value"),
         Input("environment-upload", "contents"),
         State("environment-upload", "filename"),
         prevent_initial_call=True,
     )
-    def load_environment(contents: str | None, filename: str | None) -> tuple[str, str]:
+    def load_environment(contents: str | None, filename: str | None) -> tuple[object, str, object]:
         if not contents:
             raise PreventUpdate
         try:
             markdown = _decode_uploaded_markdown(contents)
         except (ValueError, UnicodeDecodeError) as error:
-            return no_update, f"Could not load UTF-8 Markdown: {error}"
-        return markdown, f"Loaded {filename or 'environment.md'}; edit the text before generating."
+            return no_update, f"Could not load UTF-8 Markdown: {error}", no_update
+        environment_name = filename or "environment.md"
+        return (
+            markdown,
+            f"Loaded {environment_name}; edit the text before generating.",
+            _next_output_filename(environment_name),
+        )
+
+    @app.callback(
+        Output("imported-reward-machine", "data"),
+        Output("reward-machine-upload-status", "children"),
+        Output("reward-machine-upload-status", "className"),
+        Input("reward-machine-upload", "contents"),
+        State("reward-machine-upload", "filename"),
+        prevent_initial_call=True,
+    )
+    def load_reward_machine(
+        contents: str | None,
+        filename: str | None,
+    ) -> tuple[object, str, str]:
+        status_class = "field-hint text-[0.76rem] leading-[1.4] text-muted"
+        error_class = "field-hint text-[0.76rem] leading-[1.4] text-[#fda4af]"
+        if not contents:
+            raise PreventUpdate
+        if not filename or not filename.lower().endswith(".rm"):
+            return no_update, "Could not load Reward Machine: choose a .rm file.", error_class
+        try:
+            text = _decode_uploaded_markdown(contents)
+            parse_reward_machine(text)
+        except (ValueError, UnicodeDecodeError) as error:
+            return no_update, f"Could not load Reward Machine: {error}", error_class
+        return (
+            {"filename": filename, "text": text},
+            f"Loaded {filename}; select it below.",
+            status_class,
+        )
 
     @app.callback(
         Output("task-rows", "children"),
@@ -133,15 +186,17 @@ def create_app() -> Dash:
         Input("run-next", "n_clicks", allow_optional=True),
         Input({"type": "task-dot", "index": ALL}, "n_clicks"),
         State("task-selection", "data"),
+        Input("imported-reward-machine", "data"),
     )
     def poll_run(
         _n_intervals: int,
-        selected_index: int | None = None,
+        selected_index: int | str | None = None,
         remove_ids: list[dict[str, int]] | None = None,
         _previous_clicks: int | None = None,
         _next_clicks: int | None = None,
         _dot_clicks: list[int | None] | None = None,
         selection_data: dict[str, int | None] | None = None,
+        imported_data: dict[str, str] | None = None,
     ) -> tuple[object, ...]:
         snapshot = controller.snapshot()
         active = snapshot.status is RunState.RUNNING
@@ -149,8 +204,15 @@ def create_app() -> Dash:
             {"label": str(path), "value": index}
             for index, path in enumerate(snapshot.output_paths)
         ]
-        valid_indices = set(range(len(options)))
-        selected = selected_index if selected_index in valid_indices else (0 if options else None)
+        imported = _imported_reward_machine(imported_data)
+        if imported is not None:
+            options.append({"label": f"Imported: {imported['filename']}", "value": IMPORTED_RM_VALUE})
+        generated_count = len(snapshot.output_paths)
+        selected_is_generated = (
+            isinstance(selected_index, int)
+            and not isinstance(selected_index, bool)
+            and 0 <= selected_index < generated_count
+        )
         status_class = STATUS_CLASSES[snapshot.status.value]
         status_text = snapshot.status.value.capitalize()
         if snapshot.error:
@@ -174,6 +236,15 @@ def create_app() -> Dash:
             trigger = ctx.triggered_id
         except Exception:
             trigger = None
+        imported_triggered = trigger == "imported-reward-machine"
+        if imported is not None and imported_triggered:
+            selected = IMPORTED_RM_VALUE
+        elif selected_is_generated or (selected_index == IMPORTED_RM_VALUE and imported is not None):
+            selected = selected_index
+        elif imported is not None:
+            selected = IMPORTED_RM_VALUE
+        else:
+            selected = 0 if options else None
         navigation_triggered = False
         if total_tasks > 1 and trigger == "run-prev":
             task_selected = max(0, task_selected - 1)
@@ -223,26 +294,233 @@ def create_app() -> Dash:
         Output("result-text", "value"),
         Output("rm-graph", "elements"),
         Input("output-selector", "value"),
+        Input("imported-reward-machine", "data"),
     )
-    def render_selected_result(selected_index: int | None) -> tuple[str, str, list]:
+    def render_selected_result(
+        selected_index: int | str | None,
+        imported_data: dict[str, str] | None = None,
+    ) -> tuple[str, str, list]:
         if selected_index is None:
             return "No completed output selected.", "", []
+        if selected_index == IMPORTED_RM_VALUE:
+            imported = _imported_reward_machine(imported_data)
+            if imported is None:
+                return "No imported Reward Machine selected.", "", []
+            try:
+                reward_machine = parse_reward_machine(imported["text"])
+            except ValueError as error:
+                return f"Could not render imported Reward Machine: {error}", "", []
+            return (
+                f"Imported: {imported['filename']}",
+                imported["text"],
+                reward_machine_to_elements(reward_machine),
+            )
         snapshot = controller.snapshot()
-        if not isinstance(selected_index, int) or not 0 <= selected_index < len(snapshot.results):
+        if (
+            not isinstance(selected_index, int)
+            or isinstance(selected_index, bool)
+            or not 0 <= selected_index < len(snapshot.results)
+        ):
             return "No completed output selected.", "", []
         result = snapshot.results[selected_index]
         output_path = snapshot.output_paths[selected_index]
         summary = f"{output_path} | {result.proposal.task}"
         return summary, result.text, reward_machine_to_elements(result.reward_machine)
 
+    @app.callback(
+        Output("graph-transition-pin", "data"),
+        Input("rm-graph", "tapEdgeData"),
+        Input("rm-graph", "tapNodeData"),
+        Input("graph-transition-close", "n_clicks"),
+        Input("output-selector", "value"),
+        Input("imported-reward-machine", "data"),
+        prevent_initial_call=True,
+    )
+    def update_transition_pin(
+        tapped_edge: dict | None,
+        _tapped_node: dict | None,
+        _close_clicks: int | None,
+        _selected_output: int | str | None,
+        _imported_reward_machine: dict[str, str] | None,
+    ) -> dict | None:
+        triggered_props = ctx.triggered_prop_ids
+        if "rm-graph.tapEdgeData" in triggered_props:
+            return tapped_edge
+        if {
+            "output-selector.value",
+            "imported-reward-machine.data",
+            "rm-graph.tapNodeData",
+            "graph-transition-close.n_clicks",
+        } & triggered_props.keys():
+            return None
+        raise PreventUpdate
+
+    @app.callback(
+        Output("graph-transition-inspector", "className"),
+        Output("graph-transition-content", "children"),
+        Input("rm-graph", "mouseoverEdgeData"),
+        Input("graph-transition-pin", "data"),
+        Input("output-selector", "value"),
+        Input("imported-reward-machine", "data"),
+    )
+    def render_transition_inspector(
+        hovered_edge: dict | None,
+        pinned_edge: dict | None,
+        _selected_output: int | str | None,
+        _imported_reward_machine: dict[str, str] | None,
+    ) -> tuple[str, object]:
+        if {
+            "output-selector.value",
+            "imported-reward-machine.data",
+        } & ctx.triggered_prop_ids.keys():
+            return _transition_inspector_class(False), []
+
+        selected_edge = pinned_edge or hovered_edge
+
+        if not isinstance(selected_edge, dict) or not isinstance(selected_edge.get("cases"), list):
+            return _transition_inspector_class(False), []
+        return (
+            _transition_inspector_class(True),
+            _transition_inspector_children(selected_edge),
+        )
+
+    @app.callback(
+        Output("graph-focus-state", "data"),
+        Output("workspace", "className"),
+        Output("input-region", "className"),
+        Output("run-sidebar", "className"),
+        Output("output-region", "className"),
+        Output("graph-focus-toggle", "children"),
+        Output("graph-focus-toggle", "aria-pressed"),
+        Input("graph-focus-toggle", "n_clicks"),
+        State("graph-focus-state", "data"),
+        prevent_initial_call=True,
+    )
+    def toggle_graph_focus(
+        _n_clicks: int | None,
+        focused: bool | None,
+    ) -> tuple[bool, str, str, str, str, str, bool]:
+        focused = not bool(focused)
+        if focused:
+            return (
+                True,
+                FOCUS_WORKSPACE_CLASS,
+                "hidden",
+                "hidden",
+                FOCUS_OUTPUT_REGION_CLASS,
+                "Exit focus",
+                True,
+            )
+        return (
+            False,
+            WORKSPACE_CLASS,
+            INPUT_REGION_CLASS,
+            RUN_SIDEBAR_CLASS,
+            OUTPUT_REGION_CLASS,
+            "Focus graph",
+            False,
+        )
+
     app._run_controller = controller
     return app
 
 
+def _transition_inspector_class(visible: bool) -> str:
+    """Return the fixed-position inspector classes without changing graph layout."""
+    base = (
+        "graph-transition-inspector absolute left-3 top-3 z-10 max-h-[calc(100%_-_1.5rem)] "
+        "w-[min(28rem,calc(100%_-_1.5rem))] overflow-auto rounded-[0.65rem] border "
+        "border-border-strong bg-[#101a2b] p-3 text-text shadow-[0_12px_30px_rgb(0_0_0_/_35%)]"
+    )
+    return f"{base} pointer-events-none visible" if visible else f"{base} pointer-events-none invisible"
+
+
+def _transition_inspector_children(edge: dict) -> list[object]:
+    """Render all formal grouped transition cases as readable chips."""
+    source = str(edge.get("source", "")).removeprefix("state-")
+    target = str(edge.get("target", "")).removeprefix("state-")
+    cases = edge.get("cases", [])
+    children: list[object] = [
+        html.Div(
+            [
+                html.Span(f"u{source} → u{target}", className="font-bold text-text"),
+                html.Span(
+                    f"{len(cases)} formal case{'s' if len(cases) != 1 else ''}",
+                    className="text-[0.7rem] text-muted",
+                ),
+            ],
+            className="flex items-baseline justify-between gap-3",
+        )
+    ]
+    for index, case in enumerate(cases, start=1):
+        if not isinstance(case, dict):
+            continue
+        condition = case.get("condition", [])
+        if isinstance(condition, str):
+            condition = [condition]
+        if not isinstance(condition, list):
+            condition = []
+        literals = [
+            html.Span(
+                str(literal),
+                className=(
+                    "rounded-[0.3rem] px-1.5 py-0.5 font-mono text-[0.68rem] "
+                    + ("bg-[#be123c] text-[#ffe4e6]" if str(literal).startswith("!") else "bg-[#eef2ff] text-[#24314d]")
+                ),
+            )
+            for literal in condition
+        ] or [
+            html.Span(
+                "true",
+                className="rounded-[0.3rem] bg-[#eef2ff] px-1.5 py-0.5 font-mono text-[0.68rem] text-[#24314d]",
+            )
+        ]
+        reward = case.get("reward", 0)
+        try:
+            numeric_reward = float(reward)
+        except (TypeError, ValueError):
+            numeric_reward = 0.0
+        reward_class = (
+            "text-[#86efac]"
+            if numeric_reward > 0
+            else "text-[#be123c]"
+            if numeric_reward < 0
+            else "text-[#dce7f7]"
+        )
+        children.append(
+            html.Div(
+                [
+                    html.Div(
+                        [
+                            html.Span(f"Case {index}", className="text-[0.68rem] font-bold text-muted"),
+                            html.Span(
+                                f"· r={format_reward_label(numeric_reward)}",
+                                className=f"text-[0.68rem] font-bold {reward_class}",
+                            ),
+                        ],
+                        className="flex items-center gap-1",
+                    ),
+                    html.Div(literals, className="flex flex-wrap gap-1"),
+                ],
+                className="grid gap-1 rounded-[0.45rem] border border-border bg-surface-raised p-2",
+            )
+        )
+    return children
 def _decode_uploaded_markdown(contents: str) -> str:
-    """Decode one Dash upload payload as UTF-8 Markdown."""
+    """Decode one Dash upload payload as UTF-8 text."""
     _, encoded = contents.split(",", 1)
     return base64.b64decode(encoded, validate=True).decode("utf-8")
+
+
+def _imported_reward_machine(data: object) -> dict[str, str] | None:
+    """Return a well-shaped imported Reward Machine payload, if present."""
+    if not isinstance(data, dict):
+        return None
+    filename = data.get("filename")
+    text = data.get("text")
+    if not isinstance(filename, str) or not isinstance(text, str):
+        return None
+    return {"filename": filename, "text": text}
 
 
 def _resolve_environment_filename(
@@ -265,3 +543,20 @@ def _resolve_environment_filename(
 def _normalize_line_endings(markdown: str) -> str:
     """Normalize browser and platform line endings for provenance comparison."""
     return markdown.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _next_output_filename(environment_filename: str) -> str:
+    """Return the first available RM name based on an uploaded environment file."""
+    stem = Path(environment_filename).stem or "reward-machine"
+    base_name = f"{stem}.rm"
+    output_dir = Configuration.OUTPUT_PATH
+    if not (output_dir / base_name).exists():
+        return base_name
+
+    suffix_pattern = re.compile(rf"^{re.escape(stem)}-(\d+)\.rm$")
+    suffixes = (
+        int(match.group(1))
+        for path in output_dir.iterdir()
+        if (match := suffix_pattern.fullmatch(path.name))
+    )
+    return f"{stem}-{max(suffixes, default=0) + 1:03d}.rm"

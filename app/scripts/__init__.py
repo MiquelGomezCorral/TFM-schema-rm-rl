@@ -1,5 +1,7 @@
 """Command implementations."""
 
-from .generate_rm import GenerationHooks, generate_rm
+from src.utils.generation_logging import GenerationHooks
+
+from .generate_rm import generate_rm
 
 __all__ = ["GenerationHooks", "generate_rm"]
