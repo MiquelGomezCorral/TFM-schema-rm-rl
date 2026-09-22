@@ -23,6 +23,9 @@ details or reconstructed prompts as if they were published artifacts.
   `inferred` (the task or mapping is reconstructed from separate evidence), and
   `paper-associated` (the paper names the task and RM family but does not release the
   original generator pair).
+- Generated per-task bundles are separate from the published evidence catalogue. They keep
+  task/environment inputs, generated artifacts, attempts, settings, validation, and provenance.
+  Reconstructed prompts and artifacts are explicitly identified; they are not source recovery.
 
 ### Environment coverage
 
@@ -46,13 +49,14 @@ the corresponding environment files, not duplicated in this record.
   labelled exact.
 - `tasks.json` uses repository-relative paths for `env_description`, and every listed
   path resolves to the environment's `environment.md`.
-- Missing artifacts remain missing. A task description must not manufacture a finalized
-  RM, and a generic RM must not be presented as task-specific when the source does not do
-  so.
+- Missing published artifacts remain missing in the evidence catalogue. New task-specific
+  RMs may be generated in reconstructed bundles, but must not be presented as released
+  artifacts. A published generic RM must not be presented as a recovered task-specific RM.
 - The released KeyCorridor S6R3 artifact is used despite the paper table's S3R3 typo;
   the discrepancy remains documented.
-- The XLand first-1,000 set is treated as benchmark data, not expanded into invented
-  natural-language prompts.
+- The XLand first-1,000 set remains benchmark data. Deterministic task rendering and
+  reconstructed generator prompts are permitted and labelled as reconstructed; they are
+  never presented as the authors' unpublished original prompts.
 
 ## Rationale and tradeoffs
 
@@ -69,3 +73,10 @@ the paper Appendix A.9 block.
   validation command used for `examples/arm-fm`.
 - Source artifacts: `docs/ARM-FM/ARM-FM.md` and the repository linked from
   `examples/arm-fm/README.md`.
+- Separation of reconstructed bundles from recovered evidence is Review-only until bundle
+  provenance checks are implemented; provenance claims still require source review.
+
+## History
+
+- 2026-09-18: Distinguished missing published evidence from newly reconstructed artifacts;
+  authorized explicit XLand prompt reconstruction and inspectable per-task bundles.
