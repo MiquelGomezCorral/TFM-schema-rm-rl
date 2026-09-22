@@ -1,7 +1,10 @@
 """Convert in-memory Reward Machine structures to read-only Cytoscape data."""
 
 from src.compiler.reward_machine import RewardMachineStructure, Transition
+from src.config import GraphStyle
 
+
+_GRAPH = GraphStyle()
 
 CYTOSCAPE_STYLESHEET = [
     {
@@ -17,8 +20,8 @@ CYTOSCAPE_STYLESHEET = [
             "color": "#f7f9fc",
             "font-size": "14px",
             "font-weight": 600,
-            "height": "56px",
-            "width": "92px",
+            "height": f"{_GRAPH.node_height}px",
+            "width": f"{_GRAPH.node_width}px",
         },
     },
     {"selector": ".initial", "style": {"border-color": "#38bdf8", "border-width": 4}},

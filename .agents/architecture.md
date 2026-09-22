@@ -47,7 +47,8 @@ critic, compilation, serialization, or output-path behavior.
 Environment Markdown + task -> constrained proposal generator -> task critic ->
 DECLARE/LTLf materialization -> FL-AT/MONA DFA compilation -> local RM composition and
 serialization -> RM critic -> task-specific Reward Machine -> reference-format text.
-Either critic may be disabled, but at least one remains enabled, and the complete
+Each critic may be disabled; disabling both prints a warning and is reserved for explicit
+fallback runs that accept the compiler's first result per task. The complete
 refinement attempt is bounded to three runs per task.
 
 The web flow supplies the same inputs to that pipeline, polls local in-memory run state,

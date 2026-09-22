@@ -1,5 +1,5 @@
 """Project configuration."""
 
-from .config import Configuration
+from .config import Configuration, GraphStyle
 
-__all__ = ["Configuration"]
+__all__ = ["Configuration", "GraphStyle"]

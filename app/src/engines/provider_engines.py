@@ -3,13 +3,14 @@
 import json
 import os
 from functools import partial
-from pathlib import Path
 import subprocess
 from typing import Any
+from uuid import uuid4
 
 from openai import OpenAI
 
 from src.models import EnvironmentDescription
+from src.config import Configuration
 
 from .errors import ImmediateEngineError, RetryableEngineError
 from .generic_engine import GenericEngine
@@ -18,7 +19,8 @@ from .structured import completion_text, responses_text
 
 ANTIGRAVITY_AGENT = "schema-rm-provider"
 ANTIGRAVITY_TIMEOUT_SECONDS = 305
-WORKSPACE_PATH = Path(__file__).resolve().parents[3]
+OPENCODE_GO_MODEL = "opencode-go/mimo-v2.5"
+PI_TIMEOUT_SECONDS = 305
 
 # ======================================================================================
 #                                  PROVIDER ADAPTERS
@@ -39,6 +41,7 @@ class OpenAIEngine(GenericEngine):
             model,
             "OpenAI",
             partial(_request_responses, client),
+            partial(_request_responses_text, client),
         )
 
 
@@ -51,16 +54,27 @@ class OpenCodeEngine(GenericEngine):
         model: str | None,
     ) -> None:
         model = _required_model(model, "OpenCode")
+        if model == OPENCODE_GO_MODEL:
+            super().__init__(
+                environment,
+                model,
+                "OpenCode Go",
+                _request_pi,
+                _request_pi_text,
+            )
+            return
         client = OpenAI(
             api_key=_required_env("OPENCODE_API_KEY"),
             base_url=os.environ.get("OPENCODE_BASE_URL") or "https://opencode.ai/zen/v1",
             max_retries=0,
+            default_headers={"x-opencode-session": str(uuid4())},
         )
         super().__init__(
             environment,
             model,
             "OpenCode",
             partial(_request_chat_completions, client),
+            partial(_request_chat_completions_text, client),
         )
 
 
@@ -78,6 +92,7 @@ class AntigravityEngine(GenericEngine):
             model,
             "Antigravity",
             _request_antigravity,
+            _request_antigravity_text,
         )
 
 
@@ -110,6 +125,7 @@ def _request_responses(
         model=model,
         input=[{"role": "system", "content": system}, {"role": "user", "content": user}],
         text={"format": {"type": "json_schema", "name": name, "strict": True, "schema": schema}},
+        reasoning={"effort": "none"},
     )
     return responses_text(response)
 
@@ -129,8 +145,129 @@ def _request_chat_completions(
             "type": "json_schema",
             "json_schema": {"name": name, "strict": True, "schema": schema},
         },
+        reasoning_effort="none"
     )
     return completion_text(response)
+
+
+def _request_responses_text(
+    client: OpenAI,
+    model: str,
+    system: str,
+    user: str,
+) -> str:
+    response = client.responses.create(
+        model=model,
+        input=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+    )
+    return responses_text(response)
+
+
+def _request_chat_completions_text(
+    client: OpenAI,
+    model: str,
+    system: str,
+    user: str,
+) -> str:
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+    )
+    return completion_text(response)
+
+
+def _request_pi(
+    model: str,
+    system: str,
+    user: str,
+    schema: dict,
+    _name: str,
+) -> str:
+    """Request strict-parser JSON through Pi when server-side schemas are unavailable."""
+    prompt = (
+        f"{user}\n\nReturn only a JSON object matching this schema, with no markdown or commentary:\n"
+        f"{json.dumps(schema, ensure_ascii=False, separators=(',', ':'))}"
+    )
+    return _request_pi_text(model, system, prompt)
+
+
+def _request_pi_text(model: str, system: str, user: str) -> str:
+    """Run one no-tool Pi request and extract the final assistant text event."""
+    command = [
+        "pi",
+        "--model", model,
+        "--no-tools",
+        "--no-extensions",
+        "--no-context-files",
+        "--no-session",
+        "--thinking", "minimal",
+        "--mode", "json",
+        "--print",
+        "--system-prompt", system,
+        "--",
+        user,
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            shell=False,
+            cwd=Configuration.WORKSPACE_PATH,
+            timeout=PI_TIMEOUT_SECONDS,
+        )
+    except FileNotFoundError as error:
+        raise ImmediateEngineError("Pi CLI 'pi' is not installed or is not on PATH") from error
+    except subprocess.TimeoutExpired as error:
+        raise RetryableEngineError("OpenCode Go Pi request timed out") from error
+    except OSError as error:
+        raise ImmediateEngineError(f"Could not start Pi CLI: {error.strerror}") from error
+
+    if completed.returncode:
+        diagnostic = (completed.stderr or "").strip()
+        message = "OpenCode Go Pi request failed"
+        if diagnostic:
+            message += f": {diagnostic}"
+        raise ImmediateEngineError(message)
+    return _parse_pi_output(completed.stdout)
+
+
+def _parse_pi_output(output: str) -> str:
+    """Extract only the final assistant text from Pi JSON event output."""
+    assistant_text = ""
+    for line in output.splitlines():
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise ImmediateEngineError("Pi returned malformed JSON event output") from error
+        if not isinstance(event, dict):
+            raise ImmediateEngineError("Pi returned an invalid JSON event")
+        message = event.get("message")
+        if event.get("type") == "message_end" and isinstance(message, dict):
+            assistant_text = _assistant_text(message)
+        elif event.get("type") == "agent_end":
+            messages = event.get("messages")
+            if isinstance(messages, list):
+                for candidate in reversed(messages):
+                    if isinstance(candidate, dict) and candidate.get("role") == "assistant":
+                        assistant_text = _assistant_text(candidate)
+                        break
+    if not assistant_text:
+        raise ImmediateEngineError("Pi returned no final assistant text")
+    return assistant_text
+
+
+def _assistant_text(message: dict[str, Any]) -> str:
+    content = message.get("content")
+    if not isinstance(content, list):
+        return ""
+    return "".join(
+        item.get("text", "")
+        for item in content
+        if isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("text"), str)
+    )
 
 # ======================================================================================
 #                                PROVIDER ANTIGRAVITY
@@ -183,7 +320,7 @@ def _request_antigravity(
             capture_output=True,
             text=True,
             shell=False,
-            cwd=WORKSPACE_PATH,
+            cwd=Configuration.WORKSPACE_PATH,
             timeout=ANTIGRAVITY_TIMEOUT_SECONDS,
         )
     except FileNotFoundError as error:
@@ -206,12 +343,35 @@ def _request_antigravity(
     return _parse_antigravity_output(completed.stdout)
 
 
+def _request_antigravity_text(model: str, system: str, user: str) -> str:
+    """Request a text artifact through the same no-tool AGY boundary."""
+    response = _request_antigravity(
+        model,
+        system,
+        user,
+        {
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+            "additionalProperties": False,
+        },
+        "arm_fm_text",
+    )
+    try:
+        value = json.loads(response)["text"]
+    except (TypeError, KeyError, json.JSONDecodeError) as error:
+        raise ImmediateEngineError("Antigravity returned malformed text output") from error
+    if not isinstance(value, str):
+        raise ImmediateEngineError("Antigravity text output was not a string")
+    return value
+
+
 def _antigravity_exit_message(stderr: str) -> str:
     """Turn private CLI diagnostics into concise actionable application errors."""
     diagnostic = stderr.lower()
     if any(marker in diagnostic for marker in ("login", "auth", "credential", "sign in")):
         hint = "Antigravity authentication failed; run 'agy' interactively once to sign in"
-    elif "not found" in diagnostic and "model" in diagnostic:
+    elif "model unavailable" in diagnostic or "invalid model" in diagnostic or ("not found" in diagnostic and "model" in diagnostic):
         hint = "Antigravity model is unavailable; choose a slug from 'agy models'"
     else:
         hint = "Antigravity CLI exited with a nonzero status"

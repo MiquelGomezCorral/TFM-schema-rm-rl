@@ -4,7 +4,7 @@ import base64
 import re
 from pathlib import Path
 
-from dash import ALL, Dash, Input, Output, State, ctx, html, no_update
+from dash import ALL, Dash, Input, Output, State, ctx, dcc, html, no_update
 from dash.exceptions import PreventUpdate
 import dash_cytoscape as cyto
 
@@ -24,10 +24,26 @@ from .components import (
     task_row,
 )
 from .runner import RunController, RunState
+from .svg import render_elements_svg
 from .visualization import CYTOSCAPE_STYLESHEET, format_reward_label, reward_machine_to_elements
 
 
 IMPORTED_RM_VALUE = "imported"
+
+_EXPORT_CLIENT_SCRIPT = """
+function (n_clicks) {
+    if (!n_clicks || !window.cy) {
+        return window.dash_clientside.no_update;
+    }
+    const positions = Object.fromEntries(
+        window.cy.nodes().map((node) => {
+            const point = node.position();
+            return [node.id(), [point.x, point.y]];
+        })
+    );
+    return {elements: window.cy.elements().jsons(), positions: positions};
+}
+"""
 
 
 def create_app() -> Dash:
@@ -293,27 +309,32 @@ def create_app() -> Dash:
         Output("result-summary", "children"),
         Output("result-text", "value"),
         Output("rm-graph", "elements"),
+        Output("graph-export-name", "data"),
+        Output("graph-export-button", "disabled"),
         Input("output-selector", "value"),
         Input("imported-reward-machine", "data"),
     )
     def render_selected_result(
         selected_index: int | str | None,
         imported_data: dict[str, str] | None = None,
-    ) -> tuple[str, str, list]:
+    ) -> tuple[str, str, list, str | None, bool]:
         if selected_index is None:
-            return "No completed output selected.", "", []
+            return "No completed output selected.", "", [], None, True
         if selected_index == IMPORTED_RM_VALUE:
             imported = _imported_reward_machine(imported_data)
             if imported is None:
-                return "No imported Reward Machine selected.", "", []
+                return "No imported Reward Machine selected.", "", [], None, True
             try:
                 reward_machine = parse_reward_machine(imported["text"])
             except ValueError as error:
-                return f"Could not render imported Reward Machine: {error}", "", []
+                return f"Could not render imported Reward Machine: {error}", "", [], None, True
+            elements = reward_machine_to_elements(reward_machine)
             return (
                 f"Imported: {imported['filename']}",
                 imported["text"],
-                reward_machine_to_elements(reward_machine),
+                elements,
+                Path(imported["filename"]).stem,
+                not elements,
             )
         snapshot = controller.snapshot()
         if (
@@ -321,11 +342,12 @@ def create_app() -> Dash:
             or isinstance(selected_index, bool)
             or not 0 <= selected_index < len(snapshot.results)
         ):
-            return "No completed output selected.", "", []
+            return "No completed output selected.", "", [], None, True
         result = snapshot.results[selected_index]
         output_path = snapshot.output_paths[selected_index]
         summary = f"{output_path} | {result.proposal.task}"
-        return summary, result.text, reward_machine_to_elements(result.reward_machine)
+        elements = reward_machine_to_elements(result.reward_machine)
+        return summary, result.text, elements, output_path.stem, not elements
 
     @app.callback(
         Output("graph-transition-pin", "data"),
@@ -406,6 +428,30 @@ def create_app() -> Dash:
             "Focus graph",
             False,
         )
+
+    @app.callback(
+        Output("graph-download", "data"),
+        Input("graph-export-payload", "data"),
+        State("graph-export-name", "data"),
+        prevent_initial_call=True,
+    )
+    def export_graph(payload: object, name: object) -> object:
+        """Render the live graph, keeping the node positions the user arranged."""
+        if not isinstance(payload, dict):
+            raise PreventUpdate
+        elements = _export_elements(payload.get("elements"))
+        positions = _export_positions(payload.get("positions"))
+        if elements is None or positions is None:
+            raise PreventUpdate
+        svg = render_elements_svg(elements, positions or None)
+        return dcc.send_string(svg, _export_filename(name), type="image/svg+xml")
+
+    app.clientside_callback(
+        _EXPORT_CLIENT_SCRIPT,
+        Output("graph-export-payload", "data"),
+        Input("graph-export-button", "n_clicks"),
+        prevent_initial_call=True,
+    )
 
     app._run_controller = controller
     return app
@@ -529,6 +575,41 @@ def _resolve_environment_filename(
 def _normalize_line_endings(markdown: str) -> str:
     """Normalize browser and platform line endings for provenance comparison."""
     return markdown.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _export_elements(raw: object) -> list | None:
+    """Validate the browser-supplied Cytoscape elements, or None when unusable."""
+    if not isinstance(raw, list) or not raw:
+        return None
+    shaped = all(
+        isinstance(element, dict) and isinstance(element.get("data"), dict)
+        for element in raw
+    )
+    return raw if shaped else None
+
+
+def _export_positions(raw: object) -> dict | None:
+    """Validate the browser-supplied node positions, or None when unusable."""
+    if not isinstance(raw, dict):
+        return None
+    positions: dict[str, tuple[float, float]] = {}
+    for node, value in raw.items():
+        if not isinstance(value, (list, tuple)) or len(value) != 2:
+            return None
+        try:
+            positions[str(node)] = (float(value[0]), float(value[1]))
+        except (TypeError, ValueError):
+            return None
+    return positions
+
+
+def _export_filename(name: object) -> str:
+    """Name the export after the selected output, sanitized for filesystems."""
+    if isinstance(name, str):
+        stem = re.sub(r"[^A-Za-z0-9._-]+", "-", name.strip()).strip("-")
+        if stem:
+            return f"{stem}.svg"
+    return "reward-machine.svg"
 
 
 def _next_output_filename(environment_filename: str) -> str:

@@ -1,29 +1,36 @@
 # schema-rm-rl
 
 `schema-rm-rl` converts environment Markdown and critic-validated natural-language tasks into
-formally compiled Reward Machines. The model decomposes each task into at most ten
-conjunctive clauses using only `Existence`, `ExistenceTwo`, or `Precedence` and declared
-propositions. The compiler owns formulas, rewards, automata, and RM topology; the model
-never invents numeric rewards, LTL, or transitions.
-
-V1 ends after Reward Machine generation. It does not train or evaluate an RL agent.
+formally compiled Reward Machines, or complete ARM-FM bundles with labeling functions, state
+descriptions, embeddings, and policy checkpoints. Compiler mode remains bounded to the
+supported clause language; baseline mode reconstructs the paper's direct RM generation.
 
 ## Quick start
 
 On Linux or macOS, clone the repository and run the bootstrap script:
 
 ```bash
-git clone https://github.com/MiquelGomezCorral/TFM-schema-rm-rl.git
+git clone --recurse-submodules https://github.com/MiquelGomezCorral/TFM-schema-rm-rl.git
 cd TFM-schema-rm-rl
-./setup.sh
-source .venv/bin/activate
+conda create --name RM_RL_env python=3.13 -y  # only when the approved env is absent
+conda activate RM_RL_env
+uv pip install --python "$CONDA_PREFIX/bin/python" --torch-backend auto -r requirements.txt
+uv pip install --python "$CONDA_PREFIX/bin/python" -e .
 ```
 
-`setup.sh` requires Python 3.13, initializes the two pinned dependency submodules,
-creates `.venv`, installs the project, and creates `.env` from `example.env` if needed.
-It installs MONA through `apt`, `dnf`, or Homebrew when available, then falls back to the
-official source archive. It does not install an LLM provider CLI.
+`requirements.txt` is authoritative for the existing Python 3.13 `RM_RL_env` Conda
+environment. The ARM-FM runtime uses pinned Torch, Tianshou, Transformers, MiniGrid,
+XLand-MiniGrid, and Meta-World releases; do not create a second environment.
 
+The legacy `setup.sh` remains useful for the compiler-only workflow: it initializes
+submodules, installs the project, and provisions MONA. Its `.venv` should not be used
+for ARM-FM training or embedding commands.
+
+Craftium is a native Luanti build and is intentionally not a PyPI requirement. Its pinned
+source, native compiler/toolchain prerequisites, and task-interface compatibility remain
+an explicit reproduction blocker; this repository does not relax package metadata or
+bypass dependency resolution. The ARM-FM adapter refuses to substitute
+another environment when Craftium is not built.
 Choose a provider in `.env` and set its model. For OpenCode, set `OPENCODE_API_KEY` and
 keep or change the configured model.
 
@@ -160,10 +167,12 @@ them into conjunctive clauses and infers `soft` ordering only from explicit pref
 language; categorical ordering is `hard`. Unary clauses use `none`.
 
 The command displays timed progress for every task attempt and critic stage. Both critics
-run by default; use `--no-task-critic` or `--no-rm-critic` to disable one. Each task has at
-most three attempts, and no output is written unless every task is accepted. The stages
-are structured proposal generation, task critic, DECLARE/LTLf materialization,
-FL-AT/MONA DFA compilation, Reward Machine construction, and Reward Machine critic.
+run by default; use `--no-task-critic` or `--no-rm-critic` to disable one. Disabling both
+is allowed for a controlled fallback run, prints a warning, and then accepts the
+compiler's first result for each task. Each task has at most three attempts, and no output
+is written unless every task is accepted. The stages are structured proposal generation,
+task critic, DECLARE/LTLf materialization, FL-AT/MONA DFA compilation, Reward Machine
+construction, and Reward Machine critic.
 
 Each accepted task's clauses are compiled through MONA and composed into one
 task-specific Reward Machine. Separate tasks are never composed. `--output`
@@ -171,7 +180,9 @@ is a file name, not a path; files are always written under `Configuration.OUTPUT
 Multiple tasks number the stem, so the example writes `multitaxi-1.rm` and
 `multitaxi-2.rm` under that directory. All target paths are
 checked before compilation, and existing files are rejected unless `--overwrite` is
-supplied.
+supplied. Add `--svg` to write one SVG graph per accepted Reward Machine into
+`outputs/svgs`, or into `--svg-dir <directory>`; existing graphs are rejected unless
+`--overwrite` is supplied as well.
 
 Progress logs use `[total 12.345s | step 1.234s]` prefixes. Total time is measured
 from run start; step time is measured since the preceding progress entry. Every run writes
@@ -213,9 +224,9 @@ Install the declared dependencies in the Python 3.13 environment, then start the
 Dash interface from the repository root:
 
 ```bash
-uv pip install -r requirements.txt
-uv pip install -e .
-python app/app.py
+uv pip install --python "$CONDA_PREFIX/bin/python" -r requirements.txt
+uv pip install --python "$CONDA_PREFIX/bin/python" -e .
+PYTHONPATH=app "$CONDA_PREFIX/bin/python" app/app.py
 ```
 
 The UI uses the provider configured in `.env` (`LLM_PROVIDER`, its matching model, and

@@ -1,5 +1,5 @@
-"""Reusable prompts for natural-language task interpretation and review."""
+"""Load and render the packaged prompts."""
 
-from .prompts import read_prompt, read_user_prompt
+from .loaders import read_arm_fm_prompt, read_prompt, read_user_prompt, render_prompt
 
-__all__ = ["read_prompt", "read_user_prompt"]
+__all__ = ["read_arm_fm_prompt", "read_prompt", "read_user_prompt", "render_prompt"]

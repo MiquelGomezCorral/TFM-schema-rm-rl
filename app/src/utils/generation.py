@@ -100,7 +100,7 @@ def setup_environment_and_engine(
     progress(f"Using LLM engine for provider '{CONFIG.llm_provider}'.")
 
     environment = EnvironmentDescription.from_file(CONFIG.environment)
-    engine = _get_engine(CONFIG, environment)
+    engine = get_engine(CONFIG, environment)
 
     progress("Environment and engine setup complete.")
     return environment, engine
@@ -130,7 +130,7 @@ def derive_output_paths(CONFIG: Configuration) -> tuple[Path, ...]:
     return output_paths
 
 
-def _get_engine(
+def get_engine(
     CONFIG: Configuration,
     environment: EnvironmentDescription,
 ) -> GenericEngine:

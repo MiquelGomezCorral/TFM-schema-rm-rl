@@ -742,12 +742,28 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                         ],
                         className="panel-heading flex min-w-0 items-center gap-2 justify-self-start",
                     ),
-                    html.Button(
-                        "Focus graph",
-                        id="graph-focus-toggle",
-                        n_clicks=0,
-                        className=f"graph-focus-toggle {GRAPH_TOOLBAR_BUTTON_CLASS} justify-self-center max-[800px]:hidden",
-                        **{"aria-label": "Focus graph", "aria-pressed": False},
+                    html.Div(
+                        [
+                            html.Button(
+                                "Focus graph",
+                                id="graph-focus-toggle",
+                                n_clicks=0,
+                                className=f"graph-focus-toggle {GRAPH_TOOLBAR_BUTTON_CLASS}",
+                                **{"aria-label": "Focus graph", "aria-pressed": False},
+                            ),
+                            html.Button(
+                                "Export SVG",
+                                id="graph-export-button",
+                                n_clicks=0,
+                                disabled=True,
+                                className=f"graph-export-button {GRAPH_TOOLBAR_BUTTON_CLASS}",
+                                **{"aria-label": "Export the graph as an SVG file"},
+                            ),
+                        ],
+                        className=(
+                            "graph-toolbar-actions flex items-center gap-2 "
+                            "justify-self-center max-[800px]:hidden"
+                        ),
                     ),
                     html.Details(
                         [
@@ -978,6 +994,9 @@ def create_layout(stylesheet: list[dict] | None = None) -> html.Main:
             dcc.Store(id="imported-reward-machine", data=None),
             dcc.Store(id="graph-transition-pin", data=None),
             dcc.Store(id="graph-focus-state", data=False),
+            dcc.Store(id="graph-export-name", data=None),
+            dcc.Store(id="graph-export-payload", data=None),
+            dcc.Download(id="graph-download"),
         ],
         className=(
             "app-shell flex min-h-dvh w-full flex-col gap-4 "

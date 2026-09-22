@@ -40,7 +40,12 @@ from src.utils import (
 #
 # ============================================================================
 
-def generate_rm(CONFIG: Configuration, hooks: GenerationHooks | None = None) -> int:
+def generate_rm(
+    CONFIG: Configuration,
+    hooks: GenerationHooks | None = None,
+    *,
+    write_outputs: bool = True,
+) -> int:
     """Propose, review, compile, and write one RM per task."""
     hooks = hooks or GenerationHooks()
     progress = Progress(hooks, CONFIG.LOGS_PATH)
@@ -49,7 +54,7 @@ def generate_rm(CONFIG: Configuration, hooks: GenerationHooks | None = None) -> 
             hooks.notify_run_started(progress.log_path)
             progress(f"Run log: {progress.log_path}")
 
-        return _run_pipeline(CONFIG, hooks, progress)
+        return _run_pipeline(CONFIG, hooks, progress, write_outputs=write_outputs)
 
     except (ProposalValidationError, RetryableEngineError, ImmediateEngineError) as error:
         progress(f"Generation failed: {error}")
@@ -65,6 +70,8 @@ def _run_pipeline(
     CONFIG: Configuration,
     hooks: GenerationHooks,
     progress: Progress,
+    *,
+    write_outputs: bool = True,
 ) -> int:
     """Run every task through at most three proposal attempts."""
     output_paths = _prepare_outputs(CONFIG, progress)
@@ -137,13 +144,48 @@ def _run_pipeline(
 
     progress("Writing Reward Machine outputs.")
     results = tuple(accepted)
-    save_results(results, output_paths, overwrite=CONFIG.overwrite)
+    if write_outputs:
+        save_results(results, output_paths, overwrite=CONFIG.overwrite)
+        if CONFIG.svg:
+            _write_svgs(results, output_paths, CONFIG, progress)
 
     progress("Writing outputs complete.")
     hooks.notify_completion(results, output_paths)
 
     progress("Generation completed successfully.")
     return 0
+
+# ============================================================================
+#
+#                                  SVG OUTPUT
+#
+# ============================================================================
+
+def _write_svgs(
+    results: tuple[CompilationResult, ...],
+    output_paths: tuple[Path, ...],
+    CONFIG: Configuration,
+    progress: Progress,
+) -> None:
+    """Write one SVG graph per accepted Reward Machine beside the requested outputs."""
+    from .render_rm import render_structure_svg
+
+    directory = CONFIG.svg_dir or CONFIG.OUTPUT_PATH / "svgs"
+    directory.mkdir(parents=True, exist_ok=True)
+    mode = "w" if CONFIG.overwrite else "x"
+    for output_path, result in zip(output_paths, results, strict=True):
+        svg_path = directory / f"{output_path.stem}.svg"
+        try:
+            with svg_path.open(mode, encoding="utf-8") as svg_file:
+                svg_file.write(render_structure_svg(result.reward_machine))
+        except FileExistsError as error:
+            raise ValueError(
+                f"SVG file '{svg_path}' already exists; pass --overwrite to replace it"
+            ) from error
+        except OSError as error:
+            raise ValueError(f"Could not write SVG file '{svg_path}': {error}") from error
+        progress(f"SVG graph: {svg_path}")
+
 
 # ============================================================================
 #
@@ -305,6 +347,6 @@ def _step_rm_critic(
         progress.complete(task_index, attempt, StepState.COMPLETED)
     else:
         progress.complete(task_index, attempt, StepState.FAILED, critic.feedback)
-        append_history(history, proposal_text, None, PipelineStep.TASK_CRITIC, critic.feedback)
+        append_history(history, proposal_text, compiled, PipelineStep.RM_CRITIC, critic.feedback)
         
     return critic.accepted

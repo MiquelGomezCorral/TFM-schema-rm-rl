@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from src.web.components import create_layout, render_steps
 from src.web.runner import RunController, RunState, StepSnapshot, TaskSnapshot
-from src.utils.gen_pipeline import PipelineStep, ProgressEvent, StepState
+from src.utils import PipelineStep, ProgressEvent, StepState
 from src.compiler.reward_machine import RewardMachineStructure
 
 
@@ -89,10 +89,12 @@ class WebTests(unittest.TestCase):
         controller._output_paths = (Path("out.rm"),)
         result_key = next(key for key in app.callback_map if "result-summary.children" in key)
         render = app.callback_map[result_key]["callback"].__wrapped__
-        summary, text, elements = render(0)
+        summary, text, elements, export_name, export_disabled = render(0)
         self.assertIn("out.rm", summary)
         self.assertEqual(text, "rm")
         self.assertTrue(elements)
+        self.assertEqual(export_name, "out")
+        self.assertFalse(export_disabled)
 
     def test_optional_navigation_inputs_and_dark_tab_styles(self):
         from src.web.application import create_app

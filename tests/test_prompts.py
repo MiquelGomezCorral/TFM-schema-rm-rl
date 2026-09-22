@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from src.config import Configuration
-from src.prompts import read_prompt, read_user_prompt
+from src.prompts import read_arm_fm_prompt, read_prompt, read_user_prompt
 
 
 class PromptTests(unittest.TestCase):
@@ -62,14 +62,27 @@ class PromptTests(unittest.TestCase):
                 candidate_proposal="",
             )
 
-    def test_prompt_defaults_are_independent(self) -> None:
-        first = Configuration()
-        second = Configuration()
+    def test_arm_fm_rm_prompt_declares_runtime_guard_syntax(self) -> None:
+        prompt = read_arm_fm_prompt("rm_generator")
 
-        first.PROMPTS["creator"] = "changed"
+        self.assertIn("conjunction `&`, disjunction `|`, and negation `!`", prompt)
+        self.assertIn("never\nwrite English `and`, `or`, or `not` in guard conditions", prompt)
 
-        self.assertEqual(second.PROMPTS["creator"], "reward-ltlf-creator")
-        self.assertIsNot(first.PROMPTS, second.PROMPTS)
+    def test_arm_fm_labeling_prompt_declares_expression_only_syntax(self) -> None:
+        prompt = read_arm_fm_prompt("labeling_generator")
+
+        self.assertIn("Use expression-only predicates: no `if`, `for`, `while`, assignments", prompt)
+        self.assertIn("approved `any`/`all` comprehensions for scans", prompt)
+        self.assertIn("Never call a sibling predicate or `.get` on", prompt)
+        self.assertIn("for cell in [env.grid.get(x, y)]", prompt)
+        self.assertIn("exactly one `return` statement and no other statements", prompt)
+        self.assertIn("def event_name(env): return", prompt)
+
+    def test_arm_fm_labeling_critic_requires_all_declared_predicates(self) -> None:
+        prompt = read_arm_fm_prompt("labeling_critic")
+
+        self.assertIn("an unused declared", prompt)
+        self.assertIn("must never be rejected for being unused", prompt)
 
 
 if __name__ == "__main__":

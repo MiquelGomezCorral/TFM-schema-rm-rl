@@ -5,13 +5,13 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from scripts.generate_rm import generate_rm
-from src.utils import _get_engine
-from src.utils.gen_pipeline import (
+from src.utils import (
     GenerationHooks,
     PipelineStep,
     Progress,
     ProgressEvent,
     StepState,
+    get_engine,
 )
 from src.config import Configuration
 from src.engines import AntigravityEngine
@@ -28,9 +28,12 @@ class GenerationTests(unittest.TestCase):
         self.addCleanup(self.logs_patch.stop)
         self.logs_patch.start()
 
-    def test_both_critics_cannot_be_disabled(self):
-        with self.assertRaises(ValueError):
-            Configuration(task_critic=False, rm_critic=False)
+    def test_both_critics_disabled_warns_without_raising(self):
+        with patch("src.config.config.print_warn") as warning:
+            CONFIG = Configuration(task_critic=False, rm_critic=False)
+        self.assertFalse(CONFIG.task_critic)
+        self.assertFalse(CONFIG.rm_critic)
+        self.assertIn("Both critics", warning.call_args.args[0])
 
     def test_antigravity_configuration_selects_antigravity_engine(self):
         environment = EnvironmentDescription.from_markdown(
@@ -42,14 +45,14 @@ class GenerationTests(unittest.TestCase):
             {"LLM_PROVIDER": "antigravity", "ANTIGRAVITY_MODEL": "gemini-model"},
             clear=True,
         ):
-            config = Configuration()
-        self.assertEqual(config.llm_provider, "antigravity")
-        self.assertEqual(config.model, "gemini-model")
-        self.assertIsInstance(_get_engine(config, environment), AntigravityEngine)
+            CONFIG = Configuration()
+        self.assertEqual(CONFIG.llm_provider, "antigravity")
+        self.assertEqual(CONFIG.model, "gemini-model")
+        self.assertIsInstance(get_engine(CONFIG, environment), AntigravityEngine)
 
     def test_progress_has_total_and_step_once(self):
         messages = []
-        with patch("src.utils.gen_pipeline.time.monotonic", side_effect=[10.0, 11.234, 12.5]):
+        with patch("src.utils.generation_logging.time.monotonic", side_effect=[10.0, 11.234, 12.5]):
             progress = Progress(GenerationHooks(progress=messages.append))
             self.assertEqual(progress("first"), "[total 1.234s | step 1.234s] first")
             self.assertEqual(progress("second"), "[total 2.500s | step 1.266s] second")
@@ -98,10 +101,10 @@ class GenerationTests(unittest.TestCase):
         def fail_on_start(_log_path):
             raise RuntimeError("start hook failed")
 
-        config = Configuration(environment="demo.md", tasks=["finish"], output="out.rm")
+        CONFIG = Configuration(environment="demo.md", tasks=["finish"], output="out.rm")
         with patch("scripts.generate_rm.Progress", TrackingProgress):
             with self.assertRaises(RuntimeError):
-                generate_rm(config, GenerationHooks(run_started=fail_on_start))
+                generate_rm(CONFIG, GenerationHooks(run_started=fail_on_start))
 
         self.assertEqual(len(progress_instances), 1)
         self.assertIsNone(progress_instances[0]._logger)

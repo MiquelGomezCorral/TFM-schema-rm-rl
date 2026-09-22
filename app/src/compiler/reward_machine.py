@@ -3,7 +3,7 @@
 import math
 import re
 from collections import defaultdict, deque
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from itertools import product
 
@@ -134,6 +134,17 @@ def _evaluate(expression, valuation: dict[str, bool]) -> bool:
     if operator == "or":
         return _evaluate(expression[1], valuation) or _evaluate(expression[2], valuation)
     raise ValueError(f"Unsupported Boolean operator '{operator}'")
+
+
+def parse_boolean_guard(guard: str, propositions: Sequence[str] | set[str]):
+    """Parse a Boolean guard for consumers outside the numeric compiler."""
+    names = {str(proposition).lower() for proposition in propositions}
+    return _GuardParser(str(guard).lower(), names).parse()
+
+
+def evaluate_boolean_guard(expression, valuation: dict[str, bool]) -> bool:
+    """Evaluate a parsed guard against one complete valuation."""
+    return _evaluate(expression, {str(key).lower(): bool(value) for key, value in valuation.items()})
 
 
 def normalize_reward_machine(
@@ -480,20 +491,30 @@ def _minimize_dfa(
     )
 
 
-def _states_without_path_to_final(dfa: _NormalizedDFA) -> set[int]:
+def states_without_path_to_final(
+    states: Iterable[int],
+    edges: Iterable[tuple[int, int]],
+    final_state: int,
+) -> set[int]:
+    """Return the states from which no transition path reaches ``final_state``."""
     predecessors: dict[int, set[int]] = defaultdict(set)
-    for (source, _), destination in dfa.transitions.items():
+    for source, destination in edges:
         predecessors[destination].add(source)
 
-    can_reach_final = {dfa.final_state}
-    queue = deque([dfa.final_state])
+    can_reach_final = {final_state}
+    queue = deque([final_state])
     while queue:
         destination = queue.popleft()
         for source in predecessors[destination]:
             if source not in can_reach_final:
                 can_reach_final.add(source)
                 queue.append(source)
-    return set(dfa.states) - can_reach_final
+    return set(states) - can_reach_final
+
+
+def _states_without_path_to_final(dfa: _NormalizedDFA) -> set[int]:
+    edges = ((source, destination) for (source, _), destination in dfa.transitions.items())
+    return states_without_path_to_final(dfa.states, edges, dfa.final_state)
 
 
 def _validate_existence(dfa: _NormalizedDFA) -> None:
@@ -646,18 +667,15 @@ def parse_reward_machine(text: str) -> RewardMachineStructure:
         reward = _parse_reward(fields[3], line_number)
         transitions.append(Transition(source, destination, condition, reward))
 
-    predecessors: dict[int, set[int]] = defaultdict(set)
-    for transition in transitions:
-        predecessors[transition.destination].add(transition.source)
-    can_reach_final = {final_state}
-    queue = deque([final_state])
-    while queue:
-        destination = queue.popleft()
-        for source in predecessors[destination]:
-            if source not in can_reach_final:
-                can_reach_final.add(source)
-                queue.append(source)
-    rejecting_states = tuple(sorted(declared_states - can_reach_final))
+    rejecting_states = tuple(
+        sorted(
+            states_without_path_to_final(
+                declared_states,
+                ((transition.source, transition.destination) for transition in transitions),
+                final_state,
+            )
+        )
+    )
     return RewardMachineStructure(
         states=states,
         initial_state=initial_state,

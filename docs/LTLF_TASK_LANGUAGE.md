@@ -132,5 +132,5 @@ composite task receives its own RM and reuses familiar subgoal representations. 
 recommended contract above preserves this separation while keeping the present
 pipeline safer than ARM-FM: the model selects constrained semantics, bounded critics
 accept or reject the result within three attempts, and deterministic formal tools own
-the automaton. At least one critic must remain enabled, and a failed task prevents all
-batch output writes.
+the automaton. Both critics may be disabled, which warns and accepts every compiler
+result without review, and a failed task prevents all batch output writes.

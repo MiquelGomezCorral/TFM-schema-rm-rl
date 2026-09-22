@@ -10,7 +10,7 @@ from typing import Sequence
 from scripts.generate_rm import generate_rm
 from src.compiler import CompilationResult
 from src.config import Configuration
-from src.utils.generation_logging import (
+from src.utils import (
     GenerationHooks,
     PipelineStep,
     ProgressEvent,
@@ -191,7 +191,7 @@ class RunController:
                     request.environment_filename
                 )
                 environment_path.write_text(request.environment_markdown, encoding="utf-8")
-                config = Configuration(
+                CONFIG = Configuration(
                     environment=environment_path,
                     tasks=list(request.tasks),
                     output=Path(request.output_filename),
@@ -204,7 +204,7 @@ class RunController:
                     run_started=self._record_log_path,
                     completion=self._retain_results,
                 )
-                return_code = generate_rm(config, hooks=hooks)
+                return_code = generate_rm(CONFIG, hooks=hooks)
             with self._lock:
                 if return_code == 0:
                     self._status = RunState.COMPLETED

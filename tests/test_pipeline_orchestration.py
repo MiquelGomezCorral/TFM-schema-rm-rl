@@ -51,8 +51,8 @@ class OrchestrationTests(unittest.TestCase):
         self.logs_patch.start()
         self.engine=Engine(); self.engine.task_results=[]; self.engine.rm_results=[]; self.saved=Mock()
     def execute(self, tasks=("finish",), **flags):
-        config=Configuration(environment="demo.md", tasks=list(tasks), output="out.rm", **flags)
-        with patch.object(g,"setup_environment_and_engine",return_value=(ENV,self.engine)), patch.object(g,"derive_output_paths",return_value=tuple(Path(f"out-{i}.rm") for i in range(len(tasks)))), patch.object(g,"save_results",self.saved), patch.object(g,"compile_dfas",return_value=()), patch.object(g,"build_compilation_result",return_value=result()): return g.generate_rm(config)
+        CONFIG=Configuration(environment="demo.md", tasks=list(tasks), output="out.rm", **flags)
+        with patch.object(g,"setup_environment_and_engine",return_value=(ENV,self.engine)), patch.object(g,"derive_output_paths",return_value=tuple(Path(f"out-{i}.rm") for i in range(len(tasks)))), patch.object(g,"save_results",self.saved), patch.object(g,"compile_dfas",return_value=()), patch.object(g,"build_compilation_result",return_value=result()): return g.generate_rm(CONFIG)
     def test_first_attempt_acceptance(self):
         self.engine.task_results=[CriticResult(True,"task ok")]; self.engine.rm_results=[CriticResult(True,"rm ok")]
         self.assertEqual(self.execute(),0); self.saved.assert_called_once()
@@ -78,12 +78,12 @@ class OrchestrationTests(unittest.TestCase):
         self.engine.rm_results=[CriticResult(True,"ok")]; self.assertEqual(self.execute(task_critic=False),0); self.assertFalse(self.engine.tasks)
         self.engine.rms.clear(); self.engine.task_results=[CriticResult(True,"ok")]; self.assertEqual(self.execute(rm_critic=False),0); self.assertFalse(self.engine.rms)
     def test_multiple_task_output_names_are_numbered(self):
-        config=Configuration(environment="demo.md",tasks=["one","two"],output="batch.rm")
-        self.assertEqual([path.name for path in g.derive_output_paths(config)],["batch-1.rm","batch-2.rm"])
+        CONFIG=Configuration(environment="demo.md",tasks=["one","two"],output="batch.rm")
+        self.assertEqual([path.name for path in g.derive_output_paths(CONFIG)],["batch-1.rm","batch-2.rm"])
     def test_blank_task_fails_before_setup_or_generation(self):
-        config=Configuration(environment="demo.md",tasks=["  "],output="out.rm")
+        CONFIG=Configuration(environment="demo.md",tasks=["  "],output="out.rm")
         with patch.object(g,"setup_environment_and_engine") as setup, patch.object(g,"_step_generate_proposal") as propose:
-            with self.assertRaises(ValueError): g.generate_rm(config)
+            with self.assertRaises(ValueError): g.generate_rm(CONFIG)
         setup.assert_not_called(); propose.assert_not_called()
     def test_retryable_immediate_and_mona_failures(self):
         self.engine.rm_results=[CriticResult(True,"ok")]
@@ -119,14 +119,14 @@ class OrchestrationTests(unittest.TestCase):
             review_reward_machine=lambda task, candidate: order.append("RM critic") or CriticResult(True, "ok"),
         )
         fake_result = SimpleNamespace(text="rm")
-        config = Configuration(environment="demo.md", tasks=["finish"], output="out.rm")
+        CONFIG = Configuration(environment="demo.md", tasks=["finish"], output="out.rm")
         with patch.object(g, "setup_environment_and_engine", return_value=(ENV, engine)), \
             patch.object(g, "derive_output_paths", return_value=(Path("out.rm"),)), \
             patch.object(g, "save_results"), \
             patch.object(g, "materialize_proposal", side_effect=lambda *args: order.append("LTLf") or prop()), \
             patch.object(g, "compile_dfas", side_effect=lambda *args, **kwargs: order.append("DFA") or ()), \
             patch.object(g, "build_compilation_result", side_effect=lambda *args: order.append("RM") or fake_result):
-            self.assertEqual(g.generate_rm(config), 0)
+            self.assertEqual(g.generate_rm(CONFIG), 0)
         self.assertEqual(order, ["generator", "task critic", "LTLf", "DFA", "RM", "RM critic"])
 
 if __name__ == "__main__": unittest.main()

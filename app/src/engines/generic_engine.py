@@ -23,6 +23,7 @@ from .structured import (
 # ======================================================================================
 
 StructuredRequester = Callable[[str, str, str, dict, str], str]
+TextRequester = Callable[[str, str, str], str]
 
 
 class GenericEngine(Engine):
@@ -34,11 +35,22 @@ class GenericEngine(Engine):
         model: str,
         provider_name: str,
         requester: StructuredRequester,
+        text_requester: TextRequester | None = None,
     ) -> None:
         self.environment = environment
         self.model = model
         self.provider_name = provider_name
         self._request = requester
+        self._request_text = text_requester
+
+    def request_text(self, system: str, user: str) -> str:
+        """Request an unconstrained artifact while retaining provider error mapping."""
+        if self._request_text is None:
+            raise RuntimeError(f"{self.provider_name} does not provide text artifact requests")
+        try:
+            return self._request_text(self.model, system, user)
+        except Exception as error:
+            raise classify_provider_error(error) from error
 
     def translate(self, utterance: str, filtering=None) -> dict[Formula, float]:
         """Return IBM's formula-to-score shape with neutral selection scores."""

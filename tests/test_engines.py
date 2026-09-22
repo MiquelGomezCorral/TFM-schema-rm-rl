@@ -14,6 +14,8 @@ from src.engines import (
     OpenCodeEngine,
     RetryableEngineError,
 )
+from src.arm_fm.generation import _extract_artifact
+from src.arm_fm.runtime import parse_paper_reward_machine
 from src.models import EnvironmentDescription
 
 
@@ -247,6 +249,49 @@ class EngineTests(unittest.TestCase):
             [request[-1] for request in requests],
             ["declare_proposal", "task_critic", "rm_critic"],
         )
+
+    @patch("src.engines.provider_engines.subprocess.run")
+    def test_opencode_go_pi_validates_proposal_and_critic(self, run) -> None:
+        proposal = '{"clauses":[{"normalized_clause":"finish","pattern":"Existence","propositions":["done"],"priority":"none"}]}'
+        critic = '{"accepted":true,"feedback":"task is grounded"}'
+        event = lambda text: json.dumps({
+            "type": "message_end",
+            "message": {"role": "assistant", "content": [{"type": "text", "text": text}]},
+        })
+        run.side_effect = [
+            subprocess.CompletedProcess(["pi"], 0, stdout=event(proposal), stderr=""),
+            subprocess.CompletedProcess(["pi"], 0, stdout=event(critic), stderr=""),
+        ]
+
+        engine = OpenCodeEngine(ENVIRONMENT, "opencode-go/mimo-v2.5")
+        self.assertEqual(engine.propose_task("Finish")[0].normalized_clause, "finish")
+        self.assertTrue(engine.review_task("Finish", proposal).accepted)
+        command = run.call_args_list[0].args[0]
+        self.assertEqual(command[command.index("--model") + 1], "opencode-go/mimo-v2.5")
+        for flag in ("--no-tools", "--no-extensions", "--no-context-files", "--no-session", "--mode", "json"):
+            self.assertIn(flag, command)
+        self.assertEqual(command[command.index("--thinking") + 1], "minimal")
+        self.assertEqual(run.call_args_list[0].kwargs["cwd"].name, "TFM-schema-rm-rl")
+
+    @patch("src.engines.provider_engines.subprocess.run")
+    def test_opencode_go_pi_returns_plain_artifacts_and_rejects_missing_text(self, run) -> None:
+        artifact = "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES: u1\nTRANSITION_FUNCTION:\n(u0, done) -> u1\nREWARD_FUNCTION:\n"
+        run.return_value = subprocess.CompletedProcess(
+            ["pi"], 0,
+            stdout=json.dumps({
+                "type": "agent_end",
+                "messages": [{"role": "assistant", "content": [{"type": "text", "text": artifact}]}],
+            }),
+            stderr="",
+        )
+        engine = OpenCodeEngine(ENVIRONMENT, "opencode-go/mimo-v2.5")
+        output = engine.request_text("system", "user")
+        machine = parse_paper_reward_machine(_extract_artifact(output))
+        self.assertEqual(machine.states, ("u0", "u1"))
+
+        run.return_value = subprocess.CompletedProcess(["pi"], 0, stdout="{}\n", stderr="")
+        with self.assertRaises(ImmediateEngineError):
+            engine.request_text("system", "user")
 
 
 if __name__ == "__main__":
