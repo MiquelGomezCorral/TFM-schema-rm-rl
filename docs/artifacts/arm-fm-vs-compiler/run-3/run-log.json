@@ -1,0 +1,435 @@
+{
+  "run": 3,
+  "generated_at": "2026-09-22T20:03:38+00:00",
+  "provider": "opencode",
+  "model": "mimo-v2.6-flash",
+  "tasks_file": "examples/arm-fm/minigrid-doorkey/tasks.json",
+  "environment_file": "examples/arm-fm/minigrid-doorkey/environment.md",
+  "critics": {
+    "task_critic": true,
+    "rm_critic": true
+  },
+  "critics_off_fallback": {
+    "task_critic": false,
+    "rm_critic": false
+  },
+  "max_attempts": 3,
+  "records": [
+    {
+      "run": 3,
+      "pipeline": "arm-fm",
+      "task_id": "task-1",
+      "task": "Use the key to open the door, then reach the goal.",
+      "status": "accepted",
+      "fallback": "",
+      "reason": "",
+      "attempts": 1,
+      "events": [
+        {
+          "attempt": 1,
+          "stage": "reward_machine",
+          "state": "accepted",
+          "detail": "Format checks pass: the artifact carries the `REWARD_MACHINE:` header with `STATES`, `INITIAL_STATE`, and a nonempty `FINAL_STATES: u3`; u3 is declared in STATES and is the accepting/absorbing state, closed under `(u3, else) -> u3`. All state variables (u0\u2013u3) are declared and all four are reachable; the chain u0 -has_key-> u1 -door_open-> u2 -at_goal-> u3 realizes the task's required order (key acquisition strictly precedes door opening, which strictly precedes goal entry), and u0 correctly has no `door_open` shortcut, preserving the 'use the key' precondition. Semantic fidelity is good: only the four domain propositions appear, each transition label is a single predicate (no Boolean/composite expressions), and the labels are used consistently with their persistent state-condition semantics (e.g. `has_key` staying true in u1 and `door_open` staying true in u2 cause no spurious transitions because those states define no transition on those labels). Irrelevant events are covered: every state has an explicit `else` self-loop (u0, u1, u2, u3), so totality holds for all proposition valuations, including `key_lost` in u0 and `at_goal`/`door_open` in u2. The regression the task semantics require is explicit: `(u1, key_lost) -> u0` forces re-acquisition before the door can be opened, and its ordering relative to `(u1, door_open)` is consistent with `key_lost`'s definition ('before opening the door'). Reward safety: rewards are nonnegative, sparse-but-dense over the progress chain (0.1 / 0.3 / 1.0), monotone, bounded with the unique maximum 1.0 reserved for the terminal progress transition, and all self-loops/regressions are zero-reward, so no cycle can reach the maximum without genuine progress. One non-blocking advisory: because re-entering u1 via `has_key` after a `key_lost` regression re-grants 0.1, a policy can farm small rewards by repeatedly picking up and dropping the key within the step budget; this does not violate format or boundedness (per-transition rewards remain capped and 1.0 is only attainable at the goal), but a critic note is that a penalty on the regression or a one-shot key-acquisition reward would make the reward landscape strictly progress-aligned. Compactness is fine at 4 states, the minimum for this three-stage ordering."
+        }
+      ],
+      "artifacts": [
+        "task-1.rm",
+        "task-1.svg"
+      ]
+    },
+    {
+      "run": 3,
+      "pipeline": "arm-fm",
+      "task_id": "task-2",
+      "task": "Eventually acquire the key.",
+      "status": "accepted",
+      "fallback": "",
+      "reason": "",
+      "attempts": 1,
+      "events": [
+        {
+          "attempt": 1,
+          "stage": "reward_machine",
+          "state": "accepted",
+          "detail": "Semantics match the task: 'Eventually acquire the key' is captured by the single ordered transition (u0, has_key) -> u1 with u1 as the accepting state, and has_key is used as a predicate (state condition), not an action. FINAL_STATES header is present, nonempty, and u1 is declared in STATES and accepting \u2014 correct. All irrelevant propositions are handled by explicit per-state else self-loops: (u0, else) -> u0 keeps the machine waiting before acquisition, and (u1, else) -> u1 makes the post-condition absorbing so later events (door_open, at_goal, key_lost, or dropping the key) cannot regress or re-trigger progress. Reward safety holds: the only non-zero reward is the one-shot 1.0 on entering u1, there are no rewarded cycles (u1 has no outgoing rewarded edges), and all self-loops yield 0.0, so returns are bounded. For a single-milestone eventual task the goal reward at completion is the appropriate granularity of progress signal. Format matches the required paper structure exactly (REWARD_MACHINE / STATES / INITIAL_STATE / FINAL_STATES / TRANSITION_FUNCTION / REWARD_FUNCTION), with a nonempty transition and reward block. No rewrite needed."
+        }
+      ],
+      "artifacts": [
+        "task-2.rm",
+        "task-2.svg"
+      ]
+    },
+    {
+      "run": 3,
+      "pipeline": "arm-fm",
+      "task_id": "task-3",
+      "task": "Open the door only after acquiring the key.",
+      "status": "accepted",
+      "fallback": "",
+      "reason": "",
+      "attempts": 3,
+      "events": [
+        {
+          "attempt": 1,
+          "stage": "reward_machine",
+          "state": "rejected",
+          "detail": "Format, structure and semantics check out (STATES/INITIAL_STATE/FINAL_STATES/TRANSITION_FUNCTION/REWARD_FUNCTION headers exact; u2 is declared and accepting; guards are predicate-only; ordered coverage is correct in u1 with door_open tested before key_lost, which matters because key_lost is defined only before the door opens; every state has an else self-loop covering irrelevant propositions such as at_goal; regressions are explicit via (u1, key_lost) -> u0). Rejected on reward safety: the pair (u0, has_key & !door_open) -> +0.3 and (u1, key_lost) -> u0 with -0.2 forms a net-positive cycle (+0.1) that is reachable without ever opening the door. Because dropping and re-picking the key can be done in place (1 action each), a policy can farm ~+0.05/step for the whole episode and then open the door, e.g. ~1.2 farmed + 1.3 for the honest solution on DoorKey-8x8, roughly double the return of the task-optimal policy. The RM's optimal policy therefore deviates from the task (delay/skip opening the door), so the progress reward is not merely dense-but-bounded but exploitable. Fix by making the regression strictly non-profitable, e.g. set the key-loss penalty to <= -0.3 (or reduce the key-acquisition progress reward below the loss penalty), so any u0 -> u1 -> u0 cycle has non-positive net reward; alternatively make first key acquisition non-repeating. Optional hardening: add an explicit violation branch for door_open & !has_key in u0 (currently silently absorbed by the else self-loop with 0 reward), since the task says the door must be opened only after acquiring the key."
+        },
+        {
+          "attempt": 2,
+          "stage": "reward_machine",
+          "state": "rejected",
+          "detail": "Format and structure are largely correct: FINAL_STATES header is present and nonempty (u2 is declared in STATES and accepting), states/transitions use predicate-only events, all three states have per-state else self-loops covering irrelevant events, every state is reachable, progress rewards (0.2 key pickup, 1.0 success) are positive and bounded per step, and the key_lost regression from u1 to u0 is explicit with a negative reward. However, the semantic fidelity of the safety constraint 'open the door only after acquiring the key' is violated: the illegal event is only a self-loop back to u0 with -1.0, not an absorbing failure sink. Because u0 still contains the path u0 -(has_key)-> u1 -(door_open)-> u2, a trajectory that opens the door without the key can later pick up the key and still collect the full +1.0 success reward, so a violating episode is scored as successful. The -1.0 penalty also repeats on every step that door_open & !has_key persists rather than being a one-time terminal failure. Additionally, the transition (u0, door_open & has_key) -> u2 appears unreachable under the RM's own ordering: as soon as has_key becomes true the (u0, has_key) -> u1 transition fires, so door-open-with-key is only ever observed in u1, making that u0 transition dead coverage. Recommend routing door_open & !has_key to an explicit terminal failure state (with a single bounded penalty) and either removing or justifying the unreachable u0 transition; also consider denser shaped progress if dense rewards are required, since only a single 0.2 shaping reward exists before the terminal 1.0."
+        },
+        {
+          "attempt": 3,
+          "stage": "reward_machine",
+          "state": "accepted",
+          "detail": "Accept. Header set is exact and complete (REWARD_MACHINE / STATES / INITIAL_STATE / FINAL_STATES / TRANSITION_FUNCTION / REWARD_FUNCTION); FINAL_STATES is nonempty (`u2`), u2 is declared in STATES and accepting, and u0 is declared as the initial state. Guards are predicate-only (`has_key`, `door_open`, `door_open & !has_key`, `key_lost`) with a final `else` self-loop in every state (u0..u3), so all irrelevant propositions are absorbed by per-state else loops and no transition is left undefined; the else self-loops correctly carry no reward entries (only the four rewarded edges are listed, consistent with the paper format). Semantic fidelity to \"open the door only after acquiring the key\" is sound: u0 -has_key-> u1 encodes acquisition (dense progress +0.2), u1 -door_open-> u2 encodes the ordered success (+1.0), and the violation edge u0 -door_open & !has_key-> u3 fires an explicit -1.0 penalty into an absorbing trap, which is the required ordering-regression/violation handling. The key_lost -> u0 edge (-0.3) is an explicit regression; it is not strictly demanded by the task but is semantically safe, since re-opening the door requires re-acquiring the key anyway (u0 -has_key-> u1 restores progress), and it does not create a dead end. Ordered transition coverage is fine: each state lists its specific guards before the trailing else, and the accepting chain u0->u1->u2 plus the violation branch u0->u3 is reachable in the abstract transition system. Rewards are bounded in [-1.0, 1.0], dense along the successful path, and never exceed the unit success ceiling. Minor notes for a future revision (not blocking): (i) the success guard in u1 is bare `door_open`, so in the abstract model a time point with door_open & key_lost would still yield +1.0 rather than first regressing \u2014 in the real DoorKey dynamics this combination is physically impossible (the door cannot be opened without holding the key), so it is benign, but writing it as `door_open & has_key` (or ordering `key_lost` first) would make the abstraction airtight; (ii) u3 is only abstractly reachable, since a stock DoorKey episode cannot open the door before any key pickup \u2014 acceptable as a spec-level violation state, but worth noting for reachability analysis."
+        }
+      ],
+      "artifacts": [
+        "task-3.rm",
+        "task-3.svg"
+      ]
+    },
+    {
+      "run": 3,
+      "pipeline": "arm-fm",
+      "task_id": "task-4",
+      "task": "Reach the goal only after opening the door.",
+      "status": "accepted",
+      "fallback": "",
+      "reason": "",
+      "attempts": 1,
+      "events": [
+        {
+          "attempt": 1,
+          "stage": "reward_machine",
+          "state": "accepted",
+          "detail": "Format: exact ARM-FM paper layout (`REWARD_MACHINE:` header with STATES, INITIAL_STATE, FINAL_STATES, TRANSITION_FUNCTION, REWARD_FUNCTION); `FINAL_STATES: u3` is nonempty, u3 is declared in STATES, and it is accepting via the (u3, else) -> u3 self-loop. Fidelity: the only path to a reward of 1.0 is u0 -has_key-> u1 -door_open-> u2 -at_goal-> u3, so goal reward is soundly gated on the door being open, and the extra has_key precondition is entailed (a DoorKey door cannot be opened without the key), not restrictive; all environment-valid traces (key dropped before opening still re-acquire and pass through u1) are accepted, so completeness holds. Reachability/compactness: all four states are reachable, no dead ends, and the chain is minimal for an ordered three-step task plus one regression. Predicate-only events: only propositions and a boolean combination (key_lost & !door_open) appear; no action, step-count, or time predicates. Persistent/event distinctions: propositions are treated as state conditions re-evaluated each time point, and the !door_open guard makes the regression mutually exclusive with the door_open progress edge, so there is no priority ambiguity when the key is lost. Per-state coverage: every state has an else self-loop (u0, u1, u2, u3), so irrelevant events such as at_goal in u0 or has_key in u1 are safely ignored. Ordered transitions: key before door before goal matches the task order, and key loss before the door opens is an explicit regression to u0 with a negative reward (-0.1). Reward safety: progress rewards are dense (0.3, 0.4, 1.0) and individually bounded in [-1, 1], the terminal 1.0 is maximal and reachable only after door_open and at_goal, closing the door again in u2 yields no new reward, and the goal tile yields nothing while the door is shut. Advisory (non-blocking): because the +0.3 pickup subgoal can be re-earned after the -0.1 key_lost regression, a pick-up/drop cycle nets +0.2; if drop/pick-up farming is a concern in training, raise the regression penalty to at least -0.3. This does not violate the specified bounded-progress or safety requirements, since each transition reward stays within bounds and the maximum reward still requires full task completion."
+        }
+      ],
+      "artifacts": [
+        "task-4.rm",
+        "task-4.svg"
+      ]
+    },
+    {
+      "run": 3,
+      "pipeline": "compiler",
+      "task_id": "task-1",
+      "task": "Use the key to open the door, then reach the goal.",
+      "status": "accepted",
+      "fallback": "critics off (fallback)",
+      "reason": "",
+      "attempts": 1,
+      "events": [
+        {
+          "attempt": 1,
+          "stage": "generate",
+          "state": "running",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "generate",
+          "state": "completed",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "task_critic",
+          "state": "skipped",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "ltlf",
+          "state": "running",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "ltlf",
+          "state": "completed",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "dfa",
+          "state": "running",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "dfa",
+          "state": "completed",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "reward_machine",
+          "state": "running",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "reward_machine",
+          "state": "completed",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "rm_critic",
+          "state": "skipped",
+          "detail": ""
+        }
+      ],
+      "artifacts": [
+        "task-1.rm",
+        "task-1.svg"
+      ]
+    },
+    {
+      "run": 3,
+      "pipeline": "compiler",
+      "task_id": "task-2",
+      "task": "Eventually acquire the key.",
+      "status": "accepted",
+      "fallback": "",
+      "reason": "",
+      "attempts": 1,
+      "events": [
+        {
+          "attempt": 1,
+          "stage": "generate",
+          "state": "running",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "generate",
+          "state": "completed",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "task_critic",
+          "state": "running",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "task_critic",
+          "state": "completed",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "ltlf",
+          "state": "running",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "ltlf",
+          "state": "completed",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "dfa",
+          "state": "running",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "dfa",
+          "state": "completed",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "reward_machine",
+          "state": "running",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "reward_machine",
+          "state": "completed",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "rm_critic",
+          "state": "running",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "rm_critic",
+          "state": "completed",
+          "detail": ""
+        }
+      ],
+      "artifacts": [
+        "task-2.rm",
+        "task-2.svg"
+      ]
+    },
+    {
+      "run": 3,
+      "pipeline": "compiler",
+      "task_id": "task-3",
+      "task": "Open the door only after acquiring the key.",
+      "status": "accepted",
+      "fallback": "critics off (fallback)",
+      "reason": "",
+      "attempts": 1,
+      "events": [
+        {
+          "attempt": 1,
+          "stage": "generate",
+          "state": "running",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "generate",
+          "state": "completed",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "task_critic",
+          "state": "skipped",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "ltlf",
+          "state": "running",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "ltlf",
+          "state": "completed",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "dfa",
+          "state": "running",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "dfa",
+          "state": "completed",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "reward_machine",
+          "state": "running",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "reward_machine",
+          "state": "completed",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "rm_critic",
+          "state": "skipped",
+          "detail": ""
+        }
+      ],
+      "artifacts": [
+        "task-3.rm",
+        "task-3.svg"
+      ]
+    },
+    {
+      "run": 3,
+      "pipeline": "compiler",
+      "task_id": "task-4",
+      "task": "Reach the goal only after opening the door.",
+      "status": "accepted",
+      "fallback": "critics off (fallback)",
+      "reason": "",
+      "attempts": 1,
+      "events": [
+        {
+          "attempt": 1,
+          "stage": "generate",
+          "state": "running",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "generate",
+          "state": "completed",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "task_critic",
+          "state": "skipped",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "ltlf",
+          "state": "running",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "ltlf",
+          "state": "completed",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "dfa",
+          "state": "running",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "dfa",
+          "state": "completed",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "reward_machine",
+          "state": "running",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "reward_machine",
+          "state": "completed",
+          "detail": ""
+        },
+        {
+          "attempt": 1,
+          "stage": "rm_critic",
+          "state": "skipped",
+          "detail": ""
+        }
+      ],
+      "artifacts": [
+        "task-4.rm",
+        "task-4.svg"
+      ]
+    }
+  ]
+}
