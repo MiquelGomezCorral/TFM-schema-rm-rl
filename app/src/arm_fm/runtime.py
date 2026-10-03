@@ -28,6 +28,7 @@ _REWARD = re.compile(
     r"([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)\s*$"
 )
 _IDENTIFIER = re.compile(r"[a-z_][a-z0-9_]*", re.IGNORECASE)
+_STATE_NUMBER = re.compile(r"^u(\d+)$", re.IGNORECASE)
 
 
 class RuntimeValidationError(ValueError):
@@ -574,11 +575,40 @@ def parse_paper_reward_machine(
     )
 
 
+def _state_order(name: str) -> tuple[int, int, str]:
+    """Order ``u<N>`` states numerically, keeping other names last and alphabetical."""
+    match = _STATE_NUMBER.fullmatch(name)
+    if match is None:
+        return (1, 0, name)
+    return (0, int(match.group(1)), name)
+
+
+def _ordered_states(machine: PaperRewardMachine) -> tuple[str, ...]:
+    """Sort the declared states so the ``STATES`` header reads ``u0, u1, u2, …``."""
+    return tuple(sorted(machine.states, key=_state_order))
+
+
+def _transitions_by_source(
+    machine: PaperRewardMachine,
+    states: tuple[str, ...],
+) -> tuple[RuntimeTransition, ...]:
+    """Group transitions under their source state, in ``states`` order."""
+    position = {name: index for index, name in enumerate(states)}
+    return tuple(
+        sorted(
+            machine.transitions,
+            key=lambda item: position.get(item.source, len(position)),
+        )
+    )
+
+
 def serialize_paper_reward_machine(machine: PaperRewardMachine) -> str:
     """Serialize a paper-style RM, retaining zero-reward state-changing edges."""
+    states = _ordered_states(machine)
+    transitions = _transitions_by_source(machine, states)
     lines = [
         "REWARD_MACHINE:",
-        f"STATES: {', '.join(machine.states)}",
+        f"STATES: {', '.join(states)}",
         f"INITIAL_STATE: {machine.initial_state}",
     ]
     if machine.final_states:
@@ -588,12 +618,12 @@ def serialize_paper_reward_machine(machine: PaperRewardMachine) -> str:
     lines.extend(("TRANSITION_FUNCTION:",))
     lines.extend(
         f"({item.source}, {item.condition}) -> {item.destination}"
-        for item in machine.transitions
+        for item in transitions
     )
     lines.append("REWARD_FUNCTION:")
     lines.extend(
         f"({item.source}, {item.condition}, {item.destination}) -> {_format_reward(item.reward)}"
-        for item in machine.transitions
+        for item in transitions
         if item.reward != 0
     )
     return "\n".join(lines) + "\n"

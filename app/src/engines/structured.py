@@ -16,10 +16,10 @@ from .errors import CriticValidationError, ProposalValidationError
 #                                   STRUCTURED TYPES
 # ======================================================================================
 
-SUPPORTED_TEMPLATES: dict[str, tuple[type[Template], int]] = {
-    "Existence": (Existence, 1),
-    "ExistenceTwo": (ExistenceTwo, 1),
-    "Precedence": (Precedence, 2),
+SUPPORTED_TEMPLATES: dict[str, tuple[type[Template], int, tuple[PriorityLevel, ...]]] = {
+    "Existence": (Existence, 1, (PriorityLevel.NONE,)),
+    "ExistenceTwo": (ExistenceTwo, 1, (PriorityLevel.NONE,)),
+    "Precedence": (Precedence, 2, (PriorityLevel.SOFT, PriorityLevel.HARD)),
 }
 
 
@@ -49,31 +49,34 @@ def proposal_schema(task: str, environment: EnvironmentDescription) -> dict:
     if not task.strip():
         raise ValueError("Tasks must be nonempty")
 
-    clause_schema = {
-        "type": "object",
-        "properties": {
-            "normalized_clause": {"type": "string", "minLength": 1},
-            "pattern": {"type": "string", "enum": list(SUPPORTED_TEMPLATES)},
-            "propositions": {
-                "type": "array",
-                "items": {"type": "string", "enum": list(environment.proposition_ids)},
-                "minItems": 1,
-                "maxItems": 2,
+    clause_schemas = [
+        {
+            "type": "object",
+            "properties": {
+                "normalized_clause": {"type": "string", "minLength": 1},
+                "pattern": {"type": "string", "enum": [pattern]},
+                "propositions": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": list(environment.proposition_ids)},
+                    "minItems": arity,
+                    "maxItems": arity,
+                },
+                "priority": {
+                    "type": "string",
+                    "enum": [priority.value for priority in priorities],
+                },
             },
-            "priority": {
-                "type": "string",
-                "enum": [priority.value for priority in PriorityLevel],
-            },
-        },
-        "required": ["normalized_clause", "pattern", "propositions", "priority"],
-        "additionalProperties": False,
-    }
+            "required": ["normalized_clause", "pattern", "propositions", "priority"],
+            "additionalProperties": False,
+        }
+        for pattern, (_, arity, priorities) in SUPPORTED_TEMPLATES.items()
+    ]
     return {
         "type": "object",
         "properties": {
             "clauses": {
                 "type": "array",
-                "items": clause_schema,
+                "items": {"anyOf": clause_schemas},
                 "minItems": 1,
                 "maxItems": MAX_TASK_CLAUSES,
             }
@@ -185,7 +188,7 @@ def _validate_clause(
     symbols = clause["propositions"]
     if not isinstance(symbols, list) or any(not isinstance(symbol, str) for symbol in symbols):
         raise ProposalValidationError("Propositions must be a list of identifiers")
-    template_class, arity = SUPPORTED_TEMPLATES[pattern]
+    template_class, arity, priorities = SUPPORTED_TEMPLATES[pattern]
     if len(symbols) != arity:
         raise ProposalValidationError(
             f"{pattern} requires {arity} proposition(s), received {len(symbols)}"
@@ -203,10 +206,9 @@ def _validate_clause(
         raise ProposalValidationError(
             f"Unsupported priority: {clause['priority']!r}"
         ) from error
-    if pattern in {"Existence", "ExistenceTwo"} and priority is not PriorityLevel.NONE:
-        raise ProposalValidationError(f"{pattern} requires priority 'none'")
-    if pattern == "Precedence" and priority not in {PriorityLevel.SOFT, PriorityLevel.HARD}:
-        raise ProposalValidationError("Precedence requires priority 'soft' or 'hard'")
+    if priority not in priorities:
+        allowed = " or ".join(repr(value.value) for value in priorities)
+        raise ProposalValidationError(f"{pattern} requires priority {allowed}")
 
     template = template_class(*(Atomic(symbol) for symbol in symbols))
     return ProposalSelection(

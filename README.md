@@ -192,26 +192,38 @@ validated proposal JSON, critic verdicts, each LTLf clause, complete DFA data, a
 serialized Reward Machine. Credentials, environment variables, request headers, full
 prompts, and raw provider responses are not written.
 
-The output uses the current TFM runtime's numeric semicolon format. For example, a
+Compiler output uses the ARM-FM text format with separate transition and reward
+functions, matching experiment bundles. Internal compiler states remain numeric;
+text uses `u0`, `u1`, and so on. For example, a
 hard `d1`-before-`d2` machine has one success final state and a declared rejecting
 sink:
 
 ```text
-s: 0, 1, 2
-i: 0
-f: 3
-r: 0
-0; 1; !d1,d2; 0
-0; 2; d1,!d2; 0
-0; 1; d1,d2; 0
-2; 3; !d1,d2; 1.10
-2; 3; d1,d2; 1.10
+REWARD_MACHINE:
+STATES: u0, u1, u2, u3
+INITIAL_STATE: u0
+FINAL_STATES: u3
+DEFAULT_REWARD: 0
+TRANSITION_FUNCTION:
+(u0, !d1 & d2) -> u1
+(u0, d1 & !d2) -> u2
+(u0, d1 & d2) -> u1
+(u2, !d1 & d2) -> u3
+(u2, d1 & d2) -> u3
+REWARD_FUNCTION:
+(u2, !d1 & d2, u3) -> 1.1
+(u2, d1 & d2, u3) -> 1.1
 ```
 
 Missing transitions are zero-reward self-loops. Only state-changing transitions and
 necessary nonzero-reward transitions are emitted, using propositions from that
-task only. The rejecting sink has no explicit outgoing rows, so it remains
-there through the same implicit self-loop rule.
+task only. Every transition is listed in `TRANSITION_FUNCTION`; only nonzero rewards
+are listed in `REWARD_FUNCTION`. Imports accept explicit self-loops and `else` rows;
+an `else` row applies only when no ordinary guard matches and may lead to another
+state. The rejecting sink has no explicit outgoing rows, so it remains there through
+the same implicit self-loop rule. ARM-FM baseline generation and published artifacts
+retain their existing format and explicit `else` conventions. Earlier numeric
+semicolon files must be regenerated to use the new compiler import format.
 
 Each clause pays `+0.10` once on its preferred completion path. Soft reverse or
 simultaneous ordering remains valid but pays `0`; hard reverse or simultaneous ordering
