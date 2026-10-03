@@ -9,11 +9,17 @@ Sizing comes from :class:`src.config.GraphStyle`, adjustable in ``config.py``.
 
 from __future__ import annotations
 
-from collections import defaultdict, deque
-
 from src.config import GraphStyle
 
-from .visualization import CYTOSCAPE_STYLESHEET
+from .visualization import (
+    CYTOSCAPE_STYLESHEET,
+    EDGE_LABEL_HEIGHT,
+    SELF_LOOP_LABEL_DROP,
+    SELF_LOOP_LABEL_OFFSET,
+    SELF_LOOP_REACH,
+    edge_label_offsets,
+    reward_machine_positions,
+)
 
 
 GRAPH = GraphStyle()
@@ -25,8 +31,7 @@ EDGE_CLASSES = ("edge-positive", "edge-negative", "edge-zero")
 EDGE_COLOURS = {name: STYLES[f".{name}"]["line-color"] for name in EDGE_CLASSES}
 EDGE_WIDTH = STYLES["edge"]["width"]
 
-CHIP_HEIGHT = 18
-CHIP_SPACING = 1.25
+CHIP_HEIGHT = EDGE_LABEL_HEIGHT
 BACK_EDGE_REACH = 26
 EDGE_PADDING = 6
 
@@ -44,13 +49,7 @@ def render_elements_svg(elements: list[dict], positions: dict | None = None) -> 
         raise ValueError("A Reward Machine graph needs at least one state")
 
     if positions is None:
-        initial = next(
-            (node["data"]["id"] for node in nodes if "initial" in node.get("classes", "")),
-            None,
-        )
-        if initial is None:
-            raise ValueError("A Reward Machine graph needs an initial state")
-        positions = _layered_positions(nodes, edges, initial)
+        positions = reward_machine_positions(elements)
 
     positions, width, height = _fit(positions)
     return _document(nodes, edges, positions, width, height)
@@ -84,39 +83,6 @@ def _label_style(classes: str) -> dict:
 # ======================================================================================
 #                                    LAYOUT
 # ======================================================================================
-
-def _layered_positions(nodes: list[dict], edges: list[dict], initial: str) -> dict:
-    """Place states on a top-down grid by breadth-first depth from the initial state."""
-    order = [node["data"]["id"] for node in nodes]
-    adjacency: dict[str, list[str]] = defaultdict(list)
-    for edge in edges:
-        adjacency[edge["data"]["source"]].append(edge["data"]["target"])
-
-    depths = {initial: 0}
-    queue = deque([initial])
-    while queue:
-        current = queue.popleft()
-        for destination in adjacency[current]:
-            if destination not in depths:
-                depths[destination] = depths[current] + 1
-                queue.append(destination)
-
-    fallback = max(depths.values(), default=0) + 1
-    for node in order:
-        depths.setdefault(node, fallback)
-
-    layers: dict[int, list[str]] = defaultdict(list)
-    for node in order:
-        layers[depths[node]].append(node)
-
-    widest = max(len(group) for group in layers.values())
-    positions: dict[str, tuple[float, float]] = {}
-    for depth, group in layers.items():
-        left = (widest - len(group)) * GRAPH.node_gap / 2
-        for index, node in enumerate(group):
-            positions[node] = (left + index * GRAPH.node_gap, depth * GRAPH.layer_gap)
-    return positions
-
 
 def _fit(positions: dict) -> tuple[dict, float, float]:
     """Translate positions into the canvas and size it to the full bounding box."""
@@ -152,30 +118,13 @@ def _clip(centre: tuple[float, float], target: tuple[float, float]) -> tuple[flo
     return centre[0] + dx * scale, centre[1] + dy * scale
 
 
-def _label_offsets(edges: list[dict]) -> list[float]:
-    """Vertical offsets so chips of sibling edges from one state do not overlap."""
-    groups: dict[str, list[int]] = defaultdict(list)
-    for index, edge in enumerate(edges):
-        data = edge["data"]
-        if data["source"] != data["target"]:
-            groups[data["source"]].append(index)
-
-    offsets = [0.0] * len(edges)
-    step = CHIP_HEIGHT * CHIP_SPACING
-    for indices in groups.values():
-        middle = (len(indices) - 1) / 2
-        for position, index in enumerate(indices):
-            offsets[index] = (position - middle) * step
-    return offsets
-
-
 # ======================================================================================
 #                                   SVG OUTPUT
 # ======================================================================================
 
 def _document(nodes: list[dict], edges: list[dict], positions: dict, width: float, height: float) -> str:
     """Assemble the SVG document from positioned nodes and routed edges."""
-    offsets = _label_offsets(edges)
+    offsets = edge_label_offsets(edges)
     routed = [
         _edge_parts(edge, positions, width, offsets[index])
         for index, edge in enumerate(edges)
@@ -267,13 +216,17 @@ def _self_loop(position: tuple[float, float]) -> tuple[str, float, float]:
     x, y = position
     start = (x + GRAPH.node_width / 2, y - GRAPH.node_height / 2 + 8)
     end = (x + GRAPH.node_width / 2, y + GRAPH.node_height / 2 - 8)
-    control_x = x + GRAPH.node_width / 2 + 56
+    control_x = x + GRAPH.node_width / 2 + SELF_LOOP_REACH
     path = (
         f"M {start[0]:.0f} {start[1]:.0f} "
         f"C {control_x:.0f} {start[1] - 24:.0f} {control_x:.0f} {end[1] + 24:.0f} "
         f"{end[0]:.0f} {end[1]:.0f}"
     )
-    return path, x + GRAPH.node_width / 2 + 23, y + GRAPH.node_height / 2 + 10
+    return (
+        path,
+        x + GRAPH.node_width / 2 + SELF_LOOP_LABEL_OFFSET,
+        y + GRAPH.node_height / 2 + SELF_LOOP_LABEL_DROP,
+    )
 
 
 def _back_edge(
