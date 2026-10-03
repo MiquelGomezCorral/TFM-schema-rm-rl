@@ -42,6 +42,9 @@ class Configuration:
     WORKSPACE_PATH: ClassVar[Path] = Path(__file__).resolve().parents[3]
     DATA_PATH: ClassVar[Path] = WORKSPACE_PATH / "data"
     OUTPUT_PATH: ClassVar[Path] = WORKSPACE_PATH / "outputs"
+    RM_PATH: ClassVar[Path] = OUTPUT_PATH / "RMs"
+    TRACE_PATH: ClassVar[Path] = OUTPUT_PATH / "traces"
+    REPORT_PATH: ClassVar[Path] = OUTPUT_PATH / "reports"
     MODELS_PATH: ClassVar[Path] = WORKSPACE_PATH / "models"
     LOGS_PATH: ClassVar[Path] = WORKSPACE_PATH / "logs"
 
@@ -59,6 +62,8 @@ class Configuration:
     rm_critic: bool = True
     svg: bool = False
     svg_dir: Path | None = None
+    steps_report: Path | None = None
+    trace_dir: Path | None = None
     seed: int = 42
     mode: str = "arm-fm"
     bundle: Path | None = None
@@ -72,7 +77,22 @@ class Configuration:
 
     def __post_init__(self) -> None:
         """Normalize paths and resolve optional environment configuration."""
-        make_dirs([self.DATA_PATH, self.OUTPUT_PATH, self.MODELS_PATH, self.LOGS_PATH])
+        # Keep every derived output folder under the configured root.
+        output_root = Path(self.OUTPUT_PATH)
+        self.RM_PATH = output_root / "RMs"
+        self.TRACE_PATH = output_root / "traces"
+        self.REPORT_PATH = output_root / "reports"
+        make_dirs(
+            [
+                self.DATA_PATH,
+                self.OUTPUT_PATH,
+                self.RM_PATH,
+                self.TRACE_PATH,
+                self.REPORT_PATH,
+                self.MODELS_PATH,
+                self.LOGS_PATH,
+            ]
+        )
         if self.environment is not None:
             self.environment = Path(self.environment)
         if self.output is not None:
@@ -85,6 +105,10 @@ class Configuration:
             self.checkpoint = Path(self.checkpoint)
         if self.task_manifest is not None:
             self.task_manifest = Path(self.task_manifest)
+        if self.steps_report is not None:
+            self.steps_report = Path(self.steps_report)
+        if self.trace_dir is not None:
+            self.trace_dir = Path(self.trace_dir)
         self.manifests = [Path(path) for path in self.manifests]
         self.svg_dir = (
             Path(self.svg_dir) if self.svg_dir is not None else self.OUTPUT_PATH / "svgs"

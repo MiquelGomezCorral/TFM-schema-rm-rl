@@ -106,21 +106,24 @@ def setup_environment_and_engine(
     return environment, engine
 
 
+def derive_output_names(output: Path, task_count: int) -> tuple[Path, ...]:
+    """Return the file names one run writes for ``output`` and ``task_count``."""
+    if task_count <= 1:
+        return (output,)
+    return tuple(
+        output.with_name(f"{output.stem}-{index}{output.suffix}")
+        for index in range(1, task_count + 1)
+    )
+
+
 def derive_output_paths(CONFIG: Configuration) -> tuple[Path, ...]:
     if CONFIG.output is None:
         raise ValueError("An output file name is required")
 
-    if len(CONFIG.tasks) == 1:
-        output_names = (CONFIG.output,)
-    else:
-        output_names = tuple(
-            CONFIG.output.with_name(
-                f"{CONFIG.output.stem}-{index}{CONFIG.output.suffix}"
-            )
-            for index in range(1, len(CONFIG.tasks) + 1)
-        )
-
-    output_paths = tuple(CONFIG.OUTPUT_PATH / name for name in output_names)
+    output_paths = tuple(
+        CONFIG.RM_PATH / name
+        for name in derive_output_names(CONFIG.output, len(CONFIG.tasks))
+    )
     existing_paths = [path for path in output_paths if path.exists()]
     if existing_paths and not CONFIG.overwrite:
         raise ValueError(

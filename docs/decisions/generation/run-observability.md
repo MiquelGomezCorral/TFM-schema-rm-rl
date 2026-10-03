@@ -9,6 +9,11 @@ diagnostics to reproduce a failed run without changing compilation semantics.
 
 - The pipeline publishes one immutable typed event for each task stage. The CLI and
   web controller consume the same event boundary; the web layer does not parse log text.
+- Compiler failures returned as exit codes are delivered through an explicit hook.
+  When three attempts are exhausted, the error includes the last failing stage and
+  its feedback; the web Run status retains this reason rather than only the exit code.
+  Expected provider failures also retain their diagnostic message. The generic exit
+  code message is a fallback only when no specific reason was delivered.
 - Each task exposes six sequential stages: structured proposal generation, optional task
   critic, deterministic DECLARE/LTLf materialization, FL-AT/MONA DFA compilation,
   Reward Machine construction, and optional Reward Machine critic.
@@ -27,6 +32,8 @@ diagnostics to reproduce a failed run without changing compilation semantics.
   a task does not alter another task's progress.
 - Disabled critics are explicitly skipped. A task is accepted only when every enabled
   critic accepts the same attempt, and output files remain gated on all task acceptance.
+- Failure reporting must not parse logs, replace an available diagnostic with a
+  generic exit code, add refinement attempts, or override a critic's rejection.
 - Logs include validated proposal data, critic verdicts, LTLf clauses, complete DFA data,
   and serialized Reward Machines, but never explicitly include credentials, environment
   variables, request headers, full prompts, or raw provider response objects.
@@ -44,7 +51,13 @@ multi-user isolation can be added only if deployment scope expands.
 
 - `app/scripts/generate_rm.py` owns stage ordering, event publication, artifact logging,
   and handler cleanup.
-- `app/src/web/runner.py` owns immutable snapshots and retry reset behavior.
+- `app/src/utils/generation_logging.py` exposes the explicit failure callback;
+  `app/src/web/runner.py` retains that diagnostic alongside immutable snapshots and
+  retry reset behavior.
 - `app/src/web/components.py` and `app/src/web/application.py` own presentation only.
 - Deterministic orchestration and web tests verify event order, skipped states, retry
   behavior, persisted artifacts, labels, colors, and navigation.
+- `tests/test_web.py` exercises the controller and compiler pipeline with deterministic
+  provider responses for generator, task-critic, RM-critic, and provider failures.
+  These checks verify diagnostic propagation and output gating, not live provider
+  reliability or improved critic acceptance rates.

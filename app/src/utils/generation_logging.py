@@ -47,13 +47,25 @@ class ProgressEvent:
 
 
 @dataclass(frozen=True)
+class StepArtifact:
+    """Structured value one pipeline stage published for one task attempt."""
+
+    task_index: int
+    attempt: int
+    step: PipelineStep
+    value: object
+
+
+@dataclass(frozen=True)
 class GenerationHooks:
     """Optional observers for one generation run."""
 
     progress: Callable[[str], None] | None = None
     completion: Callable[[tuple[CompilationResult, ...], tuple[Path, ...]], None] | None = None
     event: Callable[[ProgressEvent], None] | None = None
+    artifact: Callable[[StepArtifact], None] | None = None
     run_started: Callable[[Path], None] | None = None
+    failure: Callable[[str], None] | None = None
 
     def notify_progress(self, message: str) -> None:
         if self.progress is not None:
@@ -63,9 +75,17 @@ class GenerationHooks:
         if self.event is not None:
             self.event(event)
 
+    def notify_artifact(self, artifact: StepArtifact) -> None:
+        if self.artifact is not None:
+            self.artifact(artifact)
+
     def notify_run_started(self, log_path: Path) -> None:
         if self.run_started is not None:
             self.run_started(log_path)
+
+    def notify_failure(self, message: str) -> None:
+        if self.failure is not None:
+            self.failure(message)
 
     def notify_completion(
         self,
@@ -88,6 +108,8 @@ class Progress:
         self.started = time.monotonic()
         self.previous = self.started
         self.current_step = PipelineStep.GENERATE
+        self.current_task = -1  # Replaced by stage_start/stage_skip before any artifact publishes.
+        self.current_attempt = 0
         self.stage_started = self.started
         self._logger: logging.Logger | None = None
         self.log_path: Path | None = None
@@ -123,8 +145,16 @@ class Progress:
         return rendered
 
     def artifact(self, label: str, value: object) -> str:
-        """Log a complete readable artifact."""
+        """Log a complete readable artifact and publish it to structured observers."""
         body = value if isinstance(value, str) else pprint.pformat(value, sort_dicts=True, width=120)
+        self.hooks.notify_artifact(
+            StepArtifact(
+                task_index=self.current_task,
+                attempt=self.current_attempt,
+                step=self.current_step,
+                value=value,
+            )
+        )
         return self(f"{label}:\n{body}")
 
     def stage_start(
@@ -135,6 +165,8 @@ class Progress:
         label: str,
     ) -> float:
         self.current_step = step
+        self.current_task = task_index
+        self.current_attempt = attempt
         self.stage_started = time.monotonic()
         self.hooks.notify_event(ProgressEvent(task_index, attempt, step, StepState.RUNNING))
         self(f"Task {task_index + 1}: attempt {attempt}/3 — {label}.")
@@ -157,6 +189,8 @@ class Progress:
 
     def stage_skip(self, task_index: int, attempt: int, step: PipelineStep) -> None:
         self.current_step = step
+        self.current_task = task_index
+        self.current_attempt = attempt
         self.hooks.notify_event(ProgressEvent(task_index, attempt, step, StepState.SKIPPED))
         self(f"Task {task_index + 1}: {step_label(step)} skipped.")
 

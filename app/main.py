@@ -116,6 +116,18 @@ if __name__ == "__main__":
         default=None,
         help="SVG directory (default: outputs/svgs)",
     )
+    generate_parser.add_argument(
+        "--trace-dir",
+        type=Path,
+        default=Configuration.TRACE_PATH,
+        help="Folder for the step trace of every run (default: outputs/traces)",
+    )
+    generate_parser.add_argument(
+        "--steps-report",
+        type=Path,
+        default=None,
+        help="Also write the readable step report to this Markdown file",
+    )
     generate_parser.set_defaults(func=cmd_generate_rm)
 
     # ======================================================================================

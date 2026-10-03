@@ -2,7 +2,7 @@
 
 import base64
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from dash import ALL, Dash, Input, Output, State, ctx, dcc, html, no_update
 from dash.exceptions import PreventUpdate
@@ -10,6 +10,7 @@ import dash_cytoscape as cyto
 
 from src.config import Configuration
 from src.compiler.reward_machine import parse_reward_machine
+from src.utils import STEP_OUTPUT_ORDER, PipelineStep, derive_output_names, load_step_trace
 
 from .components import (
     FOCUS_OUTPUT_REGION_CLASS,
@@ -19,8 +20,10 @@ from .components import (
     RUN_SIDEBAR_CLASS,
     STATUS_CLASSES,
     WORKSPACE_CLASS,
+    _section_icon,
     create_layout,
     render_steps,
+    result_tabs,
     task_row,
 )
 from .runner import RunController, RunState
@@ -29,6 +32,10 @@ from .visualization import CYTOSCAPE_STYLESHEET, format_reward_label, reward_mac
 
 
 IMPORTED_RM_VALUE = "imported"
+
+_OUTPUT_SUFFIX = ".rm"
+_DEFAULT_OUTPUT_STEM = "reward-machine"
+_UNSAFE_OUTPUT_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 _EXPORT_CLIENT_SCRIPT = """
 function (n_clicks) {
@@ -73,7 +80,7 @@ def create_app() -> Dash:
         return (
             markdown,
             f"Loaded {environment_name}; edit the text before generating.",
-            _next_output_filename(environment_name),
+            _available_output_filename(environment_name),
         )
 
     @app.callback(
@@ -92,16 +99,23 @@ def create_app() -> Dash:
         error_class = "field-hint text-[0.76rem] leading-[1.4] text-[#fda4af]"
         if not contents:
             raise PreventUpdate
-        if not filename or not filename.lower().endswith(".rm"):
-            return no_update, "Could not load Reward Machine: choose a .rm file.", error_class
+        if not filename or not filename.lower().endswith((".rm", ".json")):
+            return no_update, "Could not load Reward Machine: choose a .rm or trace .json file.", error_class
         try:
             text = _decode_uploaded_markdown(contents)
-            parse_reward_machine(text)
+            if filename.lower().endswith(".json"):
+                payload = _trace_payload(filename, text)
+            else:
+                parse_reward_machine(text)
+                payload = {"filename": filename, "text": text}
         except (ValueError, UnicodeDecodeError) as error:
             return no_update, f"Could not load Reward Machine: {error}", error_class
+        tasks = payload.get("tasks")
+        count = len(tasks) if isinstance(tasks, list) else 0
+        note = f"Loaded {filename}: {count} task(s) with every pipeline step; select one below."
         return (
-            {"filename": filename, "text": text},
-            f"Loaded {filename}; select it below.",
+            payload,
+            note if count else f"Loaded {filename}; select it below.",
             status_class,
         )
 
@@ -138,6 +152,7 @@ def create_app() -> Dash:
         State({"type": "task-input", "index": ALL}, "value"),
         State("output-filename", "value"),
         State("critic-options", "value"),
+        State("steps-report-toggle", "value"),
         prevent_initial_call=True,
     )
     def start_run(
@@ -148,15 +163,15 @@ def create_app() -> Dash:
         task_values: list[str | None],
         output_filename: str | None,
         critic_options: list[str] | None,
+        steps_report_options: list[str] | None,
     ) -> str:
         if not (markdown or "").strip():
             return "Enter or upload environment Markdown first."
         tasks = tuple((value or "").strip() for value in task_values or [])
         if not tasks or any(not task for task in tasks):
             return "Every task row must contain text."
-        output_name = (output_filename or "").strip()
-        if not output_name:
-            return "Enter a base output filename."
+        submitted_name = (output_filename or "").strip()
+        output_name = _available_output_filename(submitted_name, len(tasks))
         critic_options = critic_options or []
         #if not critic_options:
         #    return "Select at least one critic."
@@ -173,10 +188,16 @@ def create_app() -> Dash:
                 output_filename=output_name,
                 task_critic="task_critic" in critic_options,
                 rm_critic="rm_critic" in critic_options,
+                steps_report=_steps_report_path(output_name, steps_report_options),
             )
         except (RuntimeError, ValueError) as error:
             return f"Could not start run: {error}"
-        return "Run started; progress will appear in the log."
+        if output_name == submitted_name:
+            return "Run started; progress will appear in the log."
+        return (
+            f"Run started as {output_name}; the output name was adjusted automatically "
+            "to the next free file name."
+        )
 
     @app.callback(
         Output("run-status", "children"),
@@ -195,6 +216,7 @@ def create_app() -> Dash:
         Output("output-selector", "disabled"),
         Output("run-steps", "children"),
         Output("task-selection", "data"),
+        Output("steps-report-toggle", "options"),
         Input("poll-interval", "n_intervals"),
         State("output-selector", "value"),
         State({"type": "remove-task", "index": ALL}, "id"),
@@ -222,7 +244,10 @@ def create_app() -> Dash:
         ]
         imported = _imported_reward_machine(imported_data)
         if imported is not None:
-            options.append({"label": f"Imported: {imported['filename']}", "value": IMPORTED_RM_VALUE})
+            options.extend(_imported_options(imported))
+        imported_selected = selected_index == IMPORTED_RM_VALUE or (
+            _imported_task_index(selected_index) is not None
+        )
         generated_count = len(snapshot.output_paths)
         selected_is_generated = (
             isinstance(selected_index, int)
@@ -255,7 +280,7 @@ def create_app() -> Dash:
         imported_triggered = trigger == "imported-reward-machine"
         if imported is not None and imported_triggered:
             selected = IMPORTED_RM_VALUE
-        elif selected_is_generated or (selected_index == IMPORTED_RM_VALUE and imported is not None):
+        elif selected_is_generated or (imported_selected and imported is not None):
             selected = selected_index
         elif imported is not None:
             selected = IMPORTED_RM_VALUE
@@ -303,51 +328,71 @@ def create_app() -> Dash:
             not bool(options),
             render_steps(snapshot.tasks, task_selected),
             next_selection,
+            [{"label": " Step report (.md)", "value": "steps_report", "disabled": active}],
         )
 
     @app.callback(
         Output("result-summary", "children"),
-        Output("result-text", "value"),
+        Output("result-tabs", "children"),
         Output("rm-graph", "elements"),
         Output("graph-export-name", "data"),
         Output("graph-export-button", "disabled"),
         Input("output-selector", "value"),
         Input("imported-reward-machine", "data"),
+        Input("run-status", "children"),
     )
     def render_selected_result(
         selected_index: int | str | None,
         imported_data: dict[str, str] | None = None,
-    ) -> tuple[str, str, list, str | None, bool]:
+        _run_status: str | None = None,
+    ) -> tuple[str, list, list, str | None, bool]:
         if selected_index is None:
-            return "No completed output selected.", "", [], None, True
-        if selected_index == IMPORTED_RM_VALUE:
+            return "No completed output selected.", result_tabs({}), [], None, True
+        task_index = _imported_task_index(selected_index)
+        if selected_index == IMPORTED_RM_VALUE or task_index is not None:
             imported = _imported_reward_machine(imported_data)
-            if imported is None:
-                return "No imported Reward Machine selected.", "", [], None, True
+            task = _imported_task(imported, task_index)
+            if imported is None or task is None:
+                return "No imported Reward Machine selected.", result_tabs({}), [], None, True
+            raw_steps = dict(task["steps"])
+            steps = {
+                step: raw_steps[step.value]
+                for step in STEP_OUTPUT_ORDER
+                if isinstance(raw_steps.get(step.value), str)
+            }
+            machine_text = str(steps.get(PipelineStep.REWARD_MACHINE) or imported["text"])
             try:
-                reward_machine = parse_reward_machine(imported["text"])
+                reward_machine = parse_reward_machine(machine_text)
             except ValueError as error:
-                return f"Could not render imported Reward Machine: {error}", "", [], None, True
+                message = f"Could not render imported Reward Machine: {error}"
+                return message, result_tabs({}), [], None, True
             elements = reward_machine_to_elements(reward_machine)
-            return (
-                f"Imported: {imported['filename']}",
-                imported["text"],
-                elements,
-                Path(imported["filename"]).stem,
-                not elements,
-            )
+            name = str(task["reward_machine"]) or str(imported["filename"])
+            label = str(task["task"])
+            summary = f"Imported: {imported['filename']}" + (f" | {label}" if label else "")
+            return summary, result_tabs(steps), elements, Path(name).stem, not elements
         snapshot = controller.snapshot()
+        if not snapshot.results:
+            return "No completed output selected.", result_tabs({}), [], None, True
         if (
             not isinstance(selected_index, int)
             or isinstance(selected_index, bool)
             or not 0 <= selected_index < len(snapshot.results)
         ):
-            return "No completed output selected.", "", [], None, True
+            # Nothing selected yet, so show the newest completed output.
+            selected_index = len(snapshot.results) - 1
         result = snapshot.results[selected_index]
         output_path = snapshot.output_paths[selected_index]
-        summary = f"{output_path} | {result.proposal.task}"
         elements = reward_machine_to_elements(result.reward_machine)
-        return summary, result.text, elements, output_path.stem, not elements
+        steps = dict(snapshot.step_outputs[selected_index])
+        steps.setdefault(PipelineStep.REWARD_MACHINE, result.text)
+        return (
+            f"{output_path} | {result.proposal.task}",
+            result_tabs(steps),
+            elements,
+            output_path.stem,
+            not elements,
+        )
 
     @app.callback(
         Output("graph-transition-pin", "data"),
@@ -407,7 +452,7 @@ def create_app() -> Dash:
     def toggle_graph_focus(
         _n_clicks: int | None,
         focused: bool | None,
-    ) -> tuple[bool, str, str, str, str, str, bool]:
+    ) -> tuple[bool, str, str, str, str, list, bool]:
         focused = not bool(focused)
         if focused:
             return (
@@ -416,7 +461,7 @@ def create_app() -> Dash:
                 "hidden",
                 "hidden",
                 FOCUS_OUTPUT_REGION_CLASS,
-                "Exit focus",
+                [_section_icon("minimize", boxed=False), "Exit focus"],
                 True,
             )
         return (
@@ -425,7 +470,7 @@ def create_app() -> Dash:
             INPUT_REGION_CLASS,
             RUN_SIDEBAR_CLASS,
             OUTPUT_REGION_CLASS,
-            "Focus graph",
+            [_section_icon("focus", boxed=False), "Focus graph"],
             False,
         )
 
@@ -544,15 +589,71 @@ def _decode_uploaded_markdown(contents: str) -> str:
     return base64.b64decode(encoded, validate=True).decode("utf-8")
 
 
-def _imported_reward_machine(data: object) -> dict[str, str] | None:
-    """Return a well-shaped imported Reward Machine payload, if present."""
+def _trace_payload(filename: str, text: str) -> dict[str, object]:
+    """Read one uploaded trace file into the payload the output selector lists."""
+    tasks = load_step_trace(text)
+    machine = str(tasks[0]["steps"].get(PipelineStep.REWARD_MACHINE.value, ""))
+    parse_reward_machine(machine)
+    return {"filename": filename, "text": machine, "tasks": tasks}
+
+
+def _imported_task_index(value: object) -> int | None:
+    """Return the trace task index of an imported selection, or None for a plain RM."""
+    if not isinstance(value, str) or not value.startswith(f"{IMPORTED_RM_VALUE}:"):
+        return None
+    try:
+        return int(value.split(":", 1)[1])
+    except ValueError:
+        return None
+
+
+def _imported_options(imported: dict[str, object]) -> list[dict[str, object]]:
+    """List one selector entry per trace task, or one entry for a bare Reward Machine."""
+    filename = str(imported["filename"])
+    tasks = imported.get("tasks")
+    if not isinstance(tasks, list) or len(tasks) < 2:
+        return [{"label": f"Imported: {filename}", "value": IMPORTED_RM_VALUE}]
+    return [
+        {
+            "label": f"Imported: {filename} · task {index + 1}/{len(tasks)}",
+            "value": f"{IMPORTED_RM_VALUE}:{index}",
+        }
+        for index in range(len(tasks))
+    ]
+
+
+def _imported_task(
+    imported: dict[str, object] | None,
+    index: int | None,
+) -> dict[str, object] | None:
+    """Return the selected trace task, or a bare Reward Machine as a one-step task."""
+    if imported is None:
+        return None
+    tasks = imported.get("tasks")
+    if isinstance(tasks, list) and tasks:
+        position = 0 if index is None else index
+        if 0 <= position < len(tasks) and isinstance(tasks[position], dict):
+            return tasks[position]
+        return None
+    if index is not None:
+        return None
+    return {
+        "task": "",
+        "attempt": 1,
+        "reward_machine": "",
+        "steps": {PipelineStep.REWARD_MACHINE.value: imported["text"]},
+    }
+
+
+def _imported_reward_machine(data: object) -> dict[str, object] | None:
+    """Return a well-shaped imported payload, if present."""
     if not isinstance(data, dict):
         return None
     filename = data.get("filename")
     text = data.get("text")
     if not isinstance(filename, str) or not isinstance(text, str):
         return None
-    return {"filename": filename, "text": text}
+    return {"filename": filename, "text": text, "tasks": data.get("tasks")}
 
 
 def _resolve_environment_filename(
@@ -603,6 +704,16 @@ def _export_positions(raw: object) -> dict | None:
     return positions
 
 
+def _steps_report_path(
+    output_name: str,
+    options: list[str] | None,
+) -> Path | None:
+    """Return the step report path when the sidebar toggle is on."""
+    if not options or "steps_report" not in options:
+        return None
+    return Configuration.REPORT_PATH / f"{_output_stem(output_name)}-steps.md"
+
+
 def _export_filename(name: object) -> str:
     """Name the export after the selected output, sanitized for filesystems."""
     if isinstance(name, str):
@@ -612,18 +723,60 @@ def _export_filename(name: object) -> str:
     return "reward-machine.svg"
 
 
-def _next_output_filename(environment_filename: str) -> str:
-    """Return the first available RM name based on an uploaded environment file."""
-    stem = Path(environment_filename).stem or "reward-machine"
-    base_name = f"{stem}.rm"
-    output_dir = Configuration.OUTPUT_PATH
-    if not (output_dir / base_name).exists():
-        return base_name
+def _output_stem(name: str | None) -> str:
+    """Reduce a submitted output name to a filesystem-safe stem.
 
-    suffix_pattern = re.compile(rf"^{re.escape(stem)}-(\d+)\.rm$")
-    suffixes = (
-        int(match.group(1))
-        for path in output_dir.iterdir()
-        if (match := suffix_pattern.fullmatch(path.name))
+    Directories, repeated ``.rm`` fragments, and unsupported characters are
+    removed so a name the user typed can be repaired instead of rejected.
+    """
+    candidate = PurePosixPath(str(name or "").replace("\\", "/")).name.strip()
+    while candidate.lower().endswith(_OUTPUT_SUFFIX):
+        candidate = candidate[: -len(_OUTPUT_SUFFIX)]
+    path = Path(candidate)
+    stem = path.stem if path.suffix else candidate
+    stem = _UNSAFE_OUTPUT_NAME.sub("-", stem).strip("-._")
+    return stem or _DEFAULT_OUTPUT_STEM
+
+
+def _existing_output_names() -> set[str]:
+    """Return the file names already written to the shared output folder."""
+    output_dir = Configuration.RM_PATH
+    if not output_dir.exists():
+        return set()
+    return {path.name for path in output_dir.iterdir()}
+
+
+def _is_output_name_free(candidate: str, task_count: int, existing: set[str]) -> bool:
+    """Return whether the name and every file this run writes are unused."""
+    derived = derive_output_names(Path(candidate), task_count)
+    return candidate not in existing and all(name.name not in existing for name in derived)
+
+
+def _available_output_filename(name: str | None, task_count: int = 1) -> str:
+    """Return an unused RM name derived from a submitted or uploaded name.
+
+    A name that is already valid is returned unchanged. Anything else is
+    repaired: unsupported characters are replaced, then the shared ``-NNN``
+    counter continues from the highest number already on disk, so a run can
+    start without the user editing the field by hand.
+    """
+    stem = _output_stem(name)
+    existing = _existing_output_names()
+    if _is_output_name_free(f"{stem}{_OUTPUT_SUFFIX}", task_count, existing):
+        return f"{stem}{_OUTPUT_SUFFIX}"
+
+    numbered = re.compile(rf"^{re.escape(stem)}-(\d+){re.escape(_OUTPUT_SUFFIX)}$")
+    highest = max(
+        (
+            int(match.group(1))
+            for existing_name in existing
+            if (match := numbered.fullmatch(existing_name))
+        ),
+        default=0,
     )
-    return f"{stem}-{max(suffixes, default=0) + 1:03d}.rm"
+    number = highest + 1
+    while not _is_output_name_free(
+        f"{stem}-{number:03d}{_OUTPUT_SUFFIX}", task_count, existing
+    ):
+        number += 1
+    return f"{stem}-{number:03d}{_OUTPUT_SUFFIX}"

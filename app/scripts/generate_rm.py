@@ -32,6 +32,7 @@ from src.utils import (
     setup_environment_and_engine,
     derive_output_paths,
     save_results,
+    attach_step_trace,
 )
 
 # ============================================================================
@@ -47,7 +48,7 @@ def generate_rm(
     write_outputs: bool = True,
 ) -> int:
     """Propose, review, compile, and write one RM per task."""
-    hooks = hooks or GenerationHooks()
+    hooks = attach_step_trace(CONFIG, hooks or GenerationHooks())
     progress = Progress(hooks, CONFIG.LOGS_PATH)
     try:
         if progress.log_path is not None:
@@ -58,6 +59,7 @@ def generate_rm(
 
     except (ProposalValidationError, RetryableEngineError, ImmediateEngineError) as error:
         progress(f"Generation failed: {error}")
+        hooks.notify_failure(str(error))
         return 1
     except Exception as error:
         progress(f"Generation failed unexpectedly: {error}")
@@ -135,8 +137,10 @@ def _run_pipeline(
             break
 
         if result is None:
+            last_failure = history[-1]
             raise RetryableEngineError(
-                f"Task {task_index + 1} was not accepted within 3 attempts"
+                f"Task {task_index + 1} was not accepted within 3 attempts. "
+                f"Last {last_failure['source']} feedback: {last_failure['feedback']}"
             )
         accepted.append(result)
 

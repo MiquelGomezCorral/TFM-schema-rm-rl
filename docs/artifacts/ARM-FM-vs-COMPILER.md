@@ -731,3 +731,6 @@ by attempt count: run 3 task 4 cost 316 s in a single attempt, while run 3 task 
   compilation, not caching.
 - Every artifact is written once and never overwritten; a run directory must be moved aside
   before re-executing it.
+- The full step-by-step pipeline output — validated clauses, task-critic verdict, LTLf formulas,
+  MONA DFA, and the compiled machine — is in `COMPILER-STEPS-with-critics.md` and
+  `COMPILER-STEPS-without-critics.md`, one file per critic setting.

@@ -14,6 +14,7 @@ from src.utils import (
     GenerationHooks,
     PipelineStep,
     ProgressEvent,
+    StepArtifact,
     StepState,
 )
 
@@ -81,6 +82,7 @@ class RunSnapshot:
     logs: tuple[str, ...]
     results: tuple[CompilationResult, ...]
     output_paths: tuple[Path, ...]
+    step_outputs: tuple[dict[PipelineStep, object], ...] = ()
     error: str | None = None
     tasks: tuple[TaskSnapshot, ...] = ()
     active_task_index: int | None = None
@@ -106,6 +108,7 @@ class _RunRequest:
     output_filename: str
     task_critic: bool
     rm_critic: bool
+    steps_report: Path | None = None
 
 
 class RunController:
@@ -118,6 +121,7 @@ class RunController:
         self._results: tuple[CompilationResult, ...] = ()
         self._output_paths: tuple[Path, ...] = ()
         self._error: str | None = None
+        self._step_outputs: dict[int, dict[PipelineStep, object]] = {}
         self._tasks: tuple[TaskSnapshot, ...] = ()
         self._active_task_index: int | None = None
         self._log_path: Path | None = None
@@ -132,6 +136,10 @@ class RunController:
                 logs=tuple(self._logs),
                 results=tuple(self._results),
                 output_paths=tuple(self._output_paths),
+                step_outputs=tuple(
+                    dict(self._step_outputs.get(index, {}))
+                    for index in range(len(self._output_paths))
+                ),
                 error=self._error,
                 tasks=tuple(self._tasks),
                 active_task_index=self._active_task_index,
@@ -147,6 +155,7 @@ class RunController:
         environment_filename: str | None = None,
         task_critic: bool = True,
         rm_critic: bool = True,
+        steps_report: Path | None = None,
     ) -> None:
         """Start one run using submitted Markdown and UI values."""
         # if not task_critic and not rm_critic:
@@ -158,6 +167,7 @@ class RunController:
             output_filename=output_filename,
             task_critic=task_critic,
             rm_critic=rm_critic,
+            steps_report=steps_report,
         )
         with self._lock:
             if self._status is RunState.RUNNING or (
@@ -170,6 +180,7 @@ class RunController:
             self._results = ()
             self._output_paths = ()
             self._error = None
+            self._step_outputs = {}
             self._tasks = tuple(
                 _initial_task(index, task, task_critic, rm_critic)
                 for index, task in enumerate(request.tasks)
@@ -197,12 +208,17 @@ class RunController:
                     output=Path(request.output_filename),
                     task_critic=request.task_critic,
                     rm_critic=request.rm_critic,
+                    steps_report=request.steps_report,
                 )
+                # Keep the trace next to this run's outputs.
+                CONFIG.trace_dir = CONFIG.TRACE_PATH
                 hooks = GenerationHooks(
                     progress=self._record_progress,
                     event=self._record_event,
+                    artifact=self._record_step_output,
                     run_started=self._record_log_path,
                     completion=self._retain_results,
+                    failure=self._record_failure,
                 )
                 return_code = generate_rm(CONFIG, hooks=hooks)
             with self._lock:
@@ -210,7 +226,8 @@ class RunController:
                     self._status = RunState.COMPLETED
                 else:
                     self._status = RunState.FAILED
-                    self._error = f"Generation exited with code {return_code}."
+                    if self._error is None:
+                        self._error = f"Generation exited with code {return_code}."
         except Exception as error:
             with self._lock:
                 self._status = RunState.FAILED
@@ -219,6 +236,10 @@ class RunController:
     def _record_progress(self, message: str) -> None:
         with self._lock:
             self._append_log(message)
+
+    def _record_failure(self, message: str) -> None:
+        with self._lock:
+            self._error = message
 
     def _record_event(self, event: ProgressEvent) -> None:
         with self._lock:
@@ -269,6 +290,13 @@ class RunController:
         with self._lock:
             self._results = tuple(results)
             self._output_paths = tuple(output_paths)
+
+    def _record_step_output(self, artifact: StepArtifact) -> None:
+        """Keep the newest value per step, so retries end on the accepted attempt."""
+        with self._lock:
+            if not 0 <= artifact.task_index < len(self._tasks):
+                return
+            self._step_outputs.setdefault(artifact.task_index, {})[artifact.step] = artifact.value
 
     def _append_log(self, message: str) -> None:
         self._logs.append(str(message))

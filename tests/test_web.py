@@ -1,15 +1,81 @@
+import json
 import re
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+from unittest.mock import patch
+from xml.etree import ElementTree
 
+from scripts.render_rm import render_structure_svg
+
+from src.config import Configuration
+from src.engines import GenericEngine, ImmediateEngineError
+from src.models import EnvironmentDescription
 from src.web.components import create_layout, render_steps
 from src.web.runner import RunController, RunState, StepSnapshot, TaskSnapshot
 from src.utils import PipelineStep, ProgressEvent, StepState
-from src.compiler.reward_machine import RewardMachineStructure
+from src.compiler.reward_machine import RewardMachineStructure, Transition
+from src.web.visualization import CYTOSCAPE_STYLESHEET, reward_machine_to_elements
 
 
 class WebTests(unittest.TestCase):
+    def test_failed_run_exposes_generator_critic_and_provider_reasons(self):
+        environment_markdown = (
+            "# Demo\n## Propositions\n- `done`: Completion event\n- `next`: Next event"
+        )
+        environment = EnvironmentDescription.from_markdown(environment_markdown)
+        dfa = {
+            "states": ("0", "1"), "initial_state": "0",
+            "accepting_states": ("1",), "alphabet": ("done",),
+            "transitions": {
+                ("0", "!done"): "0", ("0", "done"): "1", ("1", "true"): "1",
+            },
+        }
+        for failure, expected, calls in (
+            ("generator", "Last generator feedback: Precedence requires priority 'soft' or 'hard'", 3),
+            ("task_critic", "Last task critic feedback: Rejected task interpretation", 6),
+            ("rm_critic", "Last RM critic feedback: Rejected reward machine", 9),
+            ("provider", "Experiment provider is unavailable", 0),
+        ):
+            with self.subTest(failure=failure), TemporaryDirectory() as directory:
+                requests = []
+
+                def request(_model, _system, _user, _schema, name):
+                    requests.append(name)
+                    if name == "declare_proposal":
+                        return json.dumps({"clauses": [{
+                            "normalized_clause": "Finish",
+                            "pattern": "Precedence" if failure == "generator" else "Existence",
+                            "propositions": ["done", "next"] if failure == "generator" else ["done"],
+                            "priority": "none",
+                        }]})
+                    return json.dumps({
+                        "accepted": name != failure,
+                        "feedback": "Rejected task interpretation" if name == "task_critic"
+                        else "Rejected reward machine",
+                    })
+
+                engine = GenericEngine(environment, "test-model", "test-provider", request)
+                controller = RunController()
+                with (
+                    patch.object(Configuration, "LOGS_PATH", Path(directory) / "logs"),
+                    patch.object(Configuration, "OUTPUT_PATH", Path(directory) / "outputs"),
+                    patch("scripts.generate_rm.setup_environment_and_engine",
+                          return_value=(environment, engine),
+                          side_effect=ImmediateEngineError(expected) if failure == "provider" else None),
+                    patch("scripts.generate_rm.compile_dfas", return_value=(dfa,)),
+                ):
+                    controller.start(environment_markdown, ["Finish"], "failed.rm")
+                    controller._worker.join(timeout=5)
+                    self.assertFalse(controller._worker.is_alive())
+                snapshot = controller.snapshot()
+                self.assertEqual(snapshot.status, RunState.FAILED)
+                self.assertIn(expected, snapshot.error)
+                self.assertEqual(len(requests), calls)
+                self.assertIn(expected, snapshot.log_path.read_text(encoding="utf-8"))
+                self.assertEqual(list((Path(directory) / "outputs").glob("*.rm")), [])
+
     def test_component_and_css_classes_stay_in_sync(self):
         root = Path(__file__).parents[1]
         tailwind_source = (root / "app/src/web/tailwind.css").read_text()
@@ -26,7 +92,7 @@ class WebTests(unittest.TestCase):
         )
         self.assertEqual(
             {name for name in custom_classes if not name.startswith("dash-")},
-            {"critic-options", "graph-canvas"},
+            {"critic-options", "graph-canvas", "outputs-options", "run-tab"},
         )
 
         pending = [create_layout()]
@@ -51,8 +117,8 @@ class WebTests(unittest.TestCase):
         self.assertNotIn("decline-button", layout)
         self.assertEqual({state.value for state in RunState}, {"idle", "running", "completed", "failed"})
 
-    def test_graph_keeps_a_gentle_live_cola_layout(self):
-        layout = create_layout()
+    def test_graph_starts_with_the_standalone_renderer_layout(self):
+        layout = create_layout(CYTOSCAPE_STYLESHEET)
         pending = [layout]
         graph = None
         while pending:
@@ -66,8 +132,41 @@ class WebTests(unittest.TestCase):
             elif hasattr(children, "children"):
                 pending.append(children)
         self.assertIsNotNone(graph)
-        self.assertTrue(graph.layout["infinite"])
-        self.assertFalse(graph.layout["fit"])
+        self.assertEqual(graph.layout["name"], "preset")
+        self.assertTrue(graph.layout["fit"])
+        self.assertTrue(graph.userPanningEnabled)
+        self.assertTrue(graph.userZoomingEnabled)
+
+        machine = RewardMachineStructure(
+            states=(0, 1, 2, 3), initial_state=0, final_state=3,
+            rejecting_states=(1,), transitions=(
+                Transition(0, 1, ("!a", "b"), 0),
+                Transition(0, 2, ("a", "!b"), 0),
+                Transition(2, 3, ("b",), 1.1),
+            ),
+        )
+        graph.elements = reward_machine_to_elements(machine)
+        points = {
+            element["data"]["label"]: (element["position"]["x"], element["position"]["y"])
+            for element in graph.elements if "source" not in element["data"]
+        }
+        self.assertLess(points["u0"][1], points["u1"][1])
+        self.assertEqual(points["u1"][1], points["u2"][1])
+        self.assertLess(points["u2"][1], points["u3"][1])
+        self.assertLess(points["u1"][0], points["u0"][0])
+        self.assertLess(points["u0"][0], points["u2"][0])
+        self.assertEqual(points["u0"][0], points["u3"][0])
+
+        svg = ElementTree.fromstring(render_structure_svg(machine))
+        rendered = {
+            text.text: (float(text.attrib["x"]), float(text.attrib["y"]))
+            for text in svg.findall("{http://www.w3.org/2000/svg}g/{http://www.w3.org/2000/svg}text")
+        }
+        for state, (x, y) in points.items():
+            self.assertEqual(
+                (x - points["u0"][0], y - points["u0"][1]),
+                (rendered[state][0] - rendered["u0"][0], rendered[state][1] - rendered["u0"][1]),
+            )
 
     def test_poll_locks_inputs_and_critics_while_running_and_keeps_results(self):
         from src.web.application import create_app
@@ -87,11 +186,13 @@ class WebTests(unittest.TestCase):
             reward_machine=RewardMachineStructure((0,), 0, 0, (), ()),
         ),)
         controller._output_paths = (Path("out.rm"),)
+        controller._step_outputs = {0: {PipelineStep.REWARD_MACHINE: "rm"}}
         result_key = next(key for key in app.callback_map if "result-summary.children" in key)
         render = app.callback_map[result_key]["callback"].__wrapped__
-        summary, text, elements, export_name, export_disabled = render(0)
+        summary, tabs, elements, export_name, export_disabled = render(0)
         self.assertIn("out.rm", summary)
-        self.assertEqual(text, "rm")
+        self.assertEqual([tab.value for tab in tabs], ["reward_machine"])
+        self.assertIn("rm", str(tabs[0].children))
         self.assertTrue(elements)
         self.assertEqual(export_name, "out")
         self.assertFalse(export_disabled)

@@ -1,7 +1,12 @@
 """Reusable Dash layout factories for the local Reward Machine UI."""
 
+from collections.abc import Mapping
+
 from dash import dcc, html
 
+from src.utils import PipelineStep, STEP_OUTPUT_ORDER, render_step_text
+
+from .highlight import highlight_step
 from .runner import STEP_ORDER, StepState, TaskSnapshot
 
 
@@ -53,13 +58,89 @@ SECTION_ICON_CLASS = (
     "section-number grid h-[1.65rem] w-[1.65rem] flex-none place-items-center "
     "rounded-[0.45rem] border border-border-strong bg-[rgb(56_189_248_/_8%)] text-accent"
 )
+SECTION_ICON_SIZE_CLASS = "size-[0.95rem]"
+TOOLBAR_ICON_SIZE_CLASS = "size-[0.9rem]"
 GRAPH_TOOLBAR_BUTTON_CLASS = (
-    "inline-flex min-h-[2.15rem] shrink-0 cursor-pointer items-center justify-center "
+    "inline-flex min-h-[2.15rem] shrink-0 cursor-pointer items-center justify-center gap-1.5 "
     "rounded-[0.45rem] border border-border-strong bg-surface-hover px-2.5 text-[0.72rem] "
     "font-bold text-muted transition duration-150 ease-out hover:border-accent hover:text-accent "
     "focus-visible:outline-3 focus-visible:outline-offset-2 "
     "focus-visible:outline-[rgba(56,189,248,0.35)]"
 )
+
+
+RESULT_TAB_CLASS = "result-tab border-b border-border px-2 py-2 text-[0.76rem] font-bold text-muted"
+RESULT_TAB_SELECTED_CLASS = "result-tab-selected border-accent text-accent"
+RESULT_TAB_STYLE = {"backgroundColor": "#101a2b", "color": "#a7b7ce", "padding": "8px"}
+RESULT_TAB_SELECTED_STYLE = {"backgroundColor": "#17243a", "color": "#38bdf8", "padding": "8px"}
+STEP_OUTPUT_CLASS = (
+    "step-output m-0 max-h-[26rem] overflow-auto whitespace-pre-wrap rounded-[0.55rem] "
+    "border border-border bg-[#0c1626] p-3 font-mono text-[0.76rem] leading-[1.5] text-muted "
+    "[scrollbar-color:var(--color-border-strong)_transparent]"
+)
+STEP_TAB_LABELS = {
+    PipelineStep.GENERATE: "Clauses",
+    PipelineStep.LTLF: "LTLf",
+    PipelineStep.DFA: "DFA",
+    PipelineStep.REWARD_MACHINE: "Reward Machine",
+    PipelineStep.TASK_CRITIC: "Task critic",
+    PipelineStep.RM_CRITIC: "RM critic",
+}
+
+
+def _step_tab(step: PipelineStep, bodies: Mapping[PipelineStep, str]) -> dcc.Tab:
+    """Build one read-only output tab whose content holds every step body."""
+    return dcc.Tab(
+        label=STEP_TAB_LABELS[step],
+        value=step.value,
+        className=RESULT_TAB_CLASS,
+        selected_className=RESULT_TAB_SELECTED_CLASS,
+        style=RESULT_TAB_STYLE,
+        selected_style=RESULT_TAB_SELECTED_STYLE,
+        children=_step_bodies(bodies, visible=step),
+    )
+
+
+def _step_bodies(
+    bodies: Mapping[PipelineStep, str],
+    visible: PipelineStep,
+) -> html.Div:
+    """Stack every step body in one grid cell so the panel keeps the tallest height.
+
+    Only the selected body is painted; the others stay in the layout, which is what
+    stops the panel from resizing when the reader switches tabs.
+    """
+    return html.Div(
+        [
+            html.Pre(
+                highlight_step(step, body),
+                className=(
+                    f"{STEP_OUTPUT_CLASS} [grid-area:1/1]"
+                    + ("" if step is visible else " invisible")
+                ),
+            )
+            for step, body in bodies.items()
+        ],
+        className="step-bodies grid min-w-0",
+    )
+
+
+def result_tabs(step_outputs: Mapping[PipelineStep, object]) -> list[dcc.Tab]:
+    """Build one tab per captured pipeline step, Reward Machine included.
+
+    Retries overwrite earlier attempts, so every tab shows the version that passed
+    the enabled critics. Steps that never ran, such as disabled critics, are left
+    out, and the Reward Machine tab is selected by default. The placeholder tab
+    keeps the strip valid while no output is selected.
+    """
+    bodies = {
+        step: render_step_text(step, step_outputs[step])
+        for step in STEP_OUTPUT_ORDER
+        if step in step_outputs
+    }
+    if not bodies:
+        bodies = {PipelineStep.REWARD_MACHINE: "No output selected."}
+    return [_step_tab(step, bodies) for step in bodies]
 
 
 def _icon(name: str, class_name: str) -> html.Span:
@@ -75,9 +156,16 @@ def _icon(name: str, class_name: str) -> html.Span:
     )
 
 
-def _section_icon(name: str) -> html.Span:
-    """Render a boxed section icon with the shared panel treatment."""
-    return html.Span(_icon(name, "size-[0.95rem]"), className=SECTION_ICON_CLASS)
+def _section_icon(name: str, *, boxed: bool = True) -> html.Span:
+    """Render a section icon.
+
+    Boxed icons keep the shared panel treatment used next to section headings.
+    Pass ``boxed=False`` for the bare icon when the container already draws its
+    own border or background, such as the graph toolbar buttons.
+    """
+    if not boxed:
+        return _icon(name, TOOLBAR_ICON_SIZE_CLASS)
+    return html.Span(_icon(name, SECTION_ICON_SIZE_CLASS), className=SECTION_ICON_CLASS)
 
 
 STEP_LABELS = {
@@ -528,6 +616,29 @@ def output_controls() -> html.Aside:
                     "border-border-strong bg-surface-raised px-3 pb-3 pt-[0.65rem] text-text"
                 ),
             ),
+            html.Fieldset(
+                [
+                    html.Legend(
+                        "Outputs",
+                        className=(
+                            "outputs-legend px-[0.35rem] text-[0.7rem] font-[750] "
+                            "uppercase tracking-[0.06em] text-muted"
+                        ),
+                    ),
+                    dcc.Checklist(
+                        id="steps-report-toggle",
+                        options=[
+                            {"label": " Step report (.md)", "value": "steps_report"},
+                        ],
+                        value=["steps_report"],
+                        className="outputs-options grid gap-[0.45rem] !text-text",
+                    ),
+                ],
+                className=(
+                    "outputs-controls m-0 min-w-0 rounded-[0.55rem] border "
+                    "border-border-strong bg-surface-raised px-3 pb-3 pt-[0.65rem] text-text"
+                ),
+            ),
             html.Div(
                 id="run-feedback",
                 className="field-hint text-[0.76rem] leading-[1.4] text-muted",
@@ -637,11 +748,11 @@ def result_panel() -> html.Section:
                         children=html.Div(
                             [
                                 _icon("upload", "upload-icon size-[1.05rem]"),
-                                html.Span("Choose an .rm file or drop it here"),
+                                html.Span("Choose an .rm or trace .json file"),
                             ],
                             className="upload-content flex items-center justify-center gap-2",
                         ),
-                        accept=".rm,text/plain",
+                        accept=".rm,.json,text/plain",
                         multiple=False,
                         disabled=False,
                         className=(
@@ -697,21 +808,19 @@ def result_panel() -> html.Section:
             html.Label(
                 [
                     html.Span(
-                        "Serialized Reward Machine",
+                        "Pipeline outputs",
                         className="field-label text-[0.7rem] font-[750] uppercase tracking-[0.06em] text-muted",
                     ),
-                    dcc.Textarea(
-                        id="result-text",
-                        value="",
-                        readOnly=True,
-                        className=(
-                            "result-text block min-h-[24rem] w-full flex-1 resize-y "
-                            "whitespace-pre border border-border-strong !border-border-strong "
-                            "!bg-surface-raised px-3 py-[0.7rem] font-mono text-[0.8rem] "
-                            "leading-[1.5] !text-text outline-0 transition duration-150 "
-                            "ease-out focus-visible:outline-3 focus-visible:outline-offset-2 "
-                            "focus-visible:outline-[rgba(56,189,248,0.35)]"
-                        ),
+                    dcc.Tabs(
+                        id="result-tabs",
+                        value=PipelineStep.REWARD_MACHINE.value,
+                        className="result-tabs flex-1",
+                        children=[
+                            _step_tab(
+                                PipelineStep.REWARD_MACHINE,
+                                {PipelineStep.REWARD_MACHINE: "No output selected."},
+                            ),
+                        ],
                     ),
                 ],
                 className="field flex min-w-0 flex-col gap-[0.35rem]",
@@ -745,14 +854,14 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                     html.Div(
                         [
                             html.Button(
-                                "Focus graph",
+                                [_section_icon("focus", boxed=False), "Focus graph"],
                                 id="graph-focus-toggle",
                                 n_clicks=0,
                                 className=f"graph-focus-toggle {GRAPH_TOOLBAR_BUTTON_CLASS}",
                                 **{"aria-label": "Focus graph", "aria-pressed": False},
                             ),
                             html.Button(
-                                "Export SVG",
+                                [_section_icon("download", boxed=False), "Export SVG"],
                                 id="graph-export-button",
                                 n_clicks=0,
                                 disabled=True,
@@ -880,12 +989,9 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                         id="rm-graph",
                         elements=[],
                         layout={
-                            "name": "cola",
-                            "fit": False,
-                            "infinite": False,
-                            "nodeSpacing": 16,
-                            "edgeLength": 130,
-                            "avoidOverlap": True,
+                            "name": "preset",
+                            "fit": True,
+                            "padding": 60,
                         },
                         stylesheet=stylesheet or [],
                         responsive=True,
