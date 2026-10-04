@@ -4,7 +4,7 @@ import os
 import unittest
 import json
 import subprocess
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from src.engines import (
     AntigravityEngine,
@@ -60,6 +60,8 @@ class EngineTests(unittest.TestCase):
             api_key="opencode-key",
             base_url="https://example.test/v1",
             max_retries=0,
+            # The adapter adds a per-request session header.
+            default_headers={"x-opencode-session": ANY},
         )
 
     @patch("src.engines.provider_engines.subprocess.run")
