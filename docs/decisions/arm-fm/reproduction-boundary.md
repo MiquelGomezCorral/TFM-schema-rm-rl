@@ -40,6 +40,21 @@ semantic rather than byte-for-byte.
 - Finish generation before training or evaluation. Load saved labeling functions once per
   environment and execute them in the same Python process, with isolated episode-local
   memory; Docker and a separate labeling execution backend are not required.
+- Compiler generation optionally produces MiniGrid labeling functions through the shared
+  bounded generation/validation loop, using compiler-specific context and role engines.
+  Baseline prompts, model resolution, and generation behavior remain unchanged.
+- Compiler node embeddings optionally use a configured local llama-server endpoint and
+  the existing embedding settings/cache/bundle interfaces. Input defaults to exactly each
+  node description. An explicit context prefix is a separate recorded experiment; effective
+  text and resolved model/extraction settings identify cache entries.
+- Local embedding requests contain one node's effective text at a time. Fixed single-input
+  requests keep a text-keyed cache independent of other nodes' batch composition; the local
+  preflight measured small vector differences between single and multi-text requests.
+  Validate cached and returned vectors before use, including finite values, consistent
+  dimensions, nonzero norm, and node coverage.
+- Store compiler embeddings under configured `MODELS_PATH/state_embeddings`, with per-task
+  artifacts and a shared cache. The tested local `nomic-embed-text` model is a reconstruction
+  choice; it does not recover the paper's unpublished training embedding extraction.
 - Let native Tianshou policies, collectors, replay buffers, trainers, and algorithm state
   dictionaries own learning and checkpoint state. Keep only the RM observation integration
   and the narrow SAC scheduling adaptation needed for the paper's critic-every-update and
@@ -93,6 +108,9 @@ without introducing another learner framework.
 - Shared in-process predicate loading, isolated episode memory, and one RM update per
   environment step are implemented in `app/src/arm_fm/runtime.py`; focused runtime contracts
   are checked in `tests/test_arm_fm.py`.
+- Compiler artifact finalization shares `app/src/arm_fm/generation.py`; local HTTP
+  embeddings share the settings/cache owners in `app/src/arm_fm/evaluation.py`.
+  Artifact paths and optional enablement belong to `app/src/config/config.py`.
 - Native Tianshou learning, replay, checkpoint restoration, and SAC scheduling are owned by
   `app/src/arm_fm/training.py`, with focused readiness checks in `tests/test_arm_fm.py`.
 - Baseline-first integration, context boundaries, deferred experiments, and complete frozen

@@ -33,8 +33,24 @@ tasks, while keeping the generator and critic responsibilities stable.
   occurrence fails. Soft ordering permits those completions while preferring the
   requested order. `ExistenceTwo` requires two distinct time points.
 - In compiler mode, the task critic reviews semantic fidelity and proposition grounding before compilation;
-  the independent RM critic reviews only the serialized compiled machine. Both return a
+  the independent RM critic reviews the serialized compiled machine with its generated
+  state descriptions as explanatory context. Both return a
   strict acceptance decision and nonempty feedback, never corrected artifacts.
+- A separate compiler state-description request runs after RM construction and before the
+  RM critic. Its system prompt defines the inputs and tagging rules; its user prompt supplies
+  the environment, original task, all validated clauses, compiled RM, rejecting-state metadata,
+  and ordered node identifiers. It returns one JSON list of nonempty strings in node order,
+  with 1–4 sentences describing each state's progress and remaining objectives.
+- Description generation uses the configured provider and generator model. Malformed descriptions
+  and transient provider failures permit at most three tagging requests against the same
+  compiled candidate; exhaustion stops the run without regenerating that candidate.
+  An RM-critic rejection follows the existing bounded proposal retry loop, with fresh
+  descriptions for the next candidate. Disabling critics does not disable tagging.
+- Descriptions remain separate from RM topology, rewards, and text. They distinguish
+  successful completion from irreversible rejection, preserve conjunctive requirements,
+  and follow the machine's event memory and fallback semantics. The RM critic uses them
+  to understand state intent, but grounds its verdict in the task, environment, and actual
+  transitions rather than treating generated prose as proof or extra requirements.
 - Compiler critics use paper-inspired checklists adapted to deterministic compilation.
   The task critic checks logic, grounding, completeness, compactness, and format;
   the RM critic also checks event coverage and reward safety using
@@ -51,7 +67,14 @@ tasks, while keeping the generator and critic responsibilities stable.
   of a critic's verdict.
 - In compiler mode, each task has at most three generator attempts. Each critic may be disabled;
   disabling both prints a warning and accepts the compiler's first result. Enabled critics use the
-  configured provider and model.
+  configured provider and critic model.
+- Compiler model selection is role-specific: one generator model writes clauses and state
+  descriptions; a different critic model reviews both the clauses and the compiled RM.
+  Create the generator engine and, when either critic is enabled, the critic engine once
+  per run, sharing the loaded environment and selected provider. OpenCode compiler runs
+  read `OPENCODE_MODEL_GENERATOR` and `OPENCODE_MODEL_CRITIC` for these roles.
+  Missing critic configuration must not silently reuse the generator model. ARM-FM baseline
+  model selection and prompts remain unchanged.
 - Compiler generator and critic responses use the same provider-neutral structured-output
   contract regardless of the selected LLM provider.
 - Antigravity is supported through its local `agy` CLI and cached Google account
@@ -81,6 +104,16 @@ tasks, while keeping the generator and critic responsibilities stable.
   existing format.
 - Both modes follow [RM execution](rm-execution.md) and produce separate task bundles for
   shared-policy training and evaluation.
+- Compiler mode optionally generates MiniGrid labeling functions after RM acceptance.
+  The expert receives the environment, task, validated clauses, accepted RM and node
+  descriptions, declared propositions, explicit runtime API, and bounded feedback.
+  It uses the generator engine; its associated critic uses the critic engine when
+  `rm_critic` is enabled. AST validation always applies. At most three labeling
+  candidates are tried against the same accepted RM; exhaustion stops the run.
+- Compiler bundles reuse accepted compiler labeling and node descriptions without
+  additional generation calls. Persist predicates in `labeling.py` before execution;
+  tests select a saved file and use the existing fixed predicate loader. No aggregate
+  generated callable or dynamic import swapping is required.
 
 ## Protected invariants
 
@@ -99,8 +132,13 @@ tasks, while keeping the generator and critic responsibilities stable.
   per step. They must not invent states, transitions, or extra task requirements to
   justify rejection; correct conjunctive decomposition and zero-reward progress rows
   are valid compiler output.
-- In compiler mode, the configured provider and model are used consistently for generation and both
-  critics; provider failures do not silently fall back to another provider.
+- In compiler mode, all generation steps use the generator model and all enabled critics
+  use the critic model. When either critic is enabled, the resolved model identifiers must
+  differ; an identical pair is a configuration error. Provider failures do not silently
+  fall back to another provider or exchange the models' roles.
+- Every completed compiler result carries a description for each declared node in the
+  same identity order used at the shared text boundary. Descriptions cannot change
+  compiled topology, rewards, accepting states, or rejecting states.
 - Antigravity requests use the selected `schema-rm-provider` agent, must not bypass tool
   permissions, and must reject any tool or subagent execution. AGY's advertised tool list
   is not treated as execution because primary sessions always expose the CLI registry.
@@ -135,6 +173,18 @@ prompts. Explicit execution rules and worked examples address observed false
 rejections; prompt compliance remains model-dependent and is not proof of semantic
 correctness.
 
+The clause generator does not know the final composed RM. A separate tagging request
+can describe that actual machine and give the RM critic more context. This adds provider
+cost and latency; shape validation does not prove the descriptions' semantic correctness.
+ARM-FM baseline generation remains unchanged. Compiler bundles reuse these accepted
+descriptions rather than asking another model to describe the machine again.
+
+Using a different model for criticism provides another model's judgment instead of asking
+the generating model to review its own artifacts. Different identifiers do not guarantee
+independent reasoning or correct verdicts; grounded critic prompts and deterministic
+validation remain necessary. The two critics share one model because their roles differ
+through their inputs and prompts, while both challenge the same generator.
+
 ## Enforcement
 
 - Task and clause boundaries are implemented in `app/src/compiler/pipeline.py` and
@@ -146,8 +196,23 @@ correctness.
   `app/src/engines/structured.py`.
 - Bounded refinement, strict critic schemas, and atomic batch output are implemented in
   `app/scripts/generate_rm.py` and `app/src/engines/generic_engine.py`.
+- Compiler description-list validation belongs to `app/src/engines/structured.py`;
+  request context, stage ordering, and bounded retries belong to the shared engine
+  and compiler orchestration. Focused engine and orchestration checks enforce these
+  contracts; description fidelity remains Review-only.
 - Provider adapters in `app/src/engines/provider_engines.py` enforce the selected
   provider/model contract, selected Antigravity agent, and no-execution boundary.
+- Role model resolution belongs to `Configuration.generator_model` and
+  `Configuration.critic_model` in `app/src/config/config.py`. Compiler setup in
+  `app/src/utils/generation.py` validates enabled critics' required, distinct model
+  identifiers and creates the role engines once; `app/scripts/generate_rm.py` routes
+  compiler generation and criticism. Shared labeling retries live in
+  `app/src/arm_fm/generation.py`; compiler prompt contracts remain under `compiler-rm`.
+  Focused configuration, orchestration, and web checks in
+  `tests/test_generation.py`, `tests/test_pipeline_orchestration.py`, and
+  `tests/test_web.py` enforce precedence, baseline isolation, routing, reuse, and
+  critic disabling. Different model identifiers cannot establish independent reasoning
+  or semantic correctness; those remain Review-only.
 - Reusable prompt contracts and rendering functions are packaged under `app/src/prompts`,
   while deterministic compiler ownership remains in `app/src/compiler/`.
 - Compiler critic instructions and worked examples live in
