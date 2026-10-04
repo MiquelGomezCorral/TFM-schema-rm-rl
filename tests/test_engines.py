@@ -32,6 +32,7 @@ class EngineTests(unittest.TestCase):
             "propose_task",
             "propose",
             "review_task",
+            "describe_states",
             "review_reward_machine",
             "_request_structured",
         }
@@ -248,6 +249,61 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(
             [request[-1] for request in requests],
             ["declare_proposal", "task_critic", "rm_critic"],
+        )
+
+    def test_generic_engine_tags_states_and_includes_them_in_the_rm_review(self) -> None:
+        requests = []
+        reviews = []
+
+        def request(model, system, user, schema, name):
+            reviews.append(user)
+            return '{"accepted":true,"feedback":"ok"}'
+
+        def request_text(model, system, user):
+            requests.append(user)
+            return '["first progress", "task satisfied"]'
+
+        engine = GenericEngine(ENVIRONMENT, "test-model", "Test", request, request_text)
+
+        descriptions = engine.describe_states(
+            "Finish", '[{"pattern": "Existence"}]', "REWARD_MACHINE:", "[]", ("u0", "u1")
+        )
+        review = engine.review_reward_machine(
+            "Finish", "REWARD_MACHINE:", '{"u0": "first progress"}'
+        )
+
+        self.assertEqual(descriptions, ("first progress", "task satisfied"))
+        self.assertTrue(review.accepted)
+        self.assertIn('["u0", "u1"]', requests[0])
+        self.assertIn("### Reward Machine", requests[0])
+        self.assertIn('"pattern": "Existence"', requests[0])
+        self.assertIn('{"u0": "first progress"}', reviews[0])
+
+    def test_state_tagger_output_shapes_are_validated(self) -> None:
+        nodes = ("u0", "u1")
+
+        def engine_for(response):
+            return GenericEngine(
+                ENVIRONMENT, "test-model", "Test", lambda *args: "", lambda *args: response
+            )
+
+        rejected = (
+            "not json",
+            '{"u0": "a", "u1": "b"}',
+            '["only one"]',
+            '["ok", 3]',
+            '["ok", "   "]',
+            '```json\n["ok", "two"]\n```',
+        )
+        for response in rejected:
+            with self.subTest(response=response):
+                with self.assertRaises(RetryableEngineError):
+                    engine_for(response).describe_states("Finish", "[]", "m", "[]", nodes)
+
+        accepted = engine_for('[" first ", "second"]')
+        self.assertEqual(
+            accepted.describe_states("Finish", "[]", "m", "[]", nodes),
+            ("first", "second"),
         )
 
     @patch("src.engines.provider_engines.subprocess.run")

@@ -35,6 +35,17 @@ class GenerationTests(unittest.TestCase):
         self.assertFalse(CONFIG.rm_critic)
         self.assertIn("Both critics", warning.call_args.args[0])
 
+    def test_embeddings_configuration_defaults_and_validation(self):
+        CONFIG = Configuration(embeddings=True)
+        self.assertEqual(CONFIG.EMBEDDINGS_PATH, Path(CONFIG.MODELS_PATH) / "state_embeddings")
+        self.assertEqual(CONFIG.embedding_endpoint, "http://127.0.0.1:8934/v1/embeddings")
+        self.assertEqual(CONFIG.embedding_context, "")
+        with self.assertRaisesRegex(ValueError, "http"):
+            Configuration(embeddings=True, embedding_endpoint="127.0.0.1:8934")
+        with self.assertRaisesRegex(ValueError, "timeout"):
+            Configuration(embeddings=True, embedding_timeout=0)
+        self.assertEqual(Configuration().embedding_timeout, 30.0)
+
     def test_antigravity_configuration_selects_antigravity_engine(self):
         environment = EnvironmentDescription.from_markdown(
             "# Demo\n## Propositions\n- `done`: Finished",
@@ -49,6 +60,94 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(CONFIG.llm_provider, "antigravity")
         self.assertEqual(CONFIG.model, "gemini-model")
         self.assertIsInstance(get_engine(CONFIG, environment), AntigravityEngine)
+
+    def test_role_model_precedence_and_baseline_isolation(self):
+        with patch.dict(
+            os.environ,
+            {
+                "LLM_PROVIDER": "opencode",
+                "OPENCODE_MODEL": "provider-model",
+                "OPENCODE_MODEL_GENERATOR": "role-generator # comment",
+                "OPENCODE_MODEL_CRITIC": "role-critic",
+            },
+            clear=True,
+        ):
+            CONFIG = Configuration()
+        self.assertEqual(CONFIG.model, "provider-model")
+        self.assertEqual(CONFIG.generator_model, "role-generator")
+        self.assertEqual(CONFIG.critic_model, "role-critic")
+
+        with patch.dict(
+            os.environ,
+            {
+                "LLM_PROVIDER": "opencode",
+                "OPENCODE_MODEL": "provider-model",
+                "OPENCODE_MODEL_GENERATOR": "role-generator",
+            },
+            clear=True,
+        ):
+            CONFIG = Configuration(model="explicit-model")
+        self.assertEqual(CONFIG.model, "explicit-model")
+        self.assertEqual(CONFIG.generator_model, "explicit-model")
+        self.assertIsNone(CONFIG.critic_model)
+
+        with patch.dict(
+            os.environ,
+            {"LLM_PROVIDER": "opencode", "OPENCODE_MODEL": "provider-model"},
+            clear=True,
+        ):
+            CONFIG = Configuration(
+                model="explicit-model", generator_model="explicit-generator"
+            )
+        self.assertEqual(CONFIG.model, "explicit-model")
+        self.assertEqual(CONFIG.generator_model, "explicit-generator")
+
+        with patch.dict(
+            os.environ,
+            {"LLM_PROVIDER": "opencode", "OPENCODE_MODEL": "provider-model"},
+            clear=True,
+        ):
+            CONFIG = Configuration()
+        self.assertEqual(CONFIG.model, "provider-model")
+        self.assertEqual(CONFIG.generator_model, "provider-model")
+        self.assertIsNone(CONFIG.critic_model)
+
+        # Baseline selection happens before cleaning, so a comment-only or blank
+        # explicit model stays empty instead of falling through to the provider env.
+        with patch.dict(
+            os.environ,
+            {
+                "LLM_PROVIDER": "opencode",
+                "OPENCODE_MODEL": "provider-model",
+                "OPENCODE_MODEL_GENERATOR": "role-generator",
+            },
+            clear=True,
+        ):
+            for raw_model in ("   ", "# comment"):
+                with self.subTest(raw_model=raw_model):
+                    CONFIG = Configuration(model=raw_model)
+                    self.assertEqual(CONFIG.model, "")
+                    self.assertEqual(CONFIG.generator_model, "role-generator")
+
+    def test_engine_factory_model_override_keeps_baseline_default(self):
+        environment = EnvironmentDescription.from_markdown(
+            "# Demo\n## Propositions\n- `done`: Finished",
+            source="demo.md",
+        )
+        with patch.dict(
+            os.environ,
+            {
+                "LLM_PROVIDER": "opencode",
+                "OPENCODE_MODEL": "baseline-model",
+                "OPENCODE_API_KEY": "test",
+            },
+            clear=True,
+        ):
+            CONFIG = Configuration()
+            baseline_engine = get_engine(CONFIG, environment)
+            override_engine = get_engine(CONFIG, environment, "override-model")
+        self.assertEqual(baseline_engine.model, "baseline-model")
+        self.assertEqual(override_engine.model, "override-model")
 
     def test_progress_has_total_and_step_once(self):
         messages = []

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from src.arm_fm import (
     ALGORITHM_COMPONENTS,
@@ -25,6 +25,7 @@ from src.arm_fm import (
     adapt_compilation_result,
     aggregate_judgments,
     algorithm_for_domain,
+    embed_descriptions_over_http,
     frozen_evaluate,
     generate_baseline_bundle,
     generate_compiler_bundle,
@@ -40,7 +41,30 @@ from src.arm_fm import (
     train_larm,
 )
 from src.models import EnvironmentDescription
+from src.arm_fm.generation import StageAttempt, build_compiler_bundle
 from src.arm_fm.training import _observation_array
+
+
+class _EmbeddingResponse:
+    """Minimal context manager standing in for one live HTTP embedding response."""
+
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self) -> "_EmbeddingResponse":
+        return self
+
+    def __exit__(self, *_args: object) -> bool:
+        return False
+
+
+def _embedding_response(vector: list[float], model: str) -> bytes:
+    return json.dumps(
+        {"data": [{"index": 0, "embedding": vector}], "model": model}
+    ).encode("utf-8")
 
 
 def machine(*transitions, propositions=("has_key", "lost_key")):
@@ -319,6 +343,7 @@ REWARD_FUNCTION:
                 propositions=(SimpleNamespace(identifier="done", description="finished"),),
             ),
             proposal=SimpleNamespace(task="finish"), text="numeric",
+            state_descriptions=(), labeling_source="", labeling_attempts=(),
             reward_machine=SimpleNamespace(
                 states=(0, 1), initial_state=0, final_state=1,
                 transitions=(SimpleNamespace(source=0, destination=1, condition=("done",), reward=1.0),),
@@ -333,6 +358,70 @@ REWARD_FUNCTION:
         self.assertEqual(loaded.manifest.stage_status["reward_machine"], "complete")
         self.assertEqual(loaded.manifest.stage_status["labeling"], "failed")
         self.assertTrue(loaded.manifest.errors)
+
+    @staticmethod
+    def _compiler_result(**overrides):
+        """Minimal accepted compiler result shared by compiler-bundle checks."""
+        values = dict(
+            environment=SimpleNamespace(
+                source=Path("demo.md"), markdown="# Demo\n## Propositions\n- `done`: Finished",
+                proposition_ids=("done",),
+                propositions=(SimpleNamespace(identifier="done", description="finished"),),
+            ),
+            proposal=SimpleNamespace(task="finish"), text="numeric",
+            state_descriptions=("start", "finished"),
+            labeling_source="def done(env):\n    return True\n",
+            labeling_attempts=({
+                "stage": "labeling", "attempt": 1, "status": "accepted",
+                "candidate": "def done(env):\n    return True\n",
+                "feedback": "", "error": "", "raw_response": "",
+            },),
+            reward_machine=SimpleNamespace(
+                states=(0, 1), initial_state=0, final_state=1,
+                transitions=(SimpleNamespace(source=0, destination=1, condition=("done",), reward=1.0),),
+            ),
+        )
+        values.update(overrides)
+        return SimpleNamespace(**values)
+
+    def test_compiler_bundle_reuses_accepted_labeling_and_descriptions(self):
+        compiled = self._compiler_result(
+            embeddings={"u0": [1.0, 0.0], "u1": [0.0, 1.0]},
+            embedding_settings={"model": "nomic-embed-text", "dimension": 2},
+        )
+        api_description = "env.grid.get(x, y), env.agent_pos"
+        bundle = generate_compiler_bundle((compiled,), None, api_description=api_description)[0]
+        self.assertEqual(bundle.labeling_source, compiled.labeling_source)
+        self.assertEqual(bundle.state_descriptions, {"u0": "start", "u1": "finished"})
+        self.assertEqual(bundle.manifest.stage_status["labeling"], "complete")
+        self.assertEqual(bundle.manifest.stage_status["descriptions"], "complete")
+        self.assertEqual(bundle.embeddings, compiled.embeddings)
+        self.assertEqual(bundle.manifest.stage_status["embeddings"], "complete")
+        self.assertEqual(bundle.manifest.effective_settings["embedding"], compiled.embedding_settings)
+        self.assertEqual(bundle.validate(require_complete=True), [])
+        self.assertEqual([item["stage"] for item in bundle.attempts], ["compiler", "labeling"])
+        self.assertEqual(bundle.manifest.api_definitions["labeling"], api_description)
+        self.assertEqual(bundle.manifest.generation["labeling_api"], api_description)
+        self.assertTrue(bundle.manifest.generation["first_attempt"])
+        self.assertEqual(bundle.manifest.generation["attempt_classification"], "first_attempt")
+
+    def test_compiler_bundle_requires_engine_for_missing_fields(self):
+        compiled = self._compiler_result(
+            state_descriptions=(), labeling_source="", labeling_attempts=(),
+        )
+        with self.assertRaisesRegex(RuntimeError, "no engine was supplied"):
+            generate_compiler_bundle((compiled,), None)
+
+    def test_stage_status_rejects_complete_for_rejected_attempts(self):
+        compiled = self._compiler_result()
+        bundle = build_compiler_bundle(
+            compiled,
+            api_description="env.grid.get(x, y)",
+            labeling_source=compiled.labeling_source,
+            state_descriptions={"u0": "start", "u1": "finished"},
+            attempts=(StageAttempt("labeling", 1, "rejected", compiled.labeling_source),),
+        )
+        self.assertEqual(bundle.manifest.stage_status["labeling"], "failed")
 
     def test_failed_generation_persists_inspectable_bundle(self):
         environment = EnvironmentDescription.from_markdown(
@@ -551,6 +640,75 @@ class ArmFMEvaluationTests(unittest.TestCase):
         cache.put("state", first, [1, 2])
         self.assertEqual(cache.get("state", first), [1, 2])
         self.assertIsNone(cache.get("state", second))
+
+    def test_http_embedding_is_single_text_and_cached(self):
+        from src.arm_fm import evaluation
+
+        settings = EmbeddingSettings(
+            model="nomic-embed-text", model_revision="sha256:abc",
+            tokenizer_revision="sha256:abc",
+            extraction="server-mean-pooling-last-layer", device="remote",
+        )
+        requests: list[dict] = []
+
+        def fake_urlopen(request, timeout=None):
+            requests.append({"body": json.loads(request.data.decode()), "timeout": timeout})
+            return _EmbeddingResponse(_embedding_response([3.0, 4.0], "nomic-embed-text"))
+
+        cache = EmbeddingCache()
+        with patch.object(evaluation, "urlopen", side_effect=fake_urlopen):
+            first = embed_descriptions_over_http(
+                {"u0": "start"}, endpoint="http://127.0.0.1:1/v1/embeddings",
+                settings=settings, cache=cache, timeout=5.0,
+            )
+            second = embed_descriptions_over_http(
+                {"u0": "start"}, endpoint="http://127.0.0.1:1/v1/embeddings",
+                settings=settings, cache=cache, timeout=5.0,
+            )
+        self.assertEqual(requests[0]["body"], {"input": "start", "model": "nomic-embed-text"})
+        self.assertEqual(requests[0]["timeout"], 5.0)
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(first, {"u0": [0.6, 0.8]})
+        self.assertEqual(second, first)
+
+    def test_http_embedding_rejects_bad_cached_per_served_vectors(self):
+        from src.arm_fm import evaluation
+
+        settings = EmbeddingSettings(
+            model="m", model_revision="r", tokenizer_revision="r",
+            extraction="server-mean-pooling-last-layer", device="remote",
+        )
+        for bad, pattern in (([0.0, 0.0], "zero vector"), ([True, 0.5], "only numbers")):
+            cache = EmbeddingCache()
+            cache.values[cache.key("text", settings)] = bad
+            with patch.object(evaluation, "urlopen", side_effect=AssertionError("no request")):
+                with self.assertRaisesRegex(RuntimeError, pattern):
+                    embed_descriptions_over_http(
+                        {"u0": "text"}, endpoint="http://127.0.0.1:1/v1/embeddings",
+                        settings=settings, cache=cache,
+                    )
+
+    def test_http_embedding_rejects_substituted_model_and_missing_index(self):
+        from src.arm_fm import evaluation
+
+        settings = EmbeddingSettings(
+            model="nomic-embed-text", model_revision="r", tokenizer_revision="r",
+            extraction="server-mean-pooling-last-layer", device="remote",
+        )
+        served = (
+            ({"data": [{"embedding": [1.0, 0.0]}], "model": "nomic-embed-text"}, "index 0"),
+            ({"data": [{"index": 0, "embedding": [1.0, 0.0]}], "model": "other"}, "does not match"),
+        )
+        for payload, pattern in served:
+            with patch.object(
+                evaluation, "urlopen",
+                return_value=_EmbeddingResponse(json.dumps(payload).encode()),
+            ):
+                with self.assertRaisesRegex(RuntimeError, pattern):
+                    embed_descriptions_over_http(
+                        {"u0": "text"}, endpoint="http://127.0.0.1:1/v1/embeddings",
+                        settings=settings, cache=EmbeddingCache(),
+                    )
 
     def test_judge_context_is_complete_method_blind_and_uses_stored_evidence(self):
         bundle = ArtifactBundle(

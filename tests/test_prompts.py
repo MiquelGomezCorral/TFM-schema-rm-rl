@@ -49,8 +49,10 @@ class PromptTests(unittest.TestCase):
             environment_markdown=environment,
             task="task",
             candidate_rm='{"s": "0"}',
+            state_descriptions='{"u0": "start"}',
         )
         self.assertIn('{"s": "0"}', rm_reviewer)
+        self.assertIn('{"u0": "start"}', rm_reviewer)
 
         with self.assertRaises(ValueError):
             read_user_prompt("creator", environment_markdown="", task="task")
@@ -61,6 +63,62 @@ class PromptTests(unittest.TestCase):
                 task="task",
                 candidate_proposal="",
             )
+
+    def test_tagger_prompt_renders_the_ordered_tagging_context(self) -> None:
+        clauses = '[{"normalized_clause": "finish", "pattern": "Existence"}]'
+        tagger = read_user_prompt(
+            "rm_tagger",
+            environment_markdown="# Demo",
+            task="Finish",
+            clauses_json=clauses,
+            reward_machine="REWARD_MACHINE:\nSTATES: u0, u1",
+            rejecting_states_json="[]",
+            nodes_json='["u0", "u1"]',
+        )
+
+        self.assertTrue(read_prompt("rm_tagger"))
+        self.assertIn("Finish", tagger)
+        self.assertIn(clauses, tagger)
+        self.assertIn('["u0", "u1"]', tagger)
+        self.assertNotIn("${", tagger)
+        with self.assertRaises(ValueError):
+            read_user_prompt(
+                "rm_tagger",
+                environment_markdown="",
+                task="Finish",
+                clauses_json=clauses,
+                reward_machine="REWARD_MACHINE:",
+                rejecting_states_json="[]",
+                nodes_json='["u0"]',
+            )
+
+    def test_compiler_labeling_prompts_render_grounded_context(self) -> None:
+        values = dict(
+            environment_markdown="# Demo\n## Propositions\n- `done`: Finished",
+            task="Finish after starting",
+            clauses_json='[{"normalized_clause": "finish"}]',
+            reward_machine="REWARD_MACHINE:\nSTATES: u0, u1",
+            state_descriptions_json='{"u0": "start", "u1": "done"}',
+            nodes_json='["u0", "u1"]',
+            propositions_json='{"done": "Finished"}',
+            api="env.grid.get(x, y), env.agent_pos",
+        )
+        generator = read_user_prompt("labeling_generator", **values, history="")
+        reviewer = read_user_prompt(
+            "labeling_reviewer", **values, labeling="def done(env):\n    return True\n"
+        )
+
+        self.assertTrue(read_prompt("labeling_generator"))
+        self.assertTrue(read_prompt("labeling_reviewer"))
+        for rendered in (generator, reviewer):
+            self.assertNotIn("${", rendered)
+            self.assertIn("REWARD_MACHINE", rendered)
+            self.assertIn('["u0", "u1"]', rendered)
+            self.assertIn('{"done": "Finished"}', rendered)
+        self.assertIn("None.", generator)
+        self.assertIn("def done(env)", reviewer)
+        with self.assertRaises(ValueError):
+            read_user_prompt("labeling_reviewer", **values, labeling="")
 
     def test_arm_fm_rm_prompt_declares_runtime_guard_syntax(self) -> None:
         prompt = read_arm_fm_prompt("rm_generator")

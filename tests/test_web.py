@@ -56,13 +56,21 @@ class WebTests(unittest.TestCase):
                         else "Rejected reward machine",
                     })
 
-                engine = GenericEngine(environment, "test-model", "test-provider", request)
+                def request_text(_model, _system, _user):
+                    return '["state one", "state two"]'
+
+                generator_engine = GenericEngine(
+                    environment, "test-generator-model", "test-provider", request, request_text
+                )
+                critic_engine = GenericEngine(
+                    environment, "test-critic-model", "test-provider", request, request_text
+                )
                 controller = RunController()
                 with (
                     patch.object(Configuration, "LOGS_PATH", Path(directory) / "logs"),
                     patch.object(Configuration, "OUTPUT_PATH", Path(directory) / "outputs"),
-                    patch("scripts.generate_rm.setup_environment_and_engine",
-                          return_value=(environment, engine),
+                    patch("scripts.generate_rm.setup_environment_and_engines",
+                          return_value=(environment, generator_engine, critic_engine),
                           side_effect=ImmediateEngineError(expected) if failure == "provider" else None),
                     patch("scripts.generate_rm.compile_dfas", return_value=(dfa,)),
                 ):
@@ -113,6 +121,8 @@ class WebTests(unittest.TestCase):
     def test_layout_uses_critic_options_and_no_approval_controls(self):
         layout = str(create_layout())
         self.assertIn("critic-options", layout)
+        self.assertIn("labeling-toggle", layout)
+        self.assertIn("embeddings-toggle", layout)
         self.assertNotIn("approve-button", layout)
         self.assertNotIn("decline-button", layout)
         self.assertEqual({state.value for state in RunState}, {"idle", "running", "completed", "failed"})
@@ -180,19 +190,35 @@ class WebTests(unittest.TestCase):
         active = poll(0, None, [{"index": 0}])
         self.assertTrue(active[3])
         self.assertTrue(all(item["disabled"] for item in active[10]))
+        self.assertTrue(all(item["disabled"] for item in active[-1]))
         controller._status = RunState.COMPLETED
         controller._results = (SimpleNamespace(
             proposal=SimpleNamespace(task="finish"), text="rm",
             reward_machine=RewardMachineStructure((0,), 0, 0, (), ()),
+            bundle_path=Path("out-bundle"),
+            embedding_path=Path("out-embeddings") / "embeddings.json",
+            embedding_settings={"model": "nomic-embed-text", "dimension": 2},
         ),)
         controller._output_paths = (Path("out.rm"),)
-        controller._step_outputs = {0: {PipelineStep.REWARD_MACHINE: "rm"}}
+        controller._step_outputs = {
+            0: {
+                PipelineStep.REWARD_MACHINE: "rm",
+                PipelineStep.STATE_DESCRIPTIONS: {"u0": "start", "u1": "done"},
+            }
+        }
         result_key = next(key for key in app.callback_map if "result-summary.children" in key)
         render = app.callback_map[result_key]["callback"].__wrapped__
         summary, tabs, bodies, elements, export_name, export_disabled = render(0)
         self.assertIn("out.rm", summary)
-        self.assertEqual([tab.value for tab in tabs], ["reward_machine"])
-        self.assertIn("rm", str(bodies))
+        self.assertIn("Bundle: out-bundle", summary)
+        self.assertIn("Embedding: nomic-embed-text dim=2", summary)
+        self.assertIn("Embeddings: out-embeddings", summary)
+        self.assertEqual(
+            [tab.value for tab in tabs], ["reward_machine", "state_descriptions"]
+        )
+        self.assertIn("State descriptions", str(tabs))
+        self.assertIn('"u0"', str(bodies))
+        self.assertIn('"start"', str(bodies))
         self.assertTrue(elements)
         self.assertEqual(export_name, "out")
         self.assertFalse(export_disabled)
@@ -254,7 +280,9 @@ def controller_steps():
         PipelineStep.LTLF,
         PipelineStep.DFA,
         PipelineStep.REWARD_MACHINE,
+        PipelineStep.STATE_DESCRIPTIONS,
         PipelineStep.RM_CRITIC,
+        PipelineStep.LABELING,
     )
 
 
