@@ -1,6 +1,7 @@
 """Shared workflow for provider-backed structured-output engines."""
 
-from collections.abc import Callable
+import json
+from collections.abc import Callable, Sequence
 
 from nl2ltl.engines import Engine
 from pylogics.syntax.base import Formula
@@ -15,6 +16,7 @@ from .structured import (
     critic_schema,
     parse_critic,
     parse_proposal,
+    parse_state_descriptions,
     proposal_schema,
 )
 
@@ -97,8 +99,36 @@ class GenericEngine(Engine):
         )
         return parse_critic(response)
 
-    def review_reward_machine(self, task: str, candidate_rm: str) -> CriticResult:
-        """Review a serialized Reward Machine."""
+    def describe_states(
+        self,
+        task: str,
+        clauses_json: str,
+        candidate_rm: str,
+        rejecting_states_json: str,
+        nodes: Sequence[str],
+    ) -> tuple[str, ...]:
+        """Request one validated description per ordered node identifier."""
+        response_text = self.request_text(
+            read_prompt("rm_tagger"),
+            read_user_prompt(
+                "rm_tagger",
+                environment_markdown=self.environment.markdown,
+                task=task,
+                clauses_json=clauses_json,
+                reward_machine=candidate_rm,
+                rejecting_states_json=rejecting_states_json,
+                nodes_json=json.dumps(list(nodes)),
+            ),
+        )
+        return parse_state_descriptions(response_text, nodes)
+
+    def review_reward_machine(
+        self,
+        task: str,
+        candidate_rm: str,
+        state_descriptions: str = "",
+    ) -> CriticResult:
+        """Review a serialized Reward Machine with its state descriptions as context."""
         response = self._request_structured(
             read_prompt("rm_reviewer"),
             read_user_prompt(
@@ -106,9 +136,41 @@ class GenericEngine(Engine):
                 environment_markdown=self.environment.markdown,
                 task=task,
                 candidate_rm=candidate_rm,
+                state_descriptions=state_descriptions,
             ),
             critic_schema(),
             "rm_critic",
+        )
+        return parse_critic(response)
+
+    def review_labeling(
+        self,
+        task: str,
+        candidate_rm: str,
+        api: str,
+        labeling: str,
+        clauses_json: str,
+        state_descriptions_json: str,
+        nodes_json: str,
+        propositions_json: str,
+    ) -> CriticResult:
+        """Review generated MiniGrid predicates with the compiler's grounded context."""
+        response = self._request_structured(
+            read_prompt("labeling_reviewer"),
+            read_user_prompt(
+                "labeling_reviewer",
+                environment_markdown=self.environment.markdown,
+                task=task,
+                clauses_json=clauses_json,
+                reward_machine=candidate_rm,
+                state_descriptions_json=state_descriptions_json,
+                nodes_json=nodes_json,
+                propositions_json=propositions_json,
+                api=api,
+                labeling=labeling,
+            ),
+            critic_schema(),
+            "labeling_critic",
         )
         return parse_critic(response)
 

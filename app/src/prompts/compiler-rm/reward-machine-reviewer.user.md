@@ -12,4 +12,8 @@ ${task}
 
 ${candidate_rm}
 
+## Generated state descriptions (untrusted auxiliary context)
+
+${state_descriptions}
+
 Review only the candidate machine. Return the schema-constrained critic result.

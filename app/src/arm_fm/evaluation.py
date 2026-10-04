@@ -11,11 +11,14 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from .artifacts import ArtifactBundle, BundleValidationError
 
 
 EMBEDDING_MODEL = "Qwen3-30B-A3B-Instruct-2507"
+SERVER_EMBEDDING_EXTRACTION = "server-mean-pooling-last-layer"
 
 
 @dataclass(frozen=True)
@@ -82,6 +85,128 @@ def embed_state_descriptions(
             cache.put(text, settings, cached)
         result[state] = cached
     return result
+
+
+def effective_embedding_text(context: str, description: str) -> str:
+    """Return the exact text the server and cache see: description, or a context line plus it."""
+    return f"{context}\n{description}" if context else description
+
+
+def embed_descriptions_over_http(
+    descriptions: Mapping[str, str],
+    *,
+    endpoint: str,
+    settings: EmbeddingSettings,
+    cache: EmbeddingCache | None = None,
+    context: str = "",
+    timeout: float = 30.0,
+) -> dict[str, list[float]]:
+    """Embed each state description with one OpenAI-compatible server request.
+
+    ``settings`` carries the server extraction identity for the shared text-keyed
+    cache. A nonempty ``context`` is prefixed to every description as its own line,
+    so the effective text is what both the server and the cache key see. Returned
+    and cached vectors are validated identically; any failure raises ``RuntimeError``
+    naming the failing node, and no other endpoint or model is tried.
+    """
+    cache = cache or EmbeddingCache()
+    vectors: dict[str, list[float]] = {}
+    dimension: int | None = None
+    for state, text in descriptions.items():
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError(f"State description for {state!r} must be nonempty")
+        effective = effective_embedding_text(context, text)
+        vector = cache.get(effective, settings)
+        if vector is None:
+            vector = _http_embedding(effective, endpoint=endpoint, settings=settings, timeout=timeout)
+            if settings.normalize:
+                vector = _normalized(vector)
+            cache.put(effective, settings, vector)
+        else:
+            # Cache entries are stored after normalization, so normalizing again here
+            # would drift the last bits between a miss and a hit.
+            vector = _validated_vector(vector, f"cached embedding for {state!r}")
+        if dimension is None:
+            dimension = len(vector)
+        elif len(vector) != dimension:
+            raise RuntimeError(
+                f"Embedding for {state!r} has dimension {len(vector)}; expected {dimension}"
+            )
+        vectors[state] = vector
+    return vectors
+
+
+def _http_embedding(
+    text: str,
+    *,
+    endpoint: str,
+    settings: EmbeddingSettings,
+    timeout: float,
+) -> list[float]:
+    """Request and validate one single-text vector from the local server."""
+    payload = _request_embedding(endpoint, settings.model, text, timeout)
+    if not isinstance(payload, Mapping):
+        raise RuntimeError("Embedding response must be a JSON object")
+    data = payload.get("data")
+    if not isinstance(data, list) or len(data) != 1:
+        raise RuntimeError("Embedding response must return exactly one vector")
+    item = data[0]
+    if not isinstance(item, Mapping):
+        raise RuntimeError("Embedding response item must be a JSON object")
+    index = item.get("index")
+    if isinstance(index, bool) or not isinstance(index, int) or index != 0:
+        raise RuntimeError("Embedding response must identify its single vector with index 0")
+    served_model = payload.get("model")
+    if served_model != settings.model:
+        raise RuntimeError(
+            f"Embedding response model {served_model!r} does not match the configured "
+            f"{settings.model!r}"
+        )
+    return _validated_vector(item.get("embedding"), "Embedding response vector")
+
+
+def _request_embedding(endpoint: str, model: str, text: str, timeout: float) -> object:
+    """POST one text and return its decoded JSON, without transport fallbacks."""
+    body = json.dumps({"input": text, "model": model}).encode("utf-8")
+    request = Request(endpoint, data=body, headers={"Content-Type": "application/json"})
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except HTTPError as error:
+        raise RuntimeError(
+            f"Embedding request failed with HTTP {error.code}: {_error_detail(error)}"
+        ) from error
+    except (URLError, OSError, ValueError) as error:
+        raise RuntimeError(f"Embedding request failed: {error}") from error
+
+
+def _error_detail(error: HTTPError) -> str:
+    try:
+        return error.read().decode("utf-8", "replace")[:300]
+    except OSError:
+        return "no response body"
+
+
+def _validated_vector(raw: object, where: str) -> list[float]:
+    """Return one finite, nonempty, nonzero float vector; reject anything else."""
+    if not isinstance(raw, (list, tuple)) or not raw:
+        raise RuntimeError(f"{where} must be a nonempty list of numbers")
+    values: list[float] = []
+    for value in raw:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise RuntimeError(f"{where} must contain only numbers")
+        number = float(value)
+        if not math.isfinite(number):
+            raise RuntimeError(f"{where} must contain only finite numbers")
+        values.append(number)
+    if math.sqrt(sum(value * value for value in values)) == 0.0:
+        raise RuntimeError(f"{where} must not be the zero vector")
+    return values
+
+
+def _normalized(values: Sequence[float]) -> list[float]:
+    norm = math.sqrt(sum(value * value for value in values))
+    return [value / norm for value in values]
 
 
 def load_qwen_embedding_model(

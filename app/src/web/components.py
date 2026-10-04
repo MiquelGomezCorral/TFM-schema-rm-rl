@@ -83,6 +83,9 @@ STEP_TAB_LABELS = {
     PipelineStep.LTLF: "LTLf",
     PipelineStep.DFA: "DFA",
     PipelineStep.REWARD_MACHINE: "Reward Machine",
+    PipelineStep.STATE_DESCRIPTIONS: "State descriptions",
+    PipelineStep.LABELING: "Labeling",
+    PipelineStep.EMBEDDINGS: "Embeddings",
     PipelineStep.TASK_CRITIC: "Task critic",
     PipelineStep.RM_CRITIC: "RM critic",
 }
@@ -139,7 +142,7 @@ def result_bodies(
 ) -> list[html.Pre]:
     """Build the stacked bodies of every step, with the selected one painted."""
     bodies = {
-        step: render_step_text(step, step_outputs[step]) for step in _output_steps(step_outputs)
+        step: render_step_text(step, value) for step, value in _output_steps(step_outputs).items()
     }
     return _step_bodies(bodies, selected)
 
@@ -181,7 +184,10 @@ STEP_LABELS = {
     "ltlf": "Build LTLf from DECLARE templates",
     "dfa": "Compile DFA with FL-AT / MONA",
     "reward_machine": "Build Reward Machine",
+    "state_descriptions": "Describe each Reward Machine state",
     "rm_critic": "Reward Machine critic",
+    "labeling": "Generate MiniGrid labeling functions",
+    "embeddings": "Embed each Reward Machine state description",
 }
 STEP_STATUS_CLASSES = {
     StepState.PENDING: "border-border-strong text-muted",
@@ -638,6 +644,22 @@ def output_controls() -> html.Aside:
                             {"label": " Step report (.md)", "value": "steps_report"},
                         ],
                         value=["steps_report"],
+                        className="outputs-options grid gap-[0.45rem] !text-text",
+                    ),
+                    dcc.Checklist(
+                        id="labeling-toggle",
+                        options=[
+                            {"label": " MiniGrid labeling", "value": "labeling"},
+                        ],
+                        value=[],
+                        className="outputs-options grid gap-[0.45rem] !text-text",
+                    ),
+                    dcc.Checklist(
+                        id="embeddings-toggle",
+                        options=[
+                            {"label": " Local state embeddings", "value": "embeddings"},
+                        ],
+                        value=[],
                         className="outputs-options grid gap-[0.45rem] !text-text",
                     ),
                 ],

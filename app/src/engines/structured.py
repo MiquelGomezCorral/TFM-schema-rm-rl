@@ -1,6 +1,7 @@
 """Schemas and validation for structured engine responses."""
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from nl2ltl.declare.base import Template
@@ -9,7 +10,7 @@ from pylogics.syntax.ltl import Atomic
 
 from src.models import EnvironmentDescription, MAX_TASK_CLAUSES, PriorityLevel
 
-from .errors import CriticValidationError, ProposalValidationError
+from .errors import CriticValidationError, ProposalValidationError, RetryableEngineError
 
 
 # ======================================================================================
@@ -131,6 +132,32 @@ def parse_proposal(
             f"{provider_name} returned malformed structured output: {error}"
         ) from error
     return _validate_proposal(output, environment)
+
+
+def parse_state_descriptions(
+    response_text: str,
+    nodes: Sequence[str],
+) -> tuple[str, ...]:
+    """Validate one nonempty description per node from a bare JSON array."""
+    try:
+        output = json.loads(response_text)
+    except (TypeError, json.JSONDecodeError) as error:
+        raise RetryableEngineError(
+            f"State tagger returned malformed JSON: {error}"
+        ) from error
+    if not isinstance(output, list):
+        raise RetryableEngineError("State tagger must return a JSON array of descriptions")
+    if len(output) != len(nodes):
+        raise RetryableEngineError(
+            f"State tagger returned {len(output)} description(s) for {len(nodes)} node(s)"
+        )
+
+    descriptions = []
+    for item in output:
+        if not isinstance(item, str) or not item.strip():
+            raise RetryableEngineError("State descriptions must be nonempty strings")
+        descriptions.append(item.strip())
+    return tuple(descriptions)
 
 
 def responses_text(response) -> str:

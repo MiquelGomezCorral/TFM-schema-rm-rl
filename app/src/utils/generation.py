@@ -91,19 +91,47 @@ def structure_history_text(history: list[dict[str, object]]) -> str:
     return json.dumps(history, sort_keys=True) if history else "None."
 
 
-def setup_environment_and_engine(
+def setup_environment_and_engines(
     CONFIG: Configuration,
     progress: Progress,
-) -> tuple[EnvironmentDescription, GenericEngine]:
-    progress("Setting up the environment and LLM engine.")
+) -> tuple[EnvironmentDescription, GenericEngine, GenericEngine | None]:
+    """Load the environment and create the compiler's role engines for one run.
+
+    The generator engine proposes clauses and state descriptions. The critic
+    engine reviews both artifacts and is None only when both critics are disabled.
+
+    Raises:
+        ValueError: An enabled critic has no critic model, or the resolved
+            generator and critic models are identical.
+    """
+    progress("Setting up the environment and LLM engines.")
     progress(f"Loading environment from {CONFIG.environment}.")
-    progress(f"Using LLM engine for provider '{CONFIG.llm_provider}'.")
+    progress(f"Using LLM provider '{CONFIG.llm_provider}'.")
 
     environment = EnvironmentDescription.from_file(CONFIG.environment)
-    engine = get_engine(CONFIG, environment)
+    generator_engine = get_engine(CONFIG, environment, CONFIG.generator_model)
+    progress(f"Generator engine ready: role=generator model={CONFIG.generator_model}.")
+
+    if not CONFIG.task_critic and not CONFIG.rm_critic:
+        progress("Both critics are disabled; no critic engine created.")
+        return environment, generator_engine, None
+
+    if not CONFIG.critic_model:
+        raise ValueError(
+            "An enabled critic requires a configured critic model; set the "
+            f"{CONFIG.llm_provider} critic model variable or Configuration.critic_model"
+        )
+    if CONFIG.critic_model == CONFIG.generator_model:
+        raise ValueError(
+            "The generator and critic models must differ, both resolved to "
+            f"'{CONFIG.critic_model}'"
+        )
+
+    critic_engine = get_engine(CONFIG, environment, CONFIG.critic_model)
+    progress(f"Critic engine ready: role=critic model={CONFIG.critic_model}.")
 
     progress("Environment and engine setup complete.")
-    return environment, engine
+    return environment, generator_engine, critic_engine
 
 
 def derive_output_names(output: Path, task_count: int) -> tuple[Path, ...]:
@@ -136,13 +164,17 @@ def derive_output_paths(CONFIG: Configuration) -> tuple[Path, ...]:
 def get_engine(
     CONFIG: Configuration,
     environment: EnvironmentDescription,
+    model: str | None = None,
 ) -> GenericEngine:
+    """Create the selected provider's engine, defaulting to the baseline model."""
     engine_types = {
         "openai": OpenAIEngine,
         "opencode": OpenCodeEngine,
         "antigravity": AntigravityEngine,
     }
-    return engine_types[CONFIG.llm_provider](environment, CONFIG.model)
+    return engine_types[CONFIG.llm_provider](
+        environment, model if model is not None else CONFIG.model
+    )
 
 
 def save_results(

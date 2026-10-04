@@ -34,7 +34,10 @@ STEP_ORDER = (
     PipelineStep.LTLF,
     PipelineStep.DFA,
     PipelineStep.REWARD_MACHINE,
+    PipelineStep.STATE_DESCRIPTIONS,
     PipelineStep.RM_CRITIC,
+    PipelineStep.LABELING,
+    PipelineStep.EMBEDDINGS,
 )
 
 
@@ -108,6 +111,8 @@ class _RunRequest:
     output_filename: str
     task_critic: bool
     rm_critic: bool
+    labeling: bool = False
+    embeddings: bool = False
     steps_report: bool = False
 
 
@@ -155,6 +160,8 @@ class RunController:
         environment_filename: str | None = None,
         task_critic: bool = True,
         rm_critic: bool = True,
+        labeling: bool = False,
+        embeddings: bool = False,
         steps_report: bool = False,
     ) -> None:
         """Start one run using submitted Markdown and UI values."""
@@ -167,6 +174,8 @@ class RunController:
             output_filename=output_filename,
             task_critic=task_critic,
             rm_critic=rm_critic,
+            labeling=labeling,
+            embeddings=embeddings,
             steps_report=steps_report,
         )
         with self._lock:
@@ -182,7 +191,7 @@ class RunController:
             self._error = None
             self._step_outputs = {}
             self._tasks = tuple(
-                _initial_task(index, task, task_critic, rm_critic)
+                _initial_task(index, task, task_critic, rm_critic, labeling, embeddings)
                 for index, task in enumerate(request.tasks)
             )
             self._active_task_index = None
@@ -208,6 +217,8 @@ class RunController:
                     output=Path(request.output_filename),
                     task_critic=request.task_critic,
                     rm_critic=request.rm_critic,
+                    labeling=request.labeling,
+                    embeddings=request.embeddings,
                 )
                 # Keep the run's own artifacts next to its outputs.
                 CONFIG.trace_dir = CONFIG.TRACE_PATH
@@ -304,10 +315,19 @@ class RunController:
         self._logs.append(str(message))
 
 
-def _initial_task(index: int, task: str, task_critic: bool, rm_critic: bool) -> TaskSnapshot:
+def _initial_task(
+    index: int,
+    task: str,
+    task_critic: bool,
+    rm_critic: bool,
+    labeling: bool,
+    embeddings: bool,
+) -> TaskSnapshot:
     skipped = {
         PipelineStep.TASK_CRITIC: not task_critic,
         PipelineStep.RM_CRITIC: not rm_critic,
+        PipelineStep.LABELING: not labeling,
+        PipelineStep.EMBEDDINGS: not embeddings,
     }
     return TaskSnapshot(
         index=index,

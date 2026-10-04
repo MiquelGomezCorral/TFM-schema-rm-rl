@@ -21,7 +21,10 @@ class PipelineStep(StrEnum):
     LTLF = "ltlf"
     DFA = "dfa"
     REWARD_MACHINE = "reward_machine"
+    STATE_DESCRIPTIONS = "state_descriptions"
     RM_CRITIC = "rm_critic"
+    LABELING = "labeling"
+    EMBEDDINGS = "embeddings"
 
 
 class StepState(StrEnum):
@@ -243,5 +246,8 @@ def step_label(step: PipelineStep) -> str:
         PipelineStep.LTLF: "Building LTLf",
         PipelineStep.DFA: "Compiling DFA",
         PipelineStep.REWARD_MACHINE: "Building Reward Machine",
+        PipelineStep.STATE_DESCRIPTIONS: "Generating state descriptions",
         PipelineStep.RM_CRITIC: "Reward Machine critic",
+        PipelineStep.LABELING: "Generating MiniGrid labeling",
+        PipelineStep.EMBEDDINGS: "Embedding state descriptions",
     }[step]

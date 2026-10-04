@@ -1,8 +1,9 @@
 """Step traces of one Reward Machine generation run.
 
 Attach :func:`attach_step_trace` to the pipeline's generation hooks and every sub-step
-output (clauses, LTLf, DFA, Reward Machine, critic verdicts) is captured per task and
-written once, in submission order, as ``<output>.json`` under ``Configuration.TRACE_PATH``.
+output (clauses, LTLf, DFA, Reward Machine, state descriptions, critic verdicts) is
+captured per task and written once, in submission order, as ``<output>.json`` under
+``Configuration.TRACE_PATH``.
 A trace reopens in the web panel with all of its steps, so it is the portable form of a
 run; the optional Markdown report is the same data rendered for reading.
 
@@ -30,12 +31,16 @@ from .generation_logging import GenerationHooks, PipelineStep, StepArtifact
 
 TRACE_FORMAT = "schema-rm-trace/1"
 
-# Report order, which is not the pipeline order: both critic verdicts come last.
+# Report order, which is not the pipeline order: both critic verdicts come after the
+# artifact stages.
 STEP_OUTPUT_ORDER = (
     PipelineStep.GENERATE,
     PipelineStep.LTLF,
     PipelineStep.DFA,
     PipelineStep.REWARD_MACHINE,
+    PipelineStep.STATE_DESCRIPTIONS,
+    PipelineStep.LABELING,
+    PipelineStep.EMBEDDINGS,
     PipelineStep.TASK_CRITIC,
     PipelineStep.RM_CRITIC,
 )
@@ -44,6 +49,9 @@ _STEP_TITLES = {
     PipelineStep.LTLF: "LTLf formulas",
     PipelineStep.DFA: "MONA DFA",
     PipelineStep.REWARD_MACHINE: "Compiled Reward Machine",
+    PipelineStep.STATE_DESCRIPTIONS: "State descriptions",
+    PipelineStep.LABELING: "MiniGrid labeling source",
+    PipelineStep.EMBEDDINGS: "State embeddings",
     PipelineStep.TASK_CRITIC: "Task critic verdict",
     PipelineStep.RM_CRITIC: "Reward Machine critic verdict",
 }
@@ -205,7 +213,7 @@ class _StepTraceWriter:
         output_path: Path,
         svg_directory: Path,
     ) -> list[str]:
-        """Render one task heading followed by its six sub-steps."""
+        """Render one task heading followed by its sub-steps."""
         attempt = self._accepted_attempt(task_index)
         lines = [
             f"## Task {task_index + 1} — `{html.escape(str(result.proposal.task))}`",
@@ -236,7 +244,7 @@ class _StepTraceWriter:
         if value is None:
             return [heading, "", _SKIP_NOTE]
 
-        language = "text" if step is PipelineStep.DFA else "json"
+        language = "text" if step in {PipelineStep.DFA, PipelineStep.LABELING} else "json"
         body = render_step_text(step, value)
         return [heading, "", f"```{language}\n{body}\n```"]
 

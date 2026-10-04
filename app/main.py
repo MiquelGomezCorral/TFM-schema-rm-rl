@@ -83,7 +83,7 @@ if __name__ == "__main__":
     )
     generate_parser.add_argument(
         "--model",
-        help="LLM model (defaults to the selected provider's model variable)",
+        help="Compiler generator model (defaults to the selected provider's generator model variable)",
     )
     generate_parser.add_argument(
         "--output",
@@ -104,6 +104,23 @@ if __name__ == "__main__":
     generate_parser.add_argument(
         "--rm-critic", action=argparse.BooleanOptionalAction, default=True,
         help="Enable the Reward Machine critic (default: enabled)",
+    )
+    generate_parser.add_argument(
+        "--labeling", action=argparse.BooleanOptionalAction, default=False,
+        help="Generate MiniGrid labeling functions after RM acceptance (default: disabled)",
+    )
+    generate_parser.add_argument(
+        "--domain",
+        help="Labeling domain used by --labeling (default: minigrid; only MiniGrid/BabyAI supported)",
+    )
+    generate_parser.add_argument(
+        "--embeddings", action=argparse.BooleanOptionalAction, default=False,
+        help="Embed accepted state descriptions through the configured local server (default: disabled)",
+    )
+    generate_parser.add_argument(
+        "--embedding-context",
+        default="",
+        help="Optional context line prefixed to every description before embedding",
     )
     generate_parser.add_argument(
         "--svg",
@@ -147,6 +164,15 @@ if __name__ == "__main__":
     larm_parser.add_argument("--overwrite", action="store_true")
     larm_parser.add_argument("--task-critic", action=argparse.BooleanOptionalAction, default=True)
     larm_parser.add_argument("--rm-critic", action=argparse.BooleanOptionalAction, default=True)
+    larm_parser.add_argument(
+        "--embeddings", action=argparse.BooleanOptionalAction, default=False,
+        help="Embed accepted compiler descriptions through the configured local server (default: disabled)",
+    )
+    larm_parser.add_argument(
+        "--embedding-context",
+        default="",
+        help="Optional context line prefixed to every description before embedding",
+    )
     larm_parser.set_defaults(func=cmd_generate_larm)
 
     embed_parser = subparsers.add_parser("embed-larm", help="Embed validated ARM-FM state descriptions")

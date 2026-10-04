@@ -156,6 +156,8 @@ def create_app() -> Dash:
         State("output-filename", "value"),
         State("critic-options", "value"),
         State("steps-report-toggle", "value"),
+        State("labeling-toggle", "value"),
+        State("embeddings-toggle", "value"),
         prevent_initial_call=True,
     )
     def start_run(
@@ -167,6 +169,8 @@ def create_app() -> Dash:
         output_filename: str | None,
         critic_options: list[str] | None,
         steps_report_options: list[str] | None,
+        labeling_options: list[str] | None,
+        embeddings_options: list[str] | None,
     ) -> str:
         if not (markdown or "").strip():
             return "Enter or upload environment Markdown first."
@@ -191,6 +195,8 @@ def create_app() -> Dash:
                 output_filename=output_name,
                 task_critic="task_critic" in critic_options,
                 rm_critic="rm_critic" in critic_options,
+                labeling=bool(labeling_options and "labeling" in labeling_options),
+                embeddings=bool(embeddings_options and "embeddings" in embeddings_options),
                 steps_report=bool(steps_report_options and "steps_report" in steps_report_options),
             )
         except (RuntimeError, ValueError) as error:
@@ -220,6 +226,8 @@ def create_app() -> Dash:
         Output("run-steps", "children"),
         Output("task-selection", "data"),
         Output("steps-report-toggle", "options"),
+        Output("labeling-toggle", "options"),
+        Output("embeddings-toggle", "options"),
         Input("poll-interval", "n_intervals"),
         State("output-selector", "value"),
         State({"type": "remove-task", "index": ALL}, "id"),
@@ -228,6 +236,7 @@ def create_app() -> Dash:
         Input({"type": "task-dot", "index": ALL}, "n_clicks"),
         State("task-selection", "data"),
         Input("imported-reward-machine", "data"),
+        State("run-status", "children"),
     )
     def poll_run(
         _n_intervals: int,
@@ -238,6 +247,7 @@ def create_app() -> Dash:
         _dot_clicks: list[int | None] | None = None,
         selection_data: dict[str, int | None] | None = None,
         imported_data: dict[str, str] | None = None,
+        previous_status: str | None = None,
     ) -> tuple[object, ...]:
         snapshot = controller.snapshot()
         active = snapshot.status is RunState.RUNNING
@@ -313,9 +323,11 @@ def create_app() -> Dash:
             "last_active": snapshot.active_task_index,
             "run_id": snapshot.run_id,
         }
+        # Only a real status change may wake dependents, or every poll would re-render them.
+        status_changed = status_text != previous_status
         return (
-            status_text,
-            status_class,
+            status_text if status_changed else no_update,
+            status_class if status_changed else no_update,
             log_text,
             active,
             active,
@@ -332,6 +344,8 @@ def create_app() -> Dash:
             render_steps(snapshot.tasks, task_selected),
             next_selection,
             [{"label": " Step report (.md)", "value": "steps_report", "disabled": active}],
+            [{"label": " MiniGrid labeling", "value": "labeling", "disabled": active}],
+            [{"label": " Local state embeddings", "value": "embeddings", "disabled": active}],
         )
 
     @app.callback(
@@ -393,8 +407,18 @@ def create_app() -> Dash:
         steps = dict(snapshot.step_outputs[selected_index])
         steps.setdefault(PipelineStep.REWARD_MACHINE, result.text)
         elements = reward_machine_to_elements(result.reward_machine)
+        bundle_path = result.bundle_path
+        bundle_note = f" | Bundle: {bundle_path}" if bundle_path else ""
+        embedding_note = ""
+        if result.embedding_settings:
+            model = result.embedding_settings.get("model")
+            dimension = result.embedding_settings.get("dimension")
+            embedding_note = f" | Embedding: {model} dim={dimension}"
+        embedding_path_note = (
+            f" | Embeddings: {result.embedding_path}" if result.embedding_path else ""
+        )
         return _panel(
-            f"{output_path} | {result.proposal.task}",
+            f"{output_path} | {result.proposal.task}{bundle_note}{embedding_note}{embedding_path_note}",
             steps,
             step,
             elements,

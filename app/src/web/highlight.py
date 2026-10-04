@@ -33,11 +33,19 @@ _RM_TOKENS = (
     ("arrow", r"->", "text-muted"),
     ("reward", r"-?\d+(?:\.\d+)?$", "text-success"),
 )
+_PYTHON_TOKENS = (
+    ("keyword", r"\b(?:def|return|not|and|or|None|True|False|any|all)\b", "text-[#fda4af]"),
+    ("function", r"\b[A-Za-z_]\w*(?=\()", "text-accent"),
+    ("string", r'"[^"]*"', "text-success"),
+)
 _FORMATS = {
     PipelineStep.GENERATE: _JSON_TOKENS,
     PipelineStep.LTLF: _JSON_TOKENS,
     PipelineStep.DFA: _DFA_TOKENS,
     PipelineStep.REWARD_MACHINE: _RM_TOKENS,
+    PipelineStep.STATE_DESCRIPTIONS: _JSON_TOKENS,
+    PipelineStep.LABELING: _PYTHON_TOKENS,
+    PipelineStep.EMBEDDINGS: _JSON_TOKENS,
     PipelineStep.TASK_CRITIC: _JSON_TOKENS,
     PipelineStep.RM_CRITIC: _JSON_TOKENS,
 }

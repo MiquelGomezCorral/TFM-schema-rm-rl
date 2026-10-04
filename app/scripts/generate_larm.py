@@ -12,11 +12,17 @@ from src.arm_fm import (
     load_bundle,
     load_task_manifest,
 )
+from src.arm_fm.generation import record_bundle_embeddings, record_bundle_role_models
 from src.config import Configuration
 from src.models import EnvironmentDescription
 from src.utils import GenerationHooks, get_engine
 
-from .generate_rm import generate_rm
+from .generate_rm import (
+    embedding_artifact_path,
+    generate_rm,
+    preflight_embedding_artifacts,
+    write_embedding_artifact,
+)
 
 
 def generate_larm(CONFIG: Configuration) -> None:
@@ -26,11 +32,17 @@ def generate_larm(CONFIG: Configuration) -> None:
         return
     if CONFIG.environment is None or CONFIG.bundle is None or len(CONFIG.tasks) != 1:
         raise ValueError("generate-larm requires one task, --environment, and --bundle")
+    if CONFIG.embeddings and CONFIG.mode != "compiler":
+        raise ValueError(
+            "--embeddings is available for compiler bundles; use embed-larm for baseline bundles"
+        )
 
     environment = EnvironmentDescription.from_file(CONFIG.environment)
 
     if CONFIG.mode == "compiler":
         CONFIG.output = CONFIG.output or Path("arm-fm.rm")
+        # Compiler bundles require persisted labeling, so the optional stage is always on.
+        CONFIG.labeling = True
         accepted = []
 
         def capture(results, _paths):
@@ -52,13 +64,22 @@ def generate_larm(CONFIG: Configuration) -> None:
             )
             raise RuntimeError("Compiler generation failed without an accepted result")
 
-        engine = get_engine(CONFIG, environment)
+        # The compiler pipeline already produced accepted labeling and node descriptions;
+        # the adapter reuses them, so no baseline engine or extra provider call is needed.
         bundles = generate_compiler_bundle(
-            tuple(accepted), engine,
+            tuple(accepted), None,
             api_description=labeling_api_for_domain(CONFIG.domain or str(CONFIG.environment)),
             bundle_directory=CONFIG.bundle,
             overwrite=CONFIG.overwrite,
         )
+        record_bundle_role_models(bundles[0], CONFIG)
+        if CONFIG.embeddings:
+            destination = embedding_artifact_path(CONFIG, Path(CONFIG.bundle).name)
+            preflight_embedding_artifacts([destination], overwrite=CONFIG.overwrite)
+            write_embedding_artifact(
+                accepted[0], destination, context=CONFIG.embedding_context
+            )
+            record_bundle_embeddings(bundles[0], accepted[0], destination)
         bundles[0].save(CONFIG.bundle, overwrite=CONFIG.overwrite)
     else:
         engine = get_engine(CONFIG, environment)

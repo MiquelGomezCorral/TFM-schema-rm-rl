@@ -1,7 +1,8 @@
 """Task proposal and deterministic Reward Machine compilation."""
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 
 from nl2ltl.declare.base import Template
 from pylogics.syntax.base import And, Formula, Not
@@ -51,6 +52,14 @@ class CompilationResult:
     dfas: tuple[dict, ...]
     reward_machine: RewardMachineStructure
     text: str
+    state_descriptions: tuple[str, ...] = ()
+    labeling_source: str = ""
+    labeling_attempts: tuple[dict[str, object], ...] = ()
+    embeddings: dict[str, list[float]] = field(default_factory=dict)
+    embedding_settings: dict[str, object] = field(default_factory=dict)
+    embedding_texts: dict[str, str] = field(default_factory=dict)
+    embedding_path: Path | None = None
+    bundle_path: Path | None = None
 
 
 def materialize_proposal(

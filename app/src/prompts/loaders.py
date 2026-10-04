@@ -15,9 +15,12 @@ COMPILER_DIRECTORY = "compiler-rm"
 COMPILER_PROMPTS = {
     "creator": "reward-ltlf-creator",
     "ltlf_reviewer": "reward-ltlf-reviewer",
+    "rm_tagger": "reward-machine-tagger",
     "rm_reviewer": "reward-machine-reviewer",
+    "labeling_generator": "labeling-generator",
+    "labeling_reviewer": "labeling-reviewer",
 }
-COMPILER_OPTIONAL_FIELDS = frozenset({"case_specific", "history"})
+COMPILER_OPTIONAL_FIELDS = frozenset({"case_specific", "history", "state_descriptions"})
 
 ARM_FM_DIRECTORY = "arm_fm"
 ARM_FM_ROLES = frozenset(
@@ -33,7 +36,10 @@ ARM_FM_OPTIONAL_FIELDS = frozenset({"history", "api"})
 
 PROMPT_KINDS = frozenset({"system", "user"})
 
-PromptAgent = Literal["creator", "ltlf_reviewer", "rm_reviewer"]
+PromptAgent = Literal[
+    "creator", "ltlf_reviewer", "rm_tagger", "rm_reviewer",
+    "labeling_generator", "labeling_reviewer",
+]
 PromptKind = Literal["system", "user"]
 
 

@@ -4,11 +4,14 @@ from .artifacts import ArtifactBundle, BundleManifest, BundleValidationError, lo
 from .environments import labeling_api_for_domain, make_environment
 from .evaluation import (
     EMBEDDING_MODEL,
+    SERVER_EMBEDDING_EXTRACTION,
     EmbeddingCache,
     EmbeddingSettings,
     JudgeDecision,
     JudgeSettings,
     aggregate_judgments,
+    effective_embedding_text,
+    embed_descriptions_over_http,
     embed_state_descriptions,
     frozen_evaluate,
     judge_bundle,
