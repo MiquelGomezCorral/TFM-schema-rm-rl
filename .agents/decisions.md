@@ -36,6 +36,9 @@ Record closed decisions here. Do not reopen them unless the user explicitly asks
 - V1 excludes RL training, policy evaluation, schemas, embeddings, and automatic proposition-code generation.
 - Keep focused automated tests for deterministic orchestration, prompt contracts, and web controls;
   live LLM/MONA validation remains a separately approved check.
+- Run, install, and test the project inside the existing `RM_RL_env` Conda environment, which owns
+  the complete pinned dependency set and the editable installs. The repository `.venv` is not an
+  environment owner and stays unused.
 
 ### Local Web UI
 

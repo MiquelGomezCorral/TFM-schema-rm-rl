@@ -24,6 +24,8 @@ Read this file before changing code in this repository.
 ## Project Notes
 
 - Stack: Python 3.13, setuptools, IBM `nl2ltl`, FL-AT, MONA, and OpenAI Structured Outputs.
-- Package manager: install `requirements.txt` with `uv pip`, then install this package editably.
+- Environment: run everything inside the existing `RM_RL_env` Conda environment (Python 3.13).
+  `uv pip` installs `requirements.txt` into it and this package editably. Do not create another
+  environment, and do not use the repository `.venv`.
 - Entry point: `app/main.py`; the initial command is `generate-rm`.
 - V1 compiles reviewed natural-language instructions to Reward Machines. It does not train RL agents.

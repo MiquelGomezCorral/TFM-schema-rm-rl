@@ -2,7 +2,9 @@
 
 ## Setup
 
-Clone the repository with its pinned dependencies and use Python 3.13.
+Clone the repository with its pinned dependencies and use the existing `RM_RL_env` Conda
+environment (Python 3.13). Do not create another environment; the repository `.venv` is
+incomplete and must not be used.
 
 ```bash
 git clone --recurse-submodules https://github.com/MiquelGomezCorral/TFM-schema-rm-rl.git
@@ -10,6 +12,7 @@ cd TFM-schema-rm-rl
 ```
 
 ```bash
+conda activate RM_RL_env
 uv pip install -r requirements.txt
 pip install -e .
 ```
@@ -25,7 +28,7 @@ For dependency development, switch the detached submodule to the fork's default 
 The minimum non-live readiness check is:
 
 ```bash
-PYTHONPATH=app .venv/bin/python -m unittest discover -s tests -v
+PYTHONPATH=app conda run -n RM_RL_env python -m unittest discover -s tests -v
 ```
 
 The suite checks bounded generator/critic orchestration, six-stage progress and persistent
@@ -35,7 +38,7 @@ controls. It must not contact an LLM, invoke MONA, or start the web server.
 Run the local web UI from the repository root with:
 
 ```bash
-python app/app.py
+conda run -n RM_RL_env python app/app.py
 ```
 
 ## Live Validation
