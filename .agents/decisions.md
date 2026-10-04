@@ -33,7 +33,9 @@ Record closed decisions here. Do not reopen them unless the user explicitly asks
 - Proposition metadata and accepting states remain in memory because the selected text format does not persist them.
 - The public Flat adaptation was published by explicit user authorization while the
   upstream license request remains open at `Jamidd/Flat#1`.
-- V1 excludes RL training, policy evaluation, schemas, embeddings, and automatic proposition-code generation.
+- The compiler pipeline owns compilation through Reward Machine generation plus optional
+  state descriptions, MiniGrid labeling, and local state embeddings. RL training and policy
+  evaluation belong to the separate ARM-FM capability.
 - Keep focused automated tests for deterministic orchestration, prompt contracts, and web controls;
   live LLM/MONA validation remains a separately approved check.
 - Run, install, and test the project inside the existing `RM_RL_env` Conda environment, which owns
@@ -48,7 +50,7 @@ Record closed decisions here. Do not reopen them unless the user explicitly asks
   duplicate or move critic or formal compiler behavior into the web layer.
 - Expose both critic toggles, default both on, and reject a run with neither selected.
 - Render the exact completed text and in-memory Reward Machine structures returned by the pipeline, using its authoritative output paths.
-- Present the structured six-stage tracker by default while retaining the full plain-text
+- Present the structured nine-stage tracker by default while retaining the full plain-text
   Log view; task navigation observes the sequential pipeline and does not introduce
   parallel execution.
 - Retain full local, gitignored diagnostics for every run until manually deleted; logs

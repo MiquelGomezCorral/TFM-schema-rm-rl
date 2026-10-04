@@ -28,4 +28,6 @@ Read this file before changing code in this repository.
   `uv pip` installs `requirements.txt` into it and this package editably. Do not create another
   environment, and do not use the repository `.venv`.
 - Entry point: `app/main.py`; the initial command is `generate-rm`.
-- V1 compiles reviewed natural-language instructions to Reward Machines. It does not train RL agents.
+- V1 compiles reviewed natural-language instructions to Reward Machines, with optional MiniGrid
+  labeling and local state embeddings.
+- The ARM-FM path additionally generates, runs, trains, and evaluates task bundles.

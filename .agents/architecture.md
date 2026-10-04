@@ -34,10 +34,11 @@ topology. The serializer owns the reference repository's text format.
 The nested packages `dependencies/nl2ltl` and `dependencies/Flat` are editable
 development dependencies pinned by parent gitlinks. Their maintained forks are
 `origin`; IBM `nl2ltl` and `Jamidd/Flat` remain `upstream`. MONA remains an external
-executable. V1 stops after Reward Machine generation and does not depend on an RL runtime.
+executable. The compiler stops after Reward Machine generation and its optional
+postprocessing; the separate ARM-FM path owns the RL runtime.
 
 The local web UI is a thin adapter over `scripts.generate_rm`. Optional
-`GenerationHooks` fan out run-scoped logging records and typed six-stage progress events
+`GenerationHooks` fan out run-scoped logging records and typed nine-stage progress events
 to the CLI, local persistent diagnostics, and the web controller while exposing completed
 in-memory results and authoritative output paths. The web layer does not own proposal,
 critic, compilation, serialization, or output-path behavior.
@@ -46,7 +47,8 @@ critic, compilation, serialization, or output-path behavior.
 
 Environment Markdown + task -> constrained proposal generator -> task critic ->
 DECLARE/LTLf materialization -> FL-AT/MONA DFA compilation -> local RM composition and
-serialization -> RM critic -> task-specific Reward Machine -> reference-format text.
+serialization -> state descriptions -> RM critic -> optional MiniGrid labeling ->
+optional local state embeddings -> task-specific Reward Machine -> reference-format text.
 Each critic may be disabled; disabling both prints a warning and is reserved for explicit
 fallback runs that accept the compiler's first result per task. The complete
 refinement attempt is bounded to three runs per task.

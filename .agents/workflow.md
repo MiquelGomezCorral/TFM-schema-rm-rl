@@ -31,7 +31,7 @@ The minimum non-live readiness check is:
 PYTHONPATH=app conda run -n RM_RL_env python -m unittest discover -s tests -v
 ```
 
-The suite checks bounded generator/critic orchestration, six-stage progress and persistent
+The suite checks bounded generator/critic orchestration, nine-stage progress and persistent
 diagnostics, prompt contracts, atomic output behavior, and web task navigation/critic
 controls. It must not contact an LLM, invoke MONA, or start the web server.
 
