@@ -88,8 +88,8 @@ STEP_TAB_LABELS = {
 }
 
 
-def _step_tab(step: PipelineStep, bodies: Mapping[PipelineStep, str]) -> dcc.Tab:
-    """Build one read-only output tab whose content holds every step body."""
+def _step_tab(step: PipelineStep) -> dcc.Tab:
+    """Build one label-only tab; the bodies live in their own container."""
     return dcc.Tab(
         label=STEP_TAB_LABELS[step],
         value=step.value,
@@ -97,50 +97,57 @@ def _step_tab(step: PipelineStep, bodies: Mapping[PipelineStep, str]) -> dcc.Tab
         selected_className=RESULT_TAB_SELECTED_CLASS,
         style=RESULT_TAB_STYLE,
         selected_style=RESULT_TAB_SELECTED_STYLE,
-        children=_step_bodies(bodies, visible=step),
     )
 
 
-def _step_bodies(
-    bodies: Mapping[PipelineStep, str],
-    visible: PipelineStep,
-) -> html.Div:
+def _step_body(step: PipelineStep, body: str, *, visible: bool) -> html.Pre:
+    """Build one step body, hidden but still measured when it is not selected."""
+    return html.Pre(
+        highlight_step(step, body),
+        className=(
+            f"{STEP_OUTPUT_CLASS} [grid-area:1/1]" + ("" if visible else " invisible")
+        ),
+    )
+
+
+def _step_bodies(bodies: Mapping[PipelineStep, str], visible: PipelineStep) -> list[html.Pre]:
     """Stack every step body in one grid cell so the panel keeps the tallest height.
 
     Only the selected body is painted; the others stay in the layout, which is what
     stops the panel from resizing when the reader switches tabs.
     """
-    return html.Div(
-        [
-            html.Pre(
-                highlight_step(step, body),
-                className=(
-                    f"{STEP_OUTPUT_CLASS} [grid-area:1/1]"
-                    + ("" if step is visible else " invisible")
-                ),
-            )
-            for step, body in bodies.items()
-        ],
-        className="step-bodies grid min-w-0",
-    )
+    return [
+        _step_body(step, body, visible=step is visible) for step, body in bodies.items()
+    ]
 
 
-def result_tabs(step_outputs: Mapping[PipelineStep, object]) -> list[dcc.Tab]:
-    """Build one tab per captured pipeline step, Reward Machine included.
+def result_tabs(
+    step_outputs: Mapping[PipelineStep, object],
+    selected: PipelineStep,
+) -> list[dcc.Tab]:
+    """Build the label-only tabs of one output, in report order.
 
-    Retries overwrite earlier attempts, so every tab shows the version that passed
-    the enabled critics. Steps that never ran, such as disabled critics, are left
-    out, and the Reward Machine tab is selected by default. The placeholder tab
-    keeps the strip valid while no output is selected.
+    Dash's Tabs resolves its own children from the client layout, so the bodies are
+    rendered beside it by :func:`result_bodies` and stay fresh on every update.
     """
+    return [_step_tab(step) for step in _output_steps(step_outputs)]
+
+
+def result_bodies(
+    step_outputs: Mapping[PipelineStep, object],
+    selected: PipelineStep,
+) -> list[html.Pre]:
+    """Build the stacked bodies of every step, with the selected one painted."""
     bodies = {
-        step: render_step_text(step, step_outputs[step])
-        for step in STEP_OUTPUT_ORDER
-        if step in step_outputs
+        step: render_step_text(step, step_outputs[step]) for step in _output_steps(step_outputs)
     }
-    if not bodies:
-        bodies = {PipelineStep.REWARD_MACHINE: "No output selected."}
-    return [_step_tab(step, bodies) for step in bodies]
+    return _step_bodies(bodies, selected)
+
+
+def _output_steps(step_outputs: Mapping[PipelineStep, object]) -> dict[PipelineStep, object]:
+    """Keep the captured steps in report order, defaulting to a placeholder body."""
+    steps = {step: step_outputs[step] for step in STEP_OUTPUT_ORDER if step in step_outputs}
+    return steps or {PipelineStep.REWARD_MACHINE: "No output selected."}
 
 
 def _icon(name: str, class_name: str) -> html.Span:
@@ -815,12 +822,16 @@ def result_panel() -> html.Section:
                         id="result-tabs",
                         value=PipelineStep.REWARD_MACHINE.value,
                         className="result-tabs flex-1",
-                        children=[
-                            _step_tab(
-                                PipelineStep.REWARD_MACHINE,
-                                {PipelineStep.REWARD_MACHINE: "No output selected."},
-                            ),
-                        ],
+                        content_style={"display": "none"},
+                        children=[_step_tab(PipelineStep.REWARD_MACHINE)],
+                    ),
+                    html.Div(
+                        id="result-bodies",
+                        children=result_bodies(
+                            {PipelineStep.REWARD_MACHINE: "No output selected."},
+                            PipelineStep.REWARD_MACHINE,
+                        ),
+                        className="step-bodies grid min-w-0",
                     ),
                 ],
                 className="field flex min-w-0 flex-col gap-[0.35rem]",

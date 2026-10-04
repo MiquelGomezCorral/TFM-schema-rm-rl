@@ -10,6 +10,8 @@ import dash_cytoscape as cyto
 
 from src.config import Configuration
 from src.compiler.reward_machine import parse_reward_machine
+from collections.abc import Mapping
+
 from src.utils import STEP_OUTPUT_ORDER, PipelineStep, derive_output_names, load_step_trace
 
 from .components import (
@@ -23,6 +25,7 @@ from .components import (
     _section_icon,
     create_layout,
     render_steps,
+    result_bodies,
     result_tabs,
     task_row,
 )
@@ -188,7 +191,7 @@ def create_app() -> Dash:
                 output_filename=output_name,
                 task_critic="task_critic" in critic_options,
                 rm_critic="rm_critic" in critic_options,
-                steps_report=_steps_report_path(output_name, steps_report_options),
+                steps_report=bool(steps_report_options and "steps_report" in steps_report_options),
             )
         except (RuntimeError, ValueError) as error:
             return f"Could not start run: {error}"
@@ -334,46 +337,50 @@ def create_app() -> Dash:
     @app.callback(
         Output("result-summary", "children"),
         Output("result-tabs", "children"),
+        Output("result-bodies", "children"),
         Output("rm-graph", "elements"),
         Output("graph-export-name", "data"),
         Output("graph-export-button", "disabled"),
         Input("output-selector", "value"),
         Input("imported-reward-machine", "data"),
         Input("run-status", "children"),
+        Input("result-tabs", "value"),
     )
     def render_selected_result(
         selected_index: int | str | None,
         imported_data: dict[str, str] | None = None,
         _run_status: str | None = None,
-    ) -> tuple[str, list, list, str | None, bool]:
+        selected_step: str | None = None,
+    ) -> tuple[str, object, list, list, str | None, bool]:
+        step = _selected_step(selected_step)
         if selected_index is None:
-            return "No completed output selected.", result_tabs({}), [], None, True
+            return _panel("No completed output selected.", {}, step, [], None, True)
         task_index = _imported_task_index(selected_index)
         if selected_index == IMPORTED_RM_VALUE or task_index is not None:
             imported = _imported_reward_machine(imported_data)
             task = _imported_task(imported, task_index)
             if imported is None or task is None:
-                return "No imported Reward Machine selected.", result_tabs({}), [], None, True
+                return _panel("No imported Reward Machine selected.", {}, step, [], None, True)
             raw_steps = dict(task["steps"])
             steps = {
-                step: raw_steps[step.value]
-                for step in STEP_OUTPUT_ORDER
-                if isinstance(raw_steps.get(step.value), str)
+                step_key: raw_steps[step_key.value]
+                for step_key in STEP_OUTPUT_ORDER
+                if isinstance(raw_steps.get(step_key.value), str)
             }
             machine_text = str(steps.get(PipelineStep.REWARD_MACHINE) or imported["text"])
             try:
                 reward_machine = parse_reward_machine(machine_text)
             except ValueError as error:
                 message = f"Could not render imported Reward Machine: {error}"
-                return message, result_tabs({}), [], None, True
+                return _panel(message, {}, step, [], None, True)
             elements = reward_machine_to_elements(reward_machine)
             name = str(task["reward_machine"]) or str(imported["filename"])
             label = str(task["task"])
             summary = f"Imported: {imported['filename']}" + (f" | {label}" if label else "")
-            return summary, result_tabs(steps), elements, Path(name).stem, not elements
+            return _panel(summary, steps, step, elements, Path(name).stem, not elements)
         snapshot = controller.snapshot()
         if not snapshot.results:
-            return "No completed output selected.", result_tabs({}), [], None, True
+            return _panel("No completed output selected.", {}, step, [], None, True)
         if (
             not isinstance(selected_index, int)
             or isinstance(selected_index, bool)
@@ -383,12 +390,13 @@ def create_app() -> Dash:
             selected_index = len(snapshot.results) - 1
         result = snapshot.results[selected_index]
         output_path = snapshot.output_paths[selected_index]
-        elements = reward_machine_to_elements(result.reward_machine)
         steps = dict(snapshot.step_outputs[selected_index])
         steps.setdefault(PipelineStep.REWARD_MACHINE, result.text)
-        return (
+        elements = reward_machine_to_elements(result.reward_machine)
+        return _panel(
             f"{output_path} | {result.proposal.task}",
-            result_tabs(steps),
+            steps,
+            step,
             elements,
             output_path.stem,
             not elements,
@@ -589,6 +597,33 @@ def _decode_uploaded_markdown(contents: str) -> str:
     return base64.b64decode(encoded, validate=True).decode("utf-8")
 
 
+def _selected_step(value: object) -> PipelineStep:
+    """Return the step a tab selection points at, defaulting to the Reward Machine."""
+    try:
+        return PipelineStep(value)
+    except ValueError:
+        return PipelineStep.REWARD_MACHINE
+
+
+def _panel(
+    summary: str,
+    steps: Mapping[PipelineStep, object],
+    selected: PipelineStep,
+    elements: list,
+    export_name: str | None,
+    export_disabled: bool,
+) -> tuple[str, object, list, list, str | None, bool]:
+    """Return one panel update: summary, tab strip, stacked bodies and the graph."""
+    return (
+        summary,
+        result_tabs(steps, selected),
+        result_bodies(steps, selected),
+        elements,
+        export_name,
+        export_disabled,
+    )
+
+
 def _trace_payload(filename: str, text: str) -> dict[str, object]:
     """Read one uploaded trace file into the payload the output selector lists."""
     tasks = load_step_trace(text)
@@ -702,16 +737,6 @@ def _export_positions(raw: object) -> dict | None:
         except (TypeError, ValueError):
             return None
     return positions
-
-
-def _steps_report_path(
-    output_name: str,
-    options: list[str] | None,
-) -> Path | None:
-    """Return the step report path when the sidebar toggle is on."""
-    if not options or "steps_report" not in options:
-        return None
-    return Configuration.REPORT_PATH / f"{_output_stem(output_name)}-steps.md"
 
 
 def _export_filename(name: object) -> str:

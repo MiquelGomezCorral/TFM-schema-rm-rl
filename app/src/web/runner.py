@@ -108,7 +108,7 @@ class _RunRequest:
     output_filename: str
     task_critic: bool
     rm_critic: bool
-    steps_report: Path | None = None
+    steps_report: bool = False
 
 
 class RunController:
@@ -155,7 +155,7 @@ class RunController:
         environment_filename: str | None = None,
         task_critic: bool = True,
         rm_critic: bool = True,
-        steps_report: Path | None = None,
+        steps_report: bool = False,
     ) -> None:
         """Start one run using submitted Markdown and UI values."""
         # if not task_critic and not rm_critic:
@@ -208,10 +208,12 @@ class RunController:
                     output=Path(request.output_filename),
                     task_critic=request.task_critic,
                     rm_critic=request.rm_critic,
-                    steps_report=request.steps_report,
                 )
-                # Keep the trace next to this run's outputs.
+                # Keep the run's own artifacts next to its outputs.
                 CONFIG.trace_dir = CONFIG.TRACE_PATH
+                if request.steps_report:
+                    stem = Path(request.output_filename).stem
+                    CONFIG.steps_report = CONFIG.REPORT_PATH / f"{stem}-steps.md"
                 hooks = GenerationHooks(
                     progress=self._record_progress,
                     event=self._record_event,

@@ -189,10 +189,10 @@ class WebTests(unittest.TestCase):
         controller._step_outputs = {0: {PipelineStep.REWARD_MACHINE: "rm"}}
         result_key = next(key for key in app.callback_map if "result-summary.children" in key)
         render = app.callback_map[result_key]["callback"].__wrapped__
-        summary, tabs, elements, export_name, export_disabled = render(0)
+        summary, tabs, bodies, elements, export_name, export_disabled = render(0)
         self.assertIn("out.rm", summary)
         self.assertEqual([tab.value for tab in tabs], ["reward_machine"])
-        self.assertIn("rm", str(tabs[0].children))
+        self.assertIn("rm", str(bodies))
         self.assertTrue(elements)
         self.assertEqual(export_name, "out")
         self.assertFalse(export_disabled)
