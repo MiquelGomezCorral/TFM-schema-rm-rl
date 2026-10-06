@@ -32,4 +32,3 @@ These are persistent conditions over the current robot and object state.
 - Eventually place the object in the target bin.
 - Grasp the object before placing it in the target bin.
 - Move the object near the target bin before completing placement.
-

@@ -38,4 +38,3 @@ RM generation; this project does not implement their environment adapters.
 - Eventually acquire the key.
 - Open the door after acquiring the key.
 - Reach the goal after opening the door.
-

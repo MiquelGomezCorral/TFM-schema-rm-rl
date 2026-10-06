@@ -5,15 +5,16 @@ from pathlib import Path
 
 import dotenv
 from maikol_utils.other_utils import args_to_dataclass
+
 from scripts import (
     embed_larm,
     evaluate_larm,
-    evaluate_policy_command,
+    evaluate_policy,
     generate_larm,
     generate_rm,
-    train_larm_command,
+    render_rm,
+    train_larm,
 )
-from src.arm_fm import EMBEDDING_MODEL, EmbeddingSettings, load_qwen_embedding_model
 from src.config import Configuration
 
 
@@ -23,33 +24,40 @@ def cmd_generate_rm(args: argparse.Namespace) -> None:
     generate_rm(CONFIG)
 
 
+def cmd_render_rm(args: argparse.Namespace) -> None:
+    """Render paper-format Reward Machines from a text file to SVG."""
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    render_rm(CONFIG)
+
+
 def cmd_generate_larm(args: argparse.Namespace) -> None:
     """Generate one baseline or compiler-adapted ARM-FM bundle."""
-    generate_larm(args_to_dataclass(args, Configuration))
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    generate_larm(CONFIG)
 
 
 def cmd_embed_larm(args: argparse.Namespace) -> None:
     """Embed validated ARM-FM state descriptions with the built-in Qwen loader."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
-    model, tokenizer, settings = load_qwen_embedding_model(
-        EmbeddingSettings(model=CONFIG.model or EMBEDDING_MODEL)
-    )
-    embed_larm(CONFIG, model=model, tokenizer=tokenizer, settings=settings)
+    embed_larm(CONFIG)
 
 
 def cmd_evaluate_larm(args: argparse.Namespace) -> None:
     """Judge ARM-FM bundles with the configured provider."""
-    evaluate_larm(args_to_dataclass(args, Configuration))
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    evaluate_larm(CONFIG)
 
 
 def cmd_train_larm(args: argparse.Namespace) -> None:
     """Train the built-in ARM-FM policy."""
-    train_larm_command(args_to_dataclass(args, Configuration))
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    train_larm(CONFIG)
 
 
 def cmd_evaluate_policy(args: argparse.Namespace) -> None:
     """Evaluate a frozen built-in ARM-FM policy."""
-    evaluate_policy_command(args_to_dataclass(args, Configuration))
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    evaluate_policy(CONFIG)
 
 
 # ======================================================================================
@@ -98,15 +106,21 @@ if __name__ == "__main__":
         help="Allow replacing an existing output file",
     )
     generate_parser.add_argument(
-        "--task-critic", action=argparse.BooleanOptionalAction, default=True,
+        "--task-critic",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="Enable the task critic (default: enabled)",
     )
     generate_parser.add_argument(
-        "--rm-critic", action=argparse.BooleanOptionalAction, default=True,
+        "--rm-critic",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="Enable the Reward Machine critic (default: enabled)",
     )
     generate_parser.add_argument(
-        "--labeling", action=argparse.BooleanOptionalAction, default=False,
+        "--labeling",
+        action=argparse.BooleanOptionalAction,
+        default=False,
         help="Generate MiniGrid labeling functions after RM acceptance (default: disabled)",
     )
     generate_parser.add_argument(
@@ -114,13 +128,16 @@ if __name__ == "__main__":
         help="Labeling domain used by --labeling (default: minigrid; only MiniGrid/BabyAI supported)",
     )
     generate_parser.add_argument(
-        "--embeddings", action=argparse.BooleanOptionalAction, default=False,
+        "--embeddings",
+        action=argparse.BooleanOptionalAction,
+        default=False,
         help="Embed accepted state descriptions through the configured local server (default: disabled)",
     )
     generate_parser.add_argument(
         "--embedding-context",
-        default="",
-        help="Optional context line prefixed to every description before embedding",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Prefix each description with its task context before embedding (default: disabled)",
     )
     generate_parser.add_argument(
         "--svg",
@@ -148,7 +165,27 @@ if __name__ == "__main__":
     generate_parser.set_defaults(func=cmd_generate_rm)
 
     # ======================================================================================
-    #                                       ARM-FM
+    #                                       render-rm
+    # ======================================================================================
+    render_parser = subparsers.add_parser(
+        "render-rm", help="Render paper-format Reward Machines to SVG"
+    )
+    render_parser.add_argument(
+        "--rm-file",
+        required=True,
+        type=Path,
+        help="Text or Markdown file with REWARD_MACHINE blocks",
+    )
+    render_parser.add_argument(
+        "--svg-dir",
+        type=Path,
+        default=None,
+        help="Output .svg file, or a directory for several machines (default: outputs/svgs)",
+    )
+    render_parser.set_defaults(func=cmd_render_rm)
+
+    # ======================================================================================
+    #                                       generate-larm
     # ======================================================================================
     larm_parser = subparsers.add_parser(
         "generate-larm", help="Generate one inspectable ARM-FM task bundle"
@@ -165,45 +202,77 @@ if __name__ == "__main__":
     larm_parser.add_argument("--task-critic", action=argparse.BooleanOptionalAction, default=True)
     larm_parser.add_argument("--rm-critic", action=argparse.BooleanOptionalAction, default=True)
     larm_parser.add_argument(
-        "--embeddings", action=argparse.BooleanOptionalAction, default=False,
+        "--embeddings",
+        action=argparse.BooleanOptionalAction,
+        default=False,
         help="Embed accepted compiler descriptions through the configured local server (default: disabled)",
     )
     larm_parser.add_argument(
         "--embedding-context",
-        default="",
-        help="Optional context line prefixed to every description before embedding",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Prefix each description with its task context before embedding (default: disabled)",
     )
     larm_parser.set_defaults(func=cmd_generate_larm)
 
-    embed_parser = subparsers.add_parser("embed-larm", help="Embed validated ARM-FM state descriptions")
+    # ======================================================================================
+    #                                       embed-larm
+    # ======================================================================================
+    embed_parser = subparsers.add_parser(
+        "embed-larm", help="Embed validated ARM-FM state descriptions"
+    )
     embed_parser.add_argument("--bundle", required=True, type=Path)
     embed_parser.add_argument("--model")
     embed_parser.set_defaults(func=cmd_embed_larm)
 
+    # ======================================================================================
+    #                                       evaluate-larm
+    # ======================================================================================
     evaluate_parser = subparsers.add_parser("evaluate-larm", help="Judge ARM-FM artifacts")
     evaluate_parser.add_argument("--bundle", type=Path)
-    evaluate_parser.add_argument("--manifest", dest="manifests", action="append", type=Path, default=[])
+    evaluate_parser.add_argument(
+        "--manifest", dest="manifests", action="append", type=Path, default=[]
+    )
     evaluate_parser.add_argument("--model")
     evaluate_parser.add_argument("--judge-model", default="Qwen3-30B-A3B-Instruct-2507")
     evaluate_parser.add_argument("--output", type=Path)
     evaluate_parser.set_defaults(func=cmd_evaluate_larm)
 
+    # ======================================================================================
+    #                                       train-larm
+    # ======================================================================================
     train_parser = subparsers.add_parser("train-larm", help="Train a policy from an ARM-FM bundle")
     train_inputs = train_parser.add_mutually_exclusive_group(required=True)
     train_inputs.add_argument("--bundle", type=Path)
     train_inputs.add_argument("--task-manifest", type=Path)
-    train_parser.add_argument("--domain", required=True)
+    train_parser.add_argument(
+        "--domain", help="Gymnasium environment id to train in (required with --bundle)"
+    )
     train_parser.add_argument("--checkpoint", required=True, type=Path)
-    train_parser.add_argument("--algorithm")
+    train_parser.add_argument(
+        "--algorithm", default="dqn", help="dqn, rainbow, ppo, or sac (default: dqn)"
+    )
+    train_parser.add_argument(
+        "--rnd",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Add the RND exploration bonus (default: disabled)",
+    )
     train_parser.add_argument("--learning-rate", type=float)
     train_parser.add_argument("--total-timesteps", type=int)
-    train_parser.add_argument("--seed", type=int, default=42)
+    # SUPPRESS keeps the global --seed when this one is absent, so both positions work.
+    train_parser.add_argument("--seed", type=int, default=argparse.SUPPRESS)
     train_parser.set_defaults(func=cmd_train_larm)
 
+    # ======================================================================================
+    #                                       evaluate-policy
+    # ======================================================================================
     policy_parser = subparsers.add_parser("evaluate-policy", help="Evaluate a frozen ARM-FM policy")
     policy_parser.add_argument("--bundle", required=True, type=Path)
     policy_parser.add_argument("--checkpoint", required=True, type=Path)
-    policy_parser.add_argument("--domain", required=True)
+    policy_parser.add_argument(
+        "--domain", required=True, help="Gymnasium environment id to evaluate in"
+    )
     policy_parser.set_defaults(func=cmd_evaluate_policy)
 
     # ======================================================================================

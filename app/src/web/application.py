@@ -2,25 +2,37 @@
 
 import base64
 import re
+from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
 
+import dash_cytoscape as cyto
 from dash import ALL, Dash, Input, Output, State, ctx, dcc, html, no_update
 from dash.exceptions import PreventUpdate
-import dash_cytoscape as cyto
 
+from src.compiler import CompilationResult, parse_reward_machine
 from src.config import Configuration
-from src.compiler.reward_machine import parse_reward_machine
-from collections.abc import Mapping
-
-from src.utils import STEP_OUTPUT_ORDER, PipelineStep, derive_output_names, load_step_trace
+from src.utils import (
+    CYTOSCAPE_STYLESHEET,
+    STEP_OUTPUT_ORDER,
+    PipelineStep,
+    derive_output_names,
+    format_reward_label,
+    load_step_trace,
+    render_elements_svg,
+    reward_machine_to_elements,
+)
 
 from .components import (
+    CRITIC_OPTIONS,
+    EMBEDDINGS_OPTIONS,
     FOCUS_OUTPUT_REGION_CLASS,
     FOCUS_WORKSPACE_CLASS,
     INPUT_REGION_CLASS,
+    LABELING_OPTIONS,
     OUTPUT_REGION_CLASS,
     RUN_SIDEBAR_CLASS,
     STATUS_CLASSES,
+    STEPS_REPORT_OPTIONS,
     WORKSPACE_CLASS,
     _section_icon,
     create_layout,
@@ -29,16 +41,16 @@ from .components import (
     result_tabs,
     task_row,
 )
-from .runner import RunController, RunState
-from .svg import render_elements_svg
-from .visualization import CYTOSCAPE_STYLESHEET, format_reward_label, reward_machine_to_elements
-
+from .runner import RunController, RunRequest, RunSnapshot, RunState
 
 IMPORTED_RM_VALUE = "imported"
 
 _OUTPUT_SUFFIX = ".rm"
 _DEFAULT_OUTPUT_STEM = "reward-machine"
 _UNSAFE_OUTPUT_NAME = re.compile(r"[^A-Za-z0-9._-]+")
+
+_UPLOAD_STATUS_CLASS = "field-hint text-[0.76rem] leading-[1.4] text-muted"
+_UPLOAD_ERROR_CLASS = "field-hint text-[0.76rem] leading-[1.4] text-[#fda4af]"
 
 _EXPORT_CLIENT_SCRIPT = """
 function (n_clicks) {
@@ -56,96 +68,53 @@ function (n_clicks) {
 """
 
 
-def create_app() -> Dash:
-    """Create one local Dash app with an isolated run controller."""
+def create_app(controller: RunController) -> Dash:
+    """Create one local Dash app driven by ``controller``."""
     cyto.load_extra_layouts()
     assets_folder = Path(__file__).resolve().parents[2] / "assets"
     app = Dash(__name__, assets_folder=str(assets_folder), title="Reward Machine compiler")
-    controller = RunController()
     app.layout = create_layout(CYTOSCAPE_STYLESHEET)
 
-    @app.callback(
+    _register_input_callbacks(app)
+    _register_start_callback(app, controller)
+    _register_poll_callback(app, controller)
+    _register_result_callback(app, controller)
+    _register_graph_callbacks(app)
+    return app
+
+
+# ======================================================================================
+#                                  CALLBACK REGISTRATION
+# ======================================================================================
+
+
+def _register_input_callbacks(app: Dash) -> None:
+    app.callback(
         Output("environment-markdown", "value"),
         Output("upload-status", "children"),
         Output("output-filename", "value"),
         Input("environment-upload", "contents"),
         State("environment-upload", "filename"),
         prevent_initial_call=True,
-    )
-    def load_environment(contents: str | None, filename: str | None) -> tuple[object, str, object]:
-        if not contents:
-            raise PreventUpdate
-        try:
-            markdown = _decode_uploaded_markdown(contents)
-        except (ValueError, UnicodeDecodeError) as error:
-            return no_update, f"Could not load UTF-8 Markdown: {error}", no_update
-        environment_name = filename or "environment.md"
-        return (
-            markdown,
-            f"Loaded {environment_name}; edit the text before generating.",
-            _available_output_filename(environment_name),
-        )
-
-    @app.callback(
+    )(_load_environment)
+    app.callback(
         Output("imported-reward-machine", "data"),
         Output("reward-machine-upload-status", "children"),
         Output("reward-machine-upload-status", "className"),
         Input("reward-machine-upload", "contents"),
         State("reward-machine-upload", "filename"),
         prevent_initial_call=True,
-    )
-    def load_reward_machine(
-        contents: str | None,
-        filename: str | None,
-    ) -> tuple[object, str, str]:
-        status_class = "field-hint text-[0.76rem] leading-[1.4] text-muted"
-        error_class = "field-hint text-[0.76rem] leading-[1.4] text-[#fda4af]"
-        if not contents:
-            raise PreventUpdate
-        if not filename or not filename.lower().endswith((".rm", ".json")):
-            return no_update, "Could not load Reward Machine: choose a .rm or trace .json file.", error_class
-        try:
-            text = _decode_uploaded_markdown(contents)
-            if filename.lower().endswith(".json"):
-                payload = _trace_payload(filename, text)
-            else:
-                parse_reward_machine(text)
-                payload = {"filename": filename, "text": text}
-        except (ValueError, UnicodeDecodeError) as error:
-            return no_update, f"Could not load Reward Machine: {error}", error_class
-        tasks = payload.get("tasks")
-        count = len(tasks) if isinstance(tasks, list) else 0
-        note = f"Loaded {filename}: {count} task(s) with every pipeline step; select one below."
-        return (
-            payload,
-            note if count else f"Loaded {filename}; select it below.",
-            status_class,
-        )
-
-    @app.callback(
+    )(_load_reward_machine)
+    app.callback(
         Output("task-rows", "children"),
         Input("add-task", "n_clicks"),
         Input({"type": "remove-task", "index": ALL}, "n_clicks"),
         State({"type": "task-input", "index": ALL}, "value"),
         prevent_initial_call=True,
-    )
-    def update_task_rows(
-        _add_clicks: int | None,
-        _remove_clicks: list[int | None],
-        values: list[str | None],
-    ) -> list:
-        rows = [value or "" for value in values or []]
-        triggered = ctx.triggered_id
-        if triggered == "add-task":
-            rows.append("")
-        elif isinstance(triggered, dict) and len(rows) > 1:
-            index = triggered.get("index")
-            if isinstance(index, int) and 0 <= index < len(rows):
-                rows.pop(index)
-        if not rows:
-            rows = [""]
-        return [task_row(index, value) for index, value in enumerate(rows)]
+    )(_update_task_rows)
 
+
+def _register_start_callback(app: Dash, controller: RunController) -> None:
     @app.callback(
         Output("run-feedback", "children"),
         Input("generate-button", "n_clicks"),
@@ -167,11 +136,9 @@ def create_app() -> Dash:
         upload_contents: str | None,
         task_values: list[str | None],
         output_filename: str | None,
-        critic_options: list[str] | None,
-        steps_report_options: list[str] | None,
-        labeling_options: list[str] | None,
-        embeddings_options: list[str] | None,
+        *toggles: list[str] | None,
     ) -> str:
+        """Start a run from the form; ``toggles`` are the four checklist values in layout order."""
         if not (markdown or "").strip():
             return "Enter or upload environment Markdown first."
         tasks = tuple((value or "").strip() for value in task_values or [])
@@ -179,26 +146,15 @@ def create_app() -> Dash:
             return "Every task row must contain text."
         submitted_name = (output_filename or "").strip()
         output_name = _available_output_filename(submitted_name, len(tasks))
-        critic_options = critic_options or []
-        #if not critic_options:
-        #    return "Select at least one critic."
-        source_filename = _resolve_environment_filename(
-            markdown,
-            upload_contents,
-            filename,
+        request = RunRequest(
+            environment_markdown=markdown,
+            tasks=tasks,
+            output_filename=output_name,
+            environment_filename=_resolve_environment_filename(markdown, upload_contents, filename),
+            **_run_flags(*toggles),
         )
         try:
-            controller.start(
-                environment_markdown=markdown,
-                environment_filename=source_filename,
-                tasks=tasks,
-                output_filename=output_name,
-                task_critic="task_critic" in critic_options,
-                rm_critic="rm_critic" in critic_options,
-                labeling=bool(labeling_options and "labeling" in labeling_options),
-                embeddings=bool(embeddings_options and "embeddings" in embeddings_options),
-                steps_report=bool(steps_report_options and "steps_report" in steps_report_options),
-            )
+            controller.start(request)
         except (RuntimeError, ValueError) as error:
             return f"Could not start run: {error}"
         if output_name == submitted_name:
@@ -208,6 +164,8 @@ def create_app() -> Dash:
             "to the next free file name."
         )
 
+
+def _register_poll_callback(app: Dash, controller: RunController) -> None:
     @app.callback(
         Output("run-status", "children"),
         Output("run-status", "className"),
@@ -250,104 +208,15 @@ def create_app() -> Dash:
         previous_status: str | None = None,
     ) -> tuple[object, ...]:
         snapshot = controller.snapshot()
-        active = snapshot.status is RunState.RUNNING
-        options = [
-            {"label": str(path), "value": index}
-            for index, path in enumerate(snapshot.output_paths)
-        ]
-        imported = _imported_reward_machine(imported_data)
-        if imported is not None:
-            options.extend(_imported_options(imported))
-        imported_selected = selected_index == IMPORTED_RM_VALUE or (
-            _imported_task_index(selected_index) is not None
-        )
-        generated_count = len(snapshot.output_paths)
-        selected_is_generated = (
-            isinstance(selected_index, int)
-            and not isinstance(selected_index, bool)
-            and 0 <= selected_index < generated_count
-        )
-        status_class = STATUS_CLASSES[snapshot.status.value]
-        status_text = snapshot.status.value.capitalize()
-        if snapshot.error:
-            status_text = f"{status_text}: {snapshot.error}"
-        log_text = "\n".join(snapshot.logs) if snapshot.logs else "No run yet."
-        remove_disabled = [
-            active or item.get("index") == 0
-            for item in remove_ids or []
-        ]
-        selection_data = selection_data or {}
-        total_tasks = len(snapshot.tasks)
-        stored_run_id = selection_data.get("run_id")
-        if stored_run_id != snapshot.run_id:
-            task_selected = 0
-            last_active = None
-        else:
-            task_selected = selection_data.get("selected", 0) or 0
-            last_active = selection_data.get("last_active")
-        task_selected = max(0, min(task_selected, total_tasks - 1)) if total_tasks else 0
-        try:
-            trigger = ctx.triggered_id
-        except Exception:
-            trigger = None
-        imported_triggered = trigger == "imported-reward-machine"
-        if imported is not None and imported_triggered:
-            selected = IMPORTED_RM_VALUE
-        elif selected_is_generated or (imported_selected and imported is not None):
-            selected = selected_index
-        elif imported is not None:
-            selected = IMPORTED_RM_VALUE
-        else:
-            selected = 0 if options else None
-        navigation_triggered = False
-        if total_tasks > 1 and trigger == "run-prev":
-            task_selected = max(0, task_selected - 1)
-            navigation_triggered = True
-        elif total_tasks > 1 and trigger == "run-next":
-            task_selected = min(total_tasks - 1, task_selected + 1)
-            navigation_triggered = True
-        elif isinstance(trigger, dict) and trigger.get("type") == "task-dot":
-            index = trigger.get("index")
-            if isinstance(index, int) and 0 <= index < total_tasks:
-                task_selected = index
-                navigation_triggered = True
-        if (
-            not navigation_triggered
-            and snapshot.active_task_index is not None
-            and snapshot.active_task_index != last_active
-            and task_selected == last_active
-        ):
-            task_selected = snapshot.active_task_index
-        next_selection = {
-            "selected": task_selected,
-            "last_active": snapshot.active_task_index,
-            "run_id": snapshot.run_id,
-        }
-        # Only a real status change may wake dependents, or every poll would re-render them.
-        status_changed = status_text != previous_status
-        return (
-            status_text if status_changed else no_update,
-            status_class if status_changed else no_update,
-            log_text,
-            active,
-            active,
-            [active] * len(remove_ids or []),
-            active,
-            remove_disabled,
-            active,
-            active,
-            [{"label": " Task interpretation critic", "value": "task_critic", "disabled": active},
-             {"label": " Reward Machine critic", "value": "rm_critic", "disabled": active}],
-            options,
-            selected if selected != selected_index else no_update,
-            not bool(options),
-            render_steps(snapshot.tasks, task_selected),
-            next_selection,
-            [{"label": " Step report (.md)", "value": "steps_report", "disabled": active}],
-            [{"label": " MiniGrid labeling", "value": "labeling", "disabled": active}],
-            [{"label": " Local state embeddings", "value": "embeddings", "disabled": active}],
-        )
+        status_text, status_class = _run_status(snapshot)
+        if status_text == previous_status:
+            # Only a real status change may wake dependents, or every poll would re-render them.
+            status_text = status_class = no_update
+        panels = _poll_panels(snapshot, selected_index, remove_ids, selection_data, imported_data)
+        return status_text, status_class, *panels
 
+
+def _register_result_callback(app: Dash, controller: RunController) -> None:
     @app.callback(
         Output("result-summary", "children"),
         Output("result-tabs", "children"),
@@ -368,65 +237,14 @@ def create_app() -> Dash:
     ) -> tuple[str, object, list, list, str | None, bool]:
         step = _selected_step(selected_step)
         if selected_index is None:
-            return _panel("No completed output selected.", {}, step, [], None, True)
-        task_index = _imported_task_index(selected_index)
-        if selected_index == IMPORTED_RM_VALUE or task_index is not None:
-            imported = _imported_reward_machine(imported_data)
-            task = _imported_task(imported, task_index)
-            if imported is None or task is None:
-                return _panel("No imported Reward Machine selected.", {}, step, [], None, True)
-            raw_steps = dict(task["steps"])
-            steps = {
-                step_key: raw_steps[step_key.value]
-                for step_key in STEP_OUTPUT_ORDER
-                if isinstance(raw_steps.get(step_key.value), str)
-            }
-            machine_text = str(steps.get(PipelineStep.REWARD_MACHINE) or imported["text"])
-            try:
-                reward_machine = parse_reward_machine(machine_text)
-            except ValueError as error:
-                message = f"Could not render imported Reward Machine: {error}"
-                return _panel(message, {}, step, [], None, True)
-            elements = reward_machine_to_elements(reward_machine)
-            name = str(task["reward_machine"]) or str(imported["filename"])
-            label = str(task["task"])
-            summary = f"Imported: {imported['filename']}" + (f" | {label}" if label else "")
-            return _panel(summary, steps, step, elements, Path(name).stem, not elements)
-        snapshot = controller.snapshot()
-        if not snapshot.results:
-            return _panel("No completed output selected.", {}, step, [], None, True)
-        if (
-            not isinstance(selected_index, int)
-            or isinstance(selected_index, bool)
-            or not 0 <= selected_index < len(snapshot.results)
-        ):
-            # Nothing selected yet, so show the newest completed output.
-            selected_index = len(snapshot.results) - 1
-        result = snapshot.results[selected_index]
-        output_path = snapshot.output_paths[selected_index]
-        steps = dict(snapshot.step_outputs[selected_index])
-        steps.setdefault(PipelineStep.REWARD_MACHINE, result.text)
-        elements = reward_machine_to_elements(result.reward_machine)
-        bundle_path = result.bundle_path
-        bundle_note = f" | Bundle: {bundle_path}" if bundle_path else ""
-        embedding_note = ""
-        if result.embedding_settings:
-            model = result.embedding_settings.get("model")
-            dimension = result.embedding_settings.get("dimension")
-            embedding_note = f" | Embedding: {model} dim={dimension}"
-        embedding_path_note = (
-            f" | Embeddings: {result.embedding_path}" if result.embedding_path else ""
-        )
-        return _panel(
-            f"{output_path} | {result.proposal.task}{bundle_note}{embedding_note}{embedding_path_note}",
-            steps,
-            step,
-            elements,
-            output_path.stem,
-            not elements,
-        )
+            return _empty_panel("No completed output selected.", step)
+        if _is_imported_value(selected_index):
+            return _render_imported(imported_data, _imported_task_index(selected_index), step)
+        return _render_generated(controller.snapshot(), selected_index, step)
 
-    @app.callback(
+
+def _register_graph_callbacks(app: Dash) -> None:
+    app.callback(
         Output("graph-transition-pin", "data"),
         Input("rm-graph", "tapEdgeData"),
         Input("rm-graph", "tapNodeData"),
@@ -434,42 +252,13 @@ def create_app() -> Dash:
         Input("output-selector", "value"),
         Input("imported-reward-machine", "data"),
         prevent_initial_call=True,
-    )
-    def update_transition_pin(
-        tapped_edge: dict | None,
-        _tapped_node: dict | None,
-        _close_clicks: int | None,
-        _selected_output: int | str | None,
-        _imported_reward_machine: dict[str, str] | None,
-    ) -> dict | None:
-        triggered_props = ctx.triggered_prop_ids
-        if "rm-graph.tapEdgeData" in triggered_props:
-            return tapped_edge
-        if {
-            "output-selector.value",
-            "imported-reward-machine.data",
-            "rm-graph.tapNodeData",
-            "graph-transition-close.n_clicks",
-        } & triggered_props.keys():
-            return None
-        raise PreventUpdate
-
-    @app.callback(
+    )(_update_transition_pin)
+    app.callback(
         Output("graph-transition-inspector", "className"),
         Output("graph-transition-content", "children"),
         Input("graph-transition-pin", "data"),
-    )
-    def render_transition_inspector(
-        pinned_edge: dict | None,
-    ) -> tuple[str, object]:
-        if not isinstance(pinned_edge, dict) or not isinstance(pinned_edge.get("cases"), list):
-            return _transition_inspector_class(False), []
-        return (
-            _transition_inspector_class(True),
-            _transition_inspector_children(pinned_edge),
-        )
-
-    @app.callback(
+    )(_render_transition_inspector)
+    app.callback(
         Output("graph-focus-state", "data"),
         Output("workspace", "className"),
         Output("input-region", "className"),
@@ -480,49 +269,13 @@ def create_app() -> Dash:
         Input("graph-focus-toggle", "n_clicks"),
         State("graph-focus-state", "data"),
         prevent_initial_call=True,
-    )
-    def toggle_graph_focus(
-        _n_clicks: int | None,
-        focused: bool | None,
-    ) -> tuple[bool, str, str, str, str, list, bool]:
-        focused = not bool(focused)
-        if focused:
-            return (
-                True,
-                FOCUS_WORKSPACE_CLASS,
-                "hidden",
-                "hidden",
-                FOCUS_OUTPUT_REGION_CLASS,
-                [_section_icon("minimize", boxed=False), "Exit focus"],
-                True,
-            )
-        return (
-            False,
-            WORKSPACE_CLASS,
-            INPUT_REGION_CLASS,
-            RUN_SIDEBAR_CLASS,
-            OUTPUT_REGION_CLASS,
-            [_section_icon("focus", boxed=False), "Focus graph"],
-            False,
-        )
-
-    @app.callback(
+    )(_toggle_graph_focus)
+    app.callback(
         Output("graph-download", "data"),
         Input("graph-export-payload", "data"),
         State("graph-export-name", "data"),
         prevent_initial_call=True,
-    )
-    def export_graph(payload: object, name: object) -> object:
-        """Render the live graph, keeping the node positions the user arranged."""
-        if not isinstance(payload, dict):
-            raise PreventUpdate
-        elements = _export_elements(payload.get("elements"))
-        positions = _export_positions(payload.get("positions"))
-        if elements is None or positions is None:
-            raise PreventUpdate
-        svg = render_elements_svg(elements, positions or None)
-        return dcc.send_string(svg, _export_filename(name), type="image/svg+xml")
-
+    )(_export_graph)
     app.clientside_callback(
         _EXPORT_CLIENT_SCRIPT,
         Output("graph-export-payload", "data"),
@@ -530,8 +283,363 @@ def create_app() -> Dash:
         prevent_initial_call=True,
     )
 
-    app._run_controller = controller
-    return app
+
+# ======================================================================================
+#                                  INPUT CALLBACK BODIES
+# ======================================================================================
+
+
+def _load_environment(contents: str | None, filename: str | None) -> tuple[object, str, object]:
+    if not contents:
+        raise PreventUpdate
+    try:
+        markdown = _decode_uploaded_markdown(contents)
+    except (ValueError, UnicodeDecodeError) as error:
+        return no_update, f"Could not load UTF-8 Markdown: {error}", no_update
+    environment_name = filename or "environment.md"
+    return (
+        markdown,
+        f"Loaded {environment_name}; edit the text before generating.",
+        _available_output_filename(environment_name),
+    )
+
+
+def _load_reward_machine(contents: str | None, filename: str | None) -> tuple[object, str, str]:
+    if not contents:
+        raise PreventUpdate
+    if not filename or not filename.lower().endswith((".rm", ".json")):
+        return (
+            no_update,
+            "Could not load Reward Machine: choose a .rm or trace .json file.",
+            _UPLOAD_ERROR_CLASS,
+        )
+    try:
+        text = _decode_uploaded_markdown(contents)
+        if filename.lower().endswith(".json"):
+            payload = _trace_payload(filename, text)
+        else:
+            parse_reward_machine(text)
+            payload = {"filename": filename, "text": text}
+    except (ValueError, UnicodeDecodeError) as error:
+        return no_update, f"Could not load Reward Machine: {error}", _UPLOAD_ERROR_CLASS
+    tasks = payload.get("tasks")
+    count = len(tasks) if isinstance(tasks, list) else 0
+    note = f"Loaded {filename}: {count} task(s) with every pipeline step; select one below."
+    return (
+        payload,
+        note if count else f"Loaded {filename}; select it below.",
+        _UPLOAD_STATUS_CLASS,
+    )
+
+
+def _update_task_rows(
+    _add_clicks: int | None,
+    _remove_clicks: list[int | None],
+    values: list[str | None],
+) -> list:
+    rows = [value or "" for value in values or []]
+    triggered = ctx.triggered_id
+    if triggered == "add-task":
+        rows.append("")
+    elif isinstance(triggered, dict) and len(rows) > 1:
+        index = triggered.get("index")
+        if isinstance(index, int) and 0 <= index < len(rows):
+            rows.pop(index)
+    if not rows:
+        rows = [""]
+    return [task_row(index, value) for index, value in enumerate(rows)]
+
+
+def _run_flags(
+    critic_options: list[str] | None,
+    steps_report_options: list[str] | None,
+    labeling_options: list[str] | None,
+    embeddings_options: list[str] | None,
+) -> dict[str, bool]:
+    """Turn the four checklist values into the run request's boolean flags."""
+    return {
+        "task_critic": _is_checked(critic_options, "task_critic"),
+        "rm_critic": _is_checked(critic_options, "rm_critic"),
+        "labeling": _is_checked(labeling_options, "labeling"),
+        "embeddings": _is_checked(embeddings_options, "embeddings"),
+        "steps_report": _is_checked(steps_report_options, "steps_report"),
+    }
+
+
+def _is_checked(options: list[str] | None, name: str) -> bool:
+    return bool(options and name in options)
+
+
+# ======================================================================================
+#                                  RUN CALLBACK BODIES
+# ======================================================================================
+
+
+def _run_status(snapshot: RunSnapshot) -> tuple[str, str]:
+    """Return the status label and its CSS classes."""
+    text = snapshot.status.value.capitalize()
+    if snapshot.error:
+        text = f"{text}: {snapshot.error}"
+    return text, STATUS_CLASSES[snapshot.status.value]
+
+
+def _poll_panels(
+    snapshot: RunSnapshot,
+    selected_index: int | str | None,
+    remove_ids: list[dict[str, int]] | None,
+    selection_data: dict[str, int | None] | None,
+    imported_data: dict[str, str] | None,
+) -> tuple[object, ...]:
+    """Return every poll output after the status pair."""
+    active = snapshot.status is RunState.RUNNING
+    imported = _imported_reward_machine(imported_data)
+    options = [
+        {"label": str(path), "value": index} for index, path in enumerate(snapshot.output_paths)
+    ]
+    if imported is not None:
+        options.extend(_imported_options(imported))
+    trigger = _triggered_id()
+    selected = _selected_output(snapshot, imported, selected_index, trigger)
+    task_selected, next_selection = _task_selection(snapshot, selection_data, trigger)
+    remove_ids = remove_ids or []
+    return (
+        "\n".join(snapshot.logs) if snapshot.logs else "No run yet.",
+        active,
+        active,
+        [active] * len(remove_ids),
+        active,
+        [active or item.get("index") == 0 for item in remove_ids],
+        active,
+        active,
+        _locked(CRITIC_OPTIONS, active),
+        options,
+        selected if selected != selected_index else no_update,
+        not bool(options),
+        render_steps(snapshot.tasks, task_selected),
+        next_selection,
+        _locked(STEPS_REPORT_OPTIONS, active),
+        _locked(LABELING_OPTIONS, active),
+        _locked(EMBEDDINGS_OPTIONS, active),
+    )
+
+
+def _locked(options: list[dict[str, str]], disabled: bool) -> list[dict[str, object]]:
+    return [{**option, "disabled": disabled} for option in options]
+
+
+def _triggered_id() -> str | dict | None:
+    try:
+        return ctx.triggered_id
+    except Exception:
+        return None
+
+
+def _selected_output(
+    snapshot: RunSnapshot,
+    imported: dict[str, object] | None,
+    selected_index: int | str | None,
+    trigger: str | dict | None,
+) -> int | str | None:
+    """Keep a valid selection, otherwise prefer the imported machine, then the first output."""
+    generated = _is_generated_index(selected_index, len(snapshot.output_paths))
+    if imported is None:
+        return selected_index if generated else (0 if snapshot.output_paths else None)
+    if trigger == "imported-reward-machine":
+        return IMPORTED_RM_VALUE
+    if generated or _is_imported_value(selected_index):
+        return selected_index
+    return IMPORTED_RM_VALUE
+
+
+def _task_selection(
+    snapshot: RunSnapshot,
+    selection_data: dict[str, int | None] | None,
+    trigger: str | dict | None,
+) -> tuple[int, dict[str, int | None]]:
+    """Return the task to show and the selection state to store for the next poll."""
+    selection_data = selection_data or {}
+    total_tasks = len(snapshot.tasks)
+    if selection_data.get("run_id") != snapshot.run_id:
+        task_selected = 0
+        last_active = None
+    else:
+        task_selected = selection_data.get("selected", 0) or 0
+        last_active = selection_data.get("last_active")
+    task_selected = max(0, min(task_selected, total_tasks - 1)) if total_tasks else 0
+
+    task_selected, navigated = _navigate(task_selected, total_tasks, trigger)
+    if (
+        not navigated
+        and snapshot.active_task_index is not None
+        and snapshot.active_task_index != last_active
+        and task_selected == last_active
+    ):
+        task_selected = snapshot.active_task_index
+    next_selection = {
+        "selected": task_selected,
+        "last_active": snapshot.active_task_index,
+        "run_id": snapshot.run_id,
+    }
+    return task_selected, next_selection
+
+
+def _navigate(task_selected: int, total_tasks: int, trigger: str | dict | None) -> tuple[int, bool]:
+    """Apply a previous, next or dot click; the flag says whether one was applied."""
+    if total_tasks > 1 and trigger == "run-prev":
+        return max(0, task_selected - 1), True
+    if total_tasks > 1 and trigger == "run-next":
+        return min(total_tasks - 1, task_selected + 1), True
+    if isinstance(trigger, dict) and trigger.get("type") == "task-dot":
+        index = trigger.get("index")
+        if isinstance(index, int) and 0 <= index < total_tasks:
+            return index, True
+    return task_selected, False
+
+
+def _render_imported(
+    imported_data: dict[str, str] | None, task_index: int | None, step: PipelineStep
+) -> tuple[str, object, list, list, str | None, bool]:
+    imported = _imported_reward_machine(imported_data)
+    task = _imported_task(imported, task_index)
+    if imported is None or task is None:
+        return _empty_panel("No imported Reward Machine selected.", step)
+    raw_steps = dict(task["steps"])
+    steps = {
+        step_key: raw_steps[step_key.value]
+        for step_key in STEP_OUTPUT_ORDER
+        if isinstance(raw_steps.get(step_key.value), str)
+    }
+    machine_text = str(steps.get(PipelineStep.REWARD_MACHINE) or imported["text"])
+    try:
+        reward_machine = parse_reward_machine(machine_text)
+    except ValueError as error:
+        return _empty_panel(f"Could not render imported Reward Machine: {error}", step)
+    name = str(task["reward_machine"]) or str(imported["filename"])
+    label = str(task["task"])
+    summary = f"Imported: {imported['filename']}" + (f" | {label}" if label else "")
+    return _panel(
+        summary,
+        steps,
+        step,
+        reward_machine_to_elements(reward_machine),
+        Path(name).stem,
+    )
+
+
+def _render_generated(
+    snapshot: RunSnapshot, selected_index: int | str, step: PipelineStep
+) -> tuple[str, object, list, list, str | None, bool]:
+    if not snapshot.results:
+        return _empty_panel("No completed output selected.", step)
+    if not _is_generated_index(selected_index, len(snapshot.results)):
+        # Nothing selected yet, so show the newest completed output.
+        selected_index = len(snapshot.results) - 1
+    result = snapshot.results[selected_index]
+    output_path = snapshot.output_paths[selected_index]
+    steps = dict(snapshot.step_outputs[selected_index])
+    steps.setdefault(PipelineStep.REWARD_MACHINE, result.text)
+    return _panel(
+        _result_summary(result, output_path),
+        steps,
+        step,
+        reward_machine_to_elements(result.reward_machine),
+        output_path.stem,
+    )
+
+
+def _result_summary(result: CompilationResult, output_path: Path) -> str:
+    """Describe one completed output, with its bundle and embedding artifacts when present."""
+    summary = f"{output_path} | {result.proposal.task}"
+    if result.bundle_path:
+        summary += f" | Bundle: {result.bundle_path}"
+    if result.embedding_settings:
+        model = result.embedding_settings.get("model")
+        dimension = result.embedding_settings.get("dimension")
+        summary += f" | Embedding: {model} dim={dimension}"
+    if result.embedding_path:
+        summary += f" | Embeddings: {result.embedding_path}"
+    return summary
+
+
+def _is_generated_index(value: object, generated_count: int) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and 0 <= value < generated_count
+
+
+def _is_imported_value(value: object) -> bool:
+    return value == IMPORTED_RM_VALUE or _imported_task_index(value) is not None
+
+
+# ======================================================================================
+#                                 GRAPH CALLBACK BODIES
+# ======================================================================================
+
+
+def _update_transition_pin(
+    tapped_edge: dict | None,
+    _tapped_node: dict | None,
+    _close_clicks: int | None,
+    _selected_output: int | str | None,
+    _imported_reward_machine: dict[str, str] | None,
+) -> dict | None:
+    triggered_props = ctx.triggered_prop_ids
+    if "rm-graph.tapEdgeData" in triggered_props:
+        return tapped_edge
+    if {
+        "output-selector.value",
+        "imported-reward-machine.data",
+        "rm-graph.tapNodeData",
+        "graph-transition-close.n_clicks",
+    } & triggered_props.keys():
+        return None
+    raise PreventUpdate
+
+
+def _render_transition_inspector(pinned_edge: dict | None) -> tuple[str, object]:
+    if not isinstance(pinned_edge, dict) or not isinstance(pinned_edge.get("cases"), list):
+        return _transition_inspector_class(False), []
+    return _transition_inspector_class(True), _transition_inspector_children(pinned_edge)
+
+
+def _toggle_graph_focus(
+    _n_clicks: int | None,
+    focused: bool | None,
+) -> tuple[bool, str, str, str, str, list, bool]:
+    if not focused:
+        return (
+            True,
+            FOCUS_WORKSPACE_CLASS,
+            "hidden",
+            "hidden",
+            FOCUS_OUTPUT_REGION_CLASS,
+            [_section_icon("minimize", boxed=False), "Exit focus"],
+            True,
+        )
+    return (
+        False,
+        WORKSPACE_CLASS,
+        INPUT_REGION_CLASS,
+        RUN_SIDEBAR_CLASS,
+        OUTPUT_REGION_CLASS,
+        [_section_icon("focus", boxed=False), "Focus graph"],
+        False,
+    )
+
+
+def _export_graph(payload: object, name: object) -> object:
+    """Render the live graph, keeping the node positions the user arranged."""
+    if not isinstance(payload, dict):
+        raise PreventUpdate
+    elements = _export_elements(payload.get("elements"))
+    positions = _export_positions(payload.get("positions"))
+    if elements is None or positions is None:
+        raise PreventUpdate
+    svg = render_elements_svg(elements, positions or None)
+    return dcc.send_string(svg, _export_filename(name), type="image/svg+xml")
+
+
+# ======================================================================================
+#                                      HELPERS
+# ======================================================================================
 
 
 def _transition_inspector_class(visible: bool) -> str:
@@ -541,7 +649,11 @@ def _transition_inspector_class(visible: bool) -> str:
         "w-[min(28rem,calc(100%_-_1.5rem))] overflow-auto rounded-[0.65rem] border "
         "border-border-strong bg-[#101a2b] p-3 text-text shadow-[0_12px_30px_rgb(0_0_0_/_35%)]"
     )
-    return f"{base} pointer-events-auto visible" if visible else f"{base} pointer-events-none invisible"
+    return (
+        f"{base} pointer-events-auto visible"
+        if visible
+        else f"{base} pointer-events-none invisible"
+    )
 
 
 def _transition_inspector_children(edge: dict) -> list[object]:
@@ -574,7 +686,11 @@ def _transition_inspector_children(edge: dict) -> list[object]:
                 str(literal),
                 className=(
                     "rounded-[0.3rem] px-1.5 py-0.5 font-mono text-[0.68rem] "
-                    + ("bg-[#be123c] text-[#ffe4e6]" if str(literal).startswith("!") else "bg-[#eef2ff] text-[#24314d]")
+                    + (
+                        "bg-[#be123c] text-[#ffe4e6]"
+                        if str(literal).startswith("!")
+                        else "bg-[#eef2ff] text-[#24314d]"
+                    )
                 ),
             )
             for literal in condition
@@ -601,7 +717,10 @@ def _transition_inspector_children(edge: dict) -> list[object]:
                 [
                     html.Div(
                         [
-                            html.Span(f"Case {index}", className="text-[0.68rem] font-bold text-muted"),
+                            html.Span(
+                                f"Case {index}",
+                                className="text-[0.68rem] font-bold text-muted",
+                            ),
                             html.Span(
                                 f"· r={format_reward_label(numeric_reward)}",
                                 className=f"text-[0.68rem] font-bold {reward_class}",
@@ -615,6 +734,8 @@ def _transition_inspector_children(edge: dict) -> list[object]:
             )
         )
     return children
+
+
 def _decode_uploaded_markdown(contents: str) -> str:
     """Decode one Dash upload payload as UTF-8 text."""
     _, encoded = contents.split(",", 1)
@@ -635,17 +756,23 @@ def _panel(
     selected: PipelineStep,
     elements: list,
     export_name: str | None,
-    export_disabled: bool,
 ) -> tuple[str, object, list, list, str | None, bool]:
     """Return one panel update: summary, tab strip, stacked bodies and the graph."""
     return (
         summary,
-        result_tabs(steps, selected),
+        result_tabs(steps),
         result_bodies(steps, selected),
         elements,
         export_name,
-        export_disabled,
+        not elements,
     )
+
+
+def _empty_panel(
+    summary: str, selected: PipelineStep
+) -> tuple[str, object, list, list, str | None, bool]:
+    """Return a panel update that shows only a message."""
+    return _panel(summary, {}, selected, [], None)
 
 
 def _trace_payload(filename: str, text: str) -> dict[str, object]:
@@ -742,8 +869,7 @@ def _export_elements(raw: object) -> list | None:
     if not isinstance(raw, list) or not raw:
         return None
     shaped = all(
-        isinstance(element, dict) and isinstance(element.get("data"), dict)
-        for element in raw
+        isinstance(element, dict) and isinstance(element.get("data"), dict) for element in raw
     )
     return raw if shaped else None
 
@@ -766,7 +892,7 @@ def _export_positions(raw: object) -> dict | None:
 def _export_filename(name: object) -> str:
     """Name the export after the selected output, sanitized for filesystems."""
     if isinstance(name, str):
-        stem = re.sub(r"[^A-Za-z0-9._-]+", "-", name.strip()).strip("-")
+        stem = _UNSAFE_OUTPUT_NAME.sub("-", name.strip()).strip("-")
         if stem:
             return f"{stem}.svg"
     return "reward-machine.svg"
@@ -824,8 +950,6 @@ def _available_output_filename(name: str | None, task_count: int = 1) -> str:
         default=0,
     )
     number = highest + 1
-    while not _is_output_name_free(
-        f"{stem}-{number:03d}{_OUTPUT_SUFFIX}", task_count, existing
-    ):
+    while not _is_output_name_free(f"{stem}-{number:03d}{_OUTPUT_SUFFIX}", task_count, existing):
         number += 1
     return f"{stem}-{number:03d}{_OUTPUT_SUFFIX}"

@@ -57,6 +57,10 @@ the corresponding environment files, not duplicated in this record.
 - The XLand first-1,000 set remains benchmark data. Deterministic task rendering and
   reconstructed generator prompts are permitted and labelled as reconstructed; they are
   never presented as the authors' unpublished original prompts.
+- Catalogue entries are task and RM evidence only. Runtime environments are generic
+  (`make_environment` is `gym.make` on a registered id); the XLand-MiniGrid, Craftium, and
+  Meta-World integrations were removed and will be rebuilt when training uses them.
+  MiniGrid remains because compiler labeling targets it.
 
 ## Rationale and tradeoffs
 

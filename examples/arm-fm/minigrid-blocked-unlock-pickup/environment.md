@@ -35,4 +35,3 @@ to cause it.
 - Eventually pick up the target box.
 - Move the blocker before opening the door.
 - Acquire the matching key before opening the door.
-

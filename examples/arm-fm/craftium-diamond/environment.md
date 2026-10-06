@@ -39,4 +39,3 @@ loss does not cause the acquisition event to repeat.
 - Acquire wood before stone.
 - Acquire stone before iron.
 - Acquire iron before a diamond.
-

@@ -34,4 +34,3 @@ These are persistent conditions over the current robot, stick, and pushed-object
 - Eventually push the object to its target.
 - Grasp the stick before completing the push.
 - Move the pushed object near the goal before completing the task.
-

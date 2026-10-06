@@ -2,13 +2,13 @@
 
 from collections.abc import Mapping
 
+import dash_cytoscape as cyto
 from dash import dcc, html
 
-from src.utils import PipelineStep, STEP_OUTPUT_ORDER, render_step_text
+from src.utils import STEP_OUTPUT_ORDER, PipelineStep, render_step_text
 
 from .highlight import highlight_step
-from .runner import STEP_ORDER, StepState, TaskSnapshot
-
+from .runner import StepState, TaskSnapshot
 
 # ======================================================================================
 #                                     STATUS STYLES
@@ -27,8 +27,7 @@ STATUS_CLASSES = {
 }
 
 INPUT_REGION_CLASS = (
-    "input-region grid items-start gap-3.5 [grid-area:input] "
-    "grid-cols-2 max-[1200px]:grid-cols-1"
+    "input-region grid items-start gap-3.5 [grid-area:input] grid-cols-2 max-[1200px]:grid-cols-1"
 )
 RUN_SIDEBAR_CLASS = (
     "run-sidebar control-card sticky top-4 self-stretch [grid-area:sidebar] "
@@ -69,15 +68,52 @@ GRAPH_TOOLBAR_BUTTON_CLASS = (
 )
 
 
+FIELD_CLASS = "field flex min-w-0 flex-col gap-[0.35rem]"
+FIELD_LABEL_CLASS = "field-label text-[0.7rem] font-[750] uppercase tracking-[0.06em] text-muted"
+FIELD_HINT_CLASS = "field-hint text-[0.76rem] leading-[1.4] text-muted"
+SECTION_TITLE_CLASS = "section-title text-[0.98rem] font-semibold tracking-[-0.015em]"
+PANEL_TITLE_CLASS = "panel-title text-[0.98rem] font-semibold tracking-[-0.015em]"
+SECTION_DESCRIPTION_CLASS = (
+    "section-description mt-[0.18rem] text-[0.76rem] leading-[1.4] text-muted"
+)
+UPLOAD_CONTROL_CLASS = (
+    "upload-control grid min-h-[3.3rem] cursor-pointer place-items-center "
+    "border border-dashed border-border-strong p-3 text-center text-[0.8rem] "
+    "text-accent transition duration-150 ease-out hover:border-accent "
+    "hover:bg-surface-hover focus-visible:outline-3 focus-visible:outline-offset-2 "
+    "focus-visible:outline-[rgba(56,189,248,0.35)]"
+)
+OUTPUTS_OPTIONS_CLASS = "outputs-options grid gap-[0.45rem] !text-text"
+LEGEND_ROW_CLASS = "legend-row flex items-center gap-2 text-[0.72rem] text-muted"
+TASK_NAV_BUTTON_CLASS = (
+    "task-nav-button grid size-8 place-items-center rounded-full border border-border-strong "
+    "text-muted hover:border-accent hover:text-accent focus-visible:outline-2"
+)
+
+CRITIC_OPTIONS = [
+    {"label": " Task interpretation critic", "value": "task_critic"},
+    {"label": " Reward Machine critic", "value": "rm_critic"},
+]
+STEPS_REPORT_OPTIONS = [{"label": " Step report (.md)", "value": "steps_report"}]
+LABELING_OPTIONS = [{"label": " MiniGrid labeling", "value": "labeling"}]
+EMBEDDINGS_OPTIONS = [{"label": " Local state embeddings", "value": "embeddings"}]
+
 RESULT_TAB_CLASS = "result-tab border-b border-border px-2 py-2 text-[0.76rem] font-bold text-muted"
 RESULT_TAB_SELECTED_CLASS = "result-tab-selected border-accent text-accent"
+RUN_TAB_CLASS = "run-tab border-b border-border px-2 py-2 text-[0.76rem] font-bold text-muted"
+RUN_TAB_SELECTED_CLASS = "run-tab-selected border-accent text-accent"
 RESULT_TAB_STYLE = {"backgroundColor": "#101a2b", "color": "#a7b7ce", "padding": "8px"}
-RESULT_TAB_SELECTED_STYLE = {"backgroundColor": "#17243a", "color": "#38bdf8", "padding": "8px"}
+RESULT_TAB_SELECTED_STYLE = {
+    "backgroundColor": "#17243a",
+    "color": "#38bdf8",
+    "padding": "8px",
+}
 STEP_OUTPUT_CLASS = (
     "step-output m-0 max-h-[26rem] overflow-auto whitespace-pre-wrap rounded-[0.55rem] "
     "border border-border bg-[#0c1626] p-3 font-mono text-[0.76rem] leading-[1.5] text-muted "
     "[scrollbar-color:var(--color-border-strong)_transparent]"
 )
+
 STEP_TAB_LABELS = {
     PipelineStep.GENERATE: "Clauses",
     PipelineStep.LTLF: "LTLf",
@@ -107,9 +143,7 @@ def _step_body(step: PipelineStep, body: str, *, visible: bool) -> html.Pre:
     """Build one step body, hidden but still measured when it is not selected."""
     return html.Pre(
         highlight_step(step, body),
-        className=(
-            f"{STEP_OUTPUT_CLASS} [grid-area:1/1]" + ("" if visible else " invisible")
-        ),
+        className=(f"{STEP_OUTPUT_CLASS} [grid-area:1/1]" + ("" if visible else " invisible")),
     )
 
 
@@ -119,15 +153,10 @@ def _step_bodies(bodies: Mapping[PipelineStep, str], visible: PipelineStep) -> l
     Only the selected body is painted; the others stay in the layout, which is what
     stops the panel from resizing when the reader switches tabs.
     """
-    return [
-        _step_body(step, body, visible=step is visible) for step, body in bodies.items()
-    ]
+    return [_step_body(step, body, visible=step is visible) for step, body in bodies.items()]
 
 
-def result_tabs(
-    step_outputs: Mapping[PipelineStep, object],
-    selected: PipelineStep,
-) -> list[dcc.Tab]:
+def result_tabs(step_outputs: Mapping[PipelineStep, object]) -> list[dcc.Tab]:
     """Build the label-only tabs of one output, in report order.
 
     Dash's Tabs resolves its own children from the client layout, so the bodies are
@@ -147,7 +176,9 @@ def result_bodies(
     return _step_bodies(bodies, selected)
 
 
-def _output_steps(step_outputs: Mapping[PipelineStep, object]) -> dict[PipelineStep, object]:
+def _output_steps(
+    step_outputs: Mapping[PipelineStep, object],
+) -> dict[PipelineStep, object]:
     """Keep the captured steps in report order, defaulting to a placeholder body."""
     steps = {step: step_outputs[step] for step in STEP_OUTPUT_ORDER if step in step_outputs}
     return steps or {PipelineStep.REWARD_MACHINE: "No output selected."}
@@ -163,6 +194,55 @@ def _icon(name: str, class_name: str) -> html.Span:
             "mask": f"{source} center / contain no-repeat",
         },
         **{"aria-hidden": "true"},
+    )
+
+
+def _section_heading(
+    icon_name: str, title: str, description: str, title_class: str = SECTION_TITLE_CLASS
+) -> html.Div:
+    """Build the icon, title and one-line description that open a panel."""
+    return html.Div(
+        [
+            _section_icon(icon_name),
+            html.Div(
+                [
+                    html.H2(title, className=title_class),
+                    html.P(description, className=SECTION_DESCRIPTION_CLASS),
+                ]
+            ),
+        ],
+        className="section-heading flex items-start gap-[0.7rem]",
+    )
+
+
+def _field(label: str, *controls: object) -> html.Label:
+    """Wrap controls under a small uppercase label."""
+    return html.Label(
+        [html.Span(label, className=FIELD_LABEL_CLASS), *controls],
+        className=FIELD_CLASS,
+    )
+
+
+def _upload(component_id: str, prompt: str, accept: str) -> dcc.Upload:
+    """Build one drop-or-choose upload control."""
+    return dcc.Upload(
+        id=component_id,
+        children=html.Div(
+            [_icon("upload", "upload-icon size-[1.05rem]"), html.Span(prompt)],
+            className="upload-content flex items-center justify-center gap-2",
+        ),
+        accept=accept,
+        multiple=False,
+        disabled=False,
+        className=UPLOAD_CONTROL_CLASS,
+    )
+
+
+def _legend_row(swatch_class: str, text: str) -> html.Li:
+    """Build one graph legend entry: a swatch and its meaning."""
+    return html.Li(
+        [html.Span(className=swatch_class, **{"aria-hidden": "true"}), html.Span(text)],
+        className=LEGEND_ROW_CLASS,
     )
 
 
@@ -258,10 +338,17 @@ def render_steps(tasks: tuple[TaskSnapshot, ...], selected_index: int = 0) -> ht
                 StepState.RUNNING: "bg-accent",
                 StepState.FAILED: "bg-[#fb7185]",
             }.get(state, "bg-[#64748b]")
-            selected_class = " ring-2 ring-accent ring-offset-2 ring-offset-surface" if index == selected_index else ""
+            selected_class = (
+                " ring-2 ring-accent ring-offset-2 ring-offset-surface"
+                if index == selected_index
+                else ""
+            )
             navigation.append(
                 html.Button(
-                    html.Span(className=f"task-dot size-2.5 rounded-full {dot_class}{selected_class}", **{"aria-hidden": "true"}),
+                    html.Span(
+                        className=f"task-dot size-2.5 rounded-full {dot_class}{selected_class}",
+                        **{"aria-hidden": "true"},
+                    ),
                     id={"type": "task-dot", "index": index},
                     n_clicks=0,
                     className="task-dot-button grid size-8 place-items-center rounded-full border border-transparent hover:border-border-strong focus-visible:border-accent focus-visible:outline-2",
@@ -275,7 +362,7 @@ def render_steps(tasks: tuple[TaskSnapshot, ...], selected_index: int = 0) -> ht
                 _icon("chevron-right", "size-4 -rotate-180"),
                 id="run-prev",
                 n_clicks=0,
-                className="task-nav-button grid size-8 place-items-center rounded-full border border-border-strong text-muted hover:border-accent hover:text-accent focus-visible:outline-2",
+                className=TASK_NAV_BUTTON_CLASS,
                 **{"aria-label": "View previous task"},
             ),
             *navigation,
@@ -283,7 +370,7 @@ def render_steps(tasks: tuple[TaskSnapshot, ...], selected_index: int = 0) -> ht
                 _icon("chevron-right", "size-4"),
                 id="run-next",
                 n_clicks=0,
-                className="task-nav-button grid size-8 place-items-center rounded-full border border-border-strong text-muted hover:border-accent hover:text-accent focus-visible:outline-2",
+                className=TASK_NAV_BUTTON_CLASS,
                 **{"aria-label": "View next task"},
             ),
         ]
@@ -338,7 +425,13 @@ def render_steps(tasks: tuple[TaskSnapshot, ...], selected_index: int = 0) -> ht
             )
         )
     if navigation:
-        children.append(html.Nav(navigation, className="run-task-navigation mt-1 flex items-center justify-center gap-1", **{"aria-label": "Task navigation"}))
+        children.append(
+            html.Nav(
+                navigation,
+                className="run-task-navigation mt-1 flex items-center justify-center gap-1",
+                **{"aria-label": "Task navigation"},
+            )
+        )
     return html.Div(children, className="run-steps-content flex min-h-40 flex-col gap-2")
 
 
@@ -346,76 +439,41 @@ def render_steps(tasks: tuple[TaskSnapshot, ...], selected_index: int = 0) -> ht
 #                                    INPUT CONTROLS
 # ======================================================================================
 
+
 def environment_input() -> html.Section:
     """Build the upload and editable Markdown environment controls."""
     return html.Section(
         [
-            html.Div(
-                [
-                    _section_icon("file-text"),
-                    html.Div(
-                        [
-                            html.H2(
-                                "Environment",
-                                className="section-title text-[0.98rem] font-semibold tracking-[-0.015em]",
-                            ),
-                            html.P(
-                                "Upload UTF-8 Markdown or paste it below.",
-                                className="section-description mt-[0.18rem] text-[0.76rem] leading-[1.4] text-muted",
-                            ),
-                        ]
-                    ),
-                ],
-                className="section-heading flex items-start gap-[0.7rem]",
+            _section_heading(
+                "file-text", "Environment", "Upload UTF-8 Markdown or paste it below."
             ),
-            dcc.Upload(
-                id="environment-upload",
-                children=html.Div(
-                    [
-                        _icon("upload", "upload-icon size-[1.05rem]"),
-                        html.Span("Choose a Markdown file or drop it here"),
-                    ],
-                    className="upload-content flex items-center justify-center gap-2",
-                ),
-                accept=".md,text/markdown,text/plain",
-                multiple=False,
-                disabled=False,
-                className=(
-                    "upload-control grid min-h-[3.3rem] cursor-pointer place-items-center "
-                    "border border-dashed border-border-strong p-3 text-center text-[0.8rem] "
-                    "text-accent transition duration-150 ease-out hover:border-accent "
-                    "hover:bg-surface-hover focus-visible:outline-3 focus-visible:outline-offset-2 "
-                    "focus-visible:outline-[rgba(56,189,248,0.35)]"
-                ),
+            _upload(
+                "environment-upload",
+                "Choose a Markdown file or drop it here",
+                ".md,text/markdown,text/plain",
             ),
             html.Div(
                 "No file uploaded; pasted content uses environment.md.",
                 id="upload-status",
-                className="field-hint text-[0.76rem] leading-[1.4] text-muted",
+                className=FIELD_HINT_CLASS,
             ),
-            html.Label(
-                [
-                    html.Span(
-                        "Markdown",
-                        className="field-label text-[0.7rem] font-[750] uppercase tracking-[0.06em] text-muted",
+            _field(
+                "Markdown",
+                dcc.Textarea(
+                    id="environment-markdown",
+                    value="",
+                    placeholder="# Environment\n\n## Propositions\n- `event`: Description",
+                    className=(
+                        "markdown-input block min-h-[11rem] w-full resize-y border "
+                        "border-border-strong !border-border-strong !bg-surface-raised "
+                        "px-3 py-[0.7rem] !text-text outline-0 transition duration-150 "
+                        "ease-out placeholder:!text-[#8295b2] focus-visible:outline-3 "
+                        "focus-visible:outline-offset-2 "
+                        "focus-visible:outline-[rgba(56,189,248,0.35)]"
                     ),
-                    dcc.Textarea(
-                        id="environment-markdown",
-                        value="",
-                        placeholder="# Environment\n\n## Propositions\n- `event`: Description",
-                        className=(
-                            "markdown-input block min-h-[11rem] w-full resize-y border "
-                            "border-border-strong !border-border-strong !bg-surface-raised "
-                            "px-3 py-[0.7rem] !text-text outline-0 transition duration-150 "
-                            "ease-out placeholder:!text-[#8295b2] focus-visible:outline-3 "
-                            "focus-visible:outline-offset-2 "
-                            "focus-visible:outline-[rgba(56,189,248,0.35)]"
-                        ),
-                        spellCheck=True,
-                        disabled=False,
-                    ),
-                ],
-                className="field flex min-w-0 flex-col gap-[0.35rem]",
+                    spellCheck=True,
+                    disabled=False,
+                ),
             ),
         ],
         className=(
@@ -481,7 +539,7 @@ def task_row(
                         disabled=False,
                     ),
                 ],
-                className="field flex min-w-0 flex-col gap-[0.35rem]",
+                className=FIELD_CLASS,
             ),
         ],
         id={"type": "task-row", "index": index},
@@ -493,23 +551,10 @@ def task_input() -> html.Section:
     """Build the dynamic task section."""
     return html.Section(
         [
-            html.Div(
-                [
-                    _section_icon("list-todo"),
-                    html.Div(
-                        [
-                            html.H2(
-                                "Tasks",
-                                className="section-title text-[0.98rem] font-semibold tracking-[-0.015em]",
-                            ),
-                            html.P(
-                                "Each task produces one independently compiled Reward Machine.",
-                                className="section-description mt-[0.18rem] text-[0.76rem] leading-[1.4] text-muted",
-                            ),
-                        ]
-                    ),
-                ],
-                className="section-heading flex items-start gap-[0.7rem]",
+            _section_heading(
+                "list-todo",
+                "Tasks",
+                "Each task produces one independently compiled Reward Machine.",
             ),
             html.Div(
                 [task_row(0)],
@@ -542,51 +587,31 @@ def task_input() -> html.Section:
 #                                   OUTPUT CONTROLS
 # ======================================================================================
 
+
 def output_controls() -> html.Aside:
     """Build output filename, critic controls, and run status."""
     return html.Aside(
         [
-            html.Div(
-                [
-                    _section_icon("wand-sparkles"),
-                    html.Div(
-                        [
-                            html.H2(
-                                "Generate",
-                                className="section-title text-[0.98rem] font-semibold tracking-[-0.015em]",
-                            ),
-                            html.P(
-                                "Critics validate each task automatically.",
-                                className="section-description mt-[0.18rem] text-[0.76rem] leading-[1.4] text-muted",
-                            ),
-                        ]
-                    ),
-                ],
-                className="section-heading flex items-start gap-[0.7rem]",
+            _section_heading(
+                "wand-sparkles", "Generate", "Critics validate each task automatically."
             ),
-            html.Label(
-                [
-                    html.Span(
-                        "Base output filename",
-                        className="field-label text-[0.7rem] font-[750] uppercase tracking-[0.06em] text-muted",
+            _field(
+                "Base output filename",
+                dcc.Input(
+                    id="output-filename",
+                    type="text",
+                    value="reward-machine.rm",
+                    placeholder="reward-machine.rm",
+                    className=(
+                        "text-input min-h-[2.55rem] w-full border border-border-strong "
+                        "!border-border-strong !bg-surface-raised px-[0.72rem] py-[0.65rem] "
+                        "!text-text outline-0 transition duration-150 ease-out "
+                        "placeholder:!text-[#8295b2] focus-visible:outline-3 "
+                        "focus-visible:outline-offset-2 "
+                        "focus-visible:outline-[rgba(56,189,248,0.35)]"
                     ),
-                    dcc.Input(
-                        id="output-filename",
-                        type="text",
-                        value="reward-machine.rm",
-                        placeholder="reward-machine.rm",
-                        className=(
-                            "text-input min-h-[2.55rem] w-full border border-border-strong "
-                            "!border-border-strong !bg-surface-raised px-[0.72rem] py-[0.65rem] "
-                            "!text-text outline-0 transition duration-150 ease-out "
-                            "placeholder:!text-[#8295b2] focus-visible:outline-3 "
-                            "focus-visible:outline-offset-2 "
-                            "focus-visible:outline-[rgba(56,189,248,0.35)]"
-                        ),
-                        disabled=False,
-                    ),
-                ],
-                className="field flex min-w-0 flex-col gap-[0.35rem]",
+                    disabled=False,
+                ),
             ),
             html.Button(
                 [
@@ -616,10 +641,7 @@ def output_controls() -> html.Aside:
                     ),
                     dcc.Checklist(
                         id="critic-options",
-                        options=[
-                            {"label": " Task interpretation critic", "value": "task_critic"},
-                            {"label": " Reward Machine critic", "value": "rm_critic"},
-                        ],
+                        options=CRITIC_OPTIONS,
                         value=["task_critic", "rm_critic"],
                         className="critic-options grid gap-[0.45rem] !text-text",
                     ),
@@ -640,27 +662,21 @@ def output_controls() -> html.Aside:
                     ),
                     dcc.Checklist(
                         id="steps-report-toggle",
-                        options=[
-                            {"label": " Step report (.md)", "value": "steps_report"},
-                        ],
+                        options=STEPS_REPORT_OPTIONS,
                         value=["steps_report"],
-                        className="outputs-options grid gap-[0.45rem] !text-text",
+                        className=OUTPUTS_OPTIONS_CLASS,
                     ),
                     dcc.Checklist(
                         id="labeling-toggle",
-                        options=[
-                            {"label": " MiniGrid labeling", "value": "labeling"},
-                        ],
+                        options=LABELING_OPTIONS,
                         value=[],
-                        className="outputs-options grid gap-[0.45rem] !text-text",
+                        className=OUTPUTS_OPTIONS_CLASS,
                     ),
                     dcc.Checklist(
                         id="embeddings-toggle",
-                        options=[
-                            {"label": " Local state embeddings", "value": "embeddings"},
-                        ],
+                        options=EMBEDDINGS_OPTIONS,
                         value=[],
-                        className="outputs-options grid gap-[0.45rem] !text-text",
+                        className=OUTPUTS_OPTIONS_CLASS,
                     ),
                 ],
                 className=(
@@ -670,7 +686,7 @@ def output_controls() -> html.Aside:
             ),
             html.Div(
                 id="run-feedback",
-                className="field-hint text-[0.76rem] leading-[1.4] text-muted",
+                className=FIELD_HINT_CLASS,
             ),
             html.Div(
                 [
@@ -699,16 +715,28 @@ def output_controls() -> html.Aside:
                     dcc.Tab(
                         label="Steps",
                         value="steps",
-                        className="run-tab border-b border-border px-2 py-2 text-[0.76rem] font-bold text-muted",
-                        selected_className="run-tab-selected border-accent text-accent",
-                        style={"backgroundColor": "#101a2b", "color": "#a7b7ce", "padding": "8px"},
-                        selected_style={"backgroundColor": "#17243a", "color": "#38bdf8", "padding": "8px"},
+                        className=RUN_TAB_CLASS,
+                        selected_className=RUN_TAB_SELECTED_CLASS,
+                        style=RESULT_TAB_STYLE,
+                        selected_style=RESULT_TAB_SELECTED_STYLE,
                         children=html.Div(
                             [
                                 "No run yet.",
-                                html.Button(id="run-prev", n_clicks=0, className="hidden placeholder-button"),
-                                html.Button(id="run-next", n_clicks=0, className="hidden placeholder-button"),
-                                html.Button(id={"type": "task-dot", "index": 0}, n_clicks=0, className="hidden placeholder-button"),
+                                html.Button(
+                                    id="run-prev",
+                                    n_clicks=0,
+                                    className="hidden placeholder-button",
+                                ),
+                                html.Button(
+                                    id="run-next",
+                                    n_clicks=0,
+                                    className="hidden placeholder-button",
+                                ),
+                                html.Button(
+                                    id={"type": "task-dot", "index": 0},
+                                    n_clicks=0,
+                                    className="hidden placeholder-button",
+                                ),
                             ],
                             id="run-steps",
                             className="steps-empty text-[0.8rem] text-muted",
@@ -717,10 +745,10 @@ def output_controls() -> html.Aside:
                     dcc.Tab(
                         label="Log",
                         value="log",
-                        className="run-tab border-b border-border px-2 py-2 text-[0.76rem] font-bold text-muted",
-                        selected_className="run-tab-selected border-accent text-accent",
-                        style={"backgroundColor": "#101a2b", "color": "#a7b7ce", "padding": "8px"},
-                        selected_style={"backgroundColor": "#17243a", "color": "#38bdf8", "padding": "8px"},
+                        className=RUN_TAB_CLASS,
+                        selected_className=RUN_TAB_SELECTED_CLASS,
+                        style=RESULT_TAB_STYLE,
+                        selected_style=RESULT_TAB_SELECTED_STYLE,
                         children=html.Pre(
                             "No run yet.",
                             id="run-log",
@@ -744,119 +772,75 @@ def output_controls() -> html.Aside:
 #                                     RESULT PANELS
 # ======================================================================================
 
+
 def result_panel() -> html.Section:
     """Build the synchronized output selector and exact raw text view."""
     return html.Section(
         [
-            html.Div(
-                [
-                    _section_icon("file-code"),
-                    html.Div(
-                        [
-                            html.H2(
-                                "Compiled Reward Machine",
-                                className="panel-title text-[0.98rem] font-semibold tracking-[-0.015em]",
-                            ),
-                            html.P(
-                                "Import a processed Reward Machine or select a completed output.",
-                                className="section-description mt-[0.18rem] text-[0.76rem] leading-[1.4] text-muted",
-                            ),
-                        ]
-                    ),
-                ],
-                className="section-heading flex items-start gap-[0.7rem]",
+            _section_heading(
+                "file-code",
+                "Compiled Reward Machine",
+                "Import a processed Reward Machine or select a completed output.",
+                title_class=PANEL_TITLE_CLASS,
             ),
-            html.Label(
-                [
-                    html.Span(
-                        "Import processed Reward Machine",
-                        className="field-label text-[0.7rem] font-[750] uppercase tracking-[0.06em] text-muted",
-                    ),
-                    dcc.Upload(
-                        id="reward-machine-upload",
-                        children=html.Div(
-                            [
-                                _icon("upload", "upload-icon size-[1.05rem]"),
-                                html.Span("Choose an .rm or trace .json file"),
-                            ],
-                            className="upload-content flex items-center justify-center gap-2",
-                        ),
-                        accept=".rm,.json,text/plain",
-                        multiple=False,
-                        disabled=False,
-                        className=(
-                            "upload-control grid min-h-[3.3rem] cursor-pointer place-items-center "
-                            "border border-dashed border-border-strong p-3 text-center text-[0.8rem] "
-                            "text-accent transition duration-150 ease-out hover:border-accent "
-                            "hover:bg-surface-hover focus-visible:outline-3 focus-visible:outline-offset-2 "
-                            "focus-visible:outline-[rgba(56,189,248,0.35)]"
-                        ),
-                    ),
-                ],
-                className="field flex min-w-0 flex-col gap-[0.35rem]",
+            _field(
+                "Import processed Reward Machine",
+                _upload(
+                    "reward-machine-upload",
+                    "Choose an .rm or trace .json file",
+                    ".rm,.json,text/plain",
+                ),
             ),
             html.Div(
                 "No imported Reward Machine.",
                 id="reward-machine-upload-status",
-                className="field-hint text-[0.76rem] leading-[1.4] text-muted",
+                className=FIELD_HINT_CLASS,
             ),
-            html.Label(
-                [
-                    html.Span(
-                        "Completed output",
-                        className="field-label text-[0.7rem] font-[750] uppercase tracking-[0.06em] text-muted",
+            _field(
+                "Completed output",
+                dcc.Dropdown(
+                    id="output-selector",
+                    options=[],
+                    value=None,
+                    placeholder="Select a completed output",
+                    clearable=False,
+                    searchable=False,
+                    disabled=True,
+                    className=(
+                        "output-selector min-h-[2.75rem] w-full rounded-[0.55rem] "
+                        "border !border-border-strong !bg-surface-raised p-0 text-left "
+                        "!text-text transition duration-150 ease-out "
+                        "focus:!border-accent focus:outline-3 "
+                        "focus:outline-offset-2 focus:outline-[rgb(56_189_248_/_35%)] "
+                        "focus-visible:!border-accent focus-visible:outline-3 "
+                        "focus-visible:outline-offset-2 "
+                        "focus-visible:outline-[rgb(56_189_248_/_35%)] "
+                        "disabled:cursor-not-allowed disabled:!border-border "
+                        "disabled:!bg-[#0d1625] disabled:!text-muted disabled:opacity-50"
                     ),
-                    dcc.Dropdown(
-                        id="output-selector",
-                        options=[],
-                        value=None,
-                        placeholder="Select a completed output",
-                        clearable=False,
-                        searchable=False,
-                        disabled=True,
-                        className=(
-                            "output-selector min-h-[2.75rem] w-full rounded-[0.55rem] "
-                            "border !border-border-strong !bg-surface-raised p-0 text-left "
-                            "!text-text transition duration-150 ease-out "
-                            "focus:!border-accent focus:outline-3 "
-                            "focus:outline-offset-2 focus:outline-[rgb(56_189_248_/_35%)] "
-                            "focus-visible:!border-accent focus-visible:outline-3 "
-                            "focus-visible:outline-offset-2 "
-                            "focus-visible:outline-[rgb(56_189_248_/_35%)] "
-                            "disabled:cursor-not-allowed disabled:!border-border "
-                            "disabled:!bg-[#0d1625] disabled:!text-muted disabled:opacity-50"
-                        ),
-                    ),
-                ],
-                className="field flex min-w-0 flex-col gap-[0.35rem]",
+                ),
             ),
             html.Div(
                 id="result-summary",
                 className="result-summary text-[0.76rem] leading-[1.4] text-muted",
             ),
-            html.Label(
-                [
-                    html.Span(
-                        "Pipeline outputs",
-                        className="field-label text-[0.7rem] font-[750] uppercase tracking-[0.06em] text-muted",
+            _field(
+                "Pipeline outputs",
+                dcc.Tabs(
+                    id="result-tabs",
+                    value=PipelineStep.REWARD_MACHINE.value,
+                    className="result-tabs flex-1",
+                    content_style={"display": "none"},
+                    children=[_step_tab(PipelineStep.REWARD_MACHINE)],
+                ),
+                html.Div(
+                    id="result-bodies",
+                    children=result_bodies(
+                        {PipelineStep.REWARD_MACHINE: "No output selected."},
+                        PipelineStep.REWARD_MACHINE,
                     ),
-                    dcc.Tabs(
-                        id="result-tabs",
-                        value=PipelineStep.REWARD_MACHINE.value,
-                        className="result-tabs flex-1",
-                        content_style={"display": "none"},
-                        children=[_step_tab(PipelineStep.REWARD_MACHINE)],
-                    ),
-                    html.Div(
-                        id="result-bodies",
-                        children=result_bodies(
-                            {PipelineStep.REWARD_MACHINE: "No output selected."},
-                            PipelineStep.REWARD_MACHINE,
-                        ),
-                        className="step-bodies grid min-w-0",
-                    ),
-                ],
-                className="field flex min-w-0 flex-col gap-[0.35rem]",
+                    className="step-bodies grid min-w-0",
+                ),
             ),
         ],
         className=(
@@ -868,8 +852,6 @@ def result_panel() -> html.Section:
 
 def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
     """Build the interactive Cytoscape graph panel."""
-    import dash_cytoscape as cyto
-
     return html.Section(
         [
             html.Div(
@@ -879,7 +861,7 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                             _section_icon("network"),
                             html.H2(
                                 "State graph",
-                                className="panel-title text-[0.98rem] font-semibold tracking-[-0.015em]",
+                                className=PANEL_TITLE_CLASS,
                             ),
                         ],
                         className="panel-heading flex min-w-0 items-center gap-2 justify-self-start",
@@ -917,75 +899,45 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                                 [
                                     html.Ul(
                                         [
-                                            html.Li(
-                                        [
-                                            html.Span(
-                                                className=(
+                                            _legend_row(
+                                                (
                                                     "legend-swatch inline-block h-4 w-4 flex-none "
                                                     "rounded-[0.25rem] border-2 border-[#5878a8] "
                                                     "bg-[#18263d]"
                                                 ),
-                                                **{"aria-hidden": "true"},
+                                                "Default state",
                                             ),
-                                            html.Span("Default state"),
-                                        ],
-                                        className="legend-row flex items-center gap-2 text-[0.72rem] text-muted",
-                                            ),
-                                            html.Li(
-                                        [
-                                            html.Span(
-                                                className=(
+                                            _legend_row(
+                                                (
                                                     "legend-swatch-initial legend-swatch inline-block h-4 w-4 "
                                                     "flex-none rounded-[0.25rem] border-[3px] border-accent "
                                                     "bg-[#18263d]"
                                                 ),
-                                                **{"aria-hidden": "true"},
+                                                "Initial state",
                                             ),
-                                            html.Span("Initial state"),
-                                        ],
-                                        className="legend-row flex items-center gap-2 text-[0.72rem] text-muted",
-                                            ),
-                                            html.Li(
-                                        [
-                                            html.Span(
-                                                className=(
+                                            _legend_row(
+                                                (
                                                     "legend-swatch-accepting legend-swatch inline-block h-4 w-4 "
                                                     "flex-none rounded-[0.25rem] border-2 border-success "
                                                     "bg-[#14532d]"
                                                 ),
-                                                **{"aria-hidden": "true"},
+                                                "Accepting state",
                                             ),
-                                            html.Span("Accepting state"),
-                                        ],
-                                        className="legend-row flex items-center gap-2 text-[0.72rem] text-muted",
-                                            ),
-                                            html.Li(
-                                        [
-                                            html.Span(
-                                                className=(
+                                            _legend_row(
+                                                (
                                                     "legend-swatch-rejecting legend-swatch inline-block h-4 w-4 "
                                                     "flex-none rounded-[0.25rem] border-2 border-[#fb7185] "
                                                     "bg-[#572033]"
                                                 ),
-                                                **{"aria-hidden": "true"},
+                                                "Rejecting state",
                                             ),
-                                            html.Span("Rejecting state"),
-                                        ],
-                                        className="legend-row flex items-center gap-2 text-[0.72rem] text-muted",
-                                            ),
-                                            html.Li(
-                                        [
-                                            html.Span(
-                                                className=(
+                                            _legend_row(
+                                                (
                                                     "legend-swatch-transition legend-swatch inline-block h-0 "
                                                     "w-4 flex-none rounded-none border-0 border-t-2 "
                                                     "border-[#7189ad] bg-transparent"
                                                 ),
-                                                **{"aria-hidden": "true"},
-                                            ),
-                                            html.Span("Explicit transition"),
-                                        ],
-                                        className="legend-row flex items-center gap-2 text-[0.72rem] text-muted",
+                                                "Explicit transition",
                                             ),
                                         ],
                                         className=(
@@ -1074,6 +1026,7 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
 #                                  APPLICATION LAYOUT
 # ======================================================================================
 
+
 def create_layout(stylesheet: list[dict] | None = None) -> html.Main:
     """Build the complete UI layout without registering callbacks."""
     return html.Main(
@@ -1129,7 +1082,10 @@ def create_layout(stylesheet: list[dict] | None = None) -> html.Main:
                 className=WORKSPACE_CLASS,
             ),
             dcc.Interval(id="poll-interval", interval=500, n_intervals=0),
-            dcc.Store(id="task-selection", data={"selected": 0, "last_active": None, "run_id": 0}),
+            dcc.Store(
+                id="task-selection",
+                data={"selected": 0, "last_active": None, "run_id": 0},
+            ),
             dcc.Store(id="imported-reward-machine", data=None),
             dcc.Store(id="graph-transition-pin", data=None),
             dcc.Store(id="graph-focus-state", data=False),

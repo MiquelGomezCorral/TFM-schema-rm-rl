@@ -12,15 +12,12 @@ dependencies = [
     "maikol-utils==0.8.2",
     "dash>=4,<5",
     "dash-cytoscape",
-    "accelerate==1.15.0",
     "gymnasium==1.3.0",
-    "metaworld==3.1.1",
     "minigrid==3.1.0",
     "numpy==2.5.3",
     "tianshou==2.0.1",
     "torch==2.14.0",
     "transformers==5.17.0",
-    "xminigrid==0.9.3",
 ]
 
 [build-system]
@@ -40,3 +37,61 @@ include = ["app"]
 exclude = ["data/**", "logs/**", "models/**"]
 extraPaths = ["app"]
 typeCheckingMode = "off"
+
+# ======================================================================================
+#                                    LINT AND CHECKS
+# ======================================================================================
+[tool.ruff]
+line-length = 100
+src = ["app"]
+extend-exclude = [".agents", "*.md", "dependencies"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", "I", "N", "UP", "B", "C4", "SIM", "RET", "PIE", "PTH",
+    "TID", "S", "D", "C90", "PLR0913", "PLC0415", "ARG", "NPY", "T10", "RUF",
+]
+ignore = ["E501", "D1", "S101", "S311"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"**/tests/**" = ["D", "ARG", "S"]
+"**/test_*.py" = ["D", "ARG", "S"]
+"*.ipynb" = ["D", "E402", "F811"]
+
+[tool.ruff.lint.pyflakes]
+allowed-unused-imports = ["minigrid"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-args = 5
+
+[tool.ruff.lint.pep8-naming]
+extend-ignore-names = ["*CONFIG", "visit_*"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "parents"
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"sys.path".msg = "No sys.path hacks; the editable install resolves imports."
+"importlib.import_module".msg = "No dynamic imports; import at the top of the file."
+
+[tool.importlinter]
+root_packages = ["src", "scripts"]
+
+[[tool.importlinter.contracts]]
+name = "src never imports scripts"
+type = "forbidden"
+source_modules = ["src"]
+forbidden_modules = ["scripts"]
+
+[[tool.importlinter.contracts]]
+name = "config imports no project package"
+type = "forbidden"
+source_modules = ["src.config"]
+forbidden_modules = ["src.arm_fm", "src.compiler", "src.engines", "src.models", "src.prompts", "src.utils", "src.web", "scripts"]

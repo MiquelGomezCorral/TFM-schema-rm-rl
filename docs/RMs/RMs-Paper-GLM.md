@@ -233,7 +233,7 @@ As an example, consider the reward machine shown in Figure 2b. This machine rewa
 
 More generally, we learn one option for each pair of RM states $\langle u, u_t \rangle$ that are connected in the RM, including self-loop edges where $u = u_t$. We will name the options with the pairs of RM states $\langle u, u_t \rangle$ that they correspond to. This means that the set of options is $\mathcal{A} = \{ \langle u, \delta_u(u, \sigma) \rangle \mid u \in U, \sigma \in 2^\mathcal{P} \}$. The option $\langle u, u_t \rangle$ will have its initiation set defined to contain all the states in the cross-product MDP where the RM state is $u: \mathcal{I}_{\langle u, u_t \rangle} = \{ \langle s, u \rangle : s \in S \}$. The termination condition is then defined as follows:
 
-$$\beta_{\langle u, u_t \rangle}(s', u') = \begin{cases} 
+$$\beta_{\langle u, u_t \rangle}(s', u') = \begin{cases}
 1 & \text{if } u' \neq u \text{ or } s' \text{ is terminal} \\
 0 & \text{otherwise}
 \end{cases}$$
@@ -336,7 +336,7 @@ In this section, we consider the use of value iteration over the RM states as a 
 
 Formally, given a simple RM $\langle U, u_0, F, \delta_u, \delta_r \rangle$, we construct an MDP $M = \langle S, A, r, p, \gamma \rangle$, where $S = U \cup F$, $A = 2^{\mathcal{P}}$, $r(u, \sigma, u') = \delta_r(u, \sigma)$ if $u \in U$ (zero otherwise), $\gamma < 1$, and
 
-$$p(u'|u, \sigma) = \begin{cases} 
+$$p(u'|u, \sigma) = \begin{cases}
 1 & \text{if } u \in F \text{ and } u' = u \\
 1 & \text{if } u \in U \text{ and } u' = \delta_u(u, \sigma) \\
 0 & \text{otherwise}

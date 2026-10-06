@@ -9,11 +9,12 @@ diagnostics to reproduce a failed run without changing compilation semantics.
 
 - The pipeline publishes one immutable typed event for each task stage. The CLI and
   web controller consume the same event boundary; the web layer does not parse log text.
-- Compiler failures returned as exit codes are delivered through an explicit hook.
+- Expected compiler failures make `generate_rm` return False and are delivered through an
+  explicit hook.
   When three attempts are exhausted, the error includes the last failing stage and
-  its feedback; the web Run status retains this reason rather than only the exit code.
-  Expected provider failures also retain their diagnostic message. The generic exit
-  code message is a fallback only when no specific reason was delivered.
+  its feedback; the web Run status retains this reason rather than only a failed result.
+  Expected provider failures also retain their diagnostic message. The generic failure
+  message is a fallback only when no specific reason was delivered.
 - Each task exposes nine sequential stages: structured proposal generation, optional task
   critic, deterministic DECLARE/LTLf materialization, FL-AT/MONA DFA compilation,
   Reward Machine construction, state-description generation, optional Reward Machine critic,
@@ -47,7 +48,7 @@ diagnostics to reproduce a failed run without changing compilation semantics.
 - Labeling retries likewise preserve the accepted RM and descriptions. Labeling or embedding
   failure retains its stage-specific diagnostic and does not restart proposal generation.
 - Failure reporting must not parse logs, replace an available diagnostic with a
-  generic exit code, add refinement attempts, or override a critic's rejection.
+  generic failure message, add refinement attempts, or override a critic's rejection.
 - Logs include validated proposal data, critic verdicts, LTLf clauses, complete DFA data,
   serialized Reward Machines, validated node descriptions and labeling source, and embedding
   metadata, but never explicitly include credentials, environment
@@ -69,7 +70,7 @@ keeps their association visible when a trace is reopened.
 ## Enforcement
 
 - `app/scripts/generate_rm.py` owns stage ordering, event publication, artifact logging,
-  and handler cleanup.
+  and handler cleanup; `app/src/utils/generation_pipeline.py` owns output writing.
 - `app/src/utils/generation_logging.py` exposes the explicit failure callback;
   `app/src/web/runner.py` retains that diagnostic alongside immutable snapshots and
   retry reset behavior.

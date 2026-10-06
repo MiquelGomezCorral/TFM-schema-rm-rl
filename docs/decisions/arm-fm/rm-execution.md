@@ -69,14 +69,15 @@ without expanding the machine or adding a guard-coverage calculation.
 - `app/src/arm_fm/runtime.py` owns guard evaluation, explicit fallback selection,
   zero-reward implicit loops, ordered overlap warnings, and one update per step.
   `tests/test_arm_fm.py` checks the runtime contracts.
-- `app/src/compiler/reward_machine.py` reuses the shared text parser and serializer.
+- `app/src/compiler/rm_format.py` owns the shared text parser and serializer; the compiler
+  and the runtime both import it, and it never imports `src.arm_fm`.
   `tests/test_reward_machine_format.py` checks zero-reward progress, imported guards,
   explicit self-loops, and `else` fallbacks to other destinations.
-- `app/src/web/visualization.py` owns display-only fallback edges for the app and
-  `app/scripts/render_rm.py`; `app/src/web/svg.py` renders the shared elements.
+- `app/src/utils/visualization.py` owns display-only fallback edges for the app and
+  `app/scripts/render_rm.py`; `app/src/utils/svg.py` renders the shared elements.
   `tests/test_reward_machine_format.py` checks fallback destinations, rewards,
   visible SVG labels, and unchanged input transitions.
-- `app/src/web/visualization.py` owns layered positions and sibling-label offsets;
+- `app/src/utils/visualization.py` owns layered positions and sibling-label offsets;
   it also shares loop dimensions with the SVG renderer. `app/src/web/components.py`
   selects Cytoscape's preset layout. `tests/test_web.py` checks initial app placement
   against the standalone SVG and keeps pan and zoom enabled.

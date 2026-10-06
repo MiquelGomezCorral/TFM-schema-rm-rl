@@ -7,12 +7,19 @@ from tempfile import TemporaryDirectory
 from xml.etree import ElementTree
 
 from scripts.render_rm import render_reward_machine
-from src.arm_fm.runtime import RewardMachineRuntime, parse_paper_reward_machine
-from src.compiler import ClauseProposal, Proposal, build_compilation_result
-from src.compiler.reward_machine import parse_reward_machine, serialize_reward_machine
-from src.models import EnvironmentDescription, PriorityLevel
-from src.utils.generation import save_results
-from src.web.visualization import reward_machine_to_elements
+from src.arm_fm.runtime import RewardMachineRuntime
+from src.compiler import (
+    ClauseProposal,
+    Proposal,
+    build_compilation_result,
+    parse_paper_reward_machine,
+    parse_reward_machine,
+    serialize_reward_machine,
+)
+from src.config import PriorityLevel
+from src.models import EnvironmentDescription
+from src.utils import reward_machine_to_elements
+from src.utils.generation_pipeline import save_results
 
 
 def _transition_tuples(structure):
@@ -28,15 +35,28 @@ class RewardMachineFormatTests(unittest.TestCase):
         environment = EnvironmentDescription.from_markdown(
             "# Demo\n## Propositions\n- `done`: Completion event", source="demo.md"
         )
-        proposal = Proposal("Finish twice", (ClauseProposal(
-            "Finish twice", "ExistenceTwo", ("done",), PriorityLevel.NONE, "unused"
-        ),))
+        proposal = Proposal(
+            "Finish twice",
+            (
+                ClauseProposal(
+                    "Finish twice",
+                    "ExistenceTwo",
+                    ("done",),
+                    PriorityLevel.NONE,
+                    "unused",
+                ),
+            ),
+        )
         dfa = {
-            "states": ("0", "1", "2"), "initial_state": "0",
-            "accepting_states": ("2",), "alphabet": ("done",),
+            "states": ("0", "1", "2"),
+            "initial_state": "0",
+            "accepting_states": ("2",),
+            "alphabet": ("done",),
             "transitions": {
-                ("0", "!done"): "0", ("0", "done"): "1",
-                ("1", "!done"): "1", ("1", "done"): "2",
+                ("0", "!done"): "0",
+                ("0", "done"): "1",
+                ("1", "!done"): "1",
+                ("1", "done"): "2",
                 ("2", "true"): "2",
             },
         }
@@ -56,8 +76,11 @@ REWARD_FUNCTION:
         self.assertEqual(serialize_reward_machine(parse_reward_machine(result.text)), expected)
         runtime = RewardMachineRuntime(parse_paper_reward_machine(result.text))
         for valuation, destination, reward in (
-            (False, "u0", 0), (True, "u1", 0), (False, "u1", 0),
-            (True, "u2", 1.1), (True, "u2", 0),
+            (False, "u0", 0),
+            (True, "u1", 0),
+            (False, "u1", 0),
+            (True, "u2", 1.1),
+            (True, "u2", 0),
         ):
             step = runtime.step({"done": valuation})
             self.assertEqual((step.destination, step.reward), (destination, reward))
@@ -160,9 +183,7 @@ REWARD_FUNCTION:
                     (1, 2, ("b",), 1.0),
                 ),
                 "fallbacks": {0: (1, -0.2), 1: (1, 0.0), 2: (2, 0.0)},
-                "labels": Counter(
-                    {"else · r=-0.20": 1, "1 case · r=+1.00": 2, "else · r=0": 2}
-                ),
+                "labels": Counter({"else · r=-0.20": 1, "1 case · r=+1.00": 2, "else · r=0": 2}),
             },
             {
                 "name": "ordinary guarded self-loop plus implicit else",
@@ -180,7 +201,11 @@ REWARD_FUNCTION:
                 "explicit": ((0, 0, ("a",), 0.25), (0, 1, ("b",), 1.0)),
                 "fallbacks": {0: (0, 0.0), 1: (1, 0.0)},
                 "labels": Counter(
-                    {"1 case + else · mixed r": 1, "1 case · r=+1.00": 1, "else · r=0": 1}
+                    {
+                        "1 case + else · mixed r": 1,
+                        "1 case · r=+1.00": 1,
+                        "else · r=0": 1,
+                    }
                 ),
             },
             {

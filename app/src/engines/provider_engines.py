@@ -2,32 +2,51 @@
 
 import json
 import os
-from functools import partial
 import subprocess
+from collections.abc import Iterator
 from typing import Any
 from uuid import uuid4
 
 from openai import OpenAI
 
-from src.models import EnvironmentDescription
 from src.config import Configuration
+from src.models import EnvironmentDescription
 
 from .errors import ImmediateEngineError, RetryableEngineError
 from .generic_engine import GenericEngine
 from .structured import completion_text, responses_text
-
 
 ANTIGRAVITY_AGENT = "schema-rm-provider"
 ANTIGRAVITY_TIMEOUT_SECONDS = 305
 OPENCODE_GO_MODEL = "opencode-go/mimo-v2.5"
 PI_TIMEOUT_SECONDS = 305
 
+
+# ======================================================================================
+#                                  SHARED HELPERS
+# ======================================================================================
+
+
+def _required_env(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise ValueError(f"{name} is required")
+    return value
+
+
+def _required_model(model: str | None, provider_name: str) -> str:
+    if not model:
+        raise ValueError(f"A {provider_name} model is required")
+    return model
+
+
 # ======================================================================================
 #                                  PROVIDER ADAPTERS
 # ======================================================================================
 
+
 class OpenAIEngine(GenericEngine):
-    """IBM Engine-compatible backend using OpenAI Structured Outputs."""
+    """Backend using OpenAI Structured Outputs."""
 
     def __init__(
         self,
@@ -35,18 +54,49 @@ class OpenAIEngine(GenericEngine):
         model: str | None,
     ) -> None:
         model = _required_model(model, "OpenAI")
-        client = OpenAI(api_key=_required_env("OPENAI_API_KEY"), max_retries=0)
+        self._client = OpenAI(api_key=_required_env("OPENAI_API_KEY"), max_retries=0)
         super().__init__(
             environment,
             model,
             "OpenAI",
-            partial(_request_responses, client),
-            partial(_request_responses_text, client),
+            self._request_responses,
+            self._request_responses_text,
         )
+
+    def _request_responses(
+        self, model: str, system: str, user: str, schema: dict, name: str
+    ) -> str:
+        response = self._client.responses.create(
+            model=model,
+            input=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": name,
+                    "strict": True,
+                    "schema": schema,
+                }
+            },
+            reasoning={"effort": "none"},
+        )
+        return responses_text(response)
+
+    def _request_responses_text(self, model: str, system: str, user: str) -> str:
+        response = self._client.responses.create(
+            model=model,
+            input=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        return responses_text(response)
 
 
 class OpenCodeEngine(GenericEngine):
-    """IBM Engine-compatible backend using OpenCode's OpenAI-compatible API."""
+    """Backend using OpenCode's OpenAI-compatible API."""
 
     def __init__(
         self,
@@ -63,7 +113,7 @@ class OpenCodeEngine(GenericEngine):
                 _request_pi_text,
             )
             return
-        client = OpenAI(
+        self._client = OpenAI(
             api_key=_required_env("OPENCODE_API_KEY"),
             base_url=os.environ.get("OPENCODE_BASE_URL") or "https://opencode.ai/zen/v1",
             max_retries=0,
@@ -73,13 +123,40 @@ class OpenCodeEngine(GenericEngine):
             environment,
             model,
             "OpenCode",
-            partial(_request_chat_completions, client),
-            partial(_request_chat_completions_text, client),
+            self._request_chat_completions,
+            self._request_chat_completions_text,
         )
+
+    def _request_chat_completions(
+        self, model: str, system: str, user: str, schema: dict, name: str
+    ) -> str:
+        response = self._client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {"name": name, "strict": True, "schema": schema},
+            },
+            reasoning_effort="none",
+        )
+        return completion_text(response)
+
+    def _request_chat_completions_text(self, model: str, system: str, user: str) -> str:
+        response = self._client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        return completion_text(response)
 
 
 class AntigravityEngine(GenericEngine):
-    """IBM Engine-compatible backend using Antigravity's local CLI."""
+    """Backend using Antigravity's local CLI."""
 
     def __init__(
         self,
@@ -97,83 +174,8 @@ class AntigravityEngine(GenericEngine):
 
 
 # ======================================================================================
-#                                PROVIDER REQUEST HELPERS
+#                                PROVIDER PI (OPENCODE GO)
 # ======================================================================================
-
-def _required_env(name: str) -> str:
-    value = os.environ.get(name)
-    if not value:
-        raise ValueError(f"{name} is required")
-    return value
-
-
-def _required_model(model: str | None, provider_name: str) -> str:
-    if not model:
-        raise ValueError(f"A {provider_name} model is required")
-    return model
-
-
-def _request_responses(
-    client: OpenAI,
-    model: str,
-    system: str,
-    user: str,
-    schema: dict,
-    name: str,
-) -> str:
-    response = client.responses.create(
-        model=model,
-        input=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-        text={"format": {"type": "json_schema", "name": name, "strict": True, "schema": schema}},
-        reasoning={"effort": "none"},
-    )
-    return responses_text(response)
-
-
-def _request_chat_completions(
-    client: OpenAI,
-    model: str,
-    system: str,
-    user: str,
-    schema: dict,
-    name: str,
-) -> str:
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-        response_format={
-            "type": "json_schema",
-            "json_schema": {"name": name, "strict": True, "schema": schema},
-        },
-        reasoning_effort="none"
-    )
-    return completion_text(response)
-
-
-def _request_responses_text(
-    client: OpenAI,
-    model: str,
-    system: str,
-    user: str,
-) -> str:
-    response = client.responses.create(
-        model=model,
-        input=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-    )
-    return responses_text(response)
-
-
-def _request_chat_completions_text(
-    client: OpenAI,
-    model: str,
-    system: str,
-    user: str,
-) -> str:
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-    )
-    return completion_text(response)
 
 
 def _request_pi(
@@ -195,20 +197,24 @@ def _request_pi_text(model: str, system: str, user: str) -> str:
     """Run one no-tool Pi request and extract the final assistant text event."""
     command = [
         "pi",
-        "--model", model,
+        "--model",
+        model,
         "--no-tools",
         "--no-extensions",
         "--no-context-files",
         "--no-session",
-        "--thinking", "minimal",
-        "--mode", "json",
+        "--thinking",
+        "minimal",
+        "--mode",
+        "json",
         "--print",
-        "--system-prompt", system,
+        "--system-prompt",
+        system,
         "--",
         user,
     ]
     try:
-        completed = subprocess.run(
+        completed = subprocess.run(  # noqa: S603  approved: fixed provider CLI argv, no shell
             command,
             capture_output=True,
             text=True,
@@ -248,15 +254,22 @@ def _parse_pi_output(output: str) -> str:
         if event.get("type") == "message_end" and isinstance(message, dict):
             assistant_text = _assistant_text(message)
         elif event.get("type") == "agent_end":
-            messages = event.get("messages")
-            if isinstance(messages, list):
-                for candidate in reversed(messages):
-                    if isinstance(candidate, dict) and candidate.get("role") == "assistant":
-                        assistant_text = _assistant_text(candidate)
-                        break
+            final_text = _last_assistant_text(event.get("messages"))
+            if final_text is not None:
+                assistant_text = final_text
     if not assistant_text:
         raise ImmediateEngineError("Pi returned no final assistant text")
     return assistant_text
+
+
+def _last_assistant_text(messages: object) -> str | None:
+    """Return the text of the last assistant message, or ``None`` when there is none."""
+    if not isinstance(messages, list):
+        return None
+    for candidate in reversed(messages):
+        if isinstance(candidate, dict) and candidate.get("role") == "assistant":
+            return _assistant_text(candidate)
+    return None
 
 
 def _assistant_text(message: dict[str, Any]) -> str:
@@ -266,18 +279,23 @@ def _assistant_text(message: dict[str, Any]) -> str:
     return "".join(
         item.get("text", "")
         for item in content
-        if isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("text"), str)
+        if isinstance(item, dict)
+        and item.get("type") == "text"
+        and isinstance(item.get("text"), str)
     )
+
 
 # ======================================================================================
 #                                PROVIDER ANTIGRAVITY
 # ======================================================================================
+
+
 def _request_antigravity(
     model: str,
     system: str,
     user: str,
     schema: dict,
-    name: str,
+    _name: str,
 ) -> str:
     """Run one schema-constrained Antigravity turn and return its JSON output."""
     request = json.dumps(
@@ -288,14 +306,17 @@ def _request_antigravity(
         ensure_ascii=False,
         separators=(",", ":"),
     )
-    user_event = json.dumps(
-        {
-            "event": "user",
-            "message": {"content": request},
-        },
-        ensure_ascii=False,
-        separators=(",", ":"),
-    ) + "\n"
+    user_event = (
+        json.dumps(
+            {
+                "event": "user",
+                "message": {"content": request},
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        + "\n"
+    )
     command = [
         "agy",
         "--input-format",
@@ -314,7 +335,7 @@ def _request_antigravity(
     try:
         # ponytail: one process per request keeps lifecycle simple; add a persistent
         # stream only if measured CLI startup latency becomes material.
-        completed = subprocess.run(
+        completed = subprocess.run(  # noqa: S603  approved: fixed provider CLI argv, no shell
             command,
             input=user_event,
             capture_output=True,
@@ -334,10 +355,12 @@ def _request_antigravity(
 
     if completed.returncode:
         diagnostics = " ".join(
-            value for value in (
+            value
+            for value in (
                 _antigravity_result_error(completed.stdout or ""),
                 completed.stderr or "",
-            ) if value
+            )
+            if value
         )
         raise ImmediateEngineError(_antigravity_exit_message(diagnostics))
     return _parse_antigravity_output(completed.stdout)
@@ -371,7 +394,11 @@ def _antigravity_exit_message(stderr: str) -> str:
     diagnostic = stderr.lower()
     if any(marker in diagnostic for marker in ("login", "auth", "credential", "sign in")):
         hint = "Antigravity authentication failed; run 'agy' interactively once to sign in"
-    elif "model unavailable" in diagnostic or "invalid model" in diagnostic or ("not found" in diagnostic and "model" in diagnostic):
+    elif (
+        "model unavailable" in diagnostic
+        or "invalid model" in diagnostic
+        or ("not found" in diagnostic and "model" in diagnostic)
+    ):
         hint = "Antigravity model is unavailable; choose a slug from 'agy models'"
     else:
         hint = "Antigravity CLI exited with a nonzero status"
@@ -393,15 +420,38 @@ def _antigravity_result_error(output: str) -> str:
         result = event.get("result")
         if not isinstance(result, dict) or not result.get("error"):
             continue
-        error = result["error"]
-        return error if isinstance(error, str) else json.dumps(error)
+        return _error_text(result["error"])
     return ""
+
+
+def _error_text(error: object) -> str:
+    return error if isinstance(error, str) else json.dumps(error)
 
 
 def _parse_antigravity_output(output: str) -> str:
     """Validate the constrained session and extract the single terminal result."""
     saw_init = False
     result: dict[str, Any] | None = None
+    for event in _antigravity_events(output):
+        event_type = event.get("event")
+        if event_type == "init":
+            if saw_init:
+                raise ImmediateEngineError("Antigravity returned duplicate init events")
+            saw_init = True
+            _check_init_event(event)
+        elif event_type == "step_update":
+            _check_step_update(event)
+        elif event_type == "result":
+            result = _result_event(event, saw_init=saw_init, previous=result)
+
+    if not saw_init:
+        raise ImmediateEngineError("Antigravity stream did not provide an init event")
+    if result is None:
+        raise ImmediateEngineError("Antigravity stream did not provide a result")
+    return _structured_output(result)
+
+
+def _antigravity_events(output: str) -> Iterator[dict[str, Any]]:
     for line in output.splitlines():
         if not line.strip():
             continue
@@ -413,47 +463,45 @@ def _parse_antigravity_output(output: str) -> str:
             ) from error
         if not isinstance(event, dict):
             raise ImmediateEngineError("Antigravity returned an invalid stream event")
+        yield event
 
-        event_type = event.get("event")
-        if event_type == "init":
-            if saw_init:
-                raise ImmediateEngineError("Antigravity returned duplicate init events")
-            saw_init = True
-            init = event.get("init")
-            if not isinstance(init, dict):
-                raise ImmediateEngineError("Antigravity returned an invalid init event")
-            if (
-                init.get("agent") != ANTIGRAVITY_AGENT
-                or not isinstance(init.get("tools"), list)
-            ):
-                raise ImmediateEngineError("Antigravity returned an invalid init event")
-        elif event_type == "step_update":
-            step_update = event.get("step_update")
-            if not isinstance(step_update, dict):
-                raise ImmediateEngineError("Antigravity returned an invalid step update")
-            if step_update.get("step_type") == "tool":
-                raise ImmediateEngineError("Antigravity agent used a tool unexpectedly")
-            if step_update.get("subagent_info"):
-                raise ImmediateEngineError("Antigravity agent invoked a subagent unexpectedly")
-        elif event_type == "result":
-            if not saw_init:
-                raise ImmediateEngineError("Antigravity returned a result before init")
-            if result is not None:
-                raise ImmediateEngineError("Antigravity returned duplicate result events")
-            result = event.get("result")
-            if not isinstance(result, dict):
-                raise ImmediateEngineError("Antigravity returned an invalid result event")
 
+def _check_init_event(event: dict[str, Any]) -> None:
+    init = event.get("init")
+    if not isinstance(init, dict):
+        raise ImmediateEngineError("Antigravity returned an invalid init event")
+    if init.get("agent") != ANTIGRAVITY_AGENT or not isinstance(init.get("tools"), list):
+        raise ImmediateEngineError("Antigravity returned an invalid init event")
+
+
+def _check_step_update(event: dict[str, Any]) -> None:
+    step_update = event.get("step_update")
+    if not isinstance(step_update, dict):
+        raise ImmediateEngineError("Antigravity returned an invalid step update")
+    if step_update.get("step_type") == "tool":
+        raise ImmediateEngineError("Antigravity agent used a tool unexpectedly")
+    if step_update.get("subagent_info"):
+        raise ImmediateEngineError("Antigravity agent invoked a subagent unexpectedly")
+
+
+def _result_event(
+    event: dict[str, Any], *, saw_init: bool, previous: dict[str, Any] | None
+) -> dict[str, Any]:
     if not saw_init:
-        raise ImmediateEngineError("Antigravity stream did not provide an init event")
-    if result is None:
-        raise ImmediateEngineError("Antigravity stream did not provide a result")
-    status = result.get("status")
-    if str(status).upper() != "SUCCESS":
+        raise ImmediateEngineError("Antigravity returned a result before init")
+    if previous is not None:
+        raise ImmediateEngineError("Antigravity returned duplicate result events")
+    result = event.get("result")
+    if not isinstance(result, dict):
+        raise ImmediateEngineError("Antigravity returned an invalid result event")
+    return result
+
+
+def _structured_output(result: dict[str, Any]) -> str:
+    if str(result.get("status")).upper() != "SUCCESS":
         error = result.get("error")
         if error:
-            error_text = error if isinstance(error, str) else json.dumps(error)
-            raise ImmediateEngineError(_antigravity_exit_message(error_text))
+            raise ImmediateEngineError(_antigravity_exit_message(_error_text(error)))
         raise ImmediateEngineError("Antigravity returned an unsuccessful result")
     structured_output = result.get("structured_output")
     if not isinstance(structured_output, dict):

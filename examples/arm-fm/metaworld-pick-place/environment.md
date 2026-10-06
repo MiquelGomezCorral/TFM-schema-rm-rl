@@ -33,4 +33,3 @@ These are persistent conditions over the current robot and object state.
 - Eventually place the object at its goal.
 - Grasp the object before placing it at the goal.
 - Move the object near the goal before completing placement.
-

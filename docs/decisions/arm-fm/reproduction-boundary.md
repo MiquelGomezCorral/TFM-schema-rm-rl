@@ -45,8 +45,10 @@ semantic rather than byte-for-byte.
   Baseline prompts, model resolution, and generation behavior remain unchanged.
 - Compiler node embeddings optionally use a configured local llama-server endpoint and
   the existing embedding settings/cache/bundle interfaces. Input defaults to exactly each
-  node description. An explicit context prefix is a separate recorded experiment; effective
-  text and resolved model/extraction settings identify cache entries.
+  node description. An opt-in context (`--embedding-context`) prefixes each description with
+  an instruction stating what the vectors are for plus the inputs the state tagger received;
+  it is a separate recorded experiment. Effective text and resolved model/extraction settings
+  identify cache entries.
 - Local embedding requests contain one node's effective text at a time. Fixed single-input
   requests keep a text-keyed cache independent of other nodes' batch composition; the local
   preflight measured small vector differences between single and multi-text requests.

@@ -8,10 +8,10 @@ from nl2ltl.declare.base import Template
 from nl2ltl.declare.declare import Existence, ExistenceTwo, Precedence
 from pylogics.syntax.ltl import Atomic
 
-from src.models import EnvironmentDescription, MAX_TASK_CLAUSES, PriorityLevel
+from src.config import Configuration, PriorityLevel
+from src.models import EnvironmentDescription
 
 from .errors import CriticValidationError, ProposalValidationError, RetryableEngineError
-
 
 # ======================================================================================
 #                                   STRUCTURED TYPES
@@ -45,6 +45,7 @@ class ProposalSelection:
 #                                        SCHEMAS
 # ======================================================================================
 
+
 def proposal_schema(task: str, environment: EnvironmentDescription) -> dict:
     """Build the constrained schema for one nonempty task."""
     if not task.strip():
@@ -58,7 +59,10 @@ def proposal_schema(task: str, environment: EnvironmentDescription) -> dict:
                 "pattern": {"type": "string", "enum": [pattern]},
                 "propositions": {
                     "type": "array",
-                    "items": {"type": "string", "enum": list(environment.proposition_ids)},
+                    "items": {
+                        "type": "string",
+                        "enum": list(environment.proposition_ids),
+                    },
                     "minItems": arity,
                     "maxItems": arity,
                 },
@@ -79,7 +83,7 @@ def proposal_schema(task: str, environment: EnvironmentDescription) -> dict:
                 "type": "array",
                 "items": {"anyOf": clause_schemas},
                 "minItems": 1,
-                "maxItems": MAX_TASK_CLAUSES,
+                "maxItems": Configuration.MAX_TASK_CLAUSES,
             }
         },
         "required": ["clauses"],
@@ -102,6 +106,7 @@ def critic_schema() -> dict:
 # ======================================================================================
 #                                PARSING AND VALIDATION
 # ======================================================================================
+
 
 def parse_critic(response_text: str) -> CriticResult:
     try:
@@ -142,9 +147,7 @@ def parse_state_descriptions(
     try:
         output = json.loads(response_text)
     except (TypeError, json.JSONDecodeError) as error:
-        raise RetryableEngineError(
-            f"State tagger returned malformed JSON: {error}"
-        ) from error
+        raise RetryableEngineError(f"State tagger returned malformed JSON: {error}") from error
     if not isinstance(output, list):
         raise RetryableEngineError("State tagger must return a JSON array of descriptions")
     if len(output) != len(nodes):
@@ -190,9 +193,9 @@ def _validate_proposal(
     if not isinstance(output, dict) or set(output) != {"clauses"}:
         raise ProposalValidationError("Structured output has unexpected fields")
     clauses = output["clauses"]
-    if not isinstance(clauses, list) or not 1 <= len(clauses) <= MAX_TASK_CLAUSES:
+    if not isinstance(clauses, list) or not 1 <= len(clauses) <= Configuration.MAX_TASK_CLAUSES:
         raise ProposalValidationError(
-            f"A task must contain between 1 and {MAX_TASK_CLAUSES} clauses"
+            f"A task must contain between 1 and {Configuration.MAX_TASK_CLAUSES} clauses"
         )
     return tuple(_validate_clause(clause, environment) for clause in clauses)
 
@@ -230,9 +233,7 @@ def _validate_clause(
     try:
         priority = PriorityLevel(clause["priority"])
     except (TypeError, ValueError) as error:
-        raise ProposalValidationError(
-            f"Unsupported priority: {clause['priority']!r}"
-        ) from error
+        raise ProposalValidationError(f"Unsupported priority: {clause['priority']!r}") from error
     if priority not in priorities:
         allowed = " or ".join(repr(value.value) for value in priorities)
         raise ProposalValidationError(f"{pattern} requires priority {allowed}")

@@ -12,7 +12,6 @@ from dash import html
 
 from src.utils import PipelineStep
 
-
 # ======================================================================================
 #                                     TOKEN SETS
 # ======================================================================================
@@ -34,7 +33,11 @@ _RM_TOKENS = (
     ("reward", r"-?\d+(?:\.\d+)?$", "text-success"),
 )
 _PYTHON_TOKENS = (
-    ("keyword", r"\b(?:def|return|not|and|or|None|True|False|any|all)\b", "text-[#fda4af]"),
+    (
+        "keyword",
+        r"\b(?:def|return|not|and|or|None|True|False|any|all)\b",
+        "text-[#fda4af]",
+    ),
     ("function", r"\b[A-Za-z_]\w*(?=\()", "text-accent"),
     ("string", r'"[^"]*"', "text-success"),
 )
@@ -55,6 +58,7 @@ _FORMATS = {
 #                                     PUBLIC API
 # ======================================================================================
 
+
 def highlight_step(step: PipelineStep, text: str) -> list[object]:
     """Return Dash children for one step output with its format's colouring."""
     return _highlight(text, _FORMATS[step])
@@ -63,6 +67,7 @@ def highlight_step(step: PipelineStep, text: str) -> list[object]:
 # ======================================================================================
 #                                     TOKENIZING
 # ======================================================================================
+
 
 def _highlight(text: str, tokens: tuple[tuple[str, str, str], ...]) -> list[object]:
     """Split text into coloured spans, leaving every unmatched slice untouched."""

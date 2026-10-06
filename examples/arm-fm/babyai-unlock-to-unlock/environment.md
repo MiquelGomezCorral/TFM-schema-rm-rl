@@ -36,4 +36,3 @@ the key for the target-side door. “Target-side” identifies the second depend
 - Eventually pick up the target ball.
 - Open the prerequisite door before acquiring the target-door key.
 - Open the target-side door before picking up the ball.
-

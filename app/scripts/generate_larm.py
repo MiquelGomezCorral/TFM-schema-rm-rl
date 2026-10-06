@@ -1,5 +1,6 @@
 """Generate one baseline or compiler-adapted ARM-FM task bundle."""
 
+from contextlib import suppress
 from dataclasses import replace
 from pathlib import Path
 
@@ -8,21 +9,22 @@ from src.arm_fm import (
     BundleManifest,
     generate_baseline_bundle,
     generate_compiler_bundle,
-    labeling_api_for_domain,
     load_bundle,
     load_task_manifest,
+    record_bundle_embeddings,
+    record_bundle_role_models,
 )
-from src.arm_fm.generation import record_bundle_embeddings, record_bundle_role_models
 from src.config import Configuration
 from src.models import EnvironmentDescription
-from src.utils import GenerationHooks, get_engine
-
-from .generate_rm import (
+from src.utils import (
+    GenerationHooks,
     embedding_artifact_path,
-    generate_rm,
-    preflight_embedding_artifacts,
+    get_engine,
+    preflight_paths,
     write_embedding_artifact,
 )
+
+from .generate_rm import generate_rm, resolve_labeling_api
 
 
 def generate_larm(CONFIG: Configuration) -> None:
@@ -49,7 +51,7 @@ def generate_larm(CONFIG: Configuration) -> None:
             accepted.extend(results)
 
         try:
-            status = generate_rm(
+            succeeded = generate_rm(
                 CONFIG,
                 hooks=GenerationHooks(completion=capture),
                 write_outputs=False,
@@ -58,7 +60,7 @@ def generate_larm(CONFIG: Configuration) -> None:
             _persist_compiler_failure(CONFIG, environment, str(error))
             raise
 
-        if status != 0 or not accepted:
+        if not succeeded or not accepted:
             _persist_compiler_failure(
                 CONFIG, environment, "Compiler generation returned no accepted result"
             )
@@ -67,27 +69,23 @@ def generate_larm(CONFIG: Configuration) -> None:
         # The compiler pipeline already produced accepted labeling and node descriptions;
         # the adapter reuses them, so no baseline engine or extra provider call is needed.
         bundles = generate_compiler_bundle(
-            tuple(accepted), None,
-            api_description=labeling_api_for_domain(CONFIG.domain or str(CONFIG.environment)),
-            bundle_directory=CONFIG.bundle,
-            overwrite=CONFIG.overwrite,
+            tuple(accepted), None, CONFIG, api_description=resolve_labeling_api(CONFIG)
         )
         record_bundle_role_models(bundles[0], CONFIG)
         if CONFIG.embeddings:
             destination = embedding_artifact_path(CONFIG, Path(CONFIG.bundle).name)
-            preflight_embedding_artifacts([destination], overwrite=CONFIG.overwrite)
-            write_embedding_artifact(
-                accepted[0], destination, context=CONFIG.embedding_context
-            )
+            preflight_paths([destination], overwrite=CONFIG.overwrite, kind="Embedding artifact(s)")
+            write_embedding_artifact(accepted[0], destination)
             record_bundle_embeddings(bundles[0], accepted[0], destination)
         bundles[0].save(CONFIG.bundle, overwrite=CONFIG.overwrite)
     else:
         engine = get_engine(CONFIG, environment)
         result = generate_baseline_bundle(
-            CONFIG.tasks[0], environment, engine,
-            api_description=labeling_api_for_domain(CONFIG.domain or str(CONFIG.environment)),
-            bundle_directory=CONFIG.bundle,
-            overwrite=CONFIG.overwrite,
+            CONFIG.tasks[0],
+            environment,
+            engine,
+            CONFIG,
+            api_description=resolve_labeling_api(CONFIG),
         )
         result.bundle.save(CONFIG.bundle, overwrite=CONFIG.overwrite)
 
@@ -101,20 +99,24 @@ def _persist_compiler_failure(
     manifest = BundleManifest(
         task=CONFIG.tasks[0],
         environment=str(environment.source),
-        proposition_semantics={item.identifier: item.description for item in environment.propositions},
+        proposition_semantics={
+            item.identifier: item.description for item in environment.propositions
+        },
         provenance={"status": "failed", "generator": "compiler-adaptation"},
         generation={},
         validation={"structural": False, "critic": False},
-        stage_status={"reward_machine": "failed", "labeling": "pending", "descriptions": "pending"},
+        stage_status={
+            "reward_machine": "failed",
+            "labeling": "pending",
+            "descriptions": "pending",
+        },
         inputs={"task": CONFIG.tasks[0], "environment_markdown": environment.markdown},
         errors=[error],
         effective_settings={"mode": "compiler"},
         rm_mode="compiler",
     )
-    try:
+    with suppress(OSError):
         ArtifactBundle(manifest, None).save(CONFIG.bundle, overwrite=CONFIG.overwrite)
-    except OSError:
-        pass
 
 
 def generate_manifest(CONFIG: Configuration) -> None:

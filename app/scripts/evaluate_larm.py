@@ -7,7 +7,6 @@ from src.arm_fm import (
     EMBEDDING_MODEL,
     ArtifactBundle,
     JudgeDecision,
-    JudgeSettings,
     aggregate_judgments,
     judge_bundle,
     load_bundle,
@@ -24,7 +23,6 @@ def evaluate_larm(CONFIG: Configuration) -> None:
         raise ValueError("evaluate-larm requires --bundle or --manifest")
 
     judge_model = CONFIG.judge_model or EMBEDDING_MODEL
-    settings = JudgeSettings(model=judge_model, provider=CONFIG.llm_provider)
     decisions = []
     failures = 0
 
@@ -33,10 +31,11 @@ def evaluate_larm(CONFIG: Configuration) -> None:
         try:
             bundle = load_bundle(path)
             environment = EnvironmentDescription.from_markdown(
-                bundle.manifest.inputs["environment_markdown"], source=bundle.manifest.environment
+                bundle.manifest.inputs["environment_markdown"],
+                source=bundle.manifest.environment,
             )
             engine = get_engine(replace(CONFIG, model=judge_model), environment)
-            decisions.append(judge_bundle(bundle, engine, settings=settings))
+            decisions.append(judge_bundle(bundle, engine))
         except Exception as error:
             if bundle is None or not _generation_complete(bundle):
                 failures += 1
@@ -44,8 +43,11 @@ def evaluate_larm(CONFIG: Configuration) -> None:
 
     summary = aggregate_judgments(decisions, submitted=len(paths), generation_failures=failures)
     if CONFIG.output is not None:
-        target = Configuration.OUTPUT_PATH / CONFIG.output
-        target.write_text(json.dumps(summary.__dict__, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        target = CONFIG.OUTPUT_PATH / CONFIG.output
+        target.write_text(
+            json.dumps(summary.__dict__, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
 
 
 def _generation_complete(bundle: ArtifactBundle) -> bool:
@@ -55,15 +57,10 @@ def _generation_complete(bundle: ArtifactBundle) -> bool:
     except Exception:
         return False
 
-    required = {"reward_machine", "labeling", "descriptions"}
-    complete = {
-        stage for stage, status in bundle.manifest.stage_status.items()
-        if status == "complete"
-    }
     environment_markdown = bundle.manifest.inputs.get("environment_markdown")
     return (
         not diagnostics
-        and required <= complete
+        and bundle.generation_complete
         and isinstance(environment_markdown, str)
         and bool(environment_markdown.strip())
     )

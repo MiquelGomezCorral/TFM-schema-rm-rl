@@ -1,0 +1,60 @@
+exclude: ^\.agents/
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-json
+      - id: check-toml
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-shebang-scripts-are-executable
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.10
+    hooks:
+      - id: ruff-check
+        args: [--fix, --output-format=concise]
+      - id: ruff-format
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: no-env-file
+        name: never commit .env (use example.env)
+        language: fail
+        entry: ".env must not be committed"
+        files: '(^|/)\.env$'
+      - id: init-only-imports
+        name: __init__.py holds imports only
+        language: pygrep
+        entry: '^(__all__|def |async def |class |if |try:|for |while )'
+        files: '(^|/)__init__\.py$'
+      - id: no-dynamic-imports
+        name: no __import__, import at the top of the file
+        language: pygrep
+        entry: '__import__\('
+        types: [python]
+      - id: no-optional-imports
+        name: import libraries directly, no ImportError fallback
+        language: pygrep
+        entry: 'except \(?(ImportError|ModuleNotFoundError)'
+        types: [python]
+        # approved: Craftium is a native dependency outside requirements.txt
+        exclude: ^app/src/arm_fm/environments\.py$
+      - id: import-linter
+        name: import boundaries
+        language: system
+        entry: lint-imports
+        pass_filenames: false
+        types: [python]

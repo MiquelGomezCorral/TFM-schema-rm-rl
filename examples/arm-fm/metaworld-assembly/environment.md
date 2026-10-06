@@ -34,4 +34,3 @@ These are persistent conditions over the current robot and object state.
 - Eventually complete the assembly.
 - Grasp the nut before completing the assembly.
 - Move the nut near the peg before completing the assembly.
-

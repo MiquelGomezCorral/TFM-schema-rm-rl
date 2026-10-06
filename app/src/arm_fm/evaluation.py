@@ -5,20 +5,28 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import os
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from .artifacts import ArtifactBundle, BundleValidationError
+import torch
+from transformers import AutoModel, AutoTokenizer
 
+from src.compiler import serialize_paper_reward_machine
+from src.config import Configuration
+
+from .artifacts import ArtifactBundle
 
 EMBEDDING_MODEL = "Qwen3-30B-A3B-Instruct-2507"
 SERVER_EMBEDDING_EXTRACTION = "server-mean-pooling-last-layer"
+_JUDGE_SYSTEM_PROMPT = (
+    "You are an independent ARM-FM artifact judge. "
+    "Return JSON with rm_correct, labeling_correct, and reason."
+)
 
 
 @dataclass(frozen=True)
@@ -60,7 +68,10 @@ class EmbeddingCache:
         self.values[self.key(text, settings)] = [float(item) for item in vector]
         if self.path is not None:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(json.dumps(self.values, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            self.path.write_text(
+                json.dumps(self.values, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
 
 
 def embed_state_descriptions(
@@ -87,27 +98,27 @@ def embed_state_descriptions(
     return result
 
 
-def effective_embedding_text(context: str, description: str) -> str:
-    """Return the exact text the server and cache see: description, or a context line plus it."""
+def effective_embedding_text(description: str, context: str = "") -> str:
+    """Return the exact text the server and cache see: the description, after any context."""
     return f"{context}\n{description}" if context else description
 
 
 def embed_descriptions_over_http(
     descriptions: Mapping[str, str],
+    CONFIG: Configuration,
     *,
-    endpoint: str,
     settings: EmbeddingSettings,
-    cache: EmbeddingCache | None = None,
     context: str = "",
-    timeout: float = 30.0,
+    cache: EmbeddingCache | None = None,
 ) -> dict[str, list[float]]:
     """Embed each state description with one OpenAI-compatible server request.
 
-    ``settings`` carries the server extraction identity for the shared text-keyed
-    cache. A nonempty ``context`` is prefixed to every description as its own line,
-    so the effective text is what both the server and the cache key see. Returned
-    and cached vectors are validated identically; any failure raises ``RuntimeError``
-    naming the failing node, and no other endpoint or model is tried.
+    ``CONFIG`` names the server (``embedding_endpoint``, ``embedding_timeout``);
+    ``settings`` carries the server extraction identity for the shared text-keyed cache.
+    A nonempty ``context`` is prefixed to every description, so the effective text is
+    what both the server and the cache key see.
+    Returned and cached vectors are validated identically; any failure raises
+    ``RuntimeError`` naming the failing node, and no other endpoint or model is tried.
     """
     cache = cache or EmbeddingCache()
     vectors: dict[str, list[float]] = {}
@@ -115,10 +126,15 @@ def embed_descriptions_over_http(
     for state, text in descriptions.items():
         if not isinstance(text, str) or not text.strip():
             raise ValueError(f"State description for {state!r} must be nonempty")
-        effective = effective_embedding_text(context, text)
+        effective = effective_embedding_text(text, context)
         vector = cache.get(effective, settings)
         if vector is None:
-            vector = _http_embedding(effective, endpoint=endpoint, settings=settings, timeout=timeout)
+            vector = _http_embedding(
+                effective,
+                endpoint=CONFIG.embedding_endpoint,
+                settings=settings,
+                timeout=CONFIG.embedding_timeout,
+            )
             if settings.normalize:
                 vector = _normalized(vector)
             cache.put(effective, settings, vector)
@@ -168,9 +184,9 @@ def _http_embedding(
 def _request_embedding(endpoint: str, model: str, text: str, timeout: float) -> object:
     """POST one text and return its decoded JSON, without transport fallbacks."""
     body = json.dumps({"input": text, "model": model}).encode("utf-8")
-    request = Request(endpoint, data=body, headers={"Content-Type": "application/json"})
+    request = Request(endpoint, data=body, headers={"Content-Type": "application/json"})  # noqa: S310  approved: configured http(s) embedding endpoint
     try:
-        with urlopen(request, timeout=timeout) as response:
+        with urlopen(request, timeout=timeout) as response:  # noqa: S310  approved: configured http(s) embedding endpoint
             return json.loads(response.read().decode("utf-8"))
     except HTTPError as error:
         raise RuntimeError(
@@ -216,10 +232,7 @@ def load_qwen_embedding_model(
 ) -> tuple[object, object, EmbeddingSettings]:
     """Load the frozen Qwen embedding pair without silently selecting another model."""
     settings = settings or EmbeddingSettings()
-    try:
-        from transformers import AutoModel, AutoTokenizer
-    except ImportError as error:
-        raise RuntimeError("Qwen embedding loader requires Transformers") from error
+
     common_kwargs = {
         "local_files_only": local_files_only,
         "trust_remote_code": True,
@@ -227,12 +240,12 @@ def load_qwen_embedding_model(
     tokenizer_kwargs = {
         **common_kwargs,
         "revision": settings.tokenizer_revision
-        if settings.tokenizer_revision != "unspecified" else None,
+        if settings.tokenizer_revision != "unspecified"
+        else None,
     }
     model_kwargs = {
         **common_kwargs,
-        "revision": settings.model_revision
-        if settings.model_revision != "unspecified" else None,
+        "revision": settings.model_revision if settings.model_revision != "unspecified" else None,
     }
     tokenizer_kwargs = {key: value for key, value in tokenizer_kwargs.items() if value is not None}
     model_kwargs = {key: value for key, value in model_kwargs.items() if value is not None}
@@ -240,17 +253,15 @@ def load_qwen_embedding_model(
     model = AutoModel.from_pretrained(settings.model, **model_kwargs)
     device = settings.device
     if device == "auto":
-        try:
-            import torch
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        except ImportError:
-            device = "cpu"
+        device = "cuda" if torch.cuda.is_available() else "cpu"
     if hasattr(model, "to"):
         model.to(device)
     if hasattr(model, "eval"):
         model.eval()
-    return model, tokenizer, resolve_embedding_settings(
-        model, tokenizer, settings, device=device
+    return (
+        model,
+        tokenizer,
+        resolve_embedding_settings(model, tokenizer, settings, device=device),
     )
 
 
@@ -284,7 +295,8 @@ def _resolved_revision(component: object, fallback: str) -> str | None:
     init_kwargs = getattr(component, "init_kwargs", None)
     init_revisions = (
         [init_kwargs.get(key) for key in ("_commit_hash", "commit_hash", "revision")]
-        if isinstance(init_kwargs, Mapping) else []
+        if isinstance(init_kwargs, Mapping)
+        else []
     )
     candidates = [
         (getattr(component, "_commit_hash", None), True),
@@ -310,36 +322,42 @@ def _stable_revision(value: object, *, allow_bare: bool) -> str | None:
         value = value.split("/snapshots/", 1)[1].split("/", 1)[0]
     elif not allow_bare:
         return None
-    if value.lower() in {"main", "master", "latest", "default", "unspecified", "unknown"}:
+    if value.lower() in {
+        "main",
+        "master",
+        "latest",
+        "default",
+        "unspecified",
+        "unknown",
+    }:
         return None
-    if os.path.sep in value or value.startswith("."):
+    if Path(value).name != value or value.startswith("."):
         return None
     return value
 
 
-def _embed_one(text: str, model: object, tokenizer: object, settings: EmbeddingSettings) -> list[float]:
+def _embed_one(
+    text: str, model: object, tokenizer: object, settings: EmbeddingSettings
+) -> list[float]:
     encoded = tokenizer([text], return_tensors="pt", padding=True, truncation=True)
-    try:
-        import torch
-    except ImportError as error:
-        raise RuntimeError("Embedding requires torch; no model download is performed") from error
+
     device = settings.device
     if device == "auto":
         device = "cuda" if torch.cuda.is_available() else "cpu"
     if hasattr(model, "to"):
         model.to(device)
     if hasattr(encoded, "items"):
-        encoded = {key: value.to(device) if hasattr(value, "to") else value for key, value in encoded.items()}
+        encoded = {
+            key: value.to(device) if hasattr(value, "to") else value
+            for key, value in encoded.items()
+        }
     with torch.no_grad():
         output = model(**encoded)
     hidden = getattr(output, "last_hidden_state", None)
     if hidden is None:
         hidden = output[0]
     mask = encoded.get("attention_mask")
-    if mask is None:
-        index = hidden.shape[1] - 1
-    else:
-        index = int(mask[0].sum().item()) - 1
+    index = hidden.shape[1] - 1 if mask is None else int(mask[0].sum().item()) - 1
     vector = hidden[0, index].detach().float().cpu().tolist()
     values = [float(item) for item in vector]
     if settings.normalize:
@@ -371,15 +389,6 @@ class JudgeDecision:
 
 
 @dataclass(frozen=True)
-class JudgeSettings:
-    """Independent judge selection; generation metadata is intentionally absent."""
-
-    model: str = EMBEDDING_MODEL
-    provider: str | None = None
-    revision: str = "unspecified"
-
-
-@dataclass(frozen=True)
 class BenchmarkSummary:
     submitted: int
     scored: int
@@ -388,28 +397,20 @@ class BenchmarkSummary:
     first_attempt_scored: int = 0
     refined_scored: int = 0
 
-    @property
-    def coverage(self) -> float:
-        return self.scored / self.submitted if self.submitted else 0.0
-
 
 def judge_bundle(
     bundle: ArtifactBundle,
     engine: object,
     *,
     execution_evidence: Sequence[Mapping[str, Any]] | None = None,
-    settings: JudgeSettings | None = None,
 ) -> JudgeDecision:
     """Ask a provider-neutral judge with full context and method-blind RM origin."""
     diagnostics = bundle.validate()
-    required = {"reward_machine", "labeling", "descriptions"}
-    complete = {stage for stage, status in bundle.manifest.stage_status.items() if status == "complete"}
-    if required - complete or diagnostics:
+    if not bundle.generation_complete or diagnostics:
         raise ValueError("Judging requires accepted RM, labeling, and description stages")
     request = getattr(engine, "request_text", None)
     if request is None:
         raise RuntimeError("Judging requires an engine with request_text")
-    settings = settings or JudgeSettings()
     evidence = bundle.execution_evidence if execution_evidence is None else execution_evidence
     prompt = json.dumps(
         {
@@ -426,34 +427,37 @@ def judge_bundle(
         sort_keys=True,
     )
     try:
-        response = request(
-            "You are an independent ARM-FM artifact judge. Return JSON with rm_correct, labeling_correct, and reason.",
-            prompt,
-            model=settings.model,
-        )
-    except TypeError:
-        try:
-            response = request(
-                "You are an independent ARM-FM artifact judge. Return JSON with rm_correct, labeling_correct, and reason.",
-                prompt,
-            )
-        except Exception as error:
-            return JudgeDecision(False, False, f"unscored: {error}", scored=False, attempt=_bundle_attempt(bundle))
+        response = request(_JUDGE_SYSTEM_PROMPT, prompt)
     except Exception as error:
-        return JudgeDecision(False, False, f"unscored: {error}", scored=False, attempt=_bundle_attempt(bundle))
+        return _unscored(bundle, f"unscored: {error}")
+    return _judgment(str(response), bundle)
+
+
+def _judgment(response: str, bundle: ArtifactBundle) -> JudgeDecision:
+    """Read the judge's JSON verdict; anything malformed is recorded as unscored."""
     try:
-        value = json.loads(_strip_fence(str(response)))
+        value = json.loads(_strip_fence(response))
     except json.JSONDecodeError as error:
-        return JudgeDecision(False, False, f"missing judgment: {error}", scored=False, attempt=_bundle_attempt(bundle))
-    if not isinstance(value, dict) or not isinstance(value.get("rm_correct"), bool) or not isinstance(value.get("labeling_correct"), bool):
-        return JudgeDecision(False, False, "missing judgment fields", scored=False, attempt=_bundle_attempt(bundle))
+        return _unscored(bundle, f"missing judgment: {error}")
+    if (
+        not isinstance(value, dict)
+        or not isinstance(value.get("rm_correct"), bool)
+        or not isinstance(value.get("labeling_correct"), bool)
+    ):
+        return _unscored(bundle, "missing judgment fields")
     reason = value.get("reason")
     if not isinstance(reason, str) or not reason.strip():
-        return JudgeDecision(False, False, "missing judgment reason", scored=False, attempt=_bundle_attempt(bundle))
+        return _unscored(bundle, "missing judgment reason")
     return JudgeDecision(
-        value["rm_correct"], value["labeling_correct"], reason.strip(),
+        value["rm_correct"],
+        value["labeling_correct"],
+        reason.strip(),
         attempt=_bundle_attempt(bundle),
     )
+
+
+def _unscored(bundle: ArtifactBundle, reason: str) -> JudgeDecision:
+    return JudgeDecision(False, False, reason, scored=False, attempt=_bundle_attempt(bundle))
 
 
 def aggregate_judgments(
@@ -472,7 +476,9 @@ def aggregate_judgments(
         sum(decision.scored for decision in decisions),
         generation_failures,
         dict(counts),
-        first_attempt_scored=sum(decision.scored and decision.attempt == 1 for decision in decisions),
+        first_attempt_scored=sum(
+            decision.scored and decision.attempt == 1 for decision in decisions
+        ),
         refined_scored=sum(decision.scored and decision.attempt > 1 for decision in decisions),
     )
 
@@ -497,15 +503,10 @@ def frozen_evaluate(
         parameter.requires_grad_(False)
     if runner is None:
         raise ValueError("A frozen evaluation runner is required")
+
     results = []
     try:
-        try:
-            import torch
-            context = torch.no_grad()
-        except ImportError:
-            from contextlib import nullcontext
-            context = nullcontext()
-        with context:
+        with torch.no_grad():
             for bundle in tasks:
                 bundle.validate(require_complete=True)
                 for _ in range(episodes):
@@ -517,8 +518,6 @@ def frozen_evaluate(
 
 
 def _machine_text(bundle: ArtifactBundle) -> str:
-    from .runtime import serialize_paper_reward_machine
-
     if bundle.reward_machine is None:
         return ""
     return serialize_paper_reward_machine(bundle.reward_machine)

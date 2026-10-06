@@ -16,7 +16,8 @@ automata composition, and the external MONA executable for LTLf-to-DFA compilati
 - `app/src/engines/provider_engines.py`: OpenAI, OpenCode, and no-tools Antigravity CLI adapters.
 - `app/src/compiler/ltlf.py`: `pylogics` AST to FL-AT syntax serialization.
 - `app/src/compiler/pipeline.py`: per-task proposal and deterministic compilation boundaries.
-- `app/src/compiler/reward_machine.py`: guard normalization, state renaming, and text serialization.
+- `app/src/compiler/reward_machine.py`: guard parsing, DFA normalization, and clause composition.
+- `app/src/compiler/rm_format.py`: the shared ARM-FM RM text format (parse/serialize), below `src.arm_fm`.
 - `app/src/web/`: reusable Dash layout, callbacks, run state, and RM visualization.
 - `app/assets/`: local responsive web styling.
 - `examples/`: documented environment descriptions.
@@ -37,7 +38,7 @@ development dependencies pinned by parent gitlinks. Their maintained forks are
 executable. The compiler stops after Reward Machine generation and its optional
 postprocessing; the separate ARM-FM path owns the RL runtime.
 
-The local web UI is a thin adapter over `scripts.generate_rm`. Optional
+The local web UI is a thin adapter over `scripts.generate_rm`, injected by `app/app.py`. Optional
 `GenerationHooks` fan out run-scoped logging records and typed nine-stage progress events
 to the CLI, local persistent diagnostics, and the web controller while exposing completed
 in-memory results and authoritative output paths. The web layer does not own proposal,

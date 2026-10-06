@@ -2,11 +2,11 @@
 
 import dotenv
 
-from src.web import create_app
-
+from scripts import generate_rm
+from src.web import RunController, create_app
 
 dotenv.load_dotenv()
-app = create_app()
+app = create_app(RunController(generate_rm))
 
 
 if __name__ == "__main__":

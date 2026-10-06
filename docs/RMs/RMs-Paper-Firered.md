@@ -313,7 +313,7 @@ Figure 2: Two more reward machines for the office gridworld
 Since the objective of option \(\pi_{u,u_t}\) is to induce the reward machine to transition to \(u_t\) as soon as possible, we train the option policy \(\pi_{u,u_t}(a|s)\) using the following reward function:
 
 \[
-r_{u,u_t}(s, a, s') = \begin{cases} 
+r_{u,u_t}(s, a, s') = \begin{cases}
 \delta_r(u)(s, a, s') + r^+ & \text{if } u_t \neq u \text{ and } u_t = \delta_u(u, L(s, a, s')) \\
 \delta_r(u)(s, a, s') + r^- & \text{if } u_t \neq u \text{ and } u_t \neq \delta_u(u, L(s, a, s')) \\
 \delta_r(u)(s, a, s') & \text{otherwise}

@@ -1,4 +1,4 @@
-"""Train the native domain policy from one bundle or a task manifest."""
+"""Train the native policy from one bundle or a task manifest."""
 
 from dataclasses import replace
 
@@ -7,23 +7,19 @@ from src.arm_fm import (
     load_task_manifest,
     make_environment,
     paper_training_config,
-    train_larm,
     train_manifest,
 )
+from src.arm_fm import train_larm as train_bundle
 from src.config import Configuration
 
 
-def train_larm_command(CONFIG: Configuration) -> None:
-    """Train the native domain policy from one bundle or a task manifest."""
-    if CONFIG.domain is None or CONFIG.checkpoint is None:
-        raise ValueError("train-larm requires --domain and --checkpoint")
+def train_larm(CONFIG: Configuration) -> None:
+    """Train the native policy from one bundle or a task manifest."""
+    if CONFIG.checkpoint is None:
+        raise ValueError("train-larm requires --checkpoint")
 
-    training_config = paper_training_config(
-        CONFIG.domain, seed=CONFIG.seed, rnd=_explicit_rnd_variant(CONFIG.domain)
-    )
+    training_config = paper_training_config(CONFIG.algorithm, seed=CONFIG.seed, rnd=CONFIG.rnd)
     overrides = {}
-    if CONFIG.algorithm is not None:
-        overrides["algorithm"] = CONFIG.algorithm
     if CONFIG.total_timesteps is not None:
         overrides["total_timesteps"] = CONFIG.total_timesteps
     if CONFIG.learning_rate is not None:
@@ -35,20 +31,17 @@ def train_larm_command(CONFIG: Configuration) -> None:
         environments = {entry.task_id: make_environment(entry.environment_id) for entry in entries}
         train_manifest(entries, environments, training_config, checkpoint_path=CONFIG.checkpoint)
     elif CONFIG.bundle is not None:
+        if CONFIG.domain is None:
+            raise ValueError("train-larm --bundle requires --domain")
         bundle = load_bundle(CONFIG.bundle)
-        environment = (
-            [make_environment(CONFIG.domain) for _ in range(4)]
-            if training_config.algorithm == "ppo"
-            else make_environment(CONFIG.domain)
-        )
-        train_larm(
-            bundle, environment, None, training_config,
+        # PPO collects from four independent lanes; the other algorithms use one.
+        lanes = 4 if training_config.algorithm == "ppo" else 1
+        environments = [make_environment(CONFIG.domain) for _ in range(lanes)]
+        train_bundle(
+            bundle,
+            environments if lanes > 1 else environments[0],
+            training_config,
             checkpoint_path=CONFIG.checkpoint,
         )
     else:
         raise ValueError("train-larm requires exactly one of --bundle or --task-manifest")
-
-
-def _explicit_rnd_variant(domain: str) -> bool:
-    value = domain.lower().replace("_", "-")
-    return any(part == "rnd" for part in value.split("-"))

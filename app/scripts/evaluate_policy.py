@@ -1,6 +1,8 @@
 """Evaluate a frozen built-in ARM-FM policy."""
 
 import json
+from contextlib import suppress
+from functools import partial
 
 from src.arm_fm import (
     RewardMachineEnvironment,
@@ -14,7 +16,7 @@ from src.arm_fm import (
 from src.config import Configuration
 
 
-def evaluate_policy_command(CONFIG: Configuration, *, runner=None) -> None:
+def evaluate_policy(CONFIG: Configuration) -> None:
     """Load a built-in checkpoint and evaluate it without updating learning state."""
     if CONFIG.bundle is None or CONFIG.checkpoint is None or CONFIG.domain is None:
         raise ValueError("evaluate-policy requires --bundle and --checkpoint")
@@ -23,21 +25,18 @@ def evaluate_policy_command(CONFIG: Configuration, *, runner=None) -> None:
     environment = make_environment(CONFIG.domain)
     checkpoint = TrainingCheckpoint.load(CONFIG.checkpoint)
     policy = load_builtin_policy(checkpoint, environment, bundle)
-    runner = runner or (lambda policy, current_bundle: _run_frozen_episode(
-        policy, current_bundle, environment
-    ))
 
+    runner = partial(_run_frozen_episode, environment=environment)
     results = frozen_evaluate(policy, [bundle], runner=runner)
     print(json.dumps(results, indent=2, sort_keys=True))
 
 
-def _run_frozen_episode(policy, bundle, environment=None):
+def _run_frozen_episode(policy, bundle, environment):
     """Run one evaluation episode through the shared RM environment wrapper."""
-    if environment is None:
-        raise ValueError("Frozen evaluation requires an explicit runtime environment")
-
     wrapped = RewardMachineEnvironment(
-        environment, RewardMachineRuntime(bundle.reward_machine), bundle.labeling_source,
+        environment,
+        RewardMachineRuntime(bundle.reward_machine),
+        bundle.labeling_source,
     )
     reset = wrapped.reset()
     observation = reset[0] if isinstance(reset, tuple) else reset
@@ -76,10 +75,8 @@ def _scalar_info(info: dict) -> dict[str, float]:
     for key, value in info.items():
         if isinstance(value, bool):
             continue
-        try:
+        with suppress(AttributeError):
             value = value.item()
-        except AttributeError:
-            pass
         if isinstance(value, (int, float)):
             values[key] = float(value)
     return values

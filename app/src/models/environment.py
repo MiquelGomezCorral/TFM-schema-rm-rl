@@ -4,7 +4,6 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-
 PROPOSITION_IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]*$")
 PROPOSITION_BULLET = re.compile(r"^- `([^`]+)`:\s+(.+?)\s*$")
 SECTION_END = re.compile(r"^#{1,2}\s+")
@@ -59,62 +58,72 @@ class EnvironmentDescription:
         """Validate Markdown containing one strict propositions section."""
         source_path = Path(source)
         lines = markdown.splitlines()
-        section_lines = [
-            index
-            for index, line in enumerate(lines, start=1)
-            if line.strip() == "## Propositions"
-        ]
-        if not section_lines:
-            raise EnvironmentValidationError(
-                f"{source_path}: missing required '## Propositions' section"
-            )
-        if len(section_lines) > 1:
-            raise EnvironmentValidationError(
-                f"{source_path}:{section_lines[1]}: duplicate '## Propositions' section"
-            )
-
-        section_line = section_lines[0]
-        propositions: list[Proposition] = []
-        first_seen: dict[str, int] = {}
-        for line_number in range(section_line + 1, len(lines) + 1):
-            line = lines[line_number - 1]
-            if SECTION_END.match(line):
-                break
-            if not line.strip():
-                continue
-
-            match = PROPOSITION_BULLET.fullmatch(line)
-            if match is None:
-                raise EnvironmentValidationError(
-                    f"{source_path}:{line_number}: expected '- `identifier`: description'"
-                )
-            identifier, description = match.groups()
-            if PROPOSITION_IDENTIFIER.fullmatch(identifier) is None:
-                raise EnvironmentValidationError(
-                    f"{source_path}:{line_number}: invalid proposition identifier "
-                    f"'{identifier}'; expected ^[a-z_][a-z0-9_]*$"
-                )
-            if identifier in RESERVED_IDENTIFIERS:
-                raise EnvironmentValidationError(
-                    f"{source_path}:{line_number}: proposition identifier "
-                    f"'{identifier}' is reserved"
-                )
-            if identifier in first_seen:
-                raise EnvironmentValidationError(
-                    f"{source_path}:{line_number}: duplicate proposition '{identifier}' "
-                    f"(first declared on line {first_seen[identifier]})"
-                )
-            first_seen[identifier] = line_number
-            propositions.append(Proposition(identifier, description, line_number))
-
+        section_line = _propositions_section_line(lines, source_path)
+        propositions = _parse_propositions(lines, section_line, source_path)
         if not propositions:
             raise EnvironmentValidationError(
                 f"{source_path}:{section_line}: propositions section must declare at least one proposition"
             )
+        return cls(source_path, _title(lines, source_path), markdown, propositions)
 
-        title = source_path.stem
-        for line in lines:
-            if line.startswith("# "):
-                title = line[2:].strip() or title
-                break
-        return cls(source_path, title, markdown, tuple(propositions))
+
+def _propositions_section_line(lines: list[str], source_path: Path) -> int:
+    """Return the 1-based line of the single ``## Propositions`` heading."""
+    section_lines = [
+        index for index, line in enumerate(lines, start=1) if line.strip() == "## Propositions"
+    ]
+    if not section_lines:
+        raise EnvironmentValidationError(
+            f"{source_path}: missing required '## Propositions' section"
+        )
+    if len(section_lines) > 1:
+        raise EnvironmentValidationError(
+            f"{source_path}:{section_lines[1]}: duplicate '## Propositions' section"
+        )
+    return section_lines[0]
+
+
+def _parse_propositions(
+    lines: list[str], section_line: int, source_path: Path
+) -> tuple[Proposition, ...]:
+    propositions: list[Proposition] = []
+    first_seen: dict[str, int] = {}
+    for line_number in range(section_line + 1, len(lines) + 1):
+        line = lines[line_number - 1]
+        if SECTION_END.match(line):
+            break
+        if not line.strip():
+            continue
+
+        match = PROPOSITION_BULLET.fullmatch(line)
+        if match is None:
+            raise EnvironmentValidationError(
+                f"{source_path}:{line_number}: expected '- `identifier`: description'"
+            )
+        identifier, description = match.groups()
+        if PROPOSITION_IDENTIFIER.fullmatch(identifier) is None:
+            raise EnvironmentValidationError(
+                f"{source_path}:{line_number}: invalid proposition identifier "
+                f"'{identifier}'; expected ^[a-z_][a-z0-9_]*$"
+            )
+        if identifier in RESERVED_IDENTIFIERS:
+            raise EnvironmentValidationError(
+                f"{source_path}:{line_number}: proposition identifier '{identifier}' is reserved"
+            )
+        if identifier in first_seen:
+            raise EnvironmentValidationError(
+                f"{source_path}:{line_number}: duplicate proposition '{identifier}' "
+                f"(first declared on line {first_seen[identifier]})"
+            )
+        first_seen[identifier] = line_number
+        propositions.append(Proposition(identifier, description, line_number))
+    return tuple(propositions)
+
+
+def _title(lines: list[str], source_path: Path) -> str:
+    """Return the first level-one heading, falling back to the file stem."""
+    title = source_path.stem
+    for line in lines:
+        if line.startswith("# "):
+            return line[2:].strip() or title
+    return title

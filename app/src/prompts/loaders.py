@@ -1,90 +1,72 @@
-"""Load and render the packaged prompts.
+"""Load and render the packaged prompts in ``compiler-rm/`` and ``arm_fm/``."""
 
-Prompt text lives beside this module in ``compiler-rm/`` and ``arm_fm/``. This is
-the single entry point for resolving and rendering both families; the two role
-registries stay separate so each family can evolve on its own.
-"""
-
-from collections.abc import Mapping
 from importlib.resources import files
 from string import Template
 from typing import Literal
 
-
-COMPILER_DIRECTORY = "compiler-rm"
-COMPILER_PROMPTS = {
-    "creator": "reward-ltlf-creator",
-    "ltlf_reviewer": "reward-ltlf-reviewer",
-    "rm_tagger": "reward-machine-tagger",
-    "rm_reviewer": "reward-machine-reviewer",
-    "labeling_generator": "labeling-generator",
-    "labeling_reviewer": "labeling-reviewer",
-}
-COMPILER_OPTIONAL_FIELDS = frozenset({"case_specific", "history", "state_descriptions"})
-
-ARM_FM_DIRECTORY = "arm_fm"
-ARM_FM_ROLES = frozenset(
-    {
-        "rm_generator",
-        "rm_critic",
-        "labeling_generator",
-        "labeling_critic",
-        "description_generator",
-    }
-)
-ARM_FM_OPTIONAL_FIELDS = frozenset({"history", "api"})
-
-PROMPT_KINDS = frozenset({"system", "user"})
-
+PromptFamily = Literal["compiler", "arm_fm"]
 PromptAgent = Literal[
-    "creator", "ltlf_reviewer", "rm_tagger", "rm_reviewer",
-    "labeling_generator", "labeling_reviewer",
+    "creator",
+    "ltlf_reviewer",
+    "rm_tagger",
+    "rm_reviewer",
+    "labeling_generator",
+    "labeling_reviewer",
+    "rm_generator",
+    "rm_critic",
+    "labeling_critic",
+    "description_generator",
 ]
 PromptKind = Literal["system", "user"]
 
-
-def read_prompt(agent: PromptAgent, kind: PromptKind = "system") -> str:
-    """Load a packaged compiler prompt by role and kind."""
-    if agent not in COMPILER_PROMPTS:
-        raise ValueError(f"Unknown prompt agent: {agent}")
-    return _read(COMPILER_DIRECTORY, f"{COMPILER_PROMPTS[agent]}.{_checked_kind(kind)}.md")
-
-
-def read_user_prompt(agent: PromptAgent, **values: str) -> str:
-    """Render the compiler user prompt selected by ``agent``."""
-    return _render(read_prompt(agent, "user"), values, COMPILER_OPTIONAL_FIELDS)
-
-
-def read_arm_fm_prompt(role: str, kind: str = "system") -> str:
-    """Load one ARM-FM prompt file by role and kind."""
-    if role not in ARM_FM_ROLES:
-        raise ValueError(f"Unknown ARM-FM prompt role: {role}")
-    return _read(ARM_FM_DIRECTORY, f"{role}.{_checked_kind(kind)}.md")
-
-
-def render_prompt(role: str, **values: str) -> str:
-    """Render one ARM-FM user prompt with its required fields checked."""
-    return _render(read_arm_fm_prompt(role, "user"), values, ARM_FM_OPTIONAL_FIELDS)
-
-
-def _checked_kind(kind: str) -> str:
-    if kind not in PROMPT_KINDS:
-        raise ValueError(f"Unknown prompt kind: {kind}")
-    return kind
+# Per family: its folder, each agent's file stem, and the fields a user prompt may leave empty.
+PROMPTS = {
+    "compiler": {
+        "directory": "compiler-rm",
+        "files": {
+            "creator": "reward-ltlf-creator",
+            "ltlf_reviewer": "reward-ltlf-reviewer",
+            "rm_tagger": "reward-machine-tagger",
+            "rm_reviewer": "reward-machine-reviewer",
+            "labeling_generator": "labeling-generator",
+            "labeling_reviewer": "labeling-reviewer",
+        },
+        "optional": {"case_specific", "history", "state_descriptions"},
+    },
+    "arm_fm": {
+        "directory": "arm_fm",
+        "files": {
+            "rm_generator": "rm_generator",
+            "rm_critic": "rm_critic",
+            "labeling_generator": "labeling_generator",
+            "labeling_critic": "labeling_critic",
+            "description_generator": "description_generator",
+        },
+        "optional": {"history", "api"},
+    },
+}
 
 
-def _read(directory: str, name: str) -> str:
-    """Read one packaged prompt file as stripped UTF-8 text."""
-    return files(__package__).joinpath(directory, name).read_text(encoding="utf-8").strip()
+def read_prompt(family: PromptFamily, agent: PromptAgent, kind: PromptKind = "system") -> str:
+    """Load one packaged prompt file as stripped UTF-8 text."""
+    prompts = PROMPTS[family]
+    if agent not in prompts["files"]:
+        raise ValueError(f"Unknown {family} prompt agent: {agent}")
+
+    name = f"{prompts['files'][agent]}.{kind}.md"
+    path = files(__package__).joinpath(prompts["directory"], name)
+    return path.read_text(encoding="utf-8").strip()
 
 
-def _render(text: str, values: Mapping[str, str], optional: frozenset[str]) -> str:
-    """Substitute template identifiers and reject empty required values.
+def render_prompt(family: PromptFamily, agent: PromptAgent, **values: str) -> str:
+    """Render one user prompt, rejecting empty values for required template fields.
 
-    A field is required when the template references it and ``optional`` does not
-    allow it. Missing or blank values render as the ``None.`` sentinel.
+    A field is required when the template references it and the family does not list it
+    as optional. Blank optional values render as the ``None.`` sentinel.
     """
-    template = Template(text)
+    template = Template(read_prompt(family, agent, "user"))
+    optional = PROMPTS[family]["optional"]
+
     rendered: dict[str, str] = {}
     for name in template.get_identifiers():
         value = values.get(name, "").strip()

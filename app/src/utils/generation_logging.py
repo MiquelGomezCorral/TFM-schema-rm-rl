@@ -1,14 +1,14 @@
 """Progress events and hooks shared by Reward Machine generation clients."""
 
-from collections.abc import Callable
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from enum import StrEnum
 import logging
-from pathlib import Path
 import pprint
 import sys
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from enum import StrEnum
+from pathlib import Path
 
 from src.compiler import CompilationResult
 
@@ -35,6 +35,19 @@ class StepState(StrEnum):
     COMPLETED = "completed"
     SKIPPED = "skipped"
     FAILED = "failed"
+
+
+_STEP_LABELS = {
+    PipelineStep.GENERATE: "Generating proposal",
+    PipelineStep.TASK_CRITIC: "Task critic",
+    PipelineStep.LTLF: "Building LTLf",
+    PipelineStep.DFA: "Compiling DFA",
+    PipelineStep.REWARD_MACHINE: "Building Reward Machine",
+    PipelineStep.STATE_DESCRIPTIONS: "Generating state descriptions",
+    PipelineStep.RM_CRITIC: "Reward Machine critic",
+    PipelineStep.LABELING: "Generating MiniGrid labeling",
+    PipelineStep.EMBEDDINGS: "Embedding state descriptions",
+}
 
 
 @dataclass(frozen=True)
@@ -111,7 +124,7 @@ class Progress:
         self.started = time.monotonic()
         self.previous = self.started
         self.current_step = PipelineStep.GENERATE
-        self.current_task = -1  # Replaced by stage_start/stage_skip before any artifact publishes.
+        self.current_task = -1  # Replaced by begin_attempt before any artifact publishes.
         self.current_attempt = 0
         self.stage_started = self.started
         self._logger: logging.Logger | None = None
@@ -120,7 +133,7 @@ class Progress:
         if logs_path is not None:
             logs_path = Path(logs_path).resolve()
             logs_path.mkdir(parents=True, exist_ok=True)
-            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+            stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
             self.log_path = logs_path / f"run-{stamp}.log"
             suffix = 1
             while self.log_path.exists():
@@ -149,7 +162,9 @@ class Progress:
 
     def artifact(self, label: str, value: object) -> str:
         """Log a complete readable artifact and publish it to structured observers."""
-        body = value if isinstance(value, str) else pprint.pformat(value, sort_dicts=True, width=120)
+        body = (
+            value if isinstance(value, str) else pprint.pformat(value, sort_dicts=True, width=120)
+        )
         self.hooks.notify_artifact(
             StepArtifact(
                 task_index=self.current_task,
@@ -160,67 +175,54 @@ class Progress:
         )
         return self(f"{label}:\n{body}")
 
-    def stage_start(
-        self,
-        task_index: int,
-        attempt: int,
-        step: PipelineStep,
-        label: str,
-    ) -> float:
-        self.current_step = step
+    def begin_attempt(self, task_index: int, attempt: int) -> None:
+        """Name the task attempt that the following stages belong to."""
         self.current_task = task_index
         self.current_attempt = attempt
+
+    def start(self, step: PipelineStep) -> None:
+        """Start a stage of the current attempt using its standard label."""
+        self.current_step = step
         self.stage_started = time.monotonic()
-        self.hooks.notify_event(ProgressEvent(task_index, attempt, step, StepState.RUNNING))
-        self(f"Task {task_index + 1}: attempt {attempt}/3 — {label}.")
-        return self.stage_started
+        self.hooks.notify_event(
+            ProgressEvent(self.current_task, self.current_attempt, step, StepState.RUNNING)
+        )
+        self(
+            f"Task {self.current_task + 1}: attempt {self.current_attempt}/3 — {_STEP_LABELS[step]}."
+        )
 
-    def stage_end(
-        self,
-        task_index: int,
-        attempt: int,
-        step: PipelineStep,
-        started: float,
-        state: StepState = StepState.COMPLETED,
-        detail: str | None = None,
-    ) -> float:
-        elapsed = max(0.0, time.monotonic() - started)
-        self.hooks.notify_event(ProgressEvent(task_index, attempt, step, state, elapsed, detail))
-        suffix = f" — {detail}" if detail else ""
-        self(f"Task {task_index + 1}: {step_label(step)} {state.value}{suffix}.")
-        return elapsed
-
-    def stage_skip(self, task_index: int, attempt: int, step: PipelineStep) -> None:
+    def stage_skip(self, step: PipelineStep) -> None:
         self.current_step = step
-        self.current_task = task_index
-        self.current_attempt = attempt
-        self.hooks.notify_event(ProgressEvent(task_index, attempt, step, StepState.SKIPPED))
-        self(f"Task {task_index + 1}: {step_label(step)} skipped.")
-
-    def start(self, task_index: int, attempt: int, step: PipelineStep) -> None:
-        """Start a stage using its standard label."""
-        self.stage_start(task_index, attempt, step, step_label(step))
+        self.hooks.notify_event(
+            ProgressEvent(self.current_task, self.current_attempt, step, StepState.SKIPPED)
+        )
+        self(f"Task {self.current_task + 1}: {_STEP_LABELS[step]} skipped.")
 
     def complete(
         self,
-        task_index: int,
-        attempt: int,
         state: StepState = StepState.COMPLETED,
         detail: str | None = None,
     ) -> None:
         """Finish the current stage."""
-        self.stage_end(
-            task_index,
-            attempt,
-            self.current_step,
-            self.stage_started,
-            state,
-            detail,
+        elapsed = max(0.0, time.monotonic() - self.stage_started)
+        self.hooks.notify_event(
+            ProgressEvent(
+                self.current_task,
+                self.current_attempt,
+                self.current_step,
+                state,
+                elapsed,
+                detail,
+            )
+        )
+        suffix = f" — {detail}" if detail else ""
+        self(
+            f"Task {self.current_task + 1}: {_STEP_LABELS[self.current_step]} {state.value}{suffix}."
         )
 
-    def fail(self, task_index: int, attempt: int, detail: str | None = None) -> None:
+    def fail(self, detail: str | None = None) -> None:
         """Mark the current stage as failed."""
-        self.complete(task_index, attempt, StepState.FAILED, detail)
+        self.complete(StepState.FAILED, detail)
 
     def close(self) -> None:
         """Flush and detach this run's handlers."""
@@ -236,18 +238,3 @@ class Progress:
         if self._logger is not None:
             self._logger.info(message)
         self.hooks.notify_progress(message)
-
-
-def step_label(step: PipelineStep) -> str:
-    """Return the user-facing label for a typed stage."""
-    return {
-        PipelineStep.GENERATE: "Generating proposal",
-        PipelineStep.TASK_CRITIC: "Task critic",
-        PipelineStep.LTLF: "Building LTLf",
-        PipelineStep.DFA: "Compiling DFA",
-        PipelineStep.REWARD_MACHINE: "Building Reward Machine",
-        PipelineStep.STATE_DESCRIPTIONS: "Generating state descriptions",
-        PipelineStep.RM_CRITIC: "Reward Machine critic",
-        PipelineStep.LABELING: "Generating MiniGrid labeling",
-        PipelineStep.EMBEDDINGS: "Embedding state descriptions",
-    }[step]

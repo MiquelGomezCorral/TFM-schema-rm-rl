@@ -6,7 +6,6 @@ from math import cos, radians
 from src.compiler.reward_machine import RewardMachineStructure, Transition
 from src.config import GraphStyle
 
-
 _GRAPH = GraphStyle()
 EDGE_LABEL_HEIGHT = 18
 EDGE_LABEL_SPACING = 1.25
@@ -33,8 +32,14 @@ CYTOSCAPE_STYLESHEET = [
         },
     },
     {"selector": ".initial", "style": {"border-color": "#38bdf8", "border-width": 4}},
-    {"selector": ".final", "style": {"background-color": "#14532d", "border-color": "#86efac"}},
-    {"selector": ".rejecting", "style": {"background-color": "#572033", "border-color": "#fb7185"}},
+    {
+        "selector": ".final",
+        "style": {"background-color": "#14532d", "border-color": "#86efac"},
+    },
+    {
+        "selector": ".rejecting",
+        "style": {"background-color": "#572033", "border-color": "#fb7185"},
+    },
     {
         "selector": "edge",
         "style": {
@@ -115,8 +120,24 @@ def reward_machine_to_elements(
     presentation-only zero-reward self-loop so the graph shows the runtime's
     implicit fallback. The input structure is not modified.
     """
-    elements: list[dict[str, dict[str, object] | str]] = []
+    elements = _state_elements(reward_machine)
+    elements.extend(_edge_elements(reward_machine))
+
+    positions = reward_machine_positions(elements)
+    for element in elements[: len(reward_machine.states)]:
+        x, y = positions[element["data"]["id"]]
+        element["position"] = {"x": x, "y": y}
+    edges = elements[len(reward_machine.states) :]
+    for edge, offset in zip(edges, edge_label_offsets(edges), strict=True):
+        edge["data"]["label_offset"] = offset
+    return elements
+
+
+def _state_elements(
+    reward_machine: RewardMachineStructure,
+) -> list[dict[str, dict[str, object] | str]]:
     rejecting_states = set(reward_machine.rejecting_states)
+    elements: list[dict[str, dict[str, object] | str]] = []
     for state in reward_machine.states:
         classes = ["state"]
         if state == reward_machine.initial_state:
@@ -135,51 +156,43 @@ def reward_machine_to_elements(
                 "classes": " ".join(classes),
             }
         )
+    return elements
 
+
+def _edge_elements(
+    reward_machine: RewardMachineStructure,
+) -> list[dict[str, dict[str, object] | str]]:
     grouped: dict[tuple[int, int], list[Transition]] = {}
     for transition in reward_machine.transitions:
         grouped.setdefault((transition.source, transition.destination), []).append(transition)
 
     explicit_else_sources = {
-        transition.source
-        for transition in reward_machine.transitions
-        if _is_else(transition)
+        transition.source for transition in reward_machine.transitions if _is_else(transition)
     }
     for state in reward_machine.states:
         if state not in explicit_else_sources:
-            grouped.setdefault((state, state), []).append(
-                Transition(state, state, ("else",), 0.0)
-            )
+            grouped.setdefault((state, state), []).append(Transition(state, state, ("else",), 0.0))
 
-    for index, ((source, destination), transitions) in enumerate(grouped.items()):
-        elements.append(
-            {
-                "data": {
-                    "id": f"transition-{index}",
-                    "source": f"state-{source}",
-                    "target": f"state-{destination}",
-                    "case_count": len(transitions),
-                    "cases": [
-                        {
-                            "condition": list(transition.condition),
-                            "reward": transition.reward,
-                        }
-                        for transition in transitions
-                    ],
-                    "label": _edge_label(transitions),
-                },
-                "classes": _edge_class(transitions) + (" edge-loop" if source == destination else ""),
-            }
-        )
-
-    positions = reward_machine_positions(elements)
-    for element in elements[:len(reward_machine.states)]:
-        x, y = positions[element["data"]["id"]]
-        element["position"] = {"x": x, "y": y}
-    edges = elements[len(reward_machine.states):]
-    for edge, offset in zip(edges, edge_label_offsets(edges), strict=True):
-        edge["data"]["label_offset"] = offset
-    return elements
+    return [
+        {
+            "data": {
+                "id": f"transition-{index}",
+                "source": f"state-{source}",
+                "target": f"state-{destination}",
+                "case_count": len(transitions),
+                "cases": [
+                    {
+                        "condition": list(transition.condition),
+                        "reward": transition.reward,
+                    }
+                    for transition in transitions
+                ],
+                "label": _edge_label(transitions),
+            },
+            "classes": _edge_class(transitions) + (" edge-loop" if source == destination else ""),
+        }
+        for index, ((source, destination), transitions) in enumerate(grouped.items())
+    ]
 
 
 def reward_machine_positions(elements: list[dict]) -> dict[str, tuple[float, float]]:
@@ -193,6 +206,28 @@ def reward_machine_positions(elements: list[dict]) -> dict[str, tuple[float, flo
     )
     if initial is None:
         raise ValueError("A Reward Machine graph needs an initial state")
+
+    depths = _state_depths(initial, elements)
+    fallback = max(depths.values()) + 1
+    layers: dict[int, list[str]] = defaultdict(list)
+    for node in nodes:
+        state = node["data"]["id"]
+        layers[depths.get(state, fallback)].append(state)
+
+    widest = max(len(group) for group in layers.values())
+    positions: dict[str, tuple[float, float]] = {}
+    for depth, group in layers.items():
+        left = (widest - len(group)) * _GRAPH.node_gap / 2
+        for index, state in enumerate(group):
+            positions[state] = (
+                left + index * _GRAPH.node_gap,
+                depth * _GRAPH.layer_gap,
+            )
+    return positions
+
+
+def _state_depths(initial: str, elements: list[dict]) -> dict[str, int]:
+    """Return each reachable state's breadth-first distance from the initial one."""
     adjacency: dict[str, list[str]] = defaultdict(list)
     for element in elements:
         if "source" in element["data"]:
@@ -206,20 +241,7 @@ def reward_machine_positions(elements: list[dict]) -> dict[str, tuple[float, flo
             if destination not in depths:
                 depths[destination] = depths[current] + 1
                 queue.append(destination)
-
-    fallback = max(depths.values()) + 1
-    layers: dict[int, list[str]] = defaultdict(list)
-    for node in nodes:
-        state = node["data"]["id"]
-        layers[depths.get(state, fallback)].append(state)
-
-    widest = max(len(group) for group in layers.values())
-    positions: dict[str, tuple[float, float]] = {}
-    for depth, group in layers.items():
-        left = (widest - len(group)) * _GRAPH.node_gap / 2
-        for index, state in enumerate(group):
-            positions[state] = (left + index * _GRAPH.node_gap, depth * _GRAPH.layer_gap)
-    return positions
+    return depths
 
 
 def edge_label_offsets(edges: list[dict]) -> list[float]:
@@ -255,9 +277,7 @@ def _edge_label(transitions: list[Transition]) -> str:
     """Describe the formal cases under one grouped visual edge."""
     rewards = {transition.reward for transition in transitions}
     reward_label = (
-        "mixed r"
-        if len(rewards) != 1
-        else f"r={format_reward_label(next(iter(rewards)))}"
+        "mixed r" if len(rewards) != 1 else f"r={format_reward_label(next(iter(rewards)))}"
     )
     else_count = sum(1 for transition in transitions if _is_else(transition))
     if else_count == 0:

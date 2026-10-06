@@ -1,13 +1,12 @@
 """Threaded local execution boundary for the Reward Machine pipeline."""
 
-from dataclasses import dataclass
+import tempfile
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
-import tempfile
 from threading import Lock, Thread
-from typing import Sequence
 
-from scripts.generate_rm import generate_rm
 from src.compiler import CompilationResult
 from src.config import Configuration
 from src.utils import (
@@ -17,6 +16,9 @@ from src.utils import (
     StepArtifact,
     StepState,
 )
+
+# The CLI pipeline lives in ``scripts``; the entry point hands it in so ``src`` never imports it.
+GenerateRun = Callable[[Configuration, GenerationHooks], bool]
 
 
 class RunState(StrEnum):
@@ -49,10 +51,6 @@ class StepSnapshot:
     state: StepState = StepState.PENDING
     elapsed: float | None = None
     detail: str | None = None
-
-    @property
-    def duration(self) -> float | None:
-        return self.elapsed
 
 
 @dataclass(frozen=True)
@@ -92,25 +90,17 @@ class RunSnapshot:
     log_path: Path | None = None
     run_id: int = 0
 
-    @property
-    def task_progress(self) -> tuple[TaskSnapshot, ...]:
-        return self.tasks
-
-    @property
-    def current_task_index(self) -> int | None:
-        return self.active_task_index
-
 
 @dataclass(frozen=True)
-class _RunRequest:
-    """Copied input required by the worker thread."""
+class RunRequest:
+    """One submission from the UI; ``start`` copies it for the worker thread."""
 
     environment_markdown: str
-    environment_filename: str | None
-    tasks: tuple[str, ...]
+    tasks: Sequence[str]
     output_filename: str
-    task_critic: bool
-    rm_critic: bool
+    environment_filename: str | None = None
+    task_critic: bool = True
+    rm_critic: bool = True
     labeling: bool = False
     embeddings: bool = False
     steps_report: bool = False
@@ -119,7 +109,8 @@ class _RunRequest:
 class RunController:
     """Own one background pipeline run."""
 
-    def __init__(self) -> None:
+    def __init__(self, generate_rm: GenerateRun) -> None:
+        self._generate_rm = generate_rm
         self._lock = Lock()
         self._status = RunState.IDLE
         self._logs: list[str] = []
@@ -152,32 +143,9 @@ class RunController:
                 run_id=self._run_id,
             )
 
-    def start(
-        self,
-        environment_markdown: str,
-        tasks: Sequence[str],
-        output_filename: str,
-        environment_filename: str | None = None,
-        task_critic: bool = True,
-        rm_critic: bool = True,
-        labeling: bool = False,
-        embeddings: bool = False,
-        steps_report: bool = False,
-    ) -> None:
+    def start(self, request: RunRequest) -> None:
         """Start one run using submitted Markdown and UI values."""
-        # if not task_critic and not rm_critic:
-        #     raise ValueError("At least one critic must be enabled")
-        request = _RunRequest(
-            environment_markdown=environment_markdown,
-            environment_filename=environment_filename,
-            tasks=tuple(tasks),
-            output_filename=output_filename,
-            task_critic=task_critic,
-            rm_critic=rm_critic,
-            labeling=labeling,
-            embeddings=embeddings,
-            steps_report=steps_report,
-        )
+        request = replace(request, tasks=tuple(request.tasks))
         with self._lock:
             if self._status is RunState.RUNNING or (
                 self._worker is not None and self._worker.is_alive()
@@ -191,8 +159,7 @@ class RunController:
             self._error = None
             self._step_outputs = {}
             self._tasks = tuple(
-                _initial_task(index, task, task_critic, rm_critic, labeling, embeddings)
-                for index, task in enumerate(request.tasks)
+                _initial_task(index, task, request) for index, task in enumerate(request.tasks)
             )
             self._active_task_index = None
             self._log_path = None
@@ -204,7 +171,7 @@ class RunController:
             )
             self._worker.start()
 
-    def _run_request(self, request: _RunRequest) -> None:
+    def _run_request(self, request: RunRequest) -> None:
         try:
             with tempfile.TemporaryDirectory(prefix="schema-rm-web-") as temporary_directory:
                 environment_path = Path(temporary_directory) / _safe_environment_filename(
@@ -233,14 +200,14 @@ class RunController:
                     completion=self._retain_results,
                     failure=self._record_failure,
                 )
-                return_code = generate_rm(CONFIG, hooks=hooks)
+                succeeded = self._generate_rm(CONFIG, hooks)
             with self._lock:
-                if return_code == 0:
+                if succeeded:
                     self._status = RunState.COMPLETED
                 else:
                     self._status = RunState.FAILED
                     if self._error is None:
-                        self._error = f"Generation exited with code {return_code}."
+                        self._error = "Generation failed."
         except Exception as error:
             with self._lock:
                 self._status = RunState.FAILED
@@ -248,7 +215,7 @@ class RunController:
 
     def _record_progress(self, message: str) -> None:
         with self._lock:
-            self._append_log(message)
+            self._logs.append(str(message))
 
     def _record_failure(self, message: str) -> None:
         with self._lock:
@@ -279,7 +246,8 @@ class RunController:
             retry_note = task.retry_note
             if event.state is StepState.FAILED and event.detail:
                 retry_note = event.detail
-            self._tasks = self._tasks[:event.task_index] + (
+            self._tasks = (
+                *self._tasks[: event.task_index],
                 TaskSnapshot(
                     index=task.index,
                     task=task.task,
@@ -287,7 +255,8 @@ class RunController:
                     steps=tuple(steps),
                     retry_note=retry_note,
                 ),
-            ) + self._tasks[event.task_index + 1:]
+                *self._tasks[event.task_index + 1 :],
+            )
             if event.state is StepState.RUNNING:
                 self._active_task_index = event.task_index
 
@@ -311,29 +280,22 @@ class RunController:
                 return
             self._step_outputs.setdefault(artifact.task_index, {})[artifact.step] = artifact.value
 
-    def _append_log(self, message: str) -> None:
-        self._logs.append(str(message))
 
-
-def _initial_task(
-    index: int,
-    task: str,
-    task_critic: bool,
-    rm_critic: bool,
-    labeling: bool,
-    embeddings: bool,
-) -> TaskSnapshot:
+def _initial_task(index: int, task: str, request: RunRequest) -> TaskSnapshot:
     skipped = {
-        PipelineStep.TASK_CRITIC: not task_critic,
-        PipelineStep.RM_CRITIC: not rm_critic,
-        PipelineStep.LABELING: not labeling,
-        PipelineStep.EMBEDDINGS: not embeddings,
+        PipelineStep.TASK_CRITIC: not request.task_critic,
+        PipelineStep.RM_CRITIC: not request.rm_critic,
+        PipelineStep.LABELING: not request.labeling,
+        PipelineStep.EMBEDDINGS: not request.embeddings,
     }
     return TaskSnapshot(
         index=index,
         task=task,
         steps=tuple(
-            StepSnapshot(step, StepState.SKIPPED if skipped.get(step, False) else StepState.PENDING)
+            StepSnapshot(
+                step,
+                StepState.SKIPPED if skipped.get(step, False) else StepState.PENDING,
+            )
             for step in STEP_ORDER
         ),
     )

@@ -1,16 +1,18 @@
 """Public ARM-FM reconstruction interfaces."""
 
-from .artifacts import ArtifactBundle, BundleManifest, BundleValidationError, load_bundle
-from .environments import labeling_api_for_domain, make_environment
+from .artifacts import (
+    ArtifactBundle,
+    BundleManifest,
+    BundleValidationError,
+    load_bundle,
+)
+from .environments import make_environment, minigrid_labeling_api
 from .evaluation import (
     EMBEDDING_MODEL,
-    SERVER_EMBEDDING_EXTRACTION,
     EmbeddingCache,
     EmbeddingSettings,
     JudgeDecision,
-    JudgeSettings,
     aggregate_judgments,
-    effective_embedding_text,
     embed_descriptions_over_http,
     embed_state_descriptions,
     frozen_evaluate,
@@ -18,33 +20,26 @@ from .evaluation import (
     load_qwen_embedding_model,
     resolve_embedding_settings,
 )
-from .generation import adapt_compilation_result, generate_baseline_bundle, generate_compiler_bundle
+from .generation import (
+    adapt_compilation_result,
+    generate_baseline_bundle,
+    generate_compiler_bundle,
+    record_bundle_embeddings,
+    record_bundle_role_models,
+)
 from .runtime import (
-    PaperRewardMachine,
     RewardMachineEnvironment,
     RewardMachineRuntime,
-    RuntimeRewardMachine,
-    RuntimeValidationError,
-    RuntimeStep,
-    RuntimeTransition,
     load_labeling_functions,
-    parse_paper_reward_machine,
-    parse_reward_machine,
-    serialize_paper_reward_machine,
-    serialize_reward_machine,
 )
 from .training import (
     ALGORITHM_COMPONENTS,
     BuiltinPolicy,
-    ExperimentManifest,
     RNDModule,
-    TaskManifestEntry,
     TrainingCheckpoint,
     TrainingConfig,
-    algorithm_for_domain,
     load_builtin_policy,
     load_task_manifest,
-    paper_experiment_manifest,
     paper_training_config,
     train_larm,
     train_manifest,

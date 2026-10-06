@@ -4,24 +4,22 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from flat_tool import compile_dfa
 from nl2ltl.declare.base import Template
 from pylogics.syntax.base import And, Formula, Not
 from pylogics.syntax.ltl import Atomic, Eventually, Next, Until
-from flat_tool import compile_dfa
 
+from src.config import Configuration, PriorityLevel
 from src.engines.structured import ProposalSelection
-from src.models import (
-    EnvironmentDescription,
-    PriorityLevel,
-)
+from src.models import EnvironmentDescription
 
 from .ltlf import to_flat_syntax
 from .reward_machine import (
     RewardMachineStructure,
     compose_reward_machines,
     normalize_reward_machine,
-    serialize_reward_machine,
 )
+from .rm_format import serialize_reward_machine
 
 
 @dataclass(frozen=True)
@@ -49,7 +47,6 @@ class CompilationResult:
 
     environment: EnvironmentDescription
     proposal: Proposal
-    dfas: tuple[dict, ...]
     reward_machine: RewardMachineStructure
     text: str
     state_descriptions: tuple[str, ...] = ()
@@ -62,14 +59,8 @@ class CompilationResult:
     bundle_path: Path | None = None
 
 
-def materialize_proposal(
-    environment: EnvironmentDescription,
-    task: str,
-    selections: Sequence[ProposalSelection],
-) -> Proposal:
+def materialize_proposal(task: str, selections: Sequence[ProposalSelection]) -> Proposal:
     """Build deterministic DECLARE and LTLf clauses from validated selections."""
-    task = task.strip()
-
     clauses = []
     for selection in selections:
         ltlf_ast = _build_ltlf_formula(
@@ -87,7 +78,7 @@ def materialize_proposal(
                 ltlf_formula=to_flat_syntax(ltlf_ast),
             )
         )
-    return Proposal(task=task, clauses=tuple(clauses))
+    return Proposal(task=task.strip(), clauses=tuple(clauses))
 
 
 def _build_ltlf_formula(
@@ -108,13 +99,10 @@ def _build_ltlf_formula(
     return And(Eventually(preferred), Eventually(second))
 
 
-def compile_dfas(
-    proposal: Proposal,
-    mona_executable: str = "mona",
-) -> tuple[dict, ...]:
+def compile_dfas(proposal: Proposal, CONFIG: Configuration) -> tuple[dict, ...]:
     """Compile each accepted LTLf clause into one FL-AT/MONA DFA."""
     return tuple(
-        compile_dfa(clause.ltlf_formula, mona_executable=mona_executable)
+        compile_dfa(clause.ltlf_formula, mona_executable=CONFIG.mona_executable)
         for clause in proposal.clauses
     )
 
@@ -127,9 +115,7 @@ def build_compilation_result(
     """Build and serialize a task-specific Reward Machine from compiled DFAs."""
     clause_machines = tuple(
         (
-            normalize_reward_machine(
-                dfa, clause.pattern, clause.propositions, clause.priority
-            ),
+            normalize_reward_machine(dfa, clause.pattern, clause.propositions, clause.priority),
             clause.propositions,
         )
         for clause, dfa in zip(proposal.clauses, dfas, strict=True)
@@ -138,7 +124,6 @@ def build_compilation_result(
     return CompilationResult(
         environment=environment,
         proposal=proposal,
-        dfas=tuple(dfas),
         reward_machine=reward_machine,
         text=serialize_reward_machine(reward_machine),
     )

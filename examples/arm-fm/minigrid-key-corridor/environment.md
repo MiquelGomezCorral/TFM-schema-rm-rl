@@ -37,4 +37,3 @@ layout, not hard-coded colors.
 - Eventually pick up the target object.
 - Find the matching key before opening the target door.
 - Open the target door before picking up the target object.
-

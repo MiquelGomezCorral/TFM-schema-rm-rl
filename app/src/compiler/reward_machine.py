@@ -6,12 +6,8 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from itertools import product
 
-from src.models import (
-    CLAUSE_COMPLETION_REWARD,
-    TASK_COMPLETION_REWARD,
-    PriorityLevel,
-)
-
+from src.config import Configuration, PriorityLevel
+from src.engines.structured import SUPPORTED_TEMPLATES
 
 TOKEN = re.compile(r"\s*([a-z_][a-z0-9_]*|[!~&|()])", re.IGNORECASE)
 Valuation = tuple[bool, ...]
@@ -48,6 +44,11 @@ class _NormalizedDFA:
     transitions: dict[tuple[int, Valuation], int]
 
 
+# ======================================================================================
+#                                    BOOLEAN GUARDS
+# ======================================================================================
+
+
 class _GuardParser:
     def __init__(self, guard: str, propositions: set[str]) -> None:
         self.tokens = self._tokenize(guard)
@@ -70,8 +71,8 @@ class _GuardParser:
             match = TOKEN.match(guard, position)
             if match is None:
                 raise ValueError(f"Invalid Boolean guard near '{guard[position:]}'")
-            token = match.group(1).lower()
-            tokens.append("!" if token == "~" else token)
+            lexeme = match.group(1).lower()
+            tokens.append("!" if lexeme == "~" else lexeme)
             position = match.end()
         if not tokens:
             return ["true"]
@@ -101,13 +102,13 @@ class _GuardParser:
             return expression
         if self.position >= len(self.tokens):
             raise ValueError("Boolean guard ended unexpectedly")
-        token = self.tokens[self.position]
+        lexeme = self.tokens[self.position]
         self.position += 1
-        if token in {"true", "false"}:
-            return ("constant", token == "true")
-        if token not in self.propositions:
-            raise ValueError(f"Boolean guard uses undeclared proposition '{token}'")
-        return ("atom", token)
+        if lexeme in {"true", "false"}:
+            return ("constant", lexeme == "true")
+        if lexeme not in self.propositions:
+            raise ValueError(f"Boolean guard uses undeclared proposition '{lexeme}'")
+        return ("atom", lexeme)
 
     def _accept(self, token: str) -> bool:
         if self.position < len(self.tokens) and self.tokens[self.position] == token:
@@ -143,7 +144,14 @@ def parse_boolean_guard(guard: str, propositions: Sequence[str] | set[str]):
 
 def evaluate_boolean_guard(expression, valuation: dict[str, bool]) -> bool:
     """Evaluate a parsed guard against one complete valuation."""
-    return _evaluate(expression, {str(key).lower(): bool(value) for key, value in valuation.items()})
+    return _evaluate(
+        expression, {str(key).lower(): bool(value) for key, value in valuation.items()}
+    )
+
+
+# ======================================================================================
+#                                   CLAUSE MACHINES
+# ======================================================================================
 
 
 def normalize_reward_machine(
@@ -153,18 +161,7 @@ def normalize_reward_machine(
     priority: PriorityLevel,
 ) -> RewardMachineStructure:
     """Minimize one DFA and add one-time completion rewards."""
-    if pattern not in {"Existence", "ExistenceTwo", "Precedence"}:
-        raise ValueError(f"Unsupported executable DECLARE pattern: {pattern!r}")
-    if pattern in {"Existence", "ExistenceTwo"}:
-        if len(proposition_ids) != 1:
-            raise ValueError(f"{pattern} requires exactly one proposition")
-        if priority is not PriorityLevel.NONE:
-            raise ValueError(f"{pattern} requires priority 'none'")
-    else:
-        if len(proposition_ids) != 2:
-            raise ValueError("Precedence requires exactly two propositions")
-        if priority not in {PriorityLevel.SOFT, PriorityLevel.HARD}:
-            raise ValueError("Precedence requires priority 'soft' or 'hard'")
+    _validate_clause_shape(pattern, proposition_ids, priority)
 
     normalized = _normalize_dfa(dfa, proposition_ids)
     rejecting_states = _states_without_path_to_final(normalized)
@@ -183,6 +180,38 @@ def normalize_reward_machine(
         else:
             preferred_state, reverse_state = _validate_non_hard_precedence(normalized)
 
+    return RewardMachineStructure(
+        states=normalized.states,
+        initial_state=normalized.initial_state,
+        final_state=normalized.final_state,
+        rejecting_states=tuple(sorted(rejecting_states)),
+        transitions=_reward_transitions(
+            normalized, pattern, priority, preferred_state, reverse_state
+        ),
+    )
+
+
+def _validate_clause_shape(
+    pattern: str, proposition_ids: tuple[str, ...], priority: PriorityLevel
+) -> None:
+    if pattern not in SUPPORTED_TEMPLATES:
+        raise ValueError(f"Unsupported executable DECLARE pattern: {pattern!r}")
+    _, arity, priorities = SUPPORTED_TEMPLATES[pattern]
+    if len(proposition_ids) != arity:
+        raise ValueError(f"{pattern} requires exactly {arity} proposition(s)")
+    if priority not in priorities:
+        allowed = " or ".join(repr(value.value) for value in priorities)
+        raise ValueError(f"{pattern} requires priority {allowed}")
+
+
+def _reward_transitions(
+    normalized: _NormalizedDFA,
+    pattern: str,
+    priority: PriorityLevel,
+    preferred_state: int | None,
+    reverse_state: int | None,
+) -> tuple[Transition, ...]:
+    """Emit every state change or rewarded step, paying only at classified completions."""
     transitions = []
     for source in normalized.states:
         for valuation in normalized.valuations:
@@ -190,18 +219,16 @@ def normalize_reward_machine(
             reward = 0.0
             if source != normalized.final_state and destination == normalized.final_state:
                 if pattern in {"Existence", "ExistenceTwo"} or priority is PriorityLevel.HARD:
-                    reward = CLAUSE_COMPLETION_REWARD
+                    reward = Configuration.CLAUSE_COMPLETION_REWARD
                 elif source == normalized.initial_state and all(valuation):
                     reward = 0.0
                 elif source == preferred_state and valuation[1]:
-                    reward = CLAUSE_COMPLETION_REWARD
+                    reward = Configuration.CLAUSE_COMPLETION_REWARD
                 elif source == reverse_state and valuation[0]:
                     reward = 0.0
                 else:
                     raise ValueError("Could not classify a precedence completion transition")
 
-            if reward is None:
-                raise ValueError("Rejecting precedence transitions cannot carry rewards")
             if destination != source or reward != 0:
                 transitions.append(
                     Transition(
@@ -211,14 +238,12 @@ def normalize_reward_machine(
                         reward=reward,
                     )
                 )
+    return tuple(transitions)
 
-    return RewardMachineStructure(
-        states=normalized.states,
-        initial_state=normalized.initial_state,
-        final_state=normalized.final_state,
-        rejecting_states=tuple(sorted(rejecting_states)),
-        transitions=tuple(transitions),
-    )
+
+# ======================================================================================
+#                                     COMPOSITION
+# ======================================================================================
 
 
 def compose_reward_machines(
@@ -231,12 +256,10 @@ def compose_reward_machines(
 
     propositions = tuple(
         dict.fromkeys(
-            proposition
-            for _, clause_propositions in clauses
-            for proposition in clause_propositions
+            proposition for _, clause_propositions in clauses for proposition in clause_propositions
         )
     )
-    valuations = tuple(product((False, True), repeat=len(propositions)))
+    valuations = _valuations(propositions)
     proposition_positions = {name: index for index, name in enumerate(propositions)}
     transition_maps = tuple(
         _clause_transition_map(machine, clause_propositions)
@@ -254,30 +277,11 @@ def compose_reward_machines(
             continue
         source_name = names[source]
         for valuation in valuations:
-            destinations = []
-            reward = 0.0
-            rejected = False
-            for index, ((machine, clause_propositions), transition_map) in enumerate(
-                zip(clauses, transition_maps, strict=True)
-            ):
-                clause_valuation = tuple(
-                    valuation[proposition_positions[name]] for name in clause_propositions
-                )
-                destination, clause_reward = transition_map.get(
-                    (source[index], clause_valuation),
-                    (source[index], 0.0),
-                )
-                if destination in machine.rejecting_states:
-                    rejected = True
-                    break
-                destinations.append(destination)
-                reward += clause_reward
-
-            destination_state = None if rejected else tuple(destinations)
+            destination_state, reward = _step_clauses(
+                source, valuation, clauses, transition_maps, proposition_positions
+            )
             if destination_state == final:
-                reward += TASK_COMPLETION_REWARD
-            elif rejected:
-                reward = 0.0
+                reward += Configuration.TASK_COMPLETION_REWARD
             if destination_state not in names:
                 names[destination_state] = len(names)
                 queue.append(destination_state)
@@ -304,6 +308,36 @@ def compose_reward_machines(
     )
 
 
+def _step_clauses(
+    source: tuple[int, ...],
+    valuation: Valuation,
+    clauses: Sequence[tuple[RewardMachineStructure, tuple[str, ...]]],
+    transition_maps: Sequence[dict[tuple[int, Valuation], tuple[int, float]]],
+    proposition_positions: dict[str, int],
+) -> tuple[tuple[int, ...] | None, float]:
+    """Advance every clause machine on one valuation.
+
+    Returns the joint destination, ``None`` when a clause machine rejects, and the summed reward.
+    """
+    destinations = []
+    reward = 0.0
+    for index, ((machine, clause_propositions), transition_map) in enumerate(
+        zip(clauses, transition_maps, strict=True)
+    ):
+        clause_valuation = tuple(
+            valuation[proposition_positions[name]] for name in clause_propositions
+        )
+        destination, clause_reward = transition_map.get(
+            (source[index], clause_valuation),
+            (source[index], 0.0),
+        )
+        if destination in machine.rejecting_states:
+            return None, 0.0
+        destinations.append(destination)
+        reward += clause_reward
+    return tuple(destinations), reward
+
+
 def _clause_transition_map(
     machine: RewardMachineStructure,
     propositions: tuple[str, ...],
@@ -325,22 +359,51 @@ def _clause_transition_map(
     return transitions
 
 
+# ======================================================================================
+#                                  DFA NORMALIZATION
+# ======================================================================================
+
+
 def _normalize_dfa(dfa: dict, proposition_ids: tuple[str, ...]) -> _NormalizedDFA:
     propositions = tuple(proposition.lower() for proposition in proposition_ids)
     if len(set(propositions)) != len(propositions):
         raise ValueError("Task proposition identifiers must be unique")
 
-    alphabet = {str(symbol).lower() for symbol in dfa.get("alphabet", ())}
-    if alphabet != set(propositions):
-        missing = set(propositions) - alphabet
-        unexpected = alphabet - set(propositions)
-        details = []
-        if missing:
-            details.append(f"missing {', '.join(sorted(missing))}")
-        if unexpected:
-            details.append(f"unexpected {', '.join(sorted(unexpected))}")
-        raise ValueError(f"DFA alphabet does not match the task ({'; '.join(details)})")
+    _check_alphabet(dfa, propositions)
+    states, initial_state, accepting_states = _declared_states(dfa)
+    outgoing = _guarded_transitions(dfa, states, propositions)
+    complete_transitions = _complete_transitions(states, outgoing, propositions)
 
+    reachable = _reachable_states(initial_state, complete_transitions, propositions)
+    reachable_transitions = {
+        (source, valuation): destination
+        for (source, valuation), destination in complete_transitions.items()
+        if source in reachable
+    }
+    return _minimize_dfa(
+        propositions,
+        reachable,
+        initial_state,
+        accepting_states & reachable,
+        reachable_transitions,
+    )
+
+
+def _check_alphabet(dfa: dict, propositions: tuple[str, ...]) -> None:
+    alphabet = {str(symbol).lower() for symbol in dfa.get("alphabet", ())}
+    if alphabet == set(propositions):
+        return
+    missing = set(propositions) - alphabet
+    unexpected = alphabet - set(propositions)
+    details = []
+    if missing:
+        details.append(f"missing {', '.join(sorted(missing))}")
+    if unexpected:
+        details.append(f"unexpected {', '.join(sorted(unexpected))}")
+    raise ValueError(f"DFA alphabet does not match the task ({'; '.join(details)})")
+
+
+def _declared_states(dfa: dict) -> tuple[set[str], str, set[str]]:
     states = {str(state) for state in dfa.get("states", ())}
     initial_state = str(dfa.get("initial_state", ""))
     accepting_states = {str(state) for state in dfa.get("accepting_states", ())}
@@ -348,7 +411,13 @@ def _normalize_dfa(dfa: dict, proposition_ids: tuple[str, ...]) -> _NormalizedDF
         raise ValueError("DFA has no declared initial state")
     if not accepting_states or not accepting_states <= states:
         raise ValueError("DFA has invalid accepting states")
+    return states, initial_state, accepting_states
 
+
+def _guarded_transitions(
+    dfa: dict, states: set[str], propositions: tuple[str, ...]
+) -> dict[str, list[tuple[object, str]]]:
+    """Group the DFA's guarded transitions by source state, parsing each guard."""
     outgoing: dict[str, list[tuple[object, str]]] = defaultdict(list)
     for key, raw_destination in dfa.get("transitions", {}).items():
         if not isinstance(key, tuple) or len(key) != 2:
@@ -359,8 +428,16 @@ def _normalize_dfa(dfa: dict, proposition_ids: tuple[str, ...]) -> _NormalizedDF
             raise ValueError("DFA transition references an undeclared state")
         expression = _GuardParser(guard.lower(), set(propositions)).parse()
         outgoing[source].append((expression, destination))
+    return outgoing
 
-    valuations = tuple(product((False, True), repeat=len(propositions)))
+
+def _complete_transitions(
+    states: set[str],
+    outgoing: dict[str, list[tuple[object, str]]],
+    propositions: tuple[str, ...],
+) -> dict[tuple[str, Valuation], str]:
+    """Resolve exactly one destination per state and valuation."""
+    valuations = _valuations(propositions)
     complete_transitions: dict[tuple[str, Valuation], str] = {}
     for state in states:
         for valuation in valuations:
@@ -377,79 +454,42 @@ def _normalize_dfa(dfa: dict, proposition_ids: tuple[str, ...]) -> _NormalizedDF
                     f"found {len(destinations)}"
                 )
             complete_transitions[(state, valuation)] = destinations[0]
+    return complete_transitions
 
+
+def _reachable_states(
+    initial_state: str,
+    transitions: dict[tuple[str, Valuation], str],
+    propositions: tuple[str, ...],
+) -> set[str]:
+    valuations = _valuations(propositions)
     reachable = {initial_state}
     queue = deque([initial_state])
     while queue:
         source = queue.popleft()
         for valuation in valuations:
-            destination = complete_transitions[(source, valuation)]
+            destination = transitions[(source, valuation)]
             if destination not in reachable:
                 reachable.add(destination)
                 queue.append(destination)
-
-    reachable_transitions = {
-        (source, valuation): destination
-        for (source, valuation), destination in complete_transitions.items()
-        if source in reachable
-    }
-    reachable_accepting = accepting_states & reachable
-    return _minimize_dfa(
-        propositions,
-        valuations,
-        reachable,
-        initial_state,
-        reachable_accepting,
-        reachable_transitions,
-    )
+    return reachable
 
 
 def _minimize_dfa(
     propositions: tuple[str, ...],
-    valuations: tuple[Valuation, ...],
     states: set[str],
     initial_state: str,
     accepting_states: set[str],
     transitions: dict[tuple[str, Valuation], str],
 ) -> _NormalizedDFA:
-    partitions = [
-        frozenset(partition)
-        for partition in (accepting_states, states - accepting_states)
-        if partition
-    ]
-    while True:
-        state_to_partition = {
-            state: index
-            for index, partition in enumerate(partitions)
-            for state in partition
-        }
-        refined = []
-        for partition in partitions:
-            groups: dict[tuple[int, ...], list[str]] = defaultdict(list)
-            for state in sorted(partition):
-                signature = tuple(
-                    state_to_partition[transitions[(state, valuation)]]
-                    for valuation in valuations
-                )
-                groups[signature].append(state)
-            refined.extend(
-                frozenset(group)
-                for _, group in sorted(groups.items(), key=lambda item: item[1][0])
-            )
-        if refined == partitions:
-            break
-        partitions = refined
-
+    valuations = _valuations(propositions)
+    partitions = _equivalence_partitions(states, accepting_states, transitions, valuations)
     state_to_partition = {
-        state: index
-        for index, partition in enumerate(partitions)
-        for state in partition
+        state: index for index, partition in enumerate(partitions) for state in partition
     }
     initial_partition = state_to_partition[initial_state]
     partition_transitions = {
-        (index, valuation): state_to_partition[
-            transitions[(next(iter(partition)), valuation)]
-        ]
+        (index, valuation): state_to_partition[transitions[(next(iter(partition)), valuation)]]
         for index, partition in enumerate(partitions)
         for valuation in valuations
     }
@@ -464,9 +504,7 @@ def _minimize_dfa(
                 names[destination] = len(names)
                 queue.append(destination)
 
-    accepting_partitions = {
-        state_to_partition[state] for state in accepting_states
-    }
+    accepting_partitions = {state_to_partition[state] for state in accepting_states}
     accepting = {names[partition] for partition in accepting_partitions}
     if len(accepting) != 1:
         raise ValueError("Executable DFA must minimize to one success state")
@@ -475,7 +513,6 @@ def _minimize_dfa(
         (names[source], valuation): names[destination]
         for (source, valuation), destination in partition_transitions.items()
     }
-    states_by_name = tuple(range(len(names)))
     for valuation in valuations:
         if minimized_transitions[(final_state, valuation)] != final_state:
             raise ValueError("Executable DFA success state must be absorbing")
@@ -483,11 +520,43 @@ def _minimize_dfa(
     return _NormalizedDFA(
         propositions=propositions,
         valuations=valuations,
-        states=states_by_name,
+        states=tuple(range(len(names))),
         initial_state=0,
         final_state=final_state,
         transitions=minimized_transitions,
     )
+
+
+def _equivalence_partitions(
+    states: set[str],
+    accepting_states: set[str],
+    transitions: dict[tuple[str, Valuation], str],
+    valuations: tuple[Valuation, ...],
+) -> list[frozenset[str]]:
+    """Refine accepting/non-accepting states until behaviourally equal states share a block."""
+    partitions = [
+        frozenset(partition)
+        for partition in (accepting_states, states - accepting_states)
+        if partition
+    ]
+    while True:
+        state_to_partition = {
+            state: index for index, partition in enumerate(partitions) for state in partition
+        }
+        refined = []
+        for partition in partitions:
+            groups: dict[tuple[int, ...], list[str]] = defaultdict(list)
+            for state in sorted(partition):
+                signature = tuple(
+                    state_to_partition[transitions[(state, valuation)]] for valuation in valuations
+                )
+                groups[signature].append(state)
+            refined.extend(
+                frozenset(group) for _, group in sorted(groups.items(), key=lambda item: item[1][0])
+            )
+        if refined == partitions:
+            return partitions
+        partitions = refined
 
 
 def states_without_path_to_final(
@@ -514,6 +583,11 @@ def states_without_path_to_final(
 def _states_without_path_to_final(dfa: _NormalizedDFA) -> set[int]:
     edges = ((source, destination) for (source, _), destination in dfa.transitions.items())
     return states_without_path_to_final(dfa.states, edges, dfa.final_state)
+
+
+# ======================================================================================
+#                                  PATTERN VALIDATION
+# ======================================================================================
 
 
 def _validate_existence(dfa: _NormalizedDFA) -> None:
@@ -581,6 +655,10 @@ def _validate_hard_precedence(
         raise ValueError("Preferred hard precedence order does not complete")
 
 
+def _valuations(propositions: tuple[str, ...]) -> tuple[Valuation, ...]:
+    return tuple(product((False, True), repeat=len(propositions)))
+
+
 def _condition(
     propositions: tuple[str, ...],
     valuation: Valuation,
@@ -588,38 +666,4 @@ def _condition(
     return tuple(
         proposition if value else f"!{proposition}"
         for proposition, value in zip(propositions, valuation, strict=True)
-    )
-
-
-def serialize_reward_machine(reward_machine: RewardMachineStructure) -> str:
-    """Serialize compiler states in the shared ARM-FM two-section format."""
-    # Runtime imports the compiler's guard parser, so defer this import until use.
-    from src.arm_fm.runtime import compiler_machine_to_paper, serialize_paper_reward_machine
-
-    return serialize_paper_reward_machine(compiler_machine_to_paper(reward_machine, ()))
-
-
-def parse_reward_machine(text: str) -> RewardMachineStructure:
-    """Read ARM-FM text, including explicit self-loops and ``else`` fallback rows."""
-    from src.arm_fm.runtime import parse_paper_reward_machine
-
-    machine = parse_paper_reward_machine(text, require_final_states=True)
-    if len(machine.final_states) != 1:
-        raise ValueError("Compiler Reward Machine imports require exactly one FINAL_STATES entry")
-    if machine.initial_state in machine.final_states:
-        raise ValueError("Initial and final states must differ")
-    index = {name: position for position, name in enumerate(machine.states)}
-    states = tuple(range(len(machine.states)))
-    final_state = index[machine.final_states[0]]
-    transitions = tuple(
-        Transition(index[item.source], index[item.destination], (item.condition,), item.reward)
-        for item in machine.transitions
-    )
-    edges = ((item.source, item.destination) for item in transitions)
-    return RewardMachineStructure(
-        states=states,
-        initial_state=index[machine.initial_state],
-        final_state=final_state,
-        rejecting_states=tuple(sorted(states_without_path_to_final(states, edges, final_state))),
-        transitions=transitions,
     )

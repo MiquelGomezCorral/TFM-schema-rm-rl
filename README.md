@@ -19,18 +19,17 @@ uv pip install --python "$CONDA_PREFIX/bin/python" -e .
 ```
 
 `requirements.txt` is authoritative for the existing Python 3.13 `RM_RL_env` Conda
-environment. The ARM-FM runtime uses pinned Torch, Tianshou, Transformers, MiniGrid,
-XLand-MiniGrid, and Meta-World releases; do not create a second environment.
+environment. The ARM-FM runtime uses pinned Torch, Tianshou, Transformers, and MiniGrid
+releases; do not create a second environment.
 
 The legacy `setup.sh` remains useful for the compiler-only workflow: it initializes
 submodules, installs the project, and provisions MONA. Its `.venv` should not be used
 for ARM-FM training or embedding commands.
 
-Craftium is a native Luanti build and is intentionally not a PyPI requirement. Its pinned
-source, native compiler/toolchain prerequisites, and task-interface compatibility remain
-an explicit reproduction blocker; this repository does not relax package metadata or
-bypass dependency resolution. The ARM-FM adapter refuses to substitute
-another environment when Craftium is not built.
+Training environments are generic: `train-larm` and `evaluate-policy` build any registered
+Gymnasium id with `gym.make`. Domain-specific integrations (XLand-MiniGrid, Craftium,
+Meta-World) were removed and will be rebuilt as needed; MiniGrid stays because the
+compiler's labeling stage targets it.
 Choose a provider in `.env` and set its model. For OpenCode, set `OPENCODE_API_KEY` and
 keep or change the configured model.
 

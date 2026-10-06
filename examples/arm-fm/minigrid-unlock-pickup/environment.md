@@ -34,4 +34,3 @@ The target is the box named by the current mission, not any box that may be pres
 - Eventually pick up the target box.
 - Acquire the matching key before opening the door.
 - Open the door before picking up the target box.
-

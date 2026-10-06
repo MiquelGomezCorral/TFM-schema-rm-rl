@@ -46,7 +46,7 @@ Record closed decisions here. Do not reopen them unless the user explicitly asks
 
 - Keep the Dash UI in this repository as a local, single-active-run input/output adapter.
 - Support multiple ordinary-language task rows and one independently compiled RM per task.
-- Reuse `scripts.generate_rm` through narrow timed-progress and completion hooks; do not
+- Reuse `scripts.generate_rm` (injected into the web app) through narrow timed-progress and completion hooks; do not
   duplicate or move critic or formal compiler behavior into the web layer.
 - Expose both critic toggles, default both on, and reject a run with neither selected.
 - Render the exact completed text and in-memory Reward Machine structures returned by the pipeline, using its authoritative output paths.

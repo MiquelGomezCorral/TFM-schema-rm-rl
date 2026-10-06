@@ -3,11 +3,8 @@
 import json
 from collections.abc import Callable, Sequence
 
-from nl2ltl.engines import Engine
-from pylogics.syntax.base import Formula
-
 from src.models import EnvironmentDescription
-from src.prompts import read_prompt, read_user_prompt
+from src.prompts import read_prompt, render_prompt
 
 from .errors import classify_provider_error
 from .structured import (
@@ -28,7 +25,7 @@ StructuredRequester = Callable[[str, str, str, dict, str], str]
 TextRequester = Callable[[str, str, str], str]
 
 
-class GenericEngine(Engine):
+class GenericEngine:
     """Shared proposal and critic workflow for structured-output providers."""
 
     def __init__(
@@ -54,12 +51,6 @@ class GenericEngine(Engine):
         except Exception as error:
             raise classify_provider_error(error) from error
 
-    def translate(self, utterance: str, filtering=None) -> dict[Formula, float]:
-        """Return IBM's formula-to-score shape with neutral selection scores."""
-        if filtering is not None:
-            raise ValueError(f"{type(self).__name__} does not support nl2ltl filters")
-        return {selection.template: 1.0 for selection in self.propose(utterance)}
-
     def propose_task(
         self,
         task: str,
@@ -68,8 +59,9 @@ class GenericEngine(Engine):
         """Request and validate one constrained proposal per task clause."""
         schema = proposal_schema(task, self.environment)
         response_text = self._request_structured(
-            read_prompt("creator"),
-            read_user_prompt(
+            read_prompt("compiler", "creator"),
+            render_prompt(
+                "compiler",
                 "creator",
                 environment_markdown=self.environment.markdown,
                 task=task,
@@ -80,15 +72,12 @@ class GenericEngine(Engine):
         )
         return parse_proposal(response_text, self.environment, self.provider_name)
 
-    def propose(self, task: str) -> tuple[ProposalSelection, ...]:
-        """Return the constrained proposal for one task."""
-        return self.propose_task(task)
-
     def review_task(self, task: str, candidate_proposal: str) -> CriticResult:
         """Review a task interpretation before compilation."""
         response = self._request_structured(
-            read_prompt("ltlf_reviewer"),
-            read_user_prompt(
+            read_prompt("compiler", "ltlf_reviewer"),
+            render_prompt(
+                "compiler",
                 "ltlf_reviewer",
                 environment_markdown=self.environment.markdown,
                 task=task,
@@ -109,8 +98,9 @@ class GenericEngine(Engine):
     ) -> tuple[str, ...]:
         """Request one validated description per ordered node identifier."""
         response_text = self.request_text(
-            read_prompt("rm_tagger"),
-            read_user_prompt(
+            read_prompt("compiler", "rm_tagger"),
+            render_prompt(
+                "compiler",
                 "rm_tagger",
                 environment_markdown=self.environment.markdown,
                 task=task,
@@ -130,8 +120,9 @@ class GenericEngine(Engine):
     ) -> CriticResult:
         """Review a serialized Reward Machine with its state descriptions as context."""
         response = self._request_structured(
-            read_prompt("rm_reviewer"),
-            read_user_prompt(
+            read_prompt("compiler", "rm_reviewer"),
+            render_prompt(
+                "compiler",
                 "rm_reviewer",
                 environment_markdown=self.environment.markdown,
                 task=task,
@@ -149,25 +140,24 @@ class GenericEngine(Engine):
         candidate_rm: str,
         api: str,
         labeling: str,
-        clauses_json: str,
-        state_descriptions_json: str,
-        nodes_json: str,
-        propositions_json: str,
+        **context: str,
     ) -> CriticResult:
-        """Review generated MiniGrid predicates with the compiler's grounded context."""
+        """Review generated MiniGrid predicates with the compiler's grounded context.
+
+        ``context`` carries the prompt fields ``clauses_json``, ``state_descriptions_json``,
+        ``nodes_json`` and ``propositions_json``; the prompt renderer rejects a missing one.
+        """
         response = self._request_structured(
-            read_prompt("labeling_reviewer"),
-            read_user_prompt(
+            read_prompt("compiler", "labeling_reviewer"),
+            render_prompt(
+                "compiler",
                 "labeling_reviewer",
                 environment_markdown=self.environment.markdown,
                 task=task,
-                clauses_json=clauses_json,
                 reward_machine=candidate_rm,
-                state_descriptions_json=state_descriptions_json,
-                nodes_json=nodes_json,
-                propositions_json=propositions_json,
                 api=api,
                 labeling=labeling,
+                **context,
             ),
             critic_schema(),
             "labeling_critic",

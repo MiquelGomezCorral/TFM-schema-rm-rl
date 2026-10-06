@@ -1,10 +1,13 @@
-import unittest
 import os
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from scripts.generate_rm import generate_rm
+from scripts import generate_rm
+from src.config import Configuration
+from src.engines import AntigravityEngine
+from src.models import EnvironmentDescription
 from src.utils import (
     GenerationHooks,
     PipelineStep,
@@ -13,18 +16,13 @@ from src.utils import (
     StepState,
     get_engine,
 )
-from src.config import Configuration
-from src.engines import AntigravityEngine
-from src.models import EnvironmentDescription
 
 
 class GenerationTests(unittest.TestCase):
     def setUp(self):
         self.log_directory = TemporaryDirectory()
         self.addCleanup(self.log_directory.cleanup)
-        self.logs_patch = patch.object(
-            Configuration, "LOGS_PATH", Path(self.log_directory.name)
-        )
+        self.logs_patch = patch.object(Configuration, "LOGS_PATH", Path(self.log_directory.name))
         self.addCleanup(self.logs_patch.stop)
         self.logs_patch.start()
 
@@ -39,7 +37,7 @@ class GenerationTests(unittest.TestCase):
         CONFIG = Configuration(embeddings=True)
         self.assertEqual(CONFIG.EMBEDDINGS_PATH, Path(CONFIG.MODELS_PATH) / "state_embeddings")
         self.assertEqual(CONFIG.embedding_endpoint, "http://127.0.0.1:8934/v1/embeddings")
-        self.assertEqual(CONFIG.embedding_context, "")
+        self.assertFalse(CONFIG.embedding_context)
         with self.assertRaisesRegex(ValueError, "http"):
             Configuration(embeddings=True, embedding_endpoint="127.0.0.1:8934")
         with self.assertRaisesRegex(ValueError, "timeout"):
@@ -67,7 +65,7 @@ class GenerationTests(unittest.TestCase):
             {
                 "LLM_PROVIDER": "opencode",
                 "OPENCODE_MODEL": "provider-model",
-                "OPENCODE_MODEL_GENERATOR": "role-generator # comment",
+                "OPENCODE_MODEL_GENERATOR": "role-generator",
                 "OPENCODE_MODEL_CRITIC": "role-critic",
             },
             clear=True,
@@ -96,9 +94,7 @@ class GenerationTests(unittest.TestCase):
             {"LLM_PROVIDER": "opencode", "OPENCODE_MODEL": "provider-model"},
             clear=True,
         ):
-            CONFIG = Configuration(
-                model="explicit-model", generator_model="explicit-generator"
-            )
+            CONFIG = Configuration(model="explicit-model", generator_model="explicit-generator")
         self.assertEqual(CONFIG.model, "explicit-model")
         self.assertEqual(CONFIG.generator_model, "explicit-generator")
 
@@ -111,23 +107,6 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(CONFIG.model, "provider-model")
         self.assertEqual(CONFIG.generator_model, "provider-model")
         self.assertIsNone(CONFIG.critic_model)
-
-        # Baseline selection happens before cleaning, so a comment-only or blank
-        # explicit model stays empty instead of falling through to the provider env.
-        with patch.dict(
-            os.environ,
-            {
-                "LLM_PROVIDER": "opencode",
-                "OPENCODE_MODEL": "provider-model",
-                "OPENCODE_MODEL_GENERATOR": "role-generator",
-            },
-            clear=True,
-        ):
-            for raw_model in ("   ", "# comment"):
-                with self.subTest(raw_model=raw_model):
-                    CONFIG = Configuration(model=raw_model)
-                    self.assertEqual(CONFIG.model, "")
-                    self.assertEqual(CONFIG.generator_model, "role-generator")
 
     def test_engine_factory_model_override_keeps_baseline_default(self):
         environment = EnvironmentDescription.from_markdown(
@@ -151,7 +130,10 @@ class GenerationTests(unittest.TestCase):
 
     def test_progress_has_total_and_step_once(self):
         messages = []
-        with patch("src.utils.generation_logging.time.monotonic", side_effect=[10.0, 11.234, 12.5]):
+        with patch(
+            "src.utils.generation_logging.time.monotonic",
+            side_effect=[10.0, 11.234, 12.5],
+        ):
             progress = Progress(GenerationHooks(progress=messages.append))
             self.assertEqual(progress("first"), "[total 1.234s | step 1.234s] first")
             self.assertEqual(progress("second"), "[total 2.500s | step 1.266s] second")
@@ -166,9 +148,10 @@ class GenerationTests(unittest.TestCase):
                 Path(directory),
             )
             progress(progress.log_path.as_posix())
-            started = progress.stage_start(0, 1, PipelineStep.GENERATE, "Generating")
-            progress.artifact("Proposal", "{\n  \"clauses\": []\n}")
-            progress.stage_end(0, 1, PipelineStep.GENERATE, started)
+            progress.begin_attempt(0, 1)
+            progress.start(PipelineStep.GENERATE)
+            progress.artifact("Proposal", '{\n  "clauses": []\n}')
+            progress.complete()
             log_path = progress.log_path
             progress.close()
 
@@ -201,9 +184,11 @@ class GenerationTests(unittest.TestCase):
             raise RuntimeError("start hook failed")
 
         CONFIG = Configuration(environment="demo.md", tasks=["finish"], output="out.rm")
-        with patch("scripts.generate_rm.Progress", TrackingProgress):
-            with self.assertRaises(RuntimeError):
-                generate_rm(CONFIG, GenerationHooks(run_started=fail_on_start))
+        with (
+            patch("scripts.generate_rm.Progress", TrackingProgress),
+            self.assertRaises(RuntimeError),
+        ):
+            generate_rm(CONFIG, GenerationHooks(run_started=fail_on_start))
 
         self.assertEqual(len(progress_instances), 1)
         self.assertIsNone(progress_instances[0]._logger)

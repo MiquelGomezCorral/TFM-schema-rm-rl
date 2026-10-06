@@ -190,7 +190,8 @@ through their inputs and prompts, while both challenge the same generator.
 - Task and clause boundaries are implemented in `app/src/compiler/pipeline.py` and
   `app/src/compiler/reward_machine.py`.
 - Compiler text serialization and import reuse the ARM-FM format in
-  `app/src/arm_fm/runtime.py`; `tests/test_reward_machine_format.py` checks interoperability.
+  `app/src/compiler/rm_format.py`, which the runtime also imports;
+  `tests/test_reward_machine_format.py` checks interoperability.
 - Clause count, exact arity, pattern-specific priorities, and proposition grounding
   share schema and runtime validation in
   `app/src/engines/structured.py`.

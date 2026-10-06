@@ -8,26 +8,24 @@ from src.arm_fm import (
     EmbeddingSettings,
     embed_state_descriptions,
     load_bundle,
-    resolve_embedding_settings,
+    load_qwen_embedding_model,
 )
 from src.config import Configuration
 
 
-def embed_larm(CONFIG: Configuration, *, model: object, tokenizer: object, settings=None) -> None:
-    """Embed a validated bundle and persist its state-to-row mapping."""
+def embed_larm(CONFIG: Configuration) -> None:
+    """Embed a validated bundle with the built-in Qwen loader and persist its state-to-row map."""
     if CONFIG.bundle is None:
         raise ValueError("embed-larm requires --bundle")
+
+    model, tokenizer, settings = load_qwen_embedding_model(
+        EmbeddingSettings(model=CONFIG.model or EMBEDDING_MODEL)
+    )
     bundle = load_bundle(CONFIG.bundle)
     diagnostics = bundle.validate()
 
-    required = {"reward_machine", "labeling", "descriptions"}
-    complete = {stage for stage, status in bundle.manifest.stage_status.items() if status == "complete"}
-
-    if diagnostics or required - complete:
+    if diagnostics or not bundle.generation_complete:
         raise ValueError("Embedding requires accepted RM, labeling, and description stages")
-
-    settings = settings or EmbeddingSettings(model=CONFIG.model or EMBEDDING_MODEL)
-    settings = resolve_embedding_settings(model, tokenizer, settings)
 
     bundle.embeddings = embed_state_descriptions(
         bundle.state_descriptions,

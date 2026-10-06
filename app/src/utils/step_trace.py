@@ -23,7 +23,7 @@ from src.compiler import CompilationResult
 from src.config import Configuration
 
 from .generation_logging import GenerationHooks, PipelineStep, StepArtifact
-
+from .svg import render_structure_svg
 
 # ======================================================================================
 #                                     TRACE CONTENT
@@ -62,6 +62,7 @@ _SKIP_NOTE = "skipped (disabled for this run)"
 # ======================================================================================
 #                                     PUBLIC API
 # ======================================================================================
+
 
 def attach_step_trace(CONFIG: Configuration, hooks: GenerationHooks) -> GenerationHooks:
     """Return hooks that write this run's step trace, and its report when asked.
@@ -108,6 +109,7 @@ def load_step_trace(text: str) -> list[dict[str, object]]:
 # ======================================================================================
 #                                     COLLECTION
 # ======================================================================================
+
 
 class _StepTraceWriter:
     """Collect one run's artifacts and write its trace and report when it completes."""
@@ -257,7 +259,7 @@ class _StepTraceWriter:
     ) -> list[str]:
         """Render the compiled text and its graph side by side."""
         svg_path = svg_directory / f"task-{task_index + 1}.svg"
-        svg_path.write_text(_render_svg(result.reward_machine), encoding="utf-8")
+        svg_path.write_text(render_structure_svg(result.reward_machine), encoding="utf-8")
         link = f"{svg_directory.name}/{svg_path.name}"
         heading = f"#### {number}. {_STEP_TITLES[PipelineStep.REWARD_MACHINE]}"
 
@@ -287,14 +289,14 @@ class _StepTraceWriter:
         return max(
             artifact.attempt
             for artifact in self._artifacts
-            if artifact.task_index == task_index
-            and artifact.step is PipelineStep.REWARD_MACHINE
+            if artifact.task_index == task_index and artifact.step is PipelineStep.REWARD_MACHINE
         )
 
 
 # ======================================================================================
 #                                   VALUE RENDERING
 # ======================================================================================
+
 
 def render_step_text(step: PipelineStep, value: object) -> str:
     """Return one captured step value as plain text, shared by trace, report and web UI.
@@ -343,15 +345,6 @@ def _trace_task(raw_task: object, index: int) -> dict[str, object]:
     }
 
 
-def _render_svg(reward_machine: object) -> str:
-    """Return the shared standalone SVG for one numeric Reward Machine structure."""
-    # Deferred: the drawing module lives in the web package that also imports the pipeline.
-    from src.web.svg import render_elements_svg
-    from src.web.visualization import reward_machine_to_elements
-
-    return render_elements_svg(reward_machine_to_elements(reward_machine))
-
-
 def _render_dfas(dfas: Sequence[dict]) -> str:
     """Render one DFA block per clause, sorted so equal runs read identically."""
     return "\n\n".join(_render_dfa(dfa) for dfa in dfas)
@@ -370,7 +363,6 @@ def _render_dfa(dfa: dict) -> str:
         "transitions:",
     ]
     lines.extend(
-        f"  ({source}, {guard}) -> {destination}"
-        for source, guard, destination in transitions
+        f"  ({source}, {guard}) -> {destination}" for source, guard, destination in transitions
     )
     return "\n".join(lines)

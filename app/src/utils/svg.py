@@ -1,14 +1,15 @@
 """Render Cytoscape Reward Machine elements to a standalone SVG document.
 
-The web graph view and the ``render_rm`` script share this module: the app passes
-the live node positions so an export keeps whatever placement the user arranged,
-while the script omits them and gets a deterministic layered layout.
+The web graph view, the step report and the ``render_rm`` script share this module: the
+app passes the live node positions so an export keeps whatever placement the user
+arranged, while the others omit them and get a deterministic layered layout.
 
 Sizing comes from :class:`src.config.GraphStyle`, adjustable in ``config.py``.
 """
 
 from __future__ import annotations
 
+from src.compiler.reward_machine import RewardMachineStructure
 from src.config import GraphStyle
 
 from .visualization import (
@@ -19,8 +20,8 @@ from .visualization import (
     SELF_LOOP_REACH,
     edge_label_offsets,
     reward_machine_positions,
+    reward_machine_to_elements,
 )
-
 
 GRAPH = GraphStyle()
 
@@ -34,6 +35,11 @@ EDGE_WIDTH = STYLES["edge"]["width"]
 CHIP_HEIGHT = EDGE_LABEL_HEIGHT
 BACK_EDGE_REACH = 26
 EDGE_PADDING = 6
+
+
+def render_structure_svg(structure: RewardMachineStructure) -> str:
+    """Return a standalone SVG document for one numeric Reward Machine structure."""
+    return render_elements_svg(reward_machine_to_elements(structure))
 
 
 def render_elements_svg(elements: list[dict], positions: dict | None = None) -> str:
@@ -84,6 +90,7 @@ def _label_style(classes: str) -> dict:
 #                                    LAYOUT
 # ======================================================================================
 
+
 def _fit(positions: dict) -> tuple[dict, float, float]:
     """Translate positions into the canvas and size it to the full bounding box."""
     left = max(GRAPH.margin, BACK_EDGE_REACH + EDGE_PADDING)
@@ -97,10 +104,7 @@ def _fit(positions: dict) -> tuple[dict, float, float]:
         for node, (x, y) in positions.items()
     }
     width = (
-        max(x for x, _ in shifted.values())
-        + GRAPH.node_width / 2
-        + GRAPH.margin
-        + GRAPH.arc_room
+        max(x for x, _ in shifted.values()) + GRAPH.node_width / 2 + GRAPH.margin + GRAPH.arc_room
     )
     height = max(y for _, y in shifted.values()) + GRAPH.node_height / 2 + GRAPH.margin
     return shifted, width, height
@@ -122,12 +126,14 @@ def _clip(centre: tuple[float, float], target: tuple[float, float]) -> tuple[flo
 #                                   SVG OUTPUT
 # ======================================================================================
 
-def _document(nodes: list[dict], edges: list[dict], positions: dict, width: float, height: float) -> str:
+
+def _document(
+    nodes: list[dict], edges: list[dict], positions: dict, width: float, height: float
+) -> str:
     """Assemble the SVG document from positioned nodes and routed edges."""
     offsets = edge_label_offsets(edges)
     routed = [
-        _edge_parts(edge, positions, width, offsets[index])
-        for index, edge in enumerate(edges)
+        _edge_parts(edge, positions, width, offsets[index]) for index, edge in enumerate(edges)
     ]
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:.0f}" height="{height:.0f}" '
@@ -165,11 +171,13 @@ def _node_svg(node: dict, positions: dict) -> str:
         f'stroke-width="{style["border-width"]}"/>'
         f'<text x="{x:.0f}" y="{y:.0f}" fill="{style["color"]}" font-size="{style["font-size"]}" '
         f'font-weight="600" text-anchor="middle" dominant-baseline="central">'
-        f'{_escape(node["data"]["label"])}</text></g>'
+        f"{_escape(node['data']['label'])}</text></g>"
     )
 
 
-def _edge_parts(edge: dict, positions: dict, canvas_width: float, y_offset: float) -> tuple[str, str]:
+def _edge_parts(
+    edge: dict, positions: dict, canvas_width: float, y_offset: float
+) -> tuple[str, str]:
     """Route one grouped transition into a path group and a label group.
 
     Paths and labels are returned separately so labels can be drawn above the
@@ -194,7 +202,7 @@ def _edge_parts(edge: dict, positions: dict, canvas_width: float, y_offset: floa
 
     label = data.get("label", "")
     path_svg = (
-        f'<g><title>{_escape(_case_text(edge))}</title>'
+        f"<g><title>{_escape(_case_text(edge))}</title>"
         f'<path d="{path}" fill="none" stroke="{EDGE_COLOURS[_edge_class(classes)]}" '
         f'stroke-width="{EDGE_WIDTH}" marker-end="url(#{_marker_id(classes)})"/></g>'
     )
@@ -236,7 +244,10 @@ def _back_edge(
     """Route a backward transition around the left of the node column."""
     start = (source[0] - GRAPH.node_width / 2, source[1])
     end = (target[0] - GRAPH.node_width / 2, target[1])
-    control = (min(source[0], target[0]) - GRAPH.node_width / 2 - 52, (start[1] + end[1]) / 2)
+    control = (
+        min(source[0], target[0]) - GRAPH.node_width / 2 - 52,
+        (start[1] + end[1]) / 2,
+    )
     path = (
         f"M {start[0]:.0f} {start[1]:.0f} "
         f"Q {control[0]:.0f} {control[1]:.0f} {end[0]:.0f} {end[1]:.0f}"

@@ -4,18 +4,21 @@ from __future__ import annotations
 
 import json
 import math
-import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 
-from .runtime import (
+from src.compiler import (
     PaperRewardMachine,
     RuntimeValidationError,
-    load_labeling_functions,
     parse_paper_reward_machine,
+    serialize_paper_reward_machine,
 )
+
+from .runtime import load_labeling_functions
+
+_GENERATION_STAGES = frozenset({"reward_machine", "labeling", "descriptions"})
 
 
 class BundleValidationError(ValueError):
@@ -44,7 +47,7 @@ class BundleManifest:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "BundleManifest":
+    def from_dict(cls, data: dict[str, Any]) -> BundleManifest:
         if not isinstance(data, dict):
             raise BundleValidationError("Bundle manifest must be an object")
         required = {"task", "environment"}
@@ -53,7 +56,9 @@ class BundleManifest:
         allowed = set(cls.__dataclass_fields__)
         unknown = set(data) - allowed
         if unknown:
-            raise BundleValidationError("Bundle manifest has unknown field(s): " + ", ".join(sorted(unknown)))
+            raise BundleValidationError(
+                "Bundle manifest has unknown field(s): " + ", ".join(sorted(unknown))
+            )
         return cls(**data)
 
 
@@ -72,15 +77,26 @@ class ArtifactBundle:
 
     def validate(self, *, require_complete: bool = False) -> list[str]:
         """Return diagnostics, or raise for malformed structure."""
-        diagnostics: list[str] = []
         if not self.manifest.task.strip():
             raise BundleValidationError("Bundle task must be nonempty")
         if self.reward_machine is None:
-            diagnostics.append("reward machine is missing")
             if require_complete:
                 raise BundleValidationError("reward machine is missing")
-            return diagnostics
-        expected_propositions = tuple(self.manifest.proposition_semantics) or self.reward_machine.propositions
+            return ["reward machine is missing"]
+
+        diagnostics = self._consistency_diagnostics()
+        if require_complete:
+            diagnostics.extend(self._completeness_diagnostics())
+            if diagnostics:
+                raise BundleValidationError("; ".join(diagnostics))
+        return diagnostics
+
+    def _consistency_diagnostics(self) -> list[str]:
+        """Check that the RM, labeling, descriptions and embeddings describe the same states."""
+        diagnostics: list[str] = []
+        expected_propositions = (
+            tuple(self.manifest.proposition_semantics) or self.reward_machine.propositions
+        )
         if set(expected_propositions) != set(self.reward_machine.propositions):
             diagnostics.append("RM propositions do not match the environment vocabulary")
         try:
@@ -91,27 +107,28 @@ class ArtifactBundle:
             diagnostics.append("state descriptions do not align with RM states")
         if self.embeddings and set(self.embeddings) != set(self.state_descriptions):
             diagnostics.append("embeddings do not align with state descriptions")
-        if self.embeddings:
-            for state, vector in self.embeddings.items():
-                try:
-                    if not vector or not all(math.isfinite(float(value)) for value in vector):
-                        diagnostics.append(f"embedding for {state!r} must be finite and nonempty")
-                except (TypeError, ValueError):
-                    diagnostics.append(f"embedding for {state!r} must be numeric")
-        if require_complete:
-            required = {"reward_machine", "labeling", "descriptions", "embeddings"}
-            missing_stages = required - {
-                stage for stage, status in self.manifest.stage_status.items() if status == "complete"
-            }
-            if missing_stages:
-                diagnostics.append("incomplete stages: " + ", ".join(sorted(missing_stages)))
-            if not self.embeddings:
-                diagnostics.append("embeddings are missing")
-            for check in ("structural", "critic"):
-                if check in self.manifest.validation and self.manifest.validation.get(check) is not True:
-                    diagnostics.append(f"{check} validation is incomplete")
-            if diagnostics:
-                raise BundleValidationError("; ".join(diagnostics))
+        for state, vector in self.embeddings.items():
+            try:
+                if not vector or not all(math.isfinite(float(value)) for value in vector):
+                    diagnostics.append(f"embedding for {state!r} must be finite and nonempty")
+            except (TypeError, ValueError):
+                diagnostics.append(f"embedding for {state!r} must be numeric")
+        return diagnostics
+
+    def _completeness_diagnostics(self) -> list[str]:
+        """Check that every generation stage finished and every recorded check passed."""
+        diagnostics: list[str] = []
+        missing_stages = (_GENERATION_STAGES | {"embeddings"}) - self._complete_stages()
+        if missing_stages:
+            diagnostics.append("incomplete stages: " + ", ".join(sorted(missing_stages)))
+        if not self.embeddings:
+            diagnostics.append("embeddings are missing")
+        for check in ("structural", "critic"):
+            if (
+                check in self.manifest.validation
+                and self.manifest.validation.get(check) is not True
+            ):
+                diagnostics.append(f"{check} validation is incomplete")
         return diagnostics
 
     @property
@@ -121,19 +138,32 @@ class ArtifactBundle:
         except BundleValidationError:
             return False
 
+    @property
+    def generation_complete(self) -> bool:
+        """Whether the RM, labeling and description stages are all accepted."""
+        return self._complete_stages() >= _GENERATION_STAGES
+
+    def _complete_stages(self) -> set[str]:
+        return {
+            stage for stage, status in self.manifest.stage_status.items() if status == "complete"
+        }
+
     def save(self, directory: str | Path, *, overwrite: bool = False) -> Path:
         """Write a bundle using simple JSON/text files and no hidden state."""
         target = Path(directory)
         if target.exists() and any(target.iterdir()) and not overwrite:
             raise FileExistsError(f"Bundle directory already exists: {target}")
         target.mkdir(parents=True, exist_ok=True)
-        _atomic_text(target / "manifest.json", json.dumps(self.manifest.to_dict(), indent=2, sort_keys=True) + "\n")
+        _atomic_text(
+            target / "manifest.json",
+            json.dumps(self.manifest.to_dict(), indent=2, sort_keys=True) + "\n",
+        )
         reward_path = target / "reward_machine.txt"
         if self.reward_machine is None:
             if reward_path.exists():
                 reward_path.unlink()
         else:
-            _atomic_text(reward_path, _serialize_machine(self.reward_machine))
+            _atomic_text(reward_path, serialize_paper_reward_machine(self.reward_machine))
         _atomic_text(target / "labeling.py", self.labeling_source)
         _atomic_text(target / "state_descriptions.json", _json(self.state_descriptions))
         _atomic_text(target / "embeddings.json", _json(self.embeddings))
@@ -143,10 +173,12 @@ class ArtifactBundle:
         return target
 
     @classmethod
-    def load(cls, directory: str | Path) -> "ArtifactBundle":
+    def load(cls, directory: str | Path) -> ArtifactBundle:
         root = Path(directory)
         try:
-            manifest = BundleManifest.from_dict(json.loads((root / "manifest.json").read_text(encoding="utf-8")))
+            manifest = BundleManifest.from_dict(
+                json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+            )
             reward_path = root / "reward_machine.txt"
             machine = (
                 parse_paper_reward_machine(
@@ -164,7 +196,16 @@ class ArtifactBundle:
             evidence = _load_json(root / "execution_evidence.json", [])
         except (OSError, json.JSONDecodeError, RuntimeValidationError) as error:
             raise BundleValidationError(f"Could not load bundle '{root}': {error}") from error
-        bundle = cls(manifest, machine, labeling, descriptions, embeddings, attempts, responses, evidence)
+        bundle = cls(
+            manifest,
+            machine,
+            labeling,
+            descriptions,
+            embeddings,
+            attempts,
+            responses,
+            evidence,
+        )
         bundle.validate()
         return bundle
 
@@ -172,17 +213,6 @@ class ArtifactBundle:
 def load_bundle(directory: str | Path) -> ArtifactBundle:
     """Convenience loader for persisted bundles."""
     return ArtifactBundle.load(directory)
-
-
-def validate_bundle(directory: str | Path, *, require_complete: bool = False) -> list[str]:
-    """Validate a persisted bundle without mutating it."""
-    return ArtifactBundle.load(directory).validate(require_complete=require_complete)
-
-
-def _serialize_machine(machine: PaperRewardMachine) -> str:
-    from .runtime import serialize_paper_reward_machine
-
-    return serialize_paper_reward_machine(machine)
 
 
 def _json(value: object) -> str:
@@ -200,4 +230,4 @@ def _atomic_text(path: Path, value: str) -> None:
     with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as temporary:
         temporary.write(value)
         temporary_path = Path(temporary.name)
-    os.replace(temporary_path, path)
+    temporary_path.replace(path)

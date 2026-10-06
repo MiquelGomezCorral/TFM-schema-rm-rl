@@ -1,11 +1,13 @@
 """Checks for the shared engine workflow and provider configuration."""
 
-import os
-import unittest
 import json
+import os
 import subprocess
+import unittest
 from unittest.mock import ANY, patch
 
+from src.arm_fm.generation import _extract_artifact
+from src.compiler import parse_paper_reward_machine
 from src.engines import (
     AntigravityEngine,
     GenericEngine,
@@ -14,10 +16,7 @@ from src.engines import (
     OpenCodeEngine,
     RetryableEngineError,
 )
-from src.arm_fm.generation import _extract_artifact
-from src.arm_fm.runtime import parse_paper_reward_machine
 from src.models import EnvironmentDescription
-
 
 ENVIRONMENT = EnvironmentDescription.from_markdown(
     "# Demo\n## Propositions\n- `done`: Finished",
@@ -67,23 +66,41 @@ class EngineTests(unittest.TestCase):
     @patch("src.engines.provider_engines.subprocess.run")
     def test_antigravity_returns_structured_output_without_using_tools(self, run) -> None:
         response = {
-            "clauses": [{
-                "normalized_clause": "finish",
-                "pattern": "Existence",
-                "propositions": ["done"],
-                "priority": "none",
-            }],
+            "clauses": [
+                {
+                    "normalized_clause": "finish",
+                    "pattern": "Existence",
+                    "propositions": ["done"],
+                    "priority": "none",
+                }
+            ],
         }
         run.return_value = subprocess.CompletedProcess(
             ["agy"],
             0,
-            stdout="\n".join([
-                json.dumps({"event": "init", "init": {
-                    "agent": "schema-rm-provider", "tools": ["view_file"],
-                }}),
-                json.dumps({"event": "assistant", "message": {"content": "ignored"}}),
-                json.dumps({"event": "result", "result": {"status": "SUCCESS", "structured_output": response}}),
-            ]),
+            stdout="\n".join(
+                [
+                    json.dumps(
+                        {
+                            "event": "init",
+                            "init": {
+                                "agent": "schema-rm-provider",
+                                "tools": ["view_file"],
+                            },
+                        }
+                    ),
+                    json.dumps({"event": "assistant", "message": {"content": "ignored"}}),
+                    json.dumps(
+                        {
+                            "event": "result",
+                            "result": {
+                                "status": "SUCCESS",
+                                "structured_output": response,
+                            },
+                        }
+                    ),
+                ]
+            ),
             stderr="",
         )
 
@@ -121,12 +138,28 @@ class EngineTests(unittest.TestCase):
         run.return_value = subprocess.CompletedProcess(
             ["agy"],
             0,
-            stdout="\n".join([
-                json.dumps({"event": "init", "init": {
-                    "agent": "schema-rm-provider", "tools": ["view_file"],
-                }}),
-                json.dumps({"event": "result", "result": {"status": "SUCCESS", "structured_output": critic_response}}),
-            ]),
+            stdout="\n".join(
+                [
+                    json.dumps(
+                        {
+                            "event": "init",
+                            "init": {
+                                "agent": "schema-rm-provider",
+                                "tools": ["view_file"],
+                            },
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "event": "result",
+                            "result": {
+                                "status": "SUCCESS",
+                                "structured_output": critic_response,
+                            },
+                        }
+                    ),
+                ]
+            ),
             stderr="",
         )
         self.assertTrue(engine.review_task("Finish", "{}").accepted)
@@ -154,12 +187,28 @@ class EngineTests(unittest.TestCase):
         run.return_value = subprocess.CompletedProcess(
             ["agy"],
             0,
-            stdout="\n".join([
-                json.dumps({"event": "init", "init": {
-                    "agent": "schema-rm-provider", "tools": ["view_file"],
-                }}),
-                json.dumps({"event": "result", "result": {"status": "FAILURE", "error": "model unavailable"}}),
-            ]),
+            stdout="\n".join(
+                [
+                    json.dumps(
+                        {
+                            "event": "init",
+                            "init": {
+                                "agent": "schema-rm-provider",
+                                "tools": ["view_file"],
+                            },
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "event": "result",
+                            "result": {
+                                "status": "FAILURE",
+                                "error": "model unavailable",
+                            },
+                        }
+                    ),
+                ]
+            ),
             stderr="",
         )
         with self.assertRaisesRegex(ImmediateEngineError, "model is unavailable"):
@@ -168,9 +217,16 @@ class EngineTests(unittest.TestCase):
         run.return_value = subprocess.CompletedProcess(
             ["agy"],
             2,
-            stdout="\n".join([
-                json.dumps({"event": "result", "result": {"status": "FAILURE", "error": "login required"}}),
-            ]),
+            stdout="\n".join(
+                [
+                    json.dumps(
+                        {
+                            "event": "result",
+                            "result": {"status": "FAILURE", "error": "login required"},
+                        }
+                    ),
+                ]
+            ),
             stderr="",
         )
         with self.assertRaisesRegex(ImmediateEngineError, "authentication failed"):
@@ -179,10 +235,12 @@ class EngineTests(unittest.TestCase):
         run.return_value = subprocess.CompletedProcess(
             ["agy"],
             2,
-            stdout=json.dumps({
-                "event": "result",
-                "result": {"status": "FAILURE", "error": "invalid model"},
-            }),
+            stdout=json.dumps(
+                {
+                    "event": "result",
+                    "result": {"status": "FAILURE", "error": "invalid model"},
+                }
+            ),
             stderr="",
         )
         with self.assertRaisesRegex(ImmediateEngineError, "model is unavailable"):
@@ -194,33 +252,71 @@ class EngineTests(unittest.TestCase):
         outputs = (
             "not-json",
             json.dumps({"event": "init", "init": {"tools": "invalid"}}),
-            json.dumps({"event": "init", "init": {
-                "agent": "wrong-agent", "tools": [],
-            }}),
-            "\n".join([
-                json.dumps({"event": "init", "init": {
-                    "agent": "schema-rm-provider", "tools": ["view_file"],
-                }}),
-                json.dumps({"event": "result", "result": {"status": "FAILURE", "error": "login required"}}),
-            ]),
-            "\n".join([
-                json.dumps({"event": "init", "init": {
-                    "agent": "schema-rm-provider", "tools": ["view_file"],
-                }}),
-                json.dumps({"event": "result", "result": {"status": "SUCCESS"}}),
-            ]),
-            "\n".join([
-                json.dumps({"event": "init", "init": {
-                    "agent": "schema-rm-provider", "tools": ["view_file"],
-                }}),
-                json.dumps({"event": "result", "result": {"status": "SUCCESS", "structured_output": []}}),
-            ]),
+            json.dumps(
+                {
+                    "event": "init",
+                    "init": {
+                        "agent": "wrong-agent",
+                        "tools": [],
+                    },
+                }
+            ),
+            "\n".join(
+                [
+                    json.dumps(
+                        {
+                            "event": "init",
+                            "init": {
+                                "agent": "schema-rm-provider",
+                                "tools": ["view_file"],
+                            },
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "event": "result",
+                            "result": {"status": "FAILURE", "error": "login required"},
+                        }
+                    ),
+                ]
+            ),
+            "\n".join(
+                [
+                    json.dumps(
+                        {
+                            "event": "init",
+                            "init": {
+                                "agent": "schema-rm-provider",
+                                "tools": ["view_file"],
+                            },
+                        }
+                    ),
+                    json.dumps({"event": "result", "result": {"status": "SUCCESS"}}),
+                ]
+            ),
+            "\n".join(
+                [
+                    json.dumps(
+                        {
+                            "event": "init",
+                            "init": {
+                                "agent": "schema-rm-provider",
+                                "tools": ["view_file"],
+                            },
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "event": "result",
+                            "result": {"status": "SUCCESS", "structured_output": []},
+                        }
+                    ),
+                ]
+            ),
         )
         for output in outputs:
             with self.subTest(output=output):
-                run.return_value = subprocess.CompletedProcess(
-                    ["agy"], 0, stdout=output, stderr=""
-                )
+                run.return_value = subprocess.CompletedProcess(["agy"], 0, stdout=output, stderr="")
                 with self.assertRaises(ImmediateEngineError):
                     engine.propose_task("Finish")
 
@@ -253,7 +349,9 @@ class EngineTests(unittest.TestCase):
             ["declare_proposal", "task_critic", "rm_critic"],
         )
 
-    def test_generic_engine_tags_states_and_includes_them_in_the_rm_review(self) -> None:
+    def test_generic_engine_tags_states_and_includes_them_in_the_rm_review(
+        self,
+    ) -> None:
         requests = []
         reviews = []
 
@@ -268,7 +366,11 @@ class EngineTests(unittest.TestCase):
         engine = GenericEngine(ENVIRONMENT, "test-model", "Test", request, request_text)
 
         descriptions = engine.describe_states(
-            "Finish", '[{"pattern": "Existence"}]', "REWARD_MACHINE:", "[]", ("u0", "u1")
+            "Finish",
+            '[{"pattern": "Existence"}]',
+            "REWARD_MACHINE:",
+            "[]",
+            ("u0", "u1"),
         )
         review = engine.review_reward_machine(
             "Finish", "REWARD_MACHINE:", '{"u0": "first progress"}'
@@ -286,7 +388,11 @@ class EngineTests(unittest.TestCase):
 
         def engine_for(response):
             return GenericEngine(
-                ENVIRONMENT, "test-model", "Test", lambda *args: "", lambda *args: response
+                ENVIRONMENT,
+                "test-model",
+                "Test",
+                lambda *args: "",
+                lambda *args: response,
             )
 
         rejected = (
@@ -298,9 +404,11 @@ class EngineTests(unittest.TestCase):
             '```json\n["ok", "two"]\n```',
         )
         for response in rejected:
-            with self.subTest(response=response):
-                with self.assertRaises(RetryableEngineError):
-                    engine_for(response).describe_states("Finish", "[]", "m", "[]", nodes)
+            with (
+                self.subTest(response=response),
+                self.assertRaises(RetryableEngineError),
+            ):
+                engine_for(response).describe_states("Finish", "[]", "m", "[]", nodes)
 
         accepted = engine_for('[" first ", "second"]')
         self.assertEqual(
@@ -312,10 +420,18 @@ class EngineTests(unittest.TestCase):
     def test_opencode_go_pi_validates_proposal_and_critic(self, run) -> None:
         proposal = '{"clauses":[{"normalized_clause":"finish","pattern":"Existence","propositions":["done"],"priority":"none"}]}'
         critic = '{"accepted":true,"feedback":"task is grounded"}'
-        event = lambda text: json.dumps({
-            "type": "message_end",
-            "message": {"role": "assistant", "content": [{"type": "text", "text": text}]},
-        })
+
+        def event(text):
+            return json.dumps(
+                {
+                    "type": "message_end",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": text}],
+                    },
+                }
+            )
+
         run.side_effect = [
             subprocess.CompletedProcess(["pi"], 0, stdout=event(proposal), stderr=""),
             subprocess.CompletedProcess(["pi"], 0, stdout=event(critic), stderr=""),
@@ -326,7 +442,14 @@ class EngineTests(unittest.TestCase):
         self.assertTrue(engine.review_task("Finish", proposal).accepted)
         command = run.call_args_list[0].args[0]
         self.assertEqual(command[command.index("--model") + 1], "opencode-go/mimo-v2.5")
-        for flag in ("--no-tools", "--no-extensions", "--no-context-files", "--no-session", "--mode", "json"):
+        for flag in (
+            "--no-tools",
+            "--no-extensions",
+            "--no-context-files",
+            "--no-session",
+            "--mode",
+            "json",
+        ):
             self.assertIn(flag, command)
         self.assertEqual(command[command.index("--thinking") + 1], "minimal")
         self.assertEqual(run.call_args_list[0].kwargs["cwd"].name, "TFM-schema-rm-rl")
@@ -335,11 +458,19 @@ class EngineTests(unittest.TestCase):
     def test_opencode_go_pi_returns_plain_artifacts_and_rejects_missing_text(self, run) -> None:
         artifact = "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES: u1\nTRANSITION_FUNCTION:\n(u0, done) -> u1\nREWARD_FUNCTION:\n"
         run.return_value = subprocess.CompletedProcess(
-            ["pi"], 0,
-            stdout=json.dumps({
-                "type": "agent_end",
-                "messages": [{"role": "assistant", "content": [{"type": "text", "text": artifact}]}],
-            }),
+            ["pi"],
+            0,
+            stdout=json.dumps(
+                {
+                    "type": "agent_end",
+                    "messages": [
+                        {
+                            "role": "assistant",
+                            "content": [{"type": "text", "text": artifact}],
+                        }
+                    ],
+                }
+            ),
             stderr="",
         )
         engine = OpenCodeEngine(ENVIRONMENT, "opencode-go/mimo-v2.5")

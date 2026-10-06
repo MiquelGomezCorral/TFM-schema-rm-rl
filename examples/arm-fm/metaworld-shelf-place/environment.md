@@ -32,4 +32,3 @@ These are persistent conditions over the current robot and object state.
 - Eventually place the object on the shelf.
 - Grasp the object before placing it on the shelf.
 - Move the object near the shelf target before completing placement.
-

@@ -862,6 +862,7 @@ Labeling Functions for DoorKey
 def has_key(env):
     return env.carrying is not None and env.carrying.type == "key"
 
+
 def is_door_in_env_open(env):
     for i in range(env.height):
         for j in range(env.width):
@@ -870,8 +871,10 @@ def is_door_in_env_open(env):
                 return True
     return False
 
+
 def not_has_key(env):
     return not (env.carrying is not None and env.carrying.type == "key")
+
 
 def at_goal(env):
     x, y = env.agent_pos
@@ -885,8 +888,10 @@ Labeling Functions for BlockedUnlockPickup
 def has_ball(env):
     return env.carrying is not None and env.carrying.type == "ball"
 
+
 def has_key(env):
     return env.carrying is not None and env.carrying.type == "key"
+
 
 def door_unlocked(env):
     for i in range(env.width):
@@ -896,8 +901,10 @@ def door_unlocked(env):
                 return True
     return False
 
+
 def no_key(env):
     return not has_key(env)
+
 
 def has_box(env):
     return env.carrying is not None and env.carrying.type == "box"
