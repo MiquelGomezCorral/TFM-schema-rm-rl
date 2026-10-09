@@ -209,7 +209,9 @@ def _reward_machine_inputs(
     bundle.validate(require_complete=True)
 
     labeling_bundle = CONFIG.labeling_bundle or CONFIG.bundle
-    source = (labeling_bundle / "labeling.py").read_text(encoding="utf-8")
+    source = bundle.labeling_source
+    if CONFIG.labeling_bundle is not None:
+        source = (CONFIG.labeling_bundle / "labeling.py").read_text(encoding="utf-8")
     try:
         labeling = load_labeling_functions(source, bundle.reward_machine.propositions)
     except RuntimeValidationError as error:

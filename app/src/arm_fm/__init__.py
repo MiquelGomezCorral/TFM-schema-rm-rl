@@ -9,7 +9,6 @@ from .artifacts import (
 )
 from .dqn import train_dqn
 from .environments import (
-    RunEnvironment,
     make_environment,
     make_run_environment,
     minigrid_labeling_api,

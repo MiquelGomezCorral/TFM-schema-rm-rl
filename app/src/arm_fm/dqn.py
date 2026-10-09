@@ -43,7 +43,7 @@ import random
 import shutil
 import subprocess
 import time
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -109,31 +109,34 @@ RUN_SETTINGS = (
     "torch_deterministic",
 )
 
-EPISODE_COLUMNS = (
-    "global_step",
-    "episode",
-    "env_return",
-    "rm_return",
-    "total_return",
-    "length",
-    "exited",
-    "final_rm_state",
-    "epsilon",
-    "wall_seconds",
-)
-EVAL_COLUMNS = (
-    "global_step",
-    "episodes",
-    "exit_rate",
-    "mean_length",
-    "mean_env_return",
-    "mean_rm_return",
-    "mean_total_return",
-    "rm_accept_rate",
-    "accept_exit_agreement",
-    "seeds",
-)
-TRAIN_COLUMNS = ("global_step", "td_loss", "q_mean", "epsilon", "sps")
+# Each run folder CSV and its columns.
+CSV_COLUMNS = {
+    "episodes.csv": (
+        "global_step",
+        "episode",
+        "env_return",
+        "rm_return",
+        "total_return",
+        "length",
+        "exited",
+        "final_rm_state",
+        "epsilon",
+        "wall_seconds",
+    ),
+    "eval.csv": (
+        "global_step",
+        "episodes",
+        "exit_rate",
+        "mean_length",
+        "mean_env_return",
+        "mean_rm_return",
+        "mean_total_return",
+        "rm_accept_rate",
+        "accept_exit_agreement",
+        "seeds",
+    ),
+    "train.csv": ("global_step", "td_loss", "q_mean", "epsilon", "sps"),
+}
 
 
 # ======================================================================================
@@ -217,22 +220,22 @@ class QNetwork(nn.Module):
         self.encoder = encoder
         self.rm_embedding: nn.Module | None = None
         image_space = observation_space
+        rm_feature_count = 0
         if isinstance(observation_space, spaces.Dict):
             image_space = observation_space["image"]
             dimension = observation_space["rm_embedding"].shape[0]
+            rm_feature_count = dimension // 4
             self.rm_embedding = nn.Sequential(
-                nn.Linear(dimension, dimension // 4),
+                nn.Linear(dimension, rm_feature_count),
                 nn.ReLU(),
-                nn.Linear(dimension // 4, dimension // 4),
+                nn.Linear(rm_feature_count, rm_feature_count),
                 nn.ReLU(),
             )
 
         with torch.no_grad():
-            feature_count = encoder(torch.zeros((1, *image_space.shape))).shape[1]
-        if self.rm_embedding is not None:
-            feature_count += observation_space["rm_embedding"].shape[0] // 4
+            image_feature_count = encoder(torch.zeros((1, *image_space.shape))).shape[1]
         self.head = nn.Sequential(
-            nn.Linear(feature_count, 512),
+            nn.Linear(image_feature_count + rm_feature_count, 512),
             nn.ReLU(),
             nn.Linear(512, action_count),
         )
@@ -545,11 +548,7 @@ class RunRecorder:
         self.started = time.monotonic()
         self.episode_count = 0
         self.steps_to_success: int | None = None
-        for name, columns in (
-            ("episodes.csv", EPISODE_COLUMNS),
-            ("eval.csv", EVAL_COLUMNS),
-            ("train.csv", TRAIN_COLUMNS),
-        ):
+        for name, columns in CSV_COLUMNS.items():
             with (directory / name).open("w", newline="", encoding="utf-8") as file:
                 csv.DictWriter(file, columns).writeheader()
 
@@ -576,7 +575,6 @@ class RunRecorder:
         self.episode_count += 1
         self._append(
             "episodes.csv",
-            EPISODE_COLUMNS,
             {
                 "global_step": env_steps,
                 "episode": self.episode_count,
@@ -595,13 +593,13 @@ class RunRecorder:
         td_loss, q_mean = metrics
         sps = int(env_steps / self.wall_seconds)
         row = {"td_loss": td_loss, "q_mean": q_mean, "epsilon": epsilon, "sps": sps}
-        self._append("train.csv", TRAIN_COLUMNS, {"global_step": env_steps, **row})
+        self._append("train.csv", {"global_step": env_steps, **row})
 
     def write_evaluation(self, env_steps: int, row: dict[str, object], threshold: float) -> None:
         """Append one eval row; the first row reaching ``threshold`` sets ``steps_to_success``."""
         if self.steps_to_success is None and row["exit_rate"] >= threshold:
             self.steps_to_success = env_steps
-        self._append("eval.csv", EVAL_COLUMNS, {"global_step": env_steps, **row})
+        self._append("eval.csv", {"global_step": env_steps, **row})
         print(
             f"step {env_steps}: exit_rate {row['exit_rate']:.2f}, "
             f"mean_env_return {row['mean_env_return']:.3f}, {self.wall_seconds:.0f} s"
@@ -625,9 +623,9 @@ class RunRecorder:
             json.dumps(summary, indent=2) + "\n", encoding="utf-8"
         )
 
-    def _append(self, name: str, columns: Sequence[str], row: dict[str, object]) -> None:
+    def _append(self, name: str, row: dict[str, object]) -> None:
         with (self.directory / name).open("a", newline="", encoding="utf-8") as file:
-            csv.DictWriter(file, columns).writerow(row)
+            csv.DictWriter(file, CSV_COLUMNS[name]).writerow(row)
 
 
 def _plain(value: object) -> object:
