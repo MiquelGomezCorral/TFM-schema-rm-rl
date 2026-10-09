@@ -12,6 +12,7 @@ from scripts import (
     generate_larm,
     generate_rm,
     render_rm,
+    train_rl,
 )
 from src.config import Configuration
 
@@ -44,6 +45,12 @@ def cmd_evaluate_larm(args: argparse.Namespace) -> None:
     """Judge ARM-FM bundles with the configured provider."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
     evaluate_larm(CONFIG)
+
+
+def cmd_train_rl(args: argparse.Namespace) -> None:
+    """Train one DQN run from a YAML run config."""
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    train_rl(CONFIG)
 
 
 # ======================================================================================
@@ -223,6 +230,22 @@ if __name__ == "__main__":
     evaluate_parser.add_argument("--judge-model", default="Qwen3-30B-A3B-Instruct-2507")
     evaluate_parser.add_argument("--output", type=Path)
     evaluate_parser.set_defaults(func=cmd_evaluate_larm)
+
+    # ======================================================================================
+    #                                       train-rl
+    # ======================================================================================
+    train_parser = subparsers.add_parser(
+        "train-rl", help="Train one DQN run, with or without a Reward Machine"
+    )
+    train_parser.add_argument(
+        "--config",
+        dest="yaml_config_name",
+        required=True,
+        help="Run config under configs/, e.g. minigrid-unlock-pickup/smoke-rm-symbolic.yaml",
+    )
+    # SUPPRESS keeps the global --seed when this one is absent, so both positions work.
+    train_parser.add_argument("--seed", type=int, default=argparse.SUPPRESS)
+    train_parser.set_defaults(func=cmd_train_rl)
 
     # ======================================================================================
     #                                       CALL

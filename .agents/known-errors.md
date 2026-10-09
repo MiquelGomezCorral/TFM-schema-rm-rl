@@ -32,6 +32,6 @@
 
 ## Wrong Python Environment
 
-- Symptom: the readiness suite reports `ModuleNotFoundError: No module named 'tianshou'` (also `torch`, `transformers`) and several test modules fail to import.
+- Symptom: the readiness suite reports `ModuleNotFoundError: No module named 'torch'` (also `transformers`, `stable_baselines3`) and several test modules fail to import.
 - Cause: commands ran in the repository `.venv` or a system interpreter instead of the project Conda environment.
 - Resolution: run every command inside `RM_RL_env` (`conda run -n RM_RL_env ...`) as described in `.agents/workflow.md`. That environment already holds the complete pinned dependency set; do not install into `.venv`.

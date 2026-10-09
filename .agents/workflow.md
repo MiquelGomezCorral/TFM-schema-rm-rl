@@ -41,6 +41,21 @@ Run the local web UI from the repository root with:
 conda run -n RM_RL_env python app/app.py
 ```
 
+## Training
+
+Train one run from the repository root inside `RM_RL_env`:
+
+```bash
+python app/main.py train-rl --config minigrid-unlock-pickup/smoke-rm-symbolic.yaml --seed 1
+```
+
+`--config` is a path under `configs/` (or an existing file); YAML values override defaults,
+and `seed` is rejected in YAML. Run seeds or configs in parallel as separate processes. Each
+run writes `outputs/runs/<exp_name>/seed<seed>-<UTC>-<pid>/` with `config.yaml`,
+`episodes.csv`, `eval.csv`, `train.csv`, `summary.json`, and `q_network.pt`. RM configs need
+their gitignored bundle under `outputs/bundles/`. A 20k-step smoke config takes about 30 s
+with four runs in parallel on the RTX 5070 machine.
+
 ## Live Validation
 
 Live validation is pending explicit user approval. It requires `mona` and the selected

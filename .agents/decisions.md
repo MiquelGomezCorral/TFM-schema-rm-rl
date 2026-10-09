@@ -42,6 +42,14 @@ Record closed decisions here. Do not reopen them unless the user explicitly asks
   the complete pinned dependency set and the editable installs. The repository `.venv` is not an
   environment owner and stays unused.
 
+### ARM-FM Training
+
+- `train-rl` trains one CleanRL-adapted DQN run per YAML config under `configs/`, with or
+  without a Reward Machine; the seed comes only from `--seed`. Tianshou and its learners were
+  removed. Rationale: `docs/decisions/arm-fm/reproduction-boundary.md`.
+- Environment specifics (observation pipeline, encoder, success rule) live in per-family
+  adapters in `app/src/arm_fm/environments.py`; MiniGrid is the only family so far.
+
 ### Local Web UI
 
 - Keep the Dash UI in this repository as a local, single-active-run input/output adapter.

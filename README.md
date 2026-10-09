@@ -19,17 +19,17 @@ uv pip install --python "$CONDA_PREFIX/bin/python" -e .
 ```
 
 `requirements.txt` is authoritative for the existing Python 3.13 `RM_RL_env` Conda
-environment. The ARM-FM runtime uses pinned Torch, Tianshou, Transformers, and MiniGrid
-releases; do not create a second environment.
+environment. The ARM-FM runtime uses pinned Torch, Stable-Baselines3 (replay buffers),
+Transformers, and MiniGrid releases; do not create a second environment.
 
 The legacy `setup.sh` remains useful for the compiler-only workflow: it initializes
 submodules, installs the project, and provisions MONA. Its `.venv` should not be used
 for ARM-FM training or embedding commands.
 
-Training environments are generic: `train-larm` and `evaluate-policy` build any registered
-Gymnasium id with `gym.make`. Domain-specific integrations (XLand-MiniGrid, Craftium,
-Meta-World) were removed and will be rebuilt as needed; MiniGrid stays because the
-compiler's labeling stage targets it.
+`train-rl` supports registered MiniGrid ids through the `minigrid` adapter; another
+environment family needs its own adapter (see [Train a policy](#train-a-policy)).
+Domain-specific integrations (XLand-MiniGrid, Craftium, Meta-World) were removed and will
+be rebuilt as needed; MiniGrid stays because the compiler's labeling stage targets it.
 Choose a provider in `.env` and set its model. For OpenCode, set `OPENCODE_API_KEY` and
 keep or change the configured model.
 
@@ -228,6 +228,37 @@ Each clause pays `+0.10` once on its preferred completion path. Soft reverse or
 simultaneous ordering remains valid but pays `0`; hard reverse or simultaneous ordering
 enters the rejecting sink. Completing all clauses adds `+1.00`. With at most ten clauses,
 pre-terminal shaping stays below the final-task reward and no reward repeats in cycles.
+
+## Train a policy
+
+`train-rl` trains one DQN run, with or without a Reward Machine, following ARM-FM Alg. 1
+and Table 5. Each run is one YAML file under `configs/`; the seed comes only from the CLI:
+
+```bash
+python app/main.py train-rl --config minigrid-unlock-pickup/rm-task1-symbolic.yaml --seed 1
+```
+
+The learner is adapted from CleanRL's MIT `dqn_atari.py` (upstream SHA in
+`app/src/arm_fm/dqn.py`) and uses Stable-Baselines3 replay buffers. With `use_rm: true` the
+run loads `bundle` (RM, labeling, state embeddings): each step evaluates the labeling, makes
+one RM transition, adds the RM reward to the env reward, and feeds the Q-network the
+embedding of the current RM state. `labeling_bundle` can take `labeling.py` from another
+bundle with the same propositions. With `use_rm: false` it is plain sparse-reward DQN.
+RM configs need their local bundle under `outputs/bundles/`, which is gitignored, and bundle
+paths are relative to the repository root, so run `train-rl` from there.
+
+The configs in `configs/minigrid-unlock-pickup/` cover:
+
+- **Smoke runs (`smoke-*.yaml`):** 20k steps to check the pipeline, for the symbolic 7x7
+  view, 84x84 pixels, and the procedural layout.
+- **Full runs:** `sparse-symbolic`, `rm-task1-symbolic` and `rm-task4-symbolic` use the
+  Table 5 values and the authors' 300k-step budget.
+
+`layout: fixed` resets every episode to `layout_seed` (default: the run seed);
+`layout: procedural` evaluates on held-out seeds from `eval_seed_base`. Each run writes
+`outputs/runs/<exp_name>/seed<seed>-<UTC time>-<pid>/` with `config.yaml`, `episodes.csv`,
+`eval.csv`, `train.csv`, `summary.json`, and `q_network.pt`. To compare seeds or configs,
+start several `train-rl` processes side by side; each gets its own folder.
 
 ## Local web UI
 

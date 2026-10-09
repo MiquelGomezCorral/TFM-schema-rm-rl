@@ -35,8 +35,17 @@ semantic rather than byte-for-byte.
 - Use the existing `RM_RL_env` Conda environment for local Python work. Install dependencies
   with `uv pip` into that environment, keeping `requirements.txt` authoritative; do not create
   another Conda environment or virtual environment for this reconstruction.
-- Use Tianshou for the reconstructed DQN, Rainbow, PPO, and SAC learners. This library choice
-  is a reconstruction, not a claim about the authors' original training stack.
+- DQN training adapts the MIT CleanRL `dqn_atari` template (upstream SHA recorded in
+  `app/src/arm_fm/dqn.py`) with the authors' RM changes and SB3 replay buffers; other learners
+  and RND return when an environment needs them.
+- One YAML run config per run under `configs/`, loaded by `Configuration`; the seed comes from
+  the CLI.
+- Environment specifics (observation pipeline, encoder, success rule) live in per-family
+  adapters; the DQN loop is environment-agnostic for discrete actions.
+- Paper-RM training reuses the compiler bundle's labeling and the shared local embedding
+  endpoint, so comparisons isolate RM generation.
+- Baseline bundles are generated with one model for every role (the existing baseline path),
+  recorded in the manifest.
 - Finish generation before training or evaluation. Load saved labeling functions once per
   environment and execute them in the same Python process, with isolated episode-local
   memory; Docker and a separate labeling execution backend are not required.
@@ -57,13 +66,6 @@ semantic rather than byte-for-byte.
 - Store compiler embeddings under configured `MODELS_PATH/state_embeddings`, with per-task
   artifacts and a shared cache. The tested local `nomic-embed-text` model is a reconstruction
   choice; it does not recover the paper's unpublished training embedding extraction.
-- Let native Tianshou policies, collectors, replay buffers, trainers, and algorithm state
-  dictionaries own learning and checkpoint state. Keep only the RM observation integration
-  and the narrow SAC scheduling adaptation needed for the paper's critic-every-update and
-  actor-every-second-update schedule.
-- Adapt the small MIT-licensed RLeXplore RND implementation to the project's Torch interface,
-  preserving attribution and the upstream revision. Do not install the incompatible legacy
-  `rllte-core` dependency set or bypass dependency checks.
 
 ## Protected invariants
 
@@ -91,9 +93,9 @@ language remains bounded; unsupported tasks are reported rather than weakened.
 
 Separating generation from policy execution permits direct calls to saved predicates and
 avoids container and serialization machinery. Labeling runs with the Python process's
-permissions. Native Tianshou components avoid competing implementations of action selection,
-replay, and optimizer state; the narrow SAC adaptation retains the paper's update schedule
-without introducing another learner framework.
+permissions. Adapting the authors' own CleanRL template keeps the paper's DQN math auditable
+line by line, while SB3 replay buffers avoid a hand-written buffer; adapters keep environment
+specifics out of the learner so new environments need no loop changes.
 
 ## Enforcement
 
@@ -113,11 +115,12 @@ without introducing another learner framework.
 - Compiler artifact finalization shares `app/src/arm_fm/generation.py`; local HTTP
   embeddings share the settings/cache owners in `app/src/arm_fm/evaluation.py`.
   Artifact paths and optional enablement belong to `app/src/config/config.py`.
-- Native Tianshou learning, replay, checkpoint restoration, and SAC scheduling are owned by
-  `app/src/arm_fm/training.py`, with focused readiness checks in `tests/test_arm_fm.py`.
+- DQN training, the RM gym wrapper, and the per-family environment adapters are owned by
+  `app/src/arm_fm/dqn.py` and `app/src/arm_fm/environments.py`; the RM transition and replay
+  contract is checked in `tests/test_rl_contract.py`.
 - Baseline-first integration, context boundaries, deferred experiments, and complete frozen
   comparison remain Review-only; focused checks do not establish full paper reproduction.
-- Environment selection, the dependency installation workflow, and RND provenance remain
+- Environment selection and the dependency installation workflow remain
   Review-only. `uv pip check` verifies installed dependency consistency, not Craftium's native
   compatibility or task interface; those remain unverified pending live validation.
 
@@ -131,3 +134,5 @@ without introducing another learner framework.
   paper-layout RM output per experiment task, while leaving published evidence intact.
 - 2026-09-22: Permitted warned critic-free compiler runs for controlled fallback comparisons while
   keeping the deterministic compiler boundary.
+- 2026-10-09: Replaced the Tianshou learners with a CleanRL-adapted DQN, YAML run configs and env
+  adapters; paper-RM runs reuse compiler labeling and the shared embedding endpoint.

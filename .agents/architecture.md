@@ -18,6 +18,10 @@ automata composition, and the external MONA executable for LTLf-to-DFA compilati
 - `app/src/compiler/pipeline.py`: per-task proposal and deterministic compilation boundaries.
 - `app/src/compiler/reward_machine.py`: guard parsing, DFA normalization, and clause composition.
 - `app/src/compiler/rm_format.py`: the shared ARM-FM RM text format (parse/serialize), below `src.arm_fm`.
+- `app/src/arm_fm/`: ARM-FM bundles, the string-state RM runtime, embeddings, per-family
+  environment adapters plus the RM gym wrapper (`environments.py`), and the CleanRL-adapted
+  DQN (`dqn.py`).
+- `configs/`: YAML run configs for `train-rl`, one file per run.
 - `app/src/web/`: reusable Dash layout, callbacks, run state, and RM visualization.
 - `app/assets/`: local responsive web styling.
 - `examples/`: documented environment descriptions.
@@ -56,3 +60,9 @@ refinement attempt is bounded to three runs per task.
 
 The web flow supplies the same inputs to that pipeline, polls local in-memory run state,
 and renders the returned Reward Machine structure and serialized text.
+
+Training: `train-rl --config <run>.yaml --seed N` -> `Configuration` loads the YAML ->
+family adapter (MiniGrid: symbolic 7x7x3 or 84x84 grayscale frame stack, encoder, success
+rule) -> optional RM wrapper (labeling -> one RM step -> reward = env + RM, observation gains
+the RM state embedding) -> DQN with SB3 replay -> periodic greedy evaluation on a separate env
+-> run folder `outputs/runs/<exp_name>/seed<seed>-<UTC>-<pid>/`.

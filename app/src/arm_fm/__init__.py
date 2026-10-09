@@ -7,7 +7,13 @@ from .artifacts import (
     load_bundle,
     load_task_manifest,
 )
-from .environments import make_environment, minigrid_labeling_api
+from .dqn import train_dqn
+from .environments import (
+    RunEnvironment,
+    make_environment,
+    make_run_environment,
+    minigrid_labeling_api,
+)
 from .evaluation import (
     EMBEDDING_MODEL,
     EmbeddingCache,
