@@ -36,7 +36,7 @@ def cmd_generate_larm(args: argparse.Namespace) -> None:
 
 
 def cmd_embed_larm(args: argparse.Namespace) -> None:
-    """Embed validated ARM-FM state descriptions with the built-in Qwen loader."""
+    """Embed validated ARM-FM state descriptions with the local server or the Qwen loader."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
     embed_larm(CONFIG)
 
@@ -215,7 +215,15 @@ if __name__ == "__main__":
         "embed-larm", help="Embed validated ARM-FM state descriptions"
     )
     embed_parser.add_argument("--bundle", required=True, type=Path)
-    embed_parser.add_argument("--model")
+    embed_backend = embed_parser.add_mutually_exclusive_group()
+    embed_backend.add_argument("--model")
+    embed_backend.add_argument(
+        "--embedding-server",
+        dest="embeddings",
+        action="store_true",
+        help="Embed through the configured local server with the compiler's settings "
+        "(default: built-in Qwen loader)",
+    )
     embed_parser.set_defaults(func=cmd_embed_larm)
 
     # ======================================================================================
