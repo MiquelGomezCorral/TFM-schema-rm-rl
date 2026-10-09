@@ -215,6 +215,45 @@ def load_bundle(directory: str | Path) -> ArtifactBundle:
     return ArtifactBundle.load(directory)
 
 
+@dataclass(frozen=True)
+class TaskManifestEntry:
+    task_id: str
+    bundle: Path
+    environment_description: Path
+    environment_id: str
+    settings: dict[str, Any] = field(default_factory=dict)
+    split: str = "train"
+
+
+def load_task_manifest(path: str | Path) -> tuple[TaskManifestEntry, ...]:
+    manifest_path = Path(path).resolve()
+    value = json.loads(manifest_path.read_text(encoding="utf-8"))
+    records = value.get("tasks", value) if isinstance(value, dict) else value
+    if not isinstance(records, dict):
+        raise ValueError("Task manifest must map task ids to entries")
+    entries = []
+    for task_id, item in records.items():
+        if not isinstance(item, dict) or not isinstance(item.get("bundle"), str):
+            raise ValueError(f"Task manifest entry {task_id!r} requires a bundle path")
+        environment_description = item.get("environment_description")
+        environment_id = item.get("environment_id")
+        if not isinstance(environment_description, str) or not environment_description.strip():
+            raise ValueError(f"Task manifest entry {task_id!r} requires environment_description")
+        if not isinstance(environment_id, str) or not environment_id.strip():
+            raise ValueError(f"Task manifest entry {task_id!r} requires environment_id")
+        entries.append(
+            TaskManifestEntry(
+                str(task_id),
+                (manifest_path.parent / item["bundle"]).resolve(),
+                (manifest_path.parent / environment_description).resolve(),
+                environment_id,
+                dict(item.get("settings", {})),
+                str(item.get("split", "train")),
+            )
+        )
+    return tuple(entries)
+
+
 def _json(value: object) -> str:
     return json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 

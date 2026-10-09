@@ -6,12 +6,9 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import gymnasium as gym
-import numpy as np
 
 from src.arm_fm import (
-    ALGORITHM_COMPONENTS,
     ArtifactBundle,
-    BuiltinPolicy,
     BundleManifest,
     BundleValidationError,
     EmbeddingCache,
@@ -19,9 +16,6 @@ from src.arm_fm import (
     JudgeDecision,
     RewardMachineEnvironment,
     RewardMachineRuntime,
-    RNDModule,
-    TrainingCheckpoint,
-    TrainingConfig,
     adapt_compilation_result,
     aggregate_judgments,
     embed_descriptions_over_http,
@@ -29,14 +23,11 @@ from src.arm_fm import (
     generate_baseline_bundle,
     generate_compiler_bundle,
     judge_bundle,
-    load_builtin_policy,
     load_labeling_functions,
     load_task_manifest,
     resolve_embedding_settings,
-    train_larm,
 )
 from src.arm_fm.generation import StageAttempt, build_compiler_bundle
-from src.arm_fm.training import _observation_array
 from src.compiler import (
     PaperRewardMachine,
     RuntimeTransition,
@@ -590,37 +581,6 @@ REWARD_FUNCTION:
         self.assertEqual(set(info["valuation"]), {"done"})
         self.assertEqual(len(wrapped.execution_evidence), 1)
 
-    def test_native_algorithms_and_strict_checkpoint_round_trip(self):
-        cases = (
-            ("dqn", SimpleNamespace(n=2)),
-            ("rainbow", SimpleNamespace(n=2)),
-            ("ppo", SimpleNamespace(n=2)),
-            ("sac", SimpleNamespace(shape=(2,))),
-        )
-        expected = {
-            "dqn": "DQN",
-            "rainbow": "RainbowDQN",
-            "ppo": "PPO",
-            "sac": "PeriodicSAC",
-        }
-        for algorithm, action_space in cases:
-            policy = BuiltinPolicy(TrainingConfig(algorithm, 1, 1e-2, seed=1), action_space)
-            policy._ensure({"observation": np.zeros(2), "embedding": [1.0, 0.0]})
-            self.assertEqual(type(policy.algorithm_impl).__name__, expected[algorithm])
-            self.assertIn("learner", ALGORITHM_COMPONENTS[algorithm])
-        self.assertEqual(ALGORITHM_COMPONENTS["rainbow"]["per_alpha"], 0.5)
-        self.assertEqual(ALGORITHM_COMPONENTS["rainbow"]["per_beta"], 0.4)
-
-    def test_rnd_target_freeze_and_eval_freeze(self):
-        rnd = RNDModule(2)
-        rnd.train()
-        self.assertFalse(rnd.target.training)
-        self.assertTrue(rnd.predictor.training)
-        self.assertTrue(all(not parameter.requires_grad for parameter in rnd.target.parameters()))
-        rnd.eval()
-        self.assertFalse(rnd.target.training)
-        self.assertFalse(rnd.predictor.training)
-
     def test_manifest_resolves_description_and_bundle_but_keeps_runtime_id_opaque(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -645,81 +605,6 @@ REWARD_FUNCTION:
         self.assertEqual(entry.environment_id, "Craftium/custom/id")
         self.assertEqual(entry.environment_description, (root / "environment.md").resolve())
         self.assertEqual(entry.bundle, (root / "bundle").resolve())
-
-    def test_small_native_update_saves_and_restores_strictly(self):
-        class Environment:
-            action_space = gym.spaces.Discrete(2)
-            observation_space = gym.spaces.Box(-1, 1, shape=(2,), dtype=np.float32)
-
-            def reset(self, **_kwargs):
-                return np.zeros(2, dtype=np.float32), {}
-
-            def step(self, _action):
-                return np.zeros(2, dtype=np.float32), 0.0, False, False, {}
-
-        config = TrainingConfig(
-            "dqn",
-            3,
-            1e-3,
-            batch_size=1,
-            learning_starts=1,
-            replay_capacity=20,
-            train_frequency=1,
-            target_update_frequency=2,
-            epsilon_start=1.0,
-            epsilon_end=0.1,
-            epsilon_fraction=1.0,
-        )
-        bundle = ArtifactBundle(
-            self.manifest,
-            self.rm,
-            "def done(env):\n    return True\n",
-            {"u0": "start", "u1": "done"},
-            {"u0": [0.0], "u1": [1.0]},
-        )
-        with tempfile.TemporaryDirectory() as directory:
-            checkpoint_path = Path(directory) / "checkpoint.pt"
-            checkpoint = train_larm(
-                bundle, Environment(), config=config, checkpoint_path=checkpoint_path
-            )
-            loaded = TrainingCheckpoint.load(checkpoint_path)
-            policy = load_builtin_policy(loaded, Environment(), bundle)
-        self.assertEqual(checkpoint.timestep, loaded.timestep)
-        self.assertGreaterEqual(loaded.timestep, config.learning_starts)
-        self.assertEqual(
-            loaded.config["replay_capacity"],
-            min(config.replay_capacity, config.total_timesteps),
-        )
-        self.assertFalse(policy.training)
-
-    def test_minigrid_observation_ignores_text_metadata(self):
-        environment = gym.make("MiniGrid-DoorKey-8x8-v0")
-        observation, _ = environment.reset(seed=42)
-        flattened = _observation_array(observation)
-
-        self.assertEqual(flattened.size, observation["image"].size + observation["direction"].size)
-
-    def test_native_ppo_uses_four_lanes_and_full_rollout(self):
-        class Environment:
-            action_space = gym.spaces.Discrete(2)
-            observation_space = gym.spaces.Box(-1, 1, shape=(2,), dtype=np.float32)
-
-            def reset(self, **_kwargs):
-                return np.zeros(2, dtype=np.float32), {}
-
-            def step(self, _action):
-                return np.zeros(2, dtype=np.float32), 0.0, False, False, {}
-
-        config = TrainingConfig("ppo", 1, 1e-3, batch_size=128)
-        bundle = ArtifactBundle(
-            self.manifest,
-            self.rm,
-            "def done(env):\n    return True\n",
-            {"u0": "start", "u1": "done"},
-            {"u0": [0.0], "u1": [1.0]},
-        )
-        checkpoint = train_larm(bundle, [Environment() for _ in range(4)], config=config)
-        self.assertEqual(checkpoint.timestep, 512)
 
 
 class ArmFMEvaluationTests(unittest.TestCase):

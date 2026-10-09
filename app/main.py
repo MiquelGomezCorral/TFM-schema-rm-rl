@@ -9,11 +9,9 @@ from maikol_utils.other_utils import args_to_dataclass
 from scripts import (
     embed_larm,
     evaluate_larm,
-    evaluate_policy,
     generate_larm,
     generate_rm,
     render_rm,
-    train_larm,
 )
 from src.config import Configuration
 
@@ -46,18 +44,6 @@ def cmd_evaluate_larm(args: argparse.Namespace) -> None:
     """Judge ARM-FM bundles with the configured provider."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
     evaluate_larm(CONFIG)
-
-
-def cmd_train_larm(args: argparse.Namespace) -> None:
-    """Train the built-in ARM-FM policy."""
-    CONFIG: Configuration = args_to_dataclass(args, Configuration)
-    train_larm(CONFIG)
-
-
-def cmd_evaluate_policy(args: argparse.Namespace) -> None:
-    """Evaluate a frozen built-in ARM-FM policy."""
-    CONFIG: Configuration = args_to_dataclass(args, Configuration)
-    evaluate_policy(CONFIG)
 
 
 # ======================================================================================
@@ -237,43 +223,6 @@ if __name__ == "__main__":
     evaluate_parser.add_argument("--judge-model", default="Qwen3-30B-A3B-Instruct-2507")
     evaluate_parser.add_argument("--output", type=Path)
     evaluate_parser.set_defaults(func=cmd_evaluate_larm)
-
-    # ======================================================================================
-    #                                       train-larm
-    # ======================================================================================
-    train_parser = subparsers.add_parser("train-larm", help="Train a policy from an ARM-FM bundle")
-    train_inputs = train_parser.add_mutually_exclusive_group(required=True)
-    train_inputs.add_argument("--bundle", type=Path)
-    train_inputs.add_argument("--task-manifest", type=Path)
-    train_parser.add_argument(
-        "--domain", help="Gymnasium environment id to train in (required with --bundle)"
-    )
-    train_parser.add_argument("--checkpoint", required=True, type=Path)
-    train_parser.add_argument(
-        "--algorithm", default="dqn", help="dqn, rainbow, ppo, or sac (default: dqn)"
-    )
-    train_parser.add_argument(
-        "--rnd",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Add the RND exploration bonus (default: disabled)",
-    )
-    train_parser.add_argument("--learning-rate", type=float)
-    train_parser.add_argument("--total-timesteps", type=int)
-    # SUPPRESS keeps the global --seed when this one is absent, so both positions work.
-    train_parser.add_argument("--seed", type=int, default=argparse.SUPPRESS)
-    train_parser.set_defaults(func=cmd_train_larm)
-
-    # ======================================================================================
-    #                                       evaluate-policy
-    # ======================================================================================
-    policy_parser = subparsers.add_parser("evaluate-policy", help="Evaluate a frozen ARM-FM policy")
-    policy_parser.add_argument("--bundle", required=True, type=Path)
-    policy_parser.add_argument("--checkpoint", required=True, type=Path)
-    policy_parser.add_argument(
-        "--domain", required=True, help="Gymnasium environment id to evaluate in"
-    )
-    policy_parser.set_defaults(func=cmd_evaluate_policy)
 
     # ======================================================================================
     #                                       CALL

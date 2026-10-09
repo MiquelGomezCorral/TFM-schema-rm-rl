@@ -1,11 +1,13 @@
 """Project configuration from CLI arguments and environment variables."""
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from enum import StrEnum
 from pathlib import Path
-from typing import ClassVar
+from types import UnionType
+from typing import ClassVar, get_args
 
+import yaml
 from maikol_utils.file_utils import make_dirs
 from maikol_utils.print_utils import print_warn
 
@@ -22,6 +24,28 @@ class PriorityLevel(StrEnum):
 
 def _optional_path(value: Path | str | None) -> Path | None:
     return Path(value) if value is not None else None
+
+
+def _numeric_type(annotation: object) -> type | None:
+    # `int | None` and `float | None` fields are numeric too.
+    options = get_args(annotation) if isinstance(annotation, UnionType) else (annotation,)
+    return next((option for option in options if option in (int, float)), None)
+
+
+def _coerce_number(numeric_type: type, value: object) -> int | float:
+    # bool is an int subclass, so `true` would silently become 1.
+    if isinstance(value, bool):
+        raise TypeError(f"expected a number, got {value!r}")
+    if numeric_type is float:
+        return float(value)
+    if isinstance(value, int):
+        return value
+
+    # Accept `3e5` or `3.0e5`, but never truncate a fraction such as 2.7.
+    number = float(value)
+    if not number.is_integer():
+        raise ValueError(f"expected an integer, got {value!r}")
+    return int(number)
 
 
 # ================================ Graph defaults ================================
@@ -49,7 +73,7 @@ class GraphStyle:
 
 @dataclass
 class Configuration:
-    """Project settings: CLI options plus the derived output folders."""
+    """Project settings: CLI options, an optional YAML run config, and the output folders."""
 
     # ======================================================================================
     #                                      PATHS
@@ -62,6 +86,7 @@ class Configuration:
     TRACE_PATH: ClassVar[Path] = OUTPUT_PATH / "traces"
     REPORT_PATH: ClassVar[Path] = OUTPUT_PATH / "reports"
     MODELS_PATH: ClassVar[Path] = WORKSPACE_PATH / "models"
+    CONFIG_PATH: ClassVar[Path] = WORKSPACE_PATH / "configs"
     LOGS_PATH: ClassVar[Path] = WORKSPACE_PATH / "logs"
     EMBEDDINGS_PATH: ClassVar[Path] = MODELS_PATH / "state_embeddings"
 
@@ -108,15 +133,48 @@ class Configuration:
     bundle: Path | None = None
     manifests: list[Path] = field(default_factory=list)
     domain: str | None = None
-    checkpoint: Path | None = None
-    total_timesteps: int | None = None
-    algorithm: str = "dqn"
-    rnd: bool = False
-    learning_rate: float | None = None
     task_manifest: Path | None = None
     rm_file: Path | None = None
 
+    # ============================== Training (train-rl) ==============================
+    # A YAML run config overrides these; defaults follow ARM-FM Table 5.
+
+    yaml_config_name: str | None = None
+    exp_name: str = "dqn"
+    gym_id: str | None = None
+    env_family: str = "minigrid"
+    observation: str = "symbolic"
+    layout: str = "fixed"
+    layout_seed: int | None = None  # None means the run seed
+    labeling_bundle: Path | None = None
+    use_rm: bool = True
+
+    total_timesteps: int = 300_000
+    learning_rate: float = 1e-4
+    buffer_size: int = 1_000_000
+    gamma: float = 0.99
+    tau: float = 1.0
+    target_network_frequency: int = 2_500
+    batch_size: int = 32
+    start_e: float = 1.0
+    end_e: float = 0.01
+    exploration_fraction: float = 0.35
+    learning_starts: int = 80_000
+    train_frequency: int = 4
+
+    eval_frequency: int = 10_000
+    eval_episodes: int = 10
+    final_eval_episodes: int = 100
+    eval_epsilon: float = 0.0
+    eval_seed_base: int = 1_000_000
+    success_threshold: float = 0.9
+    cuda: bool = True
+    torch_deterministic: bool = True
+
     def __post_init__(self) -> None:
+        # The YAML loads first so its path values get the same Path conversion.
+        if self.yaml_config_name:
+            self._load_yaml_configuration(self.yaml_config_name)
         self._resolve_paths()
         self._resolve_models()
         self._validate_embeddings()
@@ -125,6 +183,51 @@ class Configuration:
             print_warn(
                 "Both critics are disabled: every compiler result is accepted without review."
             )
+
+    def _load_yaml_configuration(self, yaml_file: str) -> None:
+        """Set fields from a YAML run config under CONFIG_PATH, or from an existing path.
+
+        The YAML is applied in ``__post_init__``, so it overrides constructor and CLI values for
+        the same fields (YAML wins). ``seed`` is CLI-only and rejected here. Only dataclass
+        fields are accepted, and a field whose type excludes ``None`` needs a value. Numeric
+        fields are coerced because YAML reads ``1e-4`` and ``3e5`` (no dot) as strings.
+
+        Raises:
+            ValueError: If the root is not a mapping, a key is unknown or ``seed``, or a value
+                does not fit its field. The message names the file.
+        """
+        config_path = self.CONFIG_PATH / yaml_file
+        if not config_path.is_file():
+            config_path = Path(yaml_file)
+        with config_path.open(encoding="utf-8") as file:
+            yaml_data = yaml.safe_load(file)
+
+        if yaml_data is None:  # empty file
+            yaml_data = {}
+        if not isinstance(yaml_data, dict):
+            raise ValueError(f"{config_path} must be a YAML mapping")
+
+        field_types = {item.name: item.type for item in fields(self)}
+        unknown = sorted(str(key) for key in yaml_data.keys() - field_types.keys())
+        if unknown:
+            raise ValueError(f"Unknown keys in {config_path}: {', '.join(unknown)}")
+        if "seed" in yaml_data:
+            raise ValueError(f"{config_path} must not set seed; pass --seed instead")
+
+        for key, value in yaml_data.items():
+            annotation = field_types[key]
+            if value is None and type(None) not in get_args(annotation):
+                raise ValueError(f"{config_path}: {key} needs a value")
+
+            numeric_type = _numeric_type(annotation)
+            if value is None or numeric_type is None:
+                setattr(self, key, value)
+                continue
+            try:
+                number = _coerce_number(numeric_type, value)
+            except (TypeError, ValueError) as error:
+                raise ValueError(f"{config_path}: invalid {key}: {error}") from error
+            setattr(self, key, number)
 
     def _resolve_paths(self) -> None:
         # Keep every derived output folder under the configured root.
@@ -151,7 +254,7 @@ class Configuration:
         if self.output is not None and self.output.name != str(self.output):
             raise ValueError("--output must be a file name without a directory")
         self.bundle = _optional_path(self.bundle)
-        self.checkpoint = _optional_path(self.checkpoint)
+        self.labeling_bundle = _optional_path(self.labeling_bundle)
         self.task_manifest = _optional_path(self.task_manifest)
         self.rm_file = _optional_path(self.rm_file)
         self.steps_report = _optional_path(self.steps_report)
