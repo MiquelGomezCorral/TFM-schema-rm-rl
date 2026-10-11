@@ -23,7 +23,9 @@ environment terminates on that pickup and truncates at its step limit.
 ## Proposition semantics
 
 The target and matching key are determined from the current randomized mission and
-layout, not hard-coded colors.
+layout, not hard-coded colors. The mission names only the target object. The matching
+key and the locked door share one color that is independent of the target's color.
+Exactly one door starts locked, and it guards the target's room.
 
 ## Propositions
 - `key_found`: The agent has located the key matching the target room's locked door.
