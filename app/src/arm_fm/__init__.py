@@ -34,6 +34,7 @@ from .generation import (
     record_bundle_embeddings,
     record_bundle_role_models,
 )
+from .ppo import train_ppo
 from .runtime import (
     RewardMachineEnvironment,
     RewardMachineRuntime,

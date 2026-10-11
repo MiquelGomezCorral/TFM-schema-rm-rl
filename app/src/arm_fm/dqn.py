@@ -212,18 +212,23 @@ def _check_settings(CONFIG: Configuration) -> None:
         raise ValueError(f"These run settings must be positive: {', '.join(not_positive)}")
     if CONFIG.learning_starts < 0:
         raise ValueError("learning_starts must not be negative")
-    # Config accepts these keys already; their training behavior lands in wave 3 S3 and S4.
+    if CONFIG.algorithm != "dqn":
+        raise ValueError(f"train_dqn trains algorithm: dqn, not {CONFIG.algorithm!r}")
+    check_supported_features(CONFIG)
+
+
+def check_supported_features(CONFIG: Configuration) -> None:
+    """Reject accepted config keys whose training behavior is not implemented yet (wave 3 S3)."""
     unsupported = [
         name
         for name, used in (
-            ("algorithm: ppo", CONFIG.algorithm != "dqn"),
             ("success: rm", CONFIG.success != "env"),
             ("task_bundles", bool(CONFIG.task_bundles)),
         )
         if used
     ]
     if unsupported:
-        raise ValueError(f"train-rl: {', '.join(unsupported)} not implemented yet (wave 3 S3/S4)")
+        raise ValueError(f"train-rl: {', '.join(unsupported)} not implemented yet (wave 3 S3)")
 
 
 def linear_schedule(start_e: float, end_e: float, duration: float, t: int) -> float:
@@ -235,6 +240,17 @@ def linear_schedule(start_e: float, end_e: float, duration: float, t: int) -> fl
 # ======================================================================================
 #                                      Q-NETWORK
 # ======================================================================================
+
+
+def rm_embedding_branch(dimension: int) -> nn.Sequential:
+    """RM-embedding MLP d -> d/4 -> d/4 (ARM-FM), shared by the DQN and PPO networks."""
+    feature_count = dimension // 4
+    return nn.Sequential(
+        nn.Linear(dimension, feature_count),
+        nn.ReLU(),
+        nn.Linear(feature_count, feature_count),
+        nn.ReLU(),
+    )
 
 
 class QNetwork(nn.Module):
@@ -256,12 +272,7 @@ class QNetwork(nn.Module):
             image_space = observation_space["image"]
             dimension = observation_space["rm_embedding"].shape[0]
             rm_feature_count = dimension // 4
-            self.rm_embedding = nn.Sequential(
-                nn.Linear(dimension, rm_feature_count),
-                nn.ReLU(),
-                nn.Linear(rm_feature_count, rm_feature_count),
-                nn.ReLU(),
-            )
+            self.rm_embedding = rm_embedding_branch(dimension)
 
         with torch.no_grad():
             image_feature_count = encoder(torch.zeros((1, *image_space.shape))).shape[1]
@@ -533,7 +544,11 @@ def evaluate(
     episodes = [
         _evaluation_episode(run, q_network, CONFIG.eval_epsilon, seed, rng) for seed in seeds
     ]
+    return evaluation_row(episodes, seeds)
 
+
+def evaluation_row(episodes: list[EpisodeTracker], seeds: list[int]) -> dict[str, object]:
+    """Summarize evaluation episodes as one ``eval.csv`` row (RM columns only with an RM)."""
     row: dict[str, object] = {
         "episodes": len(episodes),
         "exit_rate": _mean(episode.exited for episode in episodes),
@@ -581,22 +596,30 @@ class RunRecorder:
     CSV rows are appended as they happen, so an interrupted run keeps its history.
     """
 
-    def __init__(self, directory: Path) -> None:
+    def __init__(
+        self, directory: Path, train_columns: tuple[str, ...] = CSV_COLUMNS["train.csv"]
+    ) -> None:
         directory.mkdir(parents=True, exist_ok=False)
         self.directory = directory
         self.started = time.monotonic()
         self.episode_count = 0
         self.steps_to_success: int | None = None
-        for name, columns in CSV_COLUMNS.items():
+        self.columns = {**CSV_COLUMNS, "train.csv": train_columns}
+        for name, columns in self.columns.items():
             with (directory / name).open("w", newline="", encoding="utf-8") as file:
                 csv.DictWriter(file, columns).writeheader()
 
     @classmethod
-    def create(cls, CONFIG: Configuration, device: torch.device) -> RunRecorder:
+    def create(
+        cls,
+        CONFIG: Configuration,
+        device: torch.device,
+        train_columns: tuple[str, ...] = CSV_COLUMNS["train.csv"],
+    ) -> RunRecorder:
         """Create ``outputs/runs/<exp_name>/seed<seed>-<UTC>-<pid>/`` with ``config.yaml``."""
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
         name = f"seed{CONFIG.seed}-{stamp}-{os.getpid()}"
-        recorder = cls(CONFIG.OUTPUT_PATH / "runs" / CONFIG.exp_name / name)
+        recorder = cls(CONFIG.OUTPUT_PATH / "runs" / CONFIG.exp_name / name, train_columns)
         settings = {field: _plain(getattr(CONFIG, field)) for field in RUN_SETTINGS}
         settings["layout_seed"] = _layout_seed(CONFIG)
         settings["device"] = str(device)
@@ -632,7 +655,11 @@ class RunRecorder:
         td_loss, q_mean = metrics
         sps = int(env_steps / self.wall_seconds)
         row = {"td_loss": td_loss, "q_mean": q_mean, "epsilon": epsilon, "sps": sps}
-        self._append("train.csv", {"global_step": env_steps, **row})
+        self.write_training_row({"global_step": env_steps, **row})
+
+    def write_training_row(self, row: dict[str, object]) -> None:
+        """Append one ``train.csv`` row with the learner's own columns."""
+        self._append("train.csv", row)
 
     def write_evaluation(self, env_steps: int, row: dict[str, object], threshold: float) -> None:
         """Append one eval row; the first row reaching ``threshold`` sets ``steps_to_success``."""
@@ -666,7 +693,7 @@ class RunRecorder:
 
     def _append(self, name: str, row: dict[str, object]) -> None:
         with (self.directory / name).open("a", newline="", encoding="utf-8") as file:
-            csv.DictWriter(file, CSV_COLUMNS[name]).writerow(row)
+            csv.DictWriter(file, self.columns[name]).writerow(row)
 
 
 def _plain(value: object) -> object:
