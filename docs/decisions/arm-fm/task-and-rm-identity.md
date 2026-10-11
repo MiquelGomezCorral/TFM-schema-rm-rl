@@ -104,7 +104,8 @@ tasks, while keeping the generator and critic responsibilities stable.
   existing format.
 - Both modes follow [RM execution](rm-execution.md) and produce separate task bundles for
   shared-policy training and evaluation.
-- Compiler mode optionally generates MiniGrid labeling functions after RM acceptance.
+- Compiler mode optionally generates labeling functions after RM acceptance, for any
+  environment whose `environment.md` declares a `## Labeling API` (MiniGrid without one).
   The expert receives the environment, task, validated clauses, accepted RM and node
   descriptions, declared propositions, explicit runtime API, and bounded feedback.
   It uses the generator engine; its associated critic uses the critic engine when
@@ -126,8 +127,9 @@ tasks, while keeping the generator and critic responsibilities stable.
 - In compiler mode, the RM is accepted/finalized only after every enabled critic accepts the same attempt;
   the RM critic necessarily reviews the already compiled candidate.
 - Compiler presentation and critic improvements must preserve ARM-FM baseline prompts
-  and published evidence. Shared format adapters change representation without
-  redesigning the compiled machine.
+  and published evidence. A declared `## Labeling API` replaces only the marked labeling-API
+  regions and `${api}` in both modes; without one, every prompt renders byte-identically.
+  Shared format adapters change representation without redesigning the compiled machine.
 - Critics must follow declared finals, state memory, fallback rules, and one reward
   per step. They must not invent states, transitions, or extra task requirements to
   justify rejection; correct conjunctive decomposition and zero-reward progress rows
@@ -230,3 +232,5 @@ through their inputs and prompts, while both challenge the same generator.
 - 2026-09-21: Standardized generated bundle state names at the compiler adapter only.
 - 2026-09-22: Allowed a warned run with both critics disabled as an explicit fallback; the compiler
   still requires every enabled critic to accept the same attempt before finalizing.
+- 2026-10-11: Labeling generation follows the environment's declared `## Labeling API` in both
+  modes; MiniGrid prompts stay byte-identical when no section is declared.

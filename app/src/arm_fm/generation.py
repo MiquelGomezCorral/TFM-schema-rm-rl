@@ -70,6 +70,7 @@ def generate_reward_machine(
     """Generate and refine one paper Reward Machine, keeping the last parseable candidate."""
     if not task.strip():
         raise ValueError("Task must be nonempty")
+    api_description = _declared_api(environment, api_description)
     attempts: list[StageAttempt] = []
     machine: PaperRewardMachine | None = None
     machine_text = ""
@@ -166,7 +167,7 @@ class _Generation:
         self.task = task
         self.environment = environment
         self.engine = engine
-        self.api_description = api_description
+        self.api_description = _declared_api(environment, api_description)
         self.attempts: list[StageAttempt] = []
         self.machine: PaperRewardMachine | None = None
         self.machine_text = ""
@@ -208,6 +209,7 @@ class _Generation:
             lambda history: _request_text(
                 self.engine,
                 "labeling_generator",
+                labeling_api=self.environment.labeling_api,
                 environment=self.environment.markdown,
                 task=self.task,
                 candidate=self.machine_text,
@@ -371,6 +373,7 @@ def build_compiler_bundle(
     attempts: Sequence[StageAttempt] = (),
 ) -> ArtifactBundle:
     """Finalize one compiler bundle with its artifacts, attempts, and API provenance."""
+    api_description = _declared_api(result.environment, api_description)
     bundle = adapt_compilation_result(
         result,
         labeling_source=labeling_source,
@@ -536,6 +539,7 @@ def generate_compiler_labeling(
     review. AST validation always runs. Raises :class:`LabelingError` when no candidate is
     accepted.
     """
+    api_description = _declared_api(compiled.environment, api_description)
     attempts: list[StageAttempt] = []
     context = {
         "clauses_json": clauses_json(compiled),
@@ -552,6 +556,7 @@ def generate_compiler_labeling(
         return _compiler_request(
             engine,
             "labeling_generator",
+            labeling_api=compiled.environment.labeling_api,
             environment_markdown=compiled.environment.markdown,
             task=task,
             reward_machine=compiled.text,
@@ -664,19 +669,32 @@ def descriptions_json(compiled: CompilationResult) -> str:
 # ======================================================================================
 
 
-def _request_text(engine: object, role: str, **values: str) -> str:
+def _declared_api(environment: EnvironmentDescription, api_description: str) -> str:
+    """The environment's declared labeling API; the caller's text applies when it declares none."""
+    return environment.labeling_api or api_description
+
+
+def _request_text(
+    engine: object, role: str, *, labeling_api: str | None = None, **values: str
+) -> str:
     request = getattr(engine, "request_text", None)
     if request is None:
         raise RuntimeError("ARM-FM generation requires an engine with request_text")
-    return str(request(read_prompt("arm_fm", role), render_prompt("arm_fm", role, **values)))
+    system = read_prompt("arm_fm", role, labeling_api=labeling_api)
+    return str(request(system, render_prompt("arm_fm", role, labeling_api=labeling_api, **values)))
 
 
-def _compiler_request(engine: object, role: str, **values: str) -> str:
+def _compiler_request(
+    engine: object, role: str, *, labeling_api: str | None = None, **values: str
+) -> str:
     """Render one compiler labeling prompt through the engine's text request path."""
     request = getattr(engine, "request_text", None)
     if request is None:
         raise RuntimeError("Compiler labeling generation requires an engine with request_text")
-    return str(request(read_prompt("compiler", role), render_prompt("compiler", role, **values)))
+    system = read_prompt("compiler", role, labeling_api=labeling_api)
+    return str(
+        request(system, render_prompt("compiler", role, labeling_api=labeling_api, **values))
+    )
 
 
 def _critic(engine: object, role: str, **values: str) -> tuple[bool, str, str]:

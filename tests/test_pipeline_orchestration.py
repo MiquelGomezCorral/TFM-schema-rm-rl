@@ -13,6 +13,7 @@ from nl2ltl.declare.declare import Existence
 from pylogics.syntax.ltl import Atomic
 
 from scripts.generate_rm import EMBEDDING_INSTRUCTION, generate_rm, resolve_labeling_api
+from src.arm_fm import minigrid_labeling_api
 from src.compiler import CompilationResult, Proposal
 from src.compiler.reward_machine import RewardMachineStructure
 from src.config import Configuration, PriorityLevel
@@ -769,39 +770,14 @@ class OrchestrationTests(unittest.TestCase):
             context = contextual["settings"]["context"]
             self.assertEqual(contextual["effective_texts"]["u0"], f"{context}\ndescription u0")
 
-    def test_labeling_domain_gate_recognizes_exact_families(self):
-        baseline = resolve_labeling_api(
-            Configuration(
-                environment="demo.md",
-                tasks=["finish"],
-                output="out.rm",
-                domain="minigrid",
-            )
+    def test_labeling_api_follows_the_environment_section(self):
+        declared = EnvironmentDescription.from_markdown(
+            "# Demo\n## Propositions\n- `done`: Finished\n"
+            "## Labeling API\n\n- `env.inventory`: item counts\n"
         )
-        for domain in (
-            None,
-            "minigrid",
-            "MiniGrid-DoorKey-8x8-v0",
-            "minigrid-unlock-pickup",
-            "babyai",
-            "BabyAI-UnlockToUnlock-v0",
-        ):
-            CONFIG = Configuration(
-                environment="demo.md", tasks=["finish"], output="out.rm", domain=domain
-            )
-            self.assertEqual(resolve_labeling_api(CONFIG), baseline)
-        for domain in (
-            "xminigrid-medium-1m",
-            "minigridish",
-            "craftium",
-            "not-minigrid",
-            "metaworld",
-        ):
-            CONFIG = Configuration(
-                environment="demo.md", tasks=["finish"], output="out.rm", domain=domain
-            )
-            with self.assertRaises(ValueError):
-                resolve_labeling_api(CONFIG)
+
+        self.assertEqual(resolve_labeling_api(ENV), minigrid_labeling_api())
+        self.assertEqual(resolve_labeling_api(declared), "- `env.inventory`: item counts")
 
     def test_rm_rejection_tags_the_next_candidate_afresh(self):
         self.critic.task_results = [CriticResult(True, "ok")] * 2

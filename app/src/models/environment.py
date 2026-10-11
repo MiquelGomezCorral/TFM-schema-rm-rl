@@ -7,6 +7,7 @@ from pathlib import Path
 PROPOSITION_IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]*$")
 PROPOSITION_BULLET = re.compile(r"^- `([^`]+)`:\s+(.+?)\s*$")
 SECTION_END = re.compile(r"^#{1,2}\s+")
+LABELING_API_HEADING = "## Labeling API"
 RESERVED_IDENTIFIERS = {"true", "false"}
 
 
@@ -31,6 +32,7 @@ class EnvironmentDescription:
     title: str
     markdown: str
     propositions: tuple[Proposition, ...]
+    labeling_api: str | None = None
 
     @property
     def proposition_ids(self) -> tuple[str, ...]:
@@ -55,7 +57,7 @@ class EnvironmentDescription:
         markdown: str,
         source: str | Path = "<memory>",
     ) -> "EnvironmentDescription":
-        """Validate Markdown containing one strict propositions section."""
+        """Validate Markdown with one strict propositions section and an optional labeling API."""
         source_path = Path(source)
         lines = markdown.splitlines()
         section_line = _propositions_section_line(lines, source_path)
@@ -64,7 +66,8 @@ class EnvironmentDescription:
             raise EnvironmentValidationError(
                 f"{source_path}:{section_line}: propositions section must declare at least one proposition"
             )
-        return cls(source_path, _title(lines, source_path), markdown, propositions)
+        labeling_api = _labeling_api(lines, source_path)
+        return cls(source_path, _title(lines, source_path), markdown, propositions, labeling_api)
 
 
 def _propositions_section_line(lines: list[str], source_path: Path) -> int:
@@ -118,6 +121,31 @@ def _parse_propositions(
         first_seen[identifier] = line_number
         propositions.append(Proposition(identifier, description, line_number))
     return tuple(propositions)
+
+
+def _labeling_api(lines: list[str], source_path: Path) -> str | None:
+    """Return the body of the optional ``## Labeling API`` section, or None when absent."""
+    section_lines = [
+        index for index, line in enumerate(lines, start=1) if line.strip() == LABELING_API_HEADING
+    ]
+    if not section_lines:
+        return None
+    if len(section_lines) > 1:
+        raise EnvironmentValidationError(
+            f"{source_path}:{section_lines[1]}: duplicate '{LABELING_API_HEADING}' section"
+        )
+
+    body: list[str] = []
+    for line in lines[section_lines[0] :]:
+        if SECTION_END.match(line):
+            break
+        body.append(line)
+    text = "\n".join(body).strip()
+    if not text:
+        raise EnvironmentValidationError(
+            f"{source_path}:{section_lines[0]}: '{LABELING_API_HEADING}' section must not be empty"
+        )
+    return text
 
 
 def _title(lines: list[str], source_path: Path) -> str:

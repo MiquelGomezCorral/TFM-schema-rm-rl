@@ -118,7 +118,7 @@ class NatureCNN(nn.Module):
 
 def minigrid_environment(CONFIG: Configuration) -> RunEnvironment:
     """Build a MiniGrid env with the ``symbolic`` or ``pixels`` observation pipeline."""
-    env = make_environment(CONFIG.gym_id)
+    env = make_environment(CONFIG.gym_id, **CONFIG.env_kwargs)
     if CONFIG.observation == "symbolic":
         return RunEnvironment(ImgObsWrapper(env), MiniGridCNN, minigrid_success)
     if CONFIG.observation == "pixels":

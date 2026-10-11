@@ -15,6 +15,9 @@ semantic rather than byte-for-byte.
 - An experiment task bundle has one paper-layout RM artifact, `reward_machine.txt`.
   Compiler generation passes its accepted numeric RM in memory instead of writing a
   second `.rm` file; both modes use the same downstream embedding and training flow.
+- An environment's `environment.md` may declare a `## Labeling API`; it is the only labeling
+  surface given to generators. Without it the MiniGrid surface applies. Run configs pass
+  `env_kwargs` to `gym.make`, and custom environments register in `app/src/arm_fm/custom_envs/`.
 - The environment Markdown owns the allowed proposition vocabulary. Propositions describe
   observable state conditions or explicitly documented progress events; raw actions are
   not RM events.
@@ -69,6 +72,9 @@ semantic rather than byte-for-byte.
 
 ## Protected invariants
 
+- An already-registered environment supported by an existing adapter needs only its
+  `environment.md`, bundles and a run config; new dynamics need a level or mod, and a new kind
+  of environment an adapter.
 - Complete the baseline before integrating the compiler replacement. Comparisons change RM
   generation while preserving downstream methods and frozen zero-shot evaluation.
 - The compiler must not invent undeclared propositions or silently approximate unsupported
@@ -104,7 +110,8 @@ specifics out of the learner so new environments need no loop changes.
   `app/scripts/generate_rm.py`.
 - Formula composition and rejection of unreachable accepting products are implemented in
   `app/src/compiler/pipeline.py` and `app/src/compiler/reward_machine.py`.
-- Environment vocabulary validation is implemented in `app/src/models/environment.py`.
+- Environment vocabulary validation and the optional labeling API section are implemented in
+  `app/src/models/environment.py`; prompt region swapping in `app/src/prompts/loaders.py`.
 - Critic schemas, three-attempt orchestration, and CLI/web toggles are documented in
   `docs/LTLF_TASK_LANGUAGE.md` and enforced in the generation and UI modules.
 - Source gaps and semantic mappings are review-only because the unpublished artifacts
@@ -136,3 +143,5 @@ specifics out of the learner so new environments need no loop changes.
   keeping the deterministic compiler boundary.
 - 2026-10-09: Replaced the Tianshou learners with a CleanRL-adapted DQN, YAML run configs and env
   adapters; paper-RM runs reuse compiler labeling and the shared embedding endpoint.
+- 2026-10-11: Environments became plug-and-play: declared labeling API, `env_kwargs`, and a
+  custom-environment registration package.

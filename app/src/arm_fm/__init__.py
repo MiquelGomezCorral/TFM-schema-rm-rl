@@ -1,5 +1,6 @@
 """Public ARM-FM reconstruction interfaces."""
 
+from . import custom_envs
 from .artifacts import (
     ArtifactBundle,
     BundleManifest,

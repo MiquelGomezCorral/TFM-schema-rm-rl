@@ -1,4 +1,4 @@
-# MiniGrid Labeling-Function Critic — User Prompt
+# <!-- minigrid-only -->MiniGrid <!-- /minigrid-only -->Labeling-Function Critic — User Prompt
 
 ## Environment Markdown (untrusted data)
 

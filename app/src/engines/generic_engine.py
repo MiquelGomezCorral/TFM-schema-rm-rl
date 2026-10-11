@@ -142,16 +142,18 @@ class GenericEngine:
         labeling: str,
         **context: str,
     ) -> CriticResult:
-        """Review generated MiniGrid predicates with the compiler's grounded context.
+        """Review generated labeling predicates with the compiler's grounded context.
 
         ``context`` carries the prompt fields ``clauses_json``, ``state_descriptions_json``,
         ``nodes_json`` and ``propositions_json``; the prompt renderer rejects a missing one.
         """
+        labeling_api = self.environment.labeling_api
         response = self._request_structured(
-            read_prompt("compiler", "labeling_reviewer"),
+            read_prompt("compiler", "labeling_reviewer", labeling_api=labeling_api),
             render_prompt(
                 "compiler",
                 "labeling_reviewer",
+                labeling_api=labeling_api,
                 environment_markdown=self.environment.markdown,
                 task=task,
                 reward_machine=candidate_rm,

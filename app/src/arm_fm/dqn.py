@@ -87,6 +87,10 @@ RUN_SETTINGS = (
     "use_rm",
     "bundle",
     "labeling_bundle",
+    "env_kwargs",
+    "algorithm",
+    "success",
+    "task_bundles",
     "total_timesteps",
     "learning_rate",
     "buffer_size",
@@ -107,6 +111,19 @@ RUN_SETTINGS = (
     "success_threshold",
     "cuda",
     "torch_deterministic",
+    "ppo_num_envs",
+    "ppo_num_steps",
+    "ppo_num_minibatches",
+    "ppo_update_epochs",
+    "ppo_learning_rate",
+    "ppo_anneal_lr",
+    "ppo_max_grad_norm",
+    "ppo_gae_lambda",
+    "ppo_clip_coef",
+    "ppo_clip_vloss",
+    "ppo_norm_adv",
+    "ppo_ent_coef",
+    "ppo_vf_coef",
 )
 
 # Each run folder CSV and its columns.
@@ -122,6 +139,7 @@ CSV_COLUMNS = {
         "final_rm_state",
         "epsilon",
         "wall_seconds",
+        "task",
     ),
     "eval.csv": (
         "global_step",
@@ -134,6 +152,7 @@ CSV_COLUMNS = {
         "rm_accept_rate",
         "accept_exit_agreement",
         "seeds",
+        "task",
     ),
     "train.csv": ("global_step", "td_loss", "q_mean", "epsilon", "sps"),
 }
@@ -178,7 +197,7 @@ def train_dqn(CONFIG: Configuration) -> Path:
 
     final_eval = evaluate(CONFIG, eval_run, learner.q_network, CONFIG.final_eval_episodes)
     recorder.write_evaluation(CONFIG.total_timesteps, final_eval, CONFIG.success_threshold)
-    recorder.write_summary(CONFIG, learner, final_eval)
+    recorder.write_summary(CONFIG, learner.summary_fields(), final_eval)
     torch.save(learner.q_network.state_dict(), recorder.directory / "q_network.pt")
     print(f"run folder {recorder.directory}")
     return recorder.directory
@@ -193,6 +212,18 @@ def _check_settings(CONFIG: Configuration) -> None:
         raise ValueError(f"These run settings must be positive: {', '.join(not_positive)}")
     if CONFIG.learning_starts < 0:
         raise ValueError("learning_starts must not be negative")
+    # Config accepts these keys already; their training behavior lands in wave 3 S3 and S4.
+    unsupported = [
+        name
+        for name, used in (
+            ("algorithm: ppo", CONFIG.algorithm != "dqn"),
+            ("success: rm", CONFIG.success != "env"),
+            ("task_bundles", bool(CONFIG.task_bundles)),
+        )
+        if used
+    ]
+    if unsupported:
+        raise ValueError(f"train-rl: {', '.join(unsupported)} not implemented yet (wave 3 S3/S4)")
 
 
 def linear_schedule(start_e: float, end_e: float, duration: float, t: int) -> float:
@@ -362,6 +393,14 @@ class DQNLearner:
     def parameter_change_norm(self) -> float:
         final = nn.utils.parameters_to_vector(self.q_network.parameters()).detach()
         return float(torch.linalg.vector_norm(final - self.initial_parameters))
+
+    def summary_fields(self) -> dict[str, object]:
+        """The learner's entries of ``summary.json``."""
+        return {
+            "gradient_updates": self.gradient_updates,
+            "target_syncs": self.target_syncs,
+            "parameter_change_norm": self.parameter_change_norm(),
+        }
 
     def _gradient_step(self, CONFIG: Configuration) -> tuple[float, float] | None:
         data = self.buffer.sample(CONFIG.batch_size)
@@ -606,15 +645,17 @@ class RunRecorder:
         )
 
     def write_summary(
-        self, CONFIG: Configuration, learner: DQNLearner, final_eval: dict[str, object]
+        self,
+        CONFIG: Configuration,
+        learner_fields: dict[str, object],
+        final_eval: dict[str, object],
     ) -> None:
+        """Write ``summary.json``; ``learner_fields`` are the learner's own entries."""
         summary = {
             "total_env_steps": CONFIG.total_timesteps,
             "total_training_episodes": self.episode_count,
             "wall_seconds": self.wall_seconds,
-            "gradient_updates": learner.gradient_updates,
-            "target_syncs": learner.target_syncs,
-            "parameter_change_norm": learner.parameter_change_norm(),
+            **learner_fields,
             "steps_to_success": self.steps_to_success,
             "success_threshold": CONFIG.success_threshold,
             "final_eval": final_eval,
@@ -629,8 +670,14 @@ class RunRecorder:
 
 
 def _plain(value: object) -> object:
-    """Make a Configuration value YAML-safe; paths become absolute strings."""
-    return str(value.resolve()) if isinstance(value, Path) else value
+    """Make a Configuration value YAML-safe; paths, also nested ones, become absolute strings."""
+    if isinstance(value, Path):
+        return str(value.resolve())
+    if isinstance(value, dict):
+        return {key: _plain(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_plain(item) for item in value]
+    return value
 
 
 def _git_head() -> str | None:

@@ -36,6 +36,7 @@ from src.engines import (
     ProposalValidationError,
     RetryableEngineError,
 )
+from src.models import EnvironmentDescription
 from src.utils import (
     GenerationHooks,
     PipelineStep,
@@ -127,7 +128,7 @@ class _Pipeline:
         self.environment, self.generator_engine, self.critic_engine = setup_environment_and_engines(
             CONFIG, progress
         )
-        self.labeling_api = resolve_labeling_api(CONFIG) if CONFIG.labeling else ""
+        self.labeling_api = resolve_labeling_api(self.environment) if CONFIG.labeling else ""
 
     def run_task(self, task_index: int, task: str) -> CompilationResult:
         """Return the accepted result for one task, or raise after its last failed attempt."""
@@ -322,7 +323,7 @@ class _Pipeline:
         return critic.accepted
 
     def _generate_labeling(self, task: str, compiled: CompilationResult) -> CompilationResult:
-        """Generate MiniGrid predicates for one accepted RM, retrying locally."""
+        """Generate labeling predicates for one accepted RM, retrying locally."""
         if not self.CONFIG.labeling:
             self.progress.stage_skip(PipelineStep.LABELING)
             return compiled
@@ -411,19 +412,9 @@ class _Pipeline:
 # ============================================================================
 
 
-def resolve_labeling_api(CONFIG: Configuration) -> str:
-    """Resolve the MiniGrid labeling API, rejecting unrecognized explicit domains."""
-    domain = (CONFIG.domain or "minigrid").strip().lower()
-    families = ("minigrid", "babyai")
-    recognized = any(
-        domain == family or domain.startswith((f"{family}-", f"{family}_")) for family in families
-    )
-    if not recognized:
-        raise ValueError(
-            "Compiler labeling supports the MiniGrid and BabyAI domain families only, "
-            f"got {CONFIG.domain!r}"
-        )
-    return minigrid_labeling_api()
+def resolve_labeling_api(environment: EnvironmentDescription) -> str:
+    """Return the environment's declared labeling API, or the MiniGrid one when it has none."""
+    return environment.labeling_api or minigrid_labeling_api()
 
 
 def state_embedding_context(compiled: CompilationResult) -> str:

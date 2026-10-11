@@ -69,7 +69,7 @@ def generate_larm(CONFIG: Configuration) -> None:
         # The compiler pipeline already produced accepted labeling and node descriptions;
         # the adapter reuses them, so no baseline engine or extra provider call is needed.
         bundles = generate_compiler_bundle(
-            tuple(accepted), None, CONFIG, api_description=resolve_labeling_api(CONFIG)
+            tuple(accepted), None, CONFIG, api_description=resolve_labeling_api(environment)
         )
         record_bundle_role_models(bundles[0], CONFIG)
         if CONFIG.embeddings:
@@ -85,7 +85,7 @@ def generate_larm(CONFIG: Configuration) -> None:
             environment,
             engine,
             CONFIG,
-            api_description=resolve_labeling_api(CONFIG),
+            api_description=resolve_labeling_api(environment),
         )
         result.bundle.save(CONFIG.bundle, overwrite=CONFIG.overwrite)
 

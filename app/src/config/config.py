@@ -48,6 +48,56 @@ def _coerce_number(numeric_type: type, value: object) -> int | float:
     return int(number)
 
 
+ALGORITHMS = ("dqn", "ppo")
+SUCCESS_MODES = ("env", "rm")
+TASK_BUNDLE_KEYS = ("bundle", "labeling_bundle", "env_kwargs", "success")
+PPO_POSITIVE = (
+    "ppo_num_envs",
+    "ppo_num_steps",
+    "ppo_num_minibatches",
+    "ppo_update_epochs",
+    "ppo_learning_rate",
+    "ppo_max_grad_norm",
+    "ppo_clip_coef",
+)
+PPO_NON_NEGATIVE = ("ppo_ent_coef", "ppo_vf_coef")
+PPO_NUMBERS = (*PPO_POSITIVE, *PPO_NON_NEGATIVE, "ppo_gae_lambda")
+PPO_FLAGS = ("ppo_anneal_lr", "ppo_clip_vloss", "ppo_norm_adv")
+
+
+def _is_finite_number(value: object) -> bool:
+    # NaN fails the comparison too, and bool is not a setting value.
+    return (
+        isinstance(value, int | float) and not isinstance(value, bool) and abs(value) < float("inf")
+    )
+
+
+def _check_env_kwargs(value: object, where: str) -> None:
+    if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
+        raise ValueError(f"{where} must be a mapping with string keys")
+
+
+def _task_bundle(entry: object, index: int) -> dict:
+    """Validate one ``task_bundles`` entry and convert its bundle paths to ``Path``."""
+    where = f"task_bundles[{index}]"
+    if not isinstance(entry, dict):
+        raise ValueError(f"{where} must be a mapping")
+    unknown = sorted(str(key) for key in entry.keys() - set(TASK_BUNDLE_KEYS))
+    if unknown:
+        raise ValueError(f"Unknown keys in {where}: {', '.join(unknown)}")
+    if entry.get("bundle") is None:
+        raise ValueError(f"{where} needs a bundle")
+    if entry.get("success", "env") not in SUCCESS_MODES:
+        raise ValueError(f"{where}.success must be one of {', '.join(SUCCESS_MODES)}")
+    _check_env_kwargs(entry.get("env_kwargs", {}), f"{where}.env_kwargs")
+
+    converted = dict(entry)
+    for key in ("bundle", "labeling_bundle"):
+        if converted.get(key) is not None:
+            converted[key] = Path(converted[key])
+    return converted
+
+
 # ================================ Graph defaults ================================
 
 
@@ -148,6 +198,13 @@ class Configuration:
     layout_seed: int | None = None  # None means the run seed
     labeling_bundle: Path | None = None
     use_rm: bool = True
+    env_kwargs: dict = field(default_factory=dict)  # keyword arguments of gym.make
+    algorithm: str = "dqn"
+    # ``env`` ends an episode on the environment's own success, ``rm`` on RM acceptance.
+    success: str = "env"
+    # Several tasks in one run: entries of ``bundle`` plus optional ``labeling_bundle``,
+    # ``env_kwargs`` and ``success``. Mutually exclusive with ``bundle``.
+    task_bundles: list[dict] = field(default_factory=list)
 
     total_timesteps: int = 300_000
     learning_rate: float = 1e-4
@@ -171,11 +228,27 @@ class Configuration:
     cuda: bool = True
     torch_deterministic: bool = True
 
+    # PPO (ARM-FM Table 6); ``gamma`` is shared with DQN.
+    ppo_num_envs: int = 4
+    ppo_num_steps: int = 128
+    ppo_num_minibatches: int = 4
+    ppo_update_epochs: int = 4
+    ppo_learning_rate: float = 5e-5
+    ppo_anneal_lr: bool = True
+    ppo_max_grad_norm: float = 0.5
+    ppo_gae_lambda: float = 0.95
+    ppo_clip_coef: float = 0.1
+    ppo_clip_vloss: bool = True
+    ppo_norm_adv: bool = True
+    ppo_ent_coef: float = 0.01
+    ppo_vf_coef: float = 0.5
+
     def __post_init__(self) -> None:
         # The YAML loads first so its path values get the same Path conversion.
         if self.yaml_config_name:
             self._load_yaml_configuration(self.yaml_config_name)
         self._resolve_paths()
+        self._validate_training()
         self._resolve_models()
         self._validate_embeddings()
 
@@ -261,6 +334,42 @@ class Configuration:
         self.trace_dir = _optional_path(self.trace_dir)
         self.manifests = [Path(path) for path in self.manifests]
         self.svg_dir = Path(self.svg_dir) if self.svg_dir is not None else self.OUTPUT_PATH / "svgs"
+
+    def _validate_training(self) -> None:
+        if self.algorithm not in ALGORITHMS:
+            raise ValueError(
+                f"algorithm must be one of {', '.join(ALGORITHMS)}: {self.algorithm!r}"
+            )
+        if self.success not in SUCCESS_MODES:
+            raise ValueError(f"success must be one of {', '.join(SUCCESS_MODES)}: {self.success!r}")
+        _check_env_kwargs(self.env_kwargs, "env_kwargs")
+
+        if not isinstance(self.task_bundles, list):
+            raise ValueError("task_bundles must be a list of mappings")
+        if self.task_bundles and self.bundle is not None:
+            raise ValueError("task_bundles and bundle are mutually exclusive")
+        self.task_bundles = [
+            _task_bundle(entry, index) for index, entry in enumerate(self.task_bundles)
+        ]
+        self._validate_ppo()
+
+    def _validate_ppo(self) -> None:
+        not_finite = [name for name in PPO_NUMBERS if not _is_finite_number(getattr(self, name))]
+        if not_finite:
+            raise ValueError(f"These PPO settings must be finite numbers: {', '.join(not_finite)}")
+        not_positive = [name for name in PPO_POSITIVE if getattr(self, name) <= 0]
+        if not_positive:
+            raise ValueError(f"These PPO settings must be positive: {', '.join(not_positive)}")
+        negative = [name for name in PPO_NON_NEGATIVE if getattr(self, name) < 0]
+        if negative:
+            raise ValueError(f"These PPO settings must not be negative: {', '.join(negative)}")
+        not_flags = [name for name in PPO_FLAGS if not isinstance(getattr(self, name), bool)]
+        if not_flags:
+            raise ValueError(f"These PPO settings must be true or false: {', '.join(not_flags)}")
+        if not 0 <= self.ppo_gae_lambda <= 1:
+            raise ValueError("ppo_gae_lambda must be between 0 and 1")
+        if (self.ppo_num_envs * self.ppo_num_steps) % self.ppo_num_minibatches:
+            raise ValueError("ppo_num_envs * ppo_num_steps must divide by ppo_num_minibatches")
 
     def _resolve_models(self) -> None:
         # dotenv already strips inline `# comments` from unquoted .env values.

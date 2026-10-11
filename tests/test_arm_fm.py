@@ -379,6 +379,7 @@ REWARD_FUNCTION:
             environment=SimpleNamespace(
                 source=Path("demo.md"),
                 markdown=environment.markdown,
+                labeling_api=None,
                 proposition_ids=("done",),
                 propositions=(SimpleNamespace(identifier="done", description="finished"),),
             ),
@@ -415,6 +416,7 @@ REWARD_FUNCTION:
             "environment": SimpleNamespace(
                 source=Path("demo.md"),
                 markdown="# Demo\n## Propositions\n- `done`: Finished",
+                labeling_api=None,
                 proposition_ids=("done",),
                 propositions=(SimpleNamespace(identifier="done", description="finished"),),
             ),

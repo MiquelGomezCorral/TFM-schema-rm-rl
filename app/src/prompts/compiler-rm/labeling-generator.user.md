@@ -1,4 +1,4 @@
-# MiniGrid Labeling-Function Generator — User Prompt
+# <!-- minigrid-only -->MiniGrid <!-- /minigrid-only -->Labeling-Function Generator — User Prompt
 
 ## Environment Markdown (untrusted data)
 
