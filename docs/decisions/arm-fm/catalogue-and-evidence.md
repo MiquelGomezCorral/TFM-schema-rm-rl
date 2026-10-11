@@ -58,9 +58,14 @@ the corresponding environment files, not duplicated in this record.
   reconstructed generator prompts are permitted and labelled as reconstructed; they are
   never presented as the authors' unpublished original prompts.
 - Catalogue entries are task and RM evidence only. Runtime environments are generic
-  (`make_environment` is `gym.make` on a registered id); the XLand-MiniGrid, Craftium, and
-  Meta-World integrations were removed and will be rebuilt when training uses them.
-  MiniGrid remains because compiler labeling targets it.
+  (`make_environment` is `gym.make` on a registered id); the XLand-MiniGrid and Meta-World
+  integrations were removed and will be rebuilt when training uses them. Compiler labeling
+  targets any environment whose `environment.md` declares a labeling API (MiniGrid by default).
+- Craftium is rebuilt for training as a reconstructed diamond task (`Craftium/Diamond-v0`: Lua
+  tool grants per milestone, sparse diamond reward, per-step state snapshot for labeling). It is
+  not the paper's unpublished configuration.
+- `babyai-chosen-mission` is this project's own catalogue entry (missions written for the
+  experiments, not paper evidence).
 
 ## Rationale and tradeoffs
 
@@ -84,3 +89,5 @@ the paper Appendix A.9 block.
 
 - 2026-09-18: Distinguished missing published evidence from newly reconstructed artifacts;
   authorized explicit XLand prompt reconstruction and inspectable per-task bundles.
+- 2026-10-11: Rebuilt Craftium as a reconstructed diamond task and added the project's own
+  BabyAI chosen-mission entry.

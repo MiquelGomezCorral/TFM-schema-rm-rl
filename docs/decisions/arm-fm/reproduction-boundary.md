@@ -18,6 +18,12 @@ semantic rather than byte-for-byte.
 - An environment's `environment.md` may declare a `## Labeling API`; it is the only labeling
   surface given to generators. Without it the MiniGrid surface applies. Run configs pass
   `env_kwargs` to `gym.make`, and custom environments register in `app/src/arm_fm/custom_envs/`.
+- Learners share the RM wrapper: DQN for MiniGrid/BabyAI, PPO (CleanRL `ppo_atari`) for
+  Craftium, selected by the run config's `algorithm`.
+- One run may train on several task bundles (`task_bundles`), one drawn per episode; the policy
+  sees only the observation and the current RM-state embedding, and each task keeps its own RM
+  and labeling. `success: rm` ends an episode on RM acceptance without adding reward, for tasks
+  the environment cannot judge.
 - The environment Markdown owns the allowed proposition vocabulary. Propositions describe
   observable state conditions or explicitly documented progress events; raw actions are
   not RM events.
@@ -122,6 +128,8 @@ specifics out of the learner so new environments need no loop changes.
 - Compiler artifact finalization shares `app/src/arm_fm/generation.py`; local HTTP
   embeddings share the settings/cache owners in `app/src/arm_fm/evaluation.py`.
   Artifact paths and optional enablement belong to `app/src/config/config.py`.
+- PPO training is owned by `app/src/arm_fm/ppo.py`; custom environments by
+  `app/src/arm_fm/custom_envs/`.
 - DQN training, the RM gym wrapper, and the per-family environment adapters are owned by
   `app/src/arm_fm/dqn.py` and `app/src/arm_fm/environments.py`; the RM transition and replay
   contract is checked in `tests/test_rl_contract.py`.
@@ -145,3 +153,5 @@ specifics out of the learner so new environments need no loop changes.
   adapters; paper-RM runs reuse compiler labeling and the shared embedding endpoint.
 - 2026-10-11: Environments became plug-and-play: declared labeling API, `env_kwargs`, and a
   custom-environment registration package.
+- 2026-10-11: Added PPO for Craftium, multi-task training over several bundles, and RM-judged
+  success for missions the environment cannot judge.
