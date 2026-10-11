@@ -376,13 +376,7 @@ REWARD_FUNCTION:
             "# Demo\n## Propositions\n- `done`: Finished", source="demo.md"
         )
         compiled = SimpleNamespace(
-            environment=SimpleNamespace(
-                source=Path("demo.md"),
-                markdown=environment.markdown,
-                labeling_api=None,
-                proposition_ids=("done",),
-                propositions=(SimpleNamespace(identifier="done", description="finished"),),
-            ),
+            environment=environment,
             proposal=SimpleNamespace(task="finish"),
             text="numeric",
             state_descriptions=(),
@@ -413,12 +407,8 @@ REWARD_FUNCTION:
     def _compiler_result(**overrides):
         """Minimal accepted compiler result shared by compiler-bundle checks."""
         values = {
-            "environment": SimpleNamespace(
-                source=Path("demo.md"),
-                markdown="# Demo\n## Propositions\n- `done`: Finished",
-                labeling_api=None,
-                proposition_ids=("done",),
-                propositions=(SimpleNamespace(identifier="done", description="finished"),),
+            "environment": EnvironmentDescription.from_markdown(
+                "# Demo\n## Propositions\n- `done`: Finished", source="demo.md"
             ),
             "proposal": SimpleNamespace(task="finish"),
             "text": "numeric",
