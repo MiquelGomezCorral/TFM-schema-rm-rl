@@ -4,8 +4,11 @@ An adapter owns everything environment-specific (observation pipeline, image enc
 success rule), so the DQN loop stays environment-agnostic. MiniGrid is the only family.
 """
 
+import copy
+import random
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any
 
 import gymnasium as gym
@@ -47,9 +50,14 @@ def make_run_environment(CONFIG: Configuration) -> RunEnvironment:
     Every call owns its own RM runtime and labeling memory, so train and eval
     environments never share RM state.
 
+    With ``task_bundles`` it builds one such environment per task and returns them as one
+    ``MultiTaskEnvironment``. With ``success: rm`` an episode ends on RM acceptance.
+
     Raises:
         ValueError: If the family, observation, gym id or RM inputs are missing or unknown.
     """
+    if CONFIG.task_bundles:
+        return _multi_task_run(CONFIG)
     if not CONFIG.gym_id:
         raise ValueError("train-rl needs gym_id in the run config")
     adapter = ENVIRONMENT_FAMILIES.get(CONFIG.env_family)
@@ -60,9 +68,15 @@ def make_run_environment(CONFIG: Configuration) -> RunEnvironment:
 
     run = adapter(CONFIG)
     if not CONFIG.use_rm:
+        if CONFIG.success == "rm":
+            raise ValueError("success: rm needs use_rm: true")
         return run
     bundle, labeling = _reward_machine_inputs(CONFIG)
-    return replace(run, env=RewardMachineObservation(run.env, bundle, labeling))
+    env = RewardMachineObservation(run.env, bundle, labeling)
+    if CONFIG.success == "rm":
+        env = RMAcceptanceTermination(env)
+        return replace(run, env=env, is_success=env.is_success)
+    return replace(run, env=env)
 
 
 def minigrid_labeling_api() -> str:
@@ -196,6 +210,27 @@ class RewardMachineObservation(gym.Wrapper):
         return {"image": image, "rm_embedding": self.embeddings[state]}
 
 
+class RMAcceptanceTermination(gym.Wrapper):
+    """End an episode when the RM reaches a final state (config ``success: rm``).
+
+    For missions the environment cannot judge. It adds no reward: the episode just ends, and
+    ``is_success`` counts an exit only when the episode ended on RM acceptance. Wrap it
+    directly around ``RewardMachineObservation``, whose ``info["rm_accept"]`` it reads.
+    """
+
+    def __init__(self, env: gym.Env) -> None:
+        super().__init__(env)
+        self.accepted = False
+
+    def step(self, action):
+        observation, reward, terminated, truncated, info = self.env.step(action)
+        self.accepted = info["rm_accept"]
+        return observation, reward, terminated or self.accepted, truncated, info
+
+    def is_success(self, terminated: bool, _env_reward: float) -> bool:
+        return terminated and self.accepted
+
+
 def _reward_machine_inputs(
     CONFIG: Configuration,
 ) -> tuple[ArtifactBundle, dict[str, Callable[[object], bool]]]:
@@ -220,3 +255,97 @@ def _reward_machine_inputs(
             f"{CONFIG.bundle}: {error}"
         ) from error
     return bundle, labeling
+
+
+# ======================================================================================
+#                                      MULTI-TASK
+# ======================================================================================
+
+
+def task_name(entry: Mapping[str, Any]) -> str:
+    """A ``task_bundles`` entry is named after its bundle folder."""
+    return Path(entry["bundle"]).name
+
+
+class MultiTaskEnvironment(gym.Env):
+    """Several task environments behind one env; every training episode draws one task.
+
+    Each task keeps its own env, RM, labeling, embeddings and success rule, so the policy
+    sees only the shared observation. ``reset`` draws the task from a RNG of its own, seeded
+    from the run seed, unless ``options={"task": index}`` names one (evaluation cycles them).
+    ``info["task"]`` carries the current task's name.
+    """
+
+    def __init__(self, runs: Mapping[str, RunEnvironment], seed: int) -> None:
+        self.names = tuple(runs)
+        self.runs = tuple(runs.values())
+        first = self.runs[0].env
+        for name, run in runs.items():
+            if (
+                run.env.observation_space != first.observation_space
+                or run.env.action_space != first.action_space
+            ):
+                raise ValueError(
+                    f"Task {name!r} differs from {self.names[0]!r} in observation space, "
+                    "action space or RM embedding dimension; tasks in one run must match"
+                )
+        self.observation_space = first.observation_space
+        self.action_space = first.action_space
+        self._seed = seed
+        self._task_rng = random.Random(f"tasks-{seed}")
+        self._started: set[int] = set()
+        self._index = 0
+
+    @property
+    def current_task(self) -> str:
+        return self.names[self._index]
+
+    @property
+    def unwrapped(self):
+        """The current task's own environment, so grid state stays readable."""
+        return self.runs[self._index].env.unwrapped
+
+    def is_success(self, terminated: bool, env_reward: float) -> bool:
+        return self.runs[self._index].is_success(terminated, env_reward)
+
+    def reset(self, *, seed: int | None = None, options: dict | None = None):
+        task = (options or {}).get("task")
+        self._index = self._task_rng.randrange(len(self.runs)) if task is None else task
+        # A task's first reset needs a seed, or its layouts would not be reproducible.
+        if seed is None and self._index not in self._started:
+            seed = self._seed + self._index
+        self._started.add(self._index)
+        observation, info = self.runs[self._index].env.reset(seed=seed)
+        return observation, {**info, "task": self.current_task}
+
+    def step(self, action):
+        observation, reward, terminated, truncated, info = self.runs[self._index].env.step(action)
+        return observation, reward, terminated, truncated, {**info, "task": self.current_task}
+
+
+def _multi_task_run(CONFIG: Configuration) -> RunEnvironment:
+    """One ``MultiTaskEnvironment`` over ``CONFIG.task_bundles``, each built like a single task."""
+    names = [task_name(entry) for entry in CONFIG.task_bundles]
+    if len(set(names)) != len(names):
+        raise ValueError(f"task_bundles need distinct bundle folder names, got {names}")
+    runs = {
+        name: make_run_environment(_task_config(CONFIG, entry))
+        for name, entry in zip(names, CONFIG.task_bundles, strict=True)
+    }
+    env = MultiTaskEnvironment(runs, CONFIG.seed)
+    return RunEnvironment(env, runs[names[0]].make_encoder, env.is_success)
+
+
+def _task_config(CONFIG: Configuration, entry: Mapping[str, Any]) -> Configuration:
+    """A copy of ``CONFIG`` that runs one ``task_bundles`` entry as a single task.
+
+    The entry's ``env_kwargs`` extend the run's. ``labeling_bundle`` and ``success`` belong to
+    the entry alone, with ``success`` falling back to the run's.
+    """
+    task = copy.copy(CONFIG)  # replace() would reload the YAML over these values
+    task.bundle = entry["bundle"]
+    task.labeling_bundle = entry.get("labeling_bundle")
+    task.env_kwargs = {**CONFIG.env_kwargs, **entry.get("env_kwargs", {})}
+    task.success = entry.get("success", CONFIG.success)
+    task.task_bundles = []
+    return task

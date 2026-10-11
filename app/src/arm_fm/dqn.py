@@ -59,7 +59,7 @@ from torch import Tensor, nn, optim
 
 from src.config import Configuration
 
-from .environments import RunEnvironment, make_run_environment
+from .environments import MultiTaskEnvironment, RunEnvironment, make_run_environment, task_name
 
 LAYOUTS = ("fixed", "procedural")
 POSITIVE_SETTINGS = (
@@ -73,6 +73,7 @@ POSITIVE_SETTINGS = (
     "final_eval_episodes",
 )
 TRAIN_LOG_EVERY_UPDATES = 100
+SUCCESS_LABELS = {"env": "environment success", "rm": "RM acceptance"}
 
 # The Configuration fields recorded in a run's config.yaml.
 RUN_SETTINGS = (
@@ -212,18 +213,28 @@ def _check_settings(CONFIG: Configuration) -> None:
         raise ValueError(f"These run settings must be positive: {', '.join(not_positive)}")
     if CONFIG.learning_starts < 0:
         raise ValueError("learning_starts must not be negative")
-    # Config accepts these keys already; their training behavior lands in wave 3 S3 and S4.
-    unsupported = [
-        name
-        for name, used in (
-            ("algorithm: ppo", CONFIG.algorithm != "dqn"),
-            ("success: rm", CONFIG.success != "env"),
-            ("task_bundles", bool(CONFIG.task_bundles)),
+    # Config accepts this key already; its training behavior lands in wave 3 S4.
+    if CONFIG.algorithm != "dqn":
+        raise ValueError("train-rl: algorithm: ppo not implemented yet (wave 3 S4)")
+    if CONFIG.task_bundles:
+        _check_task_bundles(CONFIG)
+
+
+def _check_task_bundles(CONFIG: Configuration) -> None:
+    if not CONFIG.use_rm:
+        raise ValueError("task_bundles needs use_rm: true")
+    if CONFIG.labeling_bundle is not None:
+        raise ValueError("labeling_bundle belongs inside each task_bundles entry, not the run")
+    # Evaluation cycles the tasks from the first, so a shorter evaluation skips the last ones.
+    tasks = len(CONFIG.task_bundles)
+    if (
+        CONFIG.layout == "procedural"
+        and min(CONFIG.eval_episodes, CONFIG.final_eval_episodes) < tasks
+    ):
+        raise ValueError(
+            f"eval_episodes and final_eval_episodes must be at least {tasks}, "
+            "the number of task_bundles, so every task is evaluated"
         )
-        if used
-    ]
-    if unsupported:
-        raise ValueError(f"train-rl: {', '.join(unsupported)} not implemented yet (wave 3 S3/S4)")
 
 
 def linear_schedule(start_e: float, end_e: float, duration: float, t: int) -> float:
@@ -494,6 +505,8 @@ class EpisodeTracker:
     exited: bool = False
     rm_state: str | None = None
     rm_accept: bool | None = None
+    task: str | None = None  # set by a multi-task env
+    seed: int | None = None  # the reset seed of an evaluation episode
 
     @property
     def total_return(self) -> float:
@@ -505,6 +518,7 @@ class EpisodeTracker:
         self.env_return += env_reward
         self.length += 1
         self.exited = is_success(terminated, env_reward)
+        self.task = info.get("task")
         if "rm_reward" in info:
             self.rm_return = (self.rm_return or 0.0) + info["rm_reward"]
             self.rm_state = info["rm_state"]
@@ -521,26 +535,52 @@ def evaluate(
 ) -> dict[str, object]:
     """Roll out ``eval_epsilon``-greedy episodes and return one ``eval.csv`` row.
 
-    A fixed layout runs 1 episode on the layout seed; a procedural layout runs
-    ``episode_count`` episodes on held-out seeds ``eval_seed_base + i``. Exploration draws
-    come from a fresh RNG seeded with the run seed, never from the training stream.
+    A fixed layout runs 1 episode (per task) on the layout seed; a procedural layout runs
+    ``episode_count`` episodes on held-out seeds ``eval_seed_base + i``. A multi-task env
+    cycles its tasks, episode i running task i mod N, and the row gains ``tasks``: one row per
+    task. Exploration draws come from a fresh RNG seeded with the run seed, never from the
+    training stream.
     """
     rng = random.Random(CONFIG.seed)
-    if CONFIG.layout == "fixed":
-        seeds = [_layout_seed(CONFIG)]
-    else:
-        seeds = [CONFIG.eval_seed_base + index for index in range(episode_count)]
+    resets = _evaluation_resets(CONFIG, run, episode_count)
     episodes = [
-        _evaluation_episode(run, q_network, CONFIG.eval_epsilon, seed, rng) for seed in seeds
+        _evaluation_episode(run, q_network, CONFIG.eval_epsilon, reset, rng) for reset in resets
     ]
 
+    row = _evaluation_row(episodes)
+    tasks = list(dict.fromkeys(episode.task for episode in episodes))
+    if len(tasks) > 1:
+        row["tasks"] = {
+            task: _evaluation_row([episode for episode in episodes if episode.task == task])
+            for task in tasks
+        }
+    return row
+
+
+def _evaluation_resets(
+    CONFIG: Configuration, run: RunEnvironment, episode_count: int
+) -> list[dict[str, object]]:
+    """The ``reset`` arguments of every evaluation episode: its seed, and its task if any."""
+    task_count = len(run.env.runs) if isinstance(run.env, MultiTaskEnvironment) else 0
+    if CONFIG.layout == "fixed":
+        seeds = [_layout_seed(CONFIG)] * max(task_count, 1)
+    else:
+        seeds = [CONFIG.eval_seed_base + index for index in range(episode_count)]
+    if not task_count:
+        return [{"seed": seed} for seed in seeds]
+    return [
+        {"seed": seed, "options": {"task": index % task_count}} for index, seed in enumerate(seeds)
+    ]
+
+
+def _evaluation_row(episodes: list[EpisodeTracker]) -> dict[str, object]:
     row: dict[str, object] = {
         "episodes": len(episodes),
         "exit_rate": _mean(episode.exited for episode in episodes),
         "mean_length": _mean(episode.length for episode in episodes),
         "mean_env_return": _mean(episode.env_return for episode in episodes),
         "mean_total_return": _mean(episode.total_return for episode in episodes),
-        "seeds": " ".join(str(seed) for seed in seeds),
+        "seeds": " ".join(str(episode.seed) for episode in episodes),
     }
     if episodes[0].rm_return is not None:
         row["mean_rm_return"] = _mean(episode.rm_return for episode in episodes)
@@ -552,10 +592,14 @@ def evaluate(
 
 
 def _evaluation_episode(
-    run: RunEnvironment, q_network: QNetwork, epsilon: float, seed: int, rng: random.Random
+    run: RunEnvironment,
+    q_network: QNetwork,
+    epsilon: float,
+    reset: dict[str, object],
+    rng: random.Random,
 ) -> EpisodeTracker:
-    episode = EpisodeTracker()
-    observation, _ = run.env.reset(seed=seed)
+    episode = EpisodeTracker(seed=reset["seed"])
+    observation, _ = run.env.reset(**reset)
     done = False
     while not done:
         action = select_action(q_network, observation, epsilon, run.env.action_space, rng)
@@ -587,6 +631,7 @@ class RunRecorder:
         self.started = time.monotonic()
         self.episode_count = 0
         self.steps_to_success: int | None = None
+        self.success_modes: dict[str, str] = {}
         for name, columns in CSV_COLUMNS.items():
             with (directory / name).open("w", newline="", encoding="utf-8") as file:
                 csv.DictWriter(file, columns).writeheader()
@@ -597,6 +642,7 @@ class RunRecorder:
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
         name = f"seed{CONFIG.seed}-{stamp}-{os.getpid()}"
         recorder = cls(CONFIG.OUTPUT_PATH / "runs" / CONFIG.exp_name / name)
+        recorder.success_modes = _success_modes(CONFIG)
         settings = {field: _plain(getattr(CONFIG, field)) for field in RUN_SETTINGS}
         settings["layout_seed"] = _layout_seed(CONFIG)
         settings["device"] = str(device)
@@ -625,6 +671,7 @@ class RunRecorder:
                 "final_rm_state": episode.rm_state,
                 "epsilon": epsilon,
                 "wall_seconds": self.wall_seconds,
+                "task": episode.task,
             },
         )
 
@@ -635,12 +682,32 @@ class RunRecorder:
         self._append("train.csv", {"global_step": env_steps, **row})
 
     def write_evaluation(self, env_steps: int, row: dict[str, object], threshold: float) -> None:
-        """Append one eval row; the first row reaching ``threshold`` sets ``steps_to_success``."""
+        """Append one eval step; the first row reaching ``threshold`` sets ``steps_to_success``.
+
+        A multi-task row carries ``tasks``: they are appended first, one row per task, so the
+        overall row stays the last row of the step. The overall row of a one-entry
+        ``task_bundles`` run names its task; with several tasks it stays empty.
+        """
+        row = dict(row)
+        for task, task_row in row.pop("tasks", {}).items():
+            self._append("eval.csv", {"global_step": env_steps, "task": task, **task_row})
+            self._report(env_steps, task_row, task)
         if self.steps_to_success is None and row["exit_rate"] >= threshold:
             self.steps_to_success = env_steps
-        self._append("eval.csv", {"global_step": env_steps, **row})
+        self._append("eval.csv", {"global_step": env_steps, "task": self._sole_task, **row})
+        self._report(env_steps, row)
+
+    @property
+    def _sole_task(self) -> str:
+        """The name of the only task of a one-entry ``task_bundles`` run, else empty."""
+        return next(iter(self.success_modes)) if len(self.success_modes) == 1 else ""
+
+    def _report(self, env_steps: int, row: dict[str, object], task: str = "") -> None:
+        modes = {self.success_modes[task]} if task else set(self.success_modes.values())
+        note = f" ({SUCCESS_LABELS['rm']})" if modes == {"rm"} else ""
+        scope = f" [{task}]" if task else ""
         print(
-            f"step {env_steps}: exit_rate {row['exit_rate']:.2f}, "
+            f"step {env_steps}{scope}: exit_rate {row['exit_rate']:.2f}{note}, "
             f"mean_env_return {row['mean_env_return']:.3f}, {self.wall_seconds:.0f} s"
         )
 
@@ -650,7 +717,10 @@ class RunRecorder:
         learner_fields: dict[str, object],
         final_eval: dict[str, object],
     ) -> None:
-        """Write ``summary.json``; ``learner_fields`` are the learner's own entries."""
+        """Write ``summary.json``; ``learner_fields`` are the learner's own entries.
+
+        A run where any task counts RM acceptance as success names how each task defines it.
+        """
         summary = {
             "total_env_steps": CONFIG.total_timesteps,
             "total_training_episodes": self.episode_count,
@@ -658,15 +728,29 @@ class RunRecorder:
             **learner_fields,
             "steps_to_success": self.steps_to_success,
             "success_threshold": CONFIG.success_threshold,
+            **self._success_summary(),
             "final_eval": final_eval,
         }
         (self.directory / "summary.json").write_text(
             json.dumps(summary, indent=2) + "\n", encoding="utf-8"
         )
 
+    def _success_summary(self) -> dict[str, object]:
+        if "rm" not in self.success_modes.values():
+            return {}
+        labels = {task: SUCCESS_LABELS[mode] for task, mode in self.success_modes.items()}
+        return {"success": next(iter(labels.values())) if len(labels) == 1 else labels}
+
     def _append(self, name: str, row: dict[str, object]) -> None:
         with (self.directory / name).open("a", newline="", encoding="utf-8") as file:
             csv.DictWriter(file, CSV_COLUMNS[name]).writerow(row)
+
+
+def _success_modes(CONFIG: Configuration) -> dict[str, str]:
+    """Each task's success mode by name; a single-task run is keyed ``""``."""
+    if not CONFIG.task_bundles:
+        return {"": CONFIG.success}
+    return {task_name(entry): entry.get("success", CONFIG.success) for entry in CONFIG.task_bundles}
 
 
 def _plain(value: object) -> object:
