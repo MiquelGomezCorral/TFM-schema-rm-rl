@@ -66,6 +66,7 @@ from .environments import RunEnvironment, make_run_environment
 TRAIN_COLUMNS = (
     "global_step",
     "engine_frames",
+    "engine_crashes",
     "iteration",
     "learning_rate",
     "policy_loss",
@@ -397,14 +398,22 @@ class RolloutCollector:
 
     def engine_frames(self) -> int | None:
         """Engine steps simulated so far over all envs, or None when the env family has none."""
-        frames = [getattr(run.env.unwrapped, "engine_frames", None) for run in self.runs]
-        return None if frames[0] is None else sum(frames)
+        return self._engine_total("engine_frames")
+
+    def engine_crashes(self) -> int | None:
+        """Episodes cut short by an engine death so far over all envs, or None as above."""
+        return self._engine_total("engine_crashes")
+
+    def _engine_total(self, counter: str) -> int | None:
+        counts = [getattr(run.env.unwrapped, counter, None) for run in self.runs]
+        return None if counts[0] is None else sum(counts)
 
     def summary_fields(self) -> dict[str, object]:
         """The collector's entries of ``summary.json``."""
         fields: dict[str, object] = {
             "total_env_steps": self.global_step,
             "engine_frames": self.engine_frames(),
+            "engine_crashes": self.engine_crashes(),
         }
         if self.rm_states:
             fields["rm_states_visited"] = sorted(self.rm_states)
@@ -621,6 +630,7 @@ def _train(
             {
                 "global_step": global_step,
                 "engine_frames": collector.engine_frames(),
+                "engine_crashes": collector.engine_crashes(),
                 "iteration": iteration,
                 "learning_rate": learning_rate,
                 "sps": sps,

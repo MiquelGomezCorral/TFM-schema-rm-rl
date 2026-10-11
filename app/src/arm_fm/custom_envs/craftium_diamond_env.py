@@ -7,11 +7,13 @@ reads that snapshot after every ``reset()``/``step()``, exposes it as ``inventor
 termination on the step whose accepted snapshot first shows the diamond milestone. Craftium's own
 reward flag is ignored (its client reads reward and termination without a lock against the engine
 thread, so a frame can carry one without the other); death still terminates natively with reward 0.
-Every reset restarts the engine on a pristine copy of the world.
+Every reset restarts the engine on a pristine copy of the world. An engine that dies while starting
+is restarted; one that dies mid-episode truncates the episode (``info["engine_crashed"]``).
 """
 
 import json
 import shutil
+import socket
 import subprocess
 import tempfile
 import time
@@ -33,6 +35,7 @@ SNAPSHOT_NAME = "craftium_state.json"
 SNAPSHOT_TIMEOUT_SECONDS = 5.0
 SNAPSHOT_POLL_SECONDS = 0.0005
 ENGINE_EXIT_SECONDS = 30.0
+ENGINE_START_ATTEMPTS = 3
 RESOURCES = ("wood", "stone", "iron", "diamond")
 
 
@@ -58,10 +61,16 @@ class DiamondEnv(CraftiumEnv):
     def __init__(self, max_steps: int = 10_000, **kwargs: Any) -> None:
         self._episode = 0
         self._engine_frames = 0
+        self._engine_crashes = 0
         self._closed = False
         self._clear_state()
         # Craftium would otherwise create the engine's run dir in the current directory.
         kwargs.setdefault("run_dir_prefix", tempfile.gettempdir())
+        # Craftium would draw the engine's port from the global ``random``, which a seeded run
+        # shares with every other run of the same seed: their engines would collide on it. The
+        # port stays the same for every engine of this env: the engine's sync semaphores are named
+        # after it, and its client only finds them once an engine on that port has created them.
+        kwargs.setdefault("mt_port", _free_udp_port())
 
         with tempfile.TemporaryDirectory(prefix="craftium-diamond-env-") as env_dir:
             _assemble_env_dir(Path(env_dir))
@@ -113,12 +122,26 @@ class DiamondEnv(CraftiumEnv):
         """Engine steps simulated over all episodes, counting each episode's start-up frames."""
         return self._engine_frames
 
+    @property
+    def engine_crashes(self) -> int:
+        """Episodes truncated because their engine died mid-episode; start-up deaths not counted."""
+        return self._engine_crashes
+
     def reset(self, *, seed: int | None = None, options: dict | None = None):
         """Restart the engine on the pristine world and return the first observation.
 
-        ``seed`` only seeds Gymnasium's RNG: the map comes from the pristine world.
+        ``seed`` only seeds Gymnasium's RNG: the map comes from the pristine world. An engine that
+        dies while starting is restarted; the error is raised after ``ENGINE_START_ATTEMPTS`` tries.
         """
         Env.reset(self, seed=seed)
+        for _ in range(ENGINE_START_ATTEMPTS - 1):  # the last attempt below raises its error
+            try:
+                return self._start_episode(options)
+            except ConnectionError as error:
+                print(f"Craftium engine died while starting ({error}); restarting it", flush=True)
+        return self._start_episode(options)
+
+    def _start_episode(self, options: dict | None):
         self._stop_engine()
         shutil.rmtree(self._world)
         shutil.copytree(self._pristine_world, self._world)
@@ -128,17 +151,35 @@ class DiamondEnv(CraftiumEnv):
         self.mt.overwrite_config({"craftium_episode": self._episode})
         with self._engine_io():
             observation, info = super().reset(options=options)
-        self._read_snapshot()
+            self._read_snapshot()
         return observation, info
 
     def step(self, action):
-        with self._engine_io():
-            observation, _native_reward, terminated, truncated, info = super().step(action)
-        self._read_snapshot()
+        try:
+            with self._engine_io():
+                observation, _native_reward, terminated, truncated, info = super().step(action)
+                self._read_snapshot()
+        except ConnectionError as error:
+            return self._truncate_after_engine_crash(error)
         if self._milestones["diamond"] and not self._diamond_paid:
             self._diamond_paid = True
             return observation, 1.0, True, truncated, info
         return observation, 0.0, terminated, truncated, info
+
+    def _truncate_after_engine_crash(self, error: ConnectionError):
+        """End the episode of an engine that died mid-episode; ``reset()`` starts a new one.
+
+        The Luanti engine now and then dies on its own (the wave-3 regression lost its eval engine
+        mid-episode twice), and a long run restarts it thousands of times. The episode is
+        truncated, not terminated, so a learner reads the crash as a time limit and neither as a
+        death nor as a goal.
+        """
+        self._engine_crashes += 1
+        print(
+            f"Craftium engine died at engine step {self._engine_step} ({error}); episode truncated",
+            flush=True,
+        )
+        return self.last_observation, 0.0, False, True, {"engine_crashed": True}
 
     @contextmanager
     def _engine_io(self) -> Iterator[None]:
@@ -211,6 +252,7 @@ class DiamondEnv(CraftiumEnv):
         """Load the mod's snapshot, waiting for its step counter to advance.
 
         Raises:
+            ConnectionError: If the engine exited before it wrote the awaited snapshot.
             CraftiumBridgeError: If no snapshot with an advanced step counter appears in time,
                 it belongs to another episode, is unreadable, or a cumulative value went down.
         """
@@ -227,6 +269,8 @@ class DiamondEnv(CraftiumEnv):
                 if snapshot["step"] > self._engine_step:
                     break
             if time.monotonic() >= deadline:
+                if self.mt.proc.poll() is not None:
+                    raise ConnectionError("Craftium engine exited before it wrote its snapshot")
                 state = "missing" if snapshot is None else f"stale at step {int(snapshot['step'])}"
                 raise CraftiumBridgeError(
                     f"Snapshot {path} is {state}: the step counter did not pass "
@@ -244,6 +288,13 @@ class DiamondEnv(CraftiumEnv):
         self._engine_step = int(snapshot["step"])
         self._inventory = MappingProxyType({name: int(inventory[name]) for name in RESOURCES})
         self._milestones = MappingProxyType({name: bool(milestones[name]) for name in RESOURCES})
+
+
+def _free_udp_port() -> int:
+    """A UDP port on localhost that no socket holds right now."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
 
 
 def _load_snapshot(path: Path) -> dict[str, Any] | None:
