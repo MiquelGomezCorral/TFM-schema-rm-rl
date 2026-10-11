@@ -4,4 +4,4 @@
 # `gymnasium.register` with a string `entry_point` and must not import `src.arm_fm` internals
 # at module level, because `src.arm_fm` imports this package first.
 
-from . import babyai_mission
+from . import babyai_mission, craftium_diamond

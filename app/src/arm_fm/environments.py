@@ -1,7 +1,7 @@
 """Gymnasium environments for training: per-family adapters and the Reward Machine wrapper.
 
 An adapter owns everything environment-specific (observation pipeline, image encoder,
-success rule), so the DQN loop stays environment-agnostic. MiniGrid is the only family.
+success rule), so the training loops stay environment-agnostic. Families: MiniGrid and Craftium.
 """
 
 import copy
@@ -14,6 +14,7 @@ from typing import Any
 import gymnasium as gym
 import minigrid  # importing registers the MiniGrid and BabyAI gym ids
 import numpy as np
+import torch
 from gymnasium import spaces
 from gymnasium.wrappers import FrameStackObservation, GrayscaleObservation
 from minigrid.wrappers import ImgObsWrapper, RGBImgPartialObsWrapper
@@ -37,6 +38,14 @@ class RunEnvironment:
     env: gym.Env
     make_encoder: Callable[[], nn.Module]
     is_success: Callable[[bool, float], bool]
+
+
+def terminated_with_reward(terminated: bool, env_reward: float) -> bool:
+    """Success rule of the MiniGrid and Craftium families.
+
+    Both pay a positive reward only when the episode terminates on its goal.
+    """
+    return terminated and env_reward > 0
 
 
 def make_environment(environment_id: str, **kwargs: Any) -> Any:
@@ -66,13 +75,18 @@ def make_run_environment(CONFIG: Configuration) -> RunEnvironment:
             f"Unknown env_family {CONFIG.env_family!r}; supported: {', '.join(ENVIRONMENT_FAMILIES)}"
         )
 
+    # Load the RM first so a bad bundle fails before an engine or env exists.
+    rm_inputs = _reward_machine_inputs(CONFIG) if CONFIG.use_rm else None
     run = adapter(CONFIG)
-    if not CONFIG.use_rm:
+    if rm_inputs is None:
         if CONFIG.success == "rm":
             raise ValueError("success: rm needs use_rm: true")
         return run
-    bundle, labeling = _reward_machine_inputs(CONFIG)
-    env = RewardMachineObservation(run.env, bundle, labeling)
+    try:
+        env = RewardMachineObservation(run.env, *rm_inputs)
+    except Exception:
+        run.env.close()
+        raise
     if CONFIG.success == "rm":
         env = RMAcceptanceTermination(env)
         return replace(run, env=env, is_success=env.is_success)
@@ -134,22 +148,50 @@ def minigrid_environment(CONFIG: Configuration) -> RunEnvironment:
     """Build a MiniGrid env with the ``symbolic`` or ``pixels`` observation pipeline."""
     env = make_environment(CONFIG.gym_id, **CONFIG.env_kwargs)
     if CONFIG.observation == "symbolic":
-        return RunEnvironment(ImgObsWrapper(env), MiniGridCNN, minigrid_success)
+        return RunEnvironment(ImgObsWrapper(env), MiniGridCNN, terminated_with_reward)
     if CONFIG.observation == "pixels":
         # 7 tiles x 12 px = 84 px, so no ResizeObservation (it needs cv2).
         image = ImgObsWrapper(RGBImgPartialObsWrapper(env, tile_size=12))
         frames = FrameStackObservation(GrayscaleObservation(image), 4)
-        return RunEnvironment(frames, NatureCNN, minigrid_success)
+        return RunEnvironment(frames, NatureCNN, terminated_with_reward)
     raise ValueError(f"Unknown MiniGrid observation {CONFIG.observation!r}; use symbolic or pixels")
 
 
-def minigrid_success(terminated: bool, env_reward: float) -> bool:
-    """MiniGrid pays a positive reward only when it terminates on the mission."""
-    return terminated and env_reward > 0
+# ======================================================================================
+#                                   CRAFTIUM ADAPTER
+# ======================================================================================
+
+
+class AreaResizeObservation(gym.ObservationWrapper):
+    """Shrink 2-D uint8 frames to ``shape`` (height, width) by area averaging, without OpenCV."""
+
+    def __init__(self, env: gym.Env, shape: tuple[int, int]) -> None:
+        super().__init__(env)
+        self.shape = shape
+        self.observation_space = spaces.Box(0, 255, shape, np.uint8)
+
+    def observation(self, observation: np.ndarray) -> np.ndarray:
+        frame = torch.from_numpy(observation)[None, None].float()
+        return nn.functional.adaptive_avg_pool2d(frame, self.shape)[0, 0].round().byte().numpy()
+
+
+def craftium_environment(CONFIG: Configuration) -> RunEnvironment:
+    """Build a Craftium env: Discrete actions, 84x84 grayscale frames, 4 stacked (CleanRL Atari).
+
+    The registered Craftium id already returns grayscale frames and a Discrete action space;
+    its ``inventory`` and ``milestones`` are read by the labeling functions.
+    """
+    env = make_environment(CONFIG.gym_id, **CONFIG.env_kwargs)
+    return RunEnvironment(
+        FrameStackObservation(AreaResizeObservation(env, (84, 84)), 4),
+        NatureCNN,
+        terminated_with_reward,
+    )
 
 
 ENVIRONMENT_FAMILIES: dict[str, Callable[[Configuration], RunEnvironment]] = {
     "minigrid": minigrid_environment,
+    "craftium": craftium_environment,
 }
 
 
