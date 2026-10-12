@@ -34,6 +34,22 @@ class EnvironmentDescription:
     propositions: tuple[Proposition, ...]
     labeling_api: str | None = None
 
+    def require_labeling_api(self) -> str:
+        """Return the declared labeling API, the only surface labeling code may read.
+
+        Labeling and training paths call this; plain Reward Machine generation does not need
+        the section.
+
+        Raises:
+            EnvironmentValidationError: If the environment declares no ``## Labeling API``.
+        """
+        if self.labeling_api is None:
+            raise EnvironmentValidationError(
+                f"{self.source}: labeling and training need a '{LABELING_API_HEADING}' section "
+                "listing what the labeling code may read from the live environment"
+            )
+        return self.labeling_api
+
     @property
     def proposition_ids(self) -> tuple[str, ...]:
         """Return proposition identifiers in document order."""

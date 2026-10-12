@@ -16,7 +16,7 @@ import minigrid  # importing registers the MiniGrid and BabyAI gym ids
 import numpy as np
 import torch
 from gymnasium import spaces
-from gymnasium.wrappers import FrameStackObservation, GrayscaleObservation
+from gymnasium.wrappers import FrameStackObservation, GrayscaleObservation, ResizeObservation
 from minigrid.wrappers import ImgObsWrapper, RGBImgPartialObsWrapper
 from torch import Tensor, nn
 
@@ -93,14 +93,6 @@ def make_run_environment(CONFIG: Configuration) -> RunEnvironment:
     return replace(run, env=env)
 
 
-def minigrid_labeling_api() -> str:
-    """Return the API contract used in generated MiniGrid predicates."""
-    return (
-        "env.grid.get(x, y), env.agent_pos, env.carrying, env.width, env.height; "
-        "objects expose type, color, is_open, and is_locked"
-    )
-
-
 # ======================================================================================
 #                                   MINIGRID ADAPTER
 # ======================================================================================
@@ -150,8 +142,8 @@ def minigrid_environment(CONFIG: Configuration) -> RunEnvironment:
     if CONFIG.observation == "symbolic":
         return RunEnvironment(ImgObsWrapper(env), MiniGridCNN, terminated_with_reward)
     if CONFIG.observation == "pixels":
-        # 7 tiles x 12 px = 84 px, so no ResizeObservation (it needs cv2).
-        image = ImgObsWrapper(RGBImgPartialObsWrapper(env, tile_size=12))
+        # The authors' pipeline: 56 px render (7 tiles x 8 px), resized to 84 px with OpenCV.
+        image = ResizeObservation(ImgObsWrapper(RGBImgPartialObsWrapper(env)), (84, 84))
         frames = FrameStackObservation(GrayscaleObservation(image), 4)
         return RunEnvironment(frames, NatureCNN, terminated_with_reward)
     raise ValueError(f"Unknown MiniGrid observation {CONFIG.observation!r}; use symbolic or pixels")

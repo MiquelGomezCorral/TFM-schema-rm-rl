@@ -5,6 +5,10 @@ formally compiled Reward Machines, or complete ARM-FM bundles with labeling func
 descriptions, embeddings, and policy checkpoints. Compiler mode remains bounded to the
 supported clause language; baseline mode reconstructs the paper's direct RM generation.
 
+To run the full experiment on an environment (describe it, generate both RMs, train the no-RM,
+compiler-RM and paper-RM agents, test them on unseen maps and compare them), follow
+[docs/EXPERIMENTS.md](docs/EXPERIMENTS.md).
+
 ## Quick start
 
 On Linux or macOS, clone the repository and run the bootstrap script:
@@ -114,6 +118,61 @@ The `mona` executable must be on `PATH`. Compilation fails with a clear error wh
 is unavailable. System build tools and the dependencies listed by MONA may need to be
 installed first.
 
+## Optional: local embeddings (llama-server)
+
+Only needed for compiler runs with `--embeddings` or the web UI's **Local state
+embeddings** option. The app sends each state description to a local
+[llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server` running the
+`nomic-embed-text` model. Without that server the Embeddings stage fails with
+`Connection refused`.
+
+**1. Install llama-server.** Download a prebuilt binary from the
+[llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases), or build it. Drop
+`-DGGML_CUDA=ON` if you have no NVIDIA GPU:
+
+```bash
+git clone https://github.com/ggml-org/llama.cpp
+cd llama.cpp
+cmake -B build -DGGML_CUDA=ON
+cmake --build build --config Release -j
+ls build/bin/llama-server
+```
+
+**2. Get the model.** Pull it with [Ollama](https://ollama.com/download). The default
+`embedding_revision` in `app/src/config/config.py` is the hash of this exact file:
+
+```bash
+ollama pull nomic-embed-text
+```
+
+**3. Find the model path.** Ollama stores the model as a plain GGUF file, which
+llama-server can read directly. The `FROM` line gives its path:
+
+```bash
+ollama show nomic-embed-text --modelfile | grep '^FROM'
+# FROM /usr/share/ollama/.ollama/models/blobs/sha256-970aa74c...
+```
+
+**4. Fill in `.env`.** Use both paths and pick a port:
+
+```dotenv
+LLAMA_SERVER_PORT=8934
+LLAMA_SERVER_BIN=/path/to/llama.cpp/build/bin/llama-server
+LLAMA_SERVER_MODEL=/usr/share/ollama/.ollama/models/blobs/sha256-970aa74c...
+```
+
+**5. Start the server.** `python app/app.py` prints the exact command at startup, built
+from these values. Run it in a second terminal and keep it open while the app runs. The
+app calls `http://127.0.0.1:$LLAMA_SERVER_PORT/v1/embeddings`, so both always use the same
+port. To check it:
+
+```bash
+curl -s localhost:8934/v1/embeddings -H 'Content-Type: application/json' \
+  -d '{"model":"nomic-embed-text","input":"test"}' | head -c 100
+```
+
+Ollama only supplies the file. The app never calls Ollama's own server on port 11434.
+
 ## Environment Markdown
 
 Normal Markdown prose is allowed, but exactly one strict proposition section is
@@ -128,6 +187,10 @@ required. Every nonblank line in it must use this shape:
 Identifiers must match `^[a-z_][a-z0-9_]*$`, be unique, and cannot be `true` or
 `false`. Validation errors include the offending line. See
 `examples/multitaxi/environment.md` for the transition-based MultiTaxi propositions.
+
+Environments used for labeling or training must also have a `## Labeling API` section listing
+what the labeling code may read from the live environment; see
+[docs/EXPERIMENTS.md](docs/EXPERIMENTS.md#1-describe-the-environment).
 
 ## Generate a Reward Machine
 

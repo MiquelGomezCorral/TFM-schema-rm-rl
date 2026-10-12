@@ -86,7 +86,6 @@ def write_run_outputs(
     results: tuple[CompilationResult, ...],
     output_paths: tuple[Path, ...],
     CONFIG: Configuration,
-    labeling_api: str,
     progress: Progress,
 ) -> tuple[CompilationResult, ...]:
     """Check every destination, then write the RM files and each requested artifact."""
@@ -107,9 +106,7 @@ def write_run_outputs(
 
     save_results(results, output_paths, overwrite=CONFIG.overwrite)
     if CONFIG.labeling:
-        bundle_paths = _write_labeling_bundles(
-            results, output_paths, CONFIG, labeling_api, progress
-        )
+        bundle_paths = _write_labeling_bundles(results, output_paths, CONFIG, progress)
         results = tuple(
             replace(result, bundle_path=path)
             for result, path in zip(results, bundle_paths, strict=True)
@@ -209,12 +206,11 @@ def _write_labeling_bundles(
     results: tuple[CompilationResult, ...],
     output_paths: tuple[Path, ...],
     CONFIG: Configuration,
-    api_description: str,
     progress: Progress,
 ) -> tuple[Path, ...]:
     """Persist one reuse bundle per accepted task and return their directories."""
     written = []
-    bundles = generate_compiler_bundle(results, None, CONFIG, api_description=api_description)
+    bundles = generate_compiler_bundle(results, None, CONFIG)
     bundle_paths = _labeling_bundle_paths(CONFIG, output_paths)
     for result, bundle, bundle_path, output_path in zip(
         results, bundles, bundle_paths, output_paths, strict=True

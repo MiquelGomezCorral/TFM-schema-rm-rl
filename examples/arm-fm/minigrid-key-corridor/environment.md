@@ -27,6 +27,27 @@ layout, not hard-coded colors. The mission names only the target object. The mat
 key and the locked door share one color that is independent of the target's color.
 Exactly one door starts locked, and it guards the target's room.
 
+## Labeling API
+
+- `env.mission`: the mission string, for example `pick up the grey box`. Mission targets
+  come from it: do not assume a fixed color or object, match the designated one.
+- `env.agent_pos`: the agent position as `(x, y)`.
+- `env.agent_dir`: the facing direction as `0` right, `1` down, `2` left, `3` up.
+- `env.grid.get(x, y)`: the object at that cell, or `None` when the cell is empty. Grid
+  coordinates use `0 <= x < env.width` and `0 <= y < env.height`.
+- Object attributes: `type` (for example `key`, `door`, `box`, `ball`, `wall`, `goal`),
+  `color`, and `is_open` and `is_locked` on doors. Door openness and lock state come from
+  them.
+- `env.carrying`: the carried object, or `None`; it exposes `type` and `color`. Carry state
+  comes from it.
+- `env.width`, `env.height`: grid size.
+
+Object classes cannot be imported. To scan the grid, guard empty cells with
+`cell is not None` before reading an attribute. This expression checks whether any cell holds
+a given object type:
+
+    any(cell is not None and cell.type == "<type>" for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])
+
 ## Propositions
 - `key_found`: The agent has located the key matching the target room's locked door.
 - `has_matching_key`: The agent is currently carrying that matching key.

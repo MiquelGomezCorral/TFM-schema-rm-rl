@@ -24,7 +24,6 @@ from .artifacts import ArtifactBundle, BundleManifest
 from .runtime import load_labeling_functions
 
 MAX_ATTEMPTS = 3
-DEFAULT_API_DESCRIPTION = "The documented environment object passed as env."
 
 
 @dataclass
@@ -64,13 +63,12 @@ def generate_reward_machine(
     environment: EnvironmentDescription,
     engine: object,
     *,
-    api_description: str = DEFAULT_API_DESCRIPTION,
     max_attempts: int = MAX_ATTEMPTS,
 ) -> tuple[PaperRewardMachine | None, str, list[StageAttempt]]:
     """Generate and refine one paper Reward Machine, keeping the last parseable candidate."""
     if not task.strip():
         raise ValueError("Task must be nonempty")
-    api_description = _declared_api(environment, api_description)
+    labeling_api = environment.require_labeling_api()
     attempts: list[StageAttempt] = []
     machine: PaperRewardMachine | None = None
     machine_text = ""
@@ -83,7 +81,7 @@ def generate_reward_machine(
                 "rm_generator",
                 environment=environment.markdown,
                 task=task,
-                api=api_description,
+                api=labeling_api,
                 history="\n\n".join(rm_history),
             )
             machine_text = _extract_artifact(candidate)
@@ -132,14 +130,12 @@ def generate_baseline_bundle(
     environment: EnvironmentDescription,
     engine: object,
     CONFIG: Configuration,
-    *,
-    api_description: str = DEFAULT_API_DESCRIPTION,
 ) -> GenerationResult:
     """Generate RM, labeling code, and state descriptions with bounded refinement.
 
     A failed run persists its inspectable bundle to ``CONFIG.bundle`` before it raises.
     """
-    run = _Generation(task, environment, engine, api_description)
+    run = _Generation(task, environment, engine)
     run.generate_reward_machine()
     try:
         run.require_accepted_reward_machine()
@@ -157,17 +153,11 @@ def generate_baseline_bundle(
 class _Generation:
     """One generation run: the accepted artifacts so far and every attempt that produced them."""
 
-    def __init__(
-        self,
-        task: str,
-        environment: EnvironmentDescription,
-        engine: object,
-        api_description: str,
-    ) -> None:
+    def __init__(self, task: str, environment: EnvironmentDescription, engine: object) -> None:
         self.task = task
         self.environment = environment
         self.engine = engine
-        self.api_description = _declared_api(environment, api_description)
+        self.labeling_api = environment.require_labeling_api()
         self.attempts: list[StageAttempt] = []
         self.machine: PaperRewardMachine | None = None
         self.machine_text = ""
@@ -175,11 +165,9 @@ class _Generation:
         self.descriptions: dict[str, str] = {}
 
     @classmethod
-    def for_compiler_result(
-        cls, result: CompilationResult, engine: object, api_description: str
-    ) -> _Generation:
+    def for_compiler_result(cls, result: CompilationResult, engine: object) -> _Generation:
         """Start from an accepted compiler machine whose labeling or descriptions are missing."""
-        run = cls(result.proposal.task, result.environment, engine, api_description)
+        run = cls(result.proposal.task, result.environment, engine)
         run.machine = compiler_machine_to_paper(
             result.reward_machine, result.environment.proposition_ids
         )
@@ -193,7 +181,6 @@ class _Generation:
             self.task,
             self.environment,
             self.engine,
-            api_description=self.api_description,
         )
 
     def require_accepted_reward_machine(self) -> None:
@@ -209,11 +196,10 @@ class _Generation:
             lambda history: _request_text(
                 self.engine,
                 "labeling_generator",
-                labeling_api=self.environment.labeling_api,
                 environment=self.environment.markdown,
                 task=self.task,
                 candidate=self.machine_text,
-                api=self.api_description,
+                api=self.labeling_api,
                 history=history,
             ),
             lambda source: _critic(
@@ -259,7 +245,7 @@ class _Generation:
             provenance={"status": "reconstructed", "generator": "arm-fm"},
             generation={
                 "max_attempts": MAX_ATTEMPTS,
-                "labeling_api": self.api_description,
+                "labeling_api": self.labeling_api,
                 **_attempt_metadata(self.attempts, {"reward_machine", "labeling", "descriptions"}),
             },
             validation={
@@ -275,7 +261,7 @@ class _Generation:
                 "task": self.task.strip(),
                 "environment_markdown": self.environment.markdown,
             },
-            api_definitions={"labeling": self.api_description},
+            api_definitions={"labeling": self.labeling_api},
             errors=[item.error for item in self.attempts if item.error],
             effective_settings={
                 "provider": getattr(self.engine, "provider_name", None),
@@ -341,7 +327,6 @@ def adapt_compilation_result(
             "task": result.proposal.task,
             "environment_markdown": getattr(result.environment, "markdown", ""),
         },
-        api_definitions={"labeling": DEFAULT_API_DESCRIPTION},
         effective_settings={"mode": "compiler"},
         stage_status={
             "reward_machine": "complete",
@@ -367,19 +352,17 @@ def pair_state_descriptions(
 def build_compiler_bundle(
     result: CompilationResult,
     *,
-    api_description: str,
     labeling_source: str = "",
     state_descriptions: Mapping[str, str] | None = None,
     attempts: Sequence[StageAttempt] = (),
 ) -> ArtifactBundle:
     """Finalize one compiler bundle with its artifacts, attempts, and API provenance."""
-    api_description = _declared_api(result.environment, api_description)
     bundle = adapt_compilation_result(
         result,
         labeling_source=labeling_source,
         state_descriptions=state_descriptions,
     )
-    _finish_compiler_bundle(bundle, result, attempts, api_description)
+    _finish_compiler_bundle(bundle, result, attempts)
     return bundle
 
 
@@ -420,8 +403,6 @@ def generate_compiler_bundle(
     results: Sequence[CompilationResult],
     engine: object | None,
     CONFIG: Configuration,
-    *,
-    api_description: str = DEFAULT_API_DESCRIPTION,
 ) -> tuple[ArtifactBundle, ...]:
     """Adapt accepted compiler results; compiler invocation belongs to scripts.
 
@@ -431,20 +412,16 @@ def generate_compiler_bundle(
     """
     if not results:
         raise RuntimeError("Compiler generation returned no accepted in-memory result")
-    return tuple(_compiler_bundle(result, engine, CONFIG, api_description) for result in results)
+    return tuple(_compiler_bundle(result, engine, CONFIG) for result in results)
 
 
 def _compiler_bundle(
-    result: CompilationResult,
-    engine: object | None,
-    CONFIG: Configuration,
-    api_description: str,
+    result: CompilationResult, engine: object | None, CONFIG: Configuration
 ) -> ArtifactBundle:
     descriptions = pair_state_descriptions(result, result.state_descriptions)
     if result.labeling_source and descriptions:
         bundle = build_compiler_bundle(
             result,
-            api_description=api_description,
             labeling_source=result.labeling_source,
             state_descriptions=descriptions,
             attempts=[StageAttempt(**item) for item in result.labeling_attempts],
@@ -457,24 +434,21 @@ def _compiler_bundle(
             "Compiler bundle reuse requires accepted labeling and state descriptions; "
             "no engine was supplied to regenerate them"
         )
-    run = _Generation.for_compiler_result(result, engine, api_description)
+    run = _Generation.for_compiler_result(result, engine)
     try:
         run.generate_labeling()
         run.generate_descriptions()
     except Exception as error:
-        bundle = _bundle_from_run(result, run, api_description)
+        bundle = _bundle_from_run(result, run)
         bundle.manifest.errors.append(str(error))
         _persist_failure(bundle, CONFIG)
         raise
-    return _bundle_from_run(result, run, api_description)
+    return _bundle_from_run(result, run)
 
 
-def _bundle_from_run(
-    result: CompilationResult, run: _Generation, api_description: str
-) -> ArtifactBundle:
+def _bundle_from_run(result: CompilationResult, run: _Generation) -> ArtifactBundle:
     return build_compiler_bundle(
         result,
-        api_description=api_description,
         labeling_source=run.labeling_source,
         state_descriptions=run.descriptions,
         attempts=run.attempts,
@@ -482,11 +456,9 @@ def _bundle_from_run(
 
 
 def _finish_compiler_bundle(
-    bundle: ArtifactBundle,
-    result: CompilationResult,
-    attempts: Sequence[StageAttempt],
-    api_description: str,
+    bundle: ArtifactBundle, result: CompilationResult, attempts: Sequence[StageAttempt]
 ) -> None:
+    labeling_api = result.environment.require_labeling_api()
     compiler_attempt = {
         "stage": "compiler",
         "attempt": 1,
@@ -495,10 +467,10 @@ def _finish_compiler_bundle(
         "feedback": "",
         "error": "",
     }
-    bundle.manifest.generation["labeling_api"] = api_description
+    bundle.manifest.generation["labeling_api"] = labeling_api
     recorded_stages = {item.stage for item in attempts} or {"labeling", "descriptions"}
     bundle.manifest.generation.update(_attempt_metadata(attempts, recorded_stages))
-    bundle.manifest.api_definitions["labeling"] = api_description
+    bundle.manifest.api_definitions["labeling"] = labeling_api
     bundle.attempts = [compiler_attempt] + [item.__dict__ for item in attempts]
     bundle.raw_responses = [
         {
@@ -530,7 +502,6 @@ def generate_compiler_labeling(
     compiled: CompilationResult,
     engine: object,
     critic_engine: object | None,
-    api_description: str,
 ) -> tuple[str, list[StageAttempt]]:
     """Generate labeling source for one accepted compiler result, with every attempt.
 
@@ -539,7 +510,7 @@ def generate_compiler_labeling(
     review. AST validation always runs. Raises :class:`LabelingError` when no candidate is
     accepted.
     """
-    api_description = _declared_api(compiled.environment, api_description)
+    labeling_api = compiled.environment.require_labeling_api()
     attempts: list[StageAttempt] = []
     context = {
         "clauses_json": clauses_json(compiled),
@@ -556,11 +527,10 @@ def generate_compiler_labeling(
         return _compiler_request(
             engine,
             "labeling_generator",
-            labeling_api=compiled.environment.labeling_api,
             environment_markdown=compiled.environment.markdown,
             task=task,
             reward_machine=compiled.text,
-            api=api_description,
+            api=labeling_api,
             history=history,
             **context,
         )
@@ -571,7 +541,7 @@ def generate_compiler_labeling(
         verdict = critic_engine.review_labeling(
             task=task,
             candidate_rm=compiled.text,
-            api=api_description,
+            api=labeling_api,
             labeling=source,
             **context,
         )
@@ -669,32 +639,19 @@ def descriptions_json(compiled: CompilationResult) -> str:
 # ======================================================================================
 
 
-def _declared_api(environment: EnvironmentDescription, api_description: str) -> str:
-    """The environment's declared labeling API; the caller's text applies when it declares none."""
-    return environment.labeling_api or api_description
-
-
-def _request_text(
-    engine: object, role: str, *, labeling_api: str | None = None, **values: str
-) -> str:
+def _request_text(engine: object, role: str, **values: str) -> str:
     request = getattr(engine, "request_text", None)
     if request is None:
         raise RuntimeError("ARM-FM generation requires an engine with request_text")
-    system = read_prompt("arm_fm", role, labeling_api=labeling_api)
-    return str(request(system, render_prompt("arm_fm", role, labeling_api=labeling_api, **values)))
+    return str(request(read_prompt("arm_fm", role), render_prompt("arm_fm", role, **values)))
 
 
-def _compiler_request(
-    engine: object, role: str, *, labeling_api: str | None = None, **values: str
-) -> str:
+def _compiler_request(engine: object, role: str, **values: str) -> str:
     """Render one compiler labeling prompt through the engine's text request path."""
     request = getattr(engine, "request_text", None)
     if request is None:
         raise RuntimeError("Compiler labeling generation requires an engine with request_text")
-    system = read_prompt("compiler", role, labeling_api=labeling_api)
-    return str(
-        request(system, render_prompt("compiler", role, labeling_api=labeling_api, **values))
-    )
+    return str(request(read_prompt("compiler", role), render_prompt("compiler", role, **values)))
 
 
 def _critic(engine: object, role: str, **values: str) -> tuple[bool, str, str]:

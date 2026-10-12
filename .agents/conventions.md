@@ -13,6 +13,8 @@
 - Each declaration is `- `<id>`: <description>` on one line.
 - Proposition IDs match `^[a-z_][a-z0-9_]*$`, are unique, and cannot be `true` or `false`.
 - Reject malformed declarations instead of asking the LLM to infer identifiers.
+- An environment used for labeling or training also needs a `## Labeling API` section: the only
+  runtime surface the labeling generators see (`EnvironmentDescription.require_labeling_api`).
 
 ## Reward Machines
 

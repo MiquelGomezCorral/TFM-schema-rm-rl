@@ -12,8 +12,7 @@ from unittest.mock import Mock, patch
 from nl2ltl.declare.declare import Existence
 from pylogics.syntax.ltl import Atomic
 
-from scripts.generate_rm import EMBEDDING_INSTRUCTION, generate_rm, resolve_labeling_api
-from src.arm_fm import minigrid_labeling_api
+from scripts.generate_rm import EMBEDDING_INSTRUCTION, generate_rm
 from src.compiler import CompilationResult, Proposal
 from src.compiler.reward_machine import RewardMachineStructure
 from src.config import Configuration, PriorityLevel
@@ -24,7 +23,7 @@ from src.engines import (
     RetryableEngineError,
 )
 from src.engines.structured import ProposalSelection, parse_critic
-from src.models import EnvironmentDescription
+from src.models import EnvironmentDescription, EnvironmentValidationError
 from src.utils import (
     GenerationHooks,
     PipelineStep,
@@ -36,7 +35,9 @@ from src.utils import (
 from src.utils.generation_pipeline import derive_output_paths
 
 ENV = EnvironmentDescription.from_markdown(
-    "# Demo\n## Propositions\n- `done`: Finished", source="demo.md"
+    "# Demo\n## Propositions\n- `done`: Finished\n"
+    "## Labeling API\n\n- `env.grid.get(x, y)`: the object at a cell\n",
+    source="demo.md",
 )
 SELECTION = ProposalSelection(
     "finish done",
@@ -770,14 +771,14 @@ class OrchestrationTests(unittest.TestCase):
             context = contextual["settings"]["context"]
             self.assertEqual(contextual["effective_texts"]["u0"], f"{context}\ndescription u0")
 
-    def test_labeling_api_follows_the_environment_section(self):
-        declared = EnvironmentDescription.from_markdown(
-            "# Demo\n## Propositions\n- `done`: Finished\n"
-            "## Labeling API\n\n- `env.inventory`: item counts\n"
+    def test_labeling_needs_the_environment_api_section(self):
+        undeclared = EnvironmentDescription.from_markdown(
+            "# Demo\n## Propositions\n- `done`: Finished", source="demo.md"
         )
 
-        self.assertEqual(resolve_labeling_api(ENV), minigrid_labeling_api())
-        self.assertEqual(resolve_labeling_api(declared), "- `env.inventory`: item counts")
+        self.assertEqual(ENV.require_labeling_api(), "- `env.grid.get(x, y)`: the object at a cell")
+        with self.assertRaisesRegex(EnvironmentValidationError, "## Labeling API"):
+            undeclared.require_labeling_api()
 
     def test_rm_rejection_tags_the_next_candidate_afresh(self):
         self.critic.task_results = [CriticResult(True, "ok")] * 2

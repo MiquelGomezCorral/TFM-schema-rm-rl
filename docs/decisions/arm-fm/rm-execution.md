@@ -40,6 +40,12 @@ without changing how labels, transitions, and rewards are interpreted.
   layout. Self-loops appear on the right with horizontal labels below them; users
   may still pan, zoom, drag states, inspect transitions, and export their placement.
 
+- The authors' released runtime chains every triggered event inside one step. Paper-reproduction
+  runs keep our one-update rule. The authors apply `else` only when no event is true and none of
+  their four released RMs rewards `else`; their stages need distinct actions, so the difference
+  does not change those RMs (only UnlockToUnlock u4 can see two events at once, and both
+  runtimes take the first listed one).
+
 ## Protected invariants
 
 - Simultaneous true propositions never cause multiple RM updates in one environment step.
@@ -90,3 +96,5 @@ without expanding the machine or adding a guard-coverage calculation.
   overlap handling with warnings, and exactly one RM update per environment step.
 - 2026-09-21: Kept published-style `else` rows for baseline output while making
   compiler output's implicit self-loop and zero default reward explicit.
+- 2026-10-12: Recorded that paper-reproduction runs keep one update per step although the
+  authors' runtime chains events.

@@ -116,6 +116,7 @@ class PromptTests(unittest.TestCase):
         self.assertTrue(read_prompt("compiler", "labeling_reviewer"))
         for rendered in (generator, reviewer):
             self.assertNotIn("${", rendered)
+            self.assertIn(values["api"], rendered)
             self.assertIn("REWARD_MACHINE", rendered)
             self.assertIn('["u0", "u1"]', rendered)
             self.assertIn('{"done": "Finished"}', rendered)
@@ -139,7 +140,6 @@ class PromptTests(unittest.TestCase):
         )
         self.assertIn("approved `any`/`all` comprehensions for scans", prompt)
         self.assertIn("Never call a sibling predicate or `.get` on", prompt)
-        self.assertIn("for cell in [env.grid.get(x, y)]", prompt)
         self.assertIn("exactly one `return` statement and no other statements", prompt)
         self.assertIn("def event_name(env): return", prompt)
 

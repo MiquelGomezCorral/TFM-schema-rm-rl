@@ -43,10 +43,11 @@ import random
 import shutil
 import subprocess
 import time
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import gymnasium as gym
 import numpy as np
@@ -74,6 +75,8 @@ POSITIVE_SETTINGS = (
 )
 TRAIN_LOG_EVERY_UPDATES = 100
 SUCCESS_LABELS = {"env": "environment success", "rm": "RM acceptance"}
+# A run's method by the ``rm_mode`` its bundle manifest records.
+METHOD_BY_RM_MODE = {"compiler": "compiler", "arm-fm": "paper"}
 
 # The Configuration fields recorded in a run's config.yaml.
 RUN_SETTINGS = (
@@ -547,7 +550,7 @@ def evaluate(
     training stream.
     """
     rng = random.Random(CONFIG.seed)
-    resets = _evaluation_resets(CONFIG, run, episode_count)
+    resets = evaluation_resets(CONFIG, run, episode_count)
     episodes = [
         _evaluation_episode(run, q_network, CONFIG.eval_epsilon, reset, rng) for reset in resets
     ]
@@ -561,7 +564,7 @@ def evaluate(
     return row
 
 
-def _evaluation_resets(
+def evaluation_resets(
     CONFIG: Configuration, run: RunEnvironment, episode_count: int
 ) -> list[dict[str, object]]:
     """The ``reset`` arguments of every evaluation episode: its seed, and its task if any."""
@@ -768,6 +771,19 @@ def _success_modes(CONFIG: Configuration) -> dict[str, str]:
     if not CONFIG.task_bundles:
         return {"": CONFIG.success}
     return {task_name(entry): entry.get("success", CONFIG.success) for entry in CONFIG.task_bundles}
+
+
+def run_method(settings: Mapping[str, Any]) -> str:
+    """Name a run's method from its saved ``config.yaml`` settings.
+
+    Returns ``sparse`` without a Reward Machine, else ``compiler`` or ``paper`` by the
+    ``rm_mode`` in the manifest of the run's bundle (a multi-task run reads its first task's).
+    """
+    if not settings["use_rm"]:
+        return "sparse"
+    bundle = settings["bundle"] or settings["task_bundles"][0]["bundle"]
+    manifest = json.loads((Path(bundle) / "manifest.json").read_text(encoding="utf-8"))
+    return METHOD_BY_RM_MODE[manifest["rm_mode"]]
 
 
 def _plain(value: object) -> object:

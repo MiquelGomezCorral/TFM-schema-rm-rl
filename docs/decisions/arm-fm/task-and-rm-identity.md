@@ -105,7 +105,7 @@ tasks, while keeping the generator and critic responsibilities stable.
 - Both modes follow [RM execution](rm-execution.md) and produce separate task bundles for
   shared-policy training and evaluation.
 - Compiler mode optionally generates labeling functions after RM acceptance, for any
-  environment whose `environment.md` declares a `## Labeling API` (MiniGrid without one).
+  environment whose `environment.md` declares a `## Labeling API`, which labeling requires.
   The expert receives the environment, task, validated clauses, accepted RM and node
   descriptions, declared propositions, explicit runtime API, and bounded feedback.
   It uses the generator engine; its associated critic uses the critic engine when
@@ -128,7 +128,7 @@ tasks, while keeping the generator and critic responsibilities stable.
   the RM critic necessarily reviews the already compiled candidate.
 - Compiler presentation and critic improvements must preserve ARM-FM baseline prompts
   and published evidence. A declared `## Labeling API` replaces only the marked labeling-API
-  regions and `${api}` in both modes; without one, every prompt renders byte-identically.
+  regions and `${api}` in both modes; it is the only labeling surface (no MiniGrid default).
   Shared format adapters change representation without redesigning the compiled machine.
 - Critics must follow declared finals, state memory, fallback rules, and one reward
   per step. They must not invent states, transitions, or extra task requirements to
@@ -234,3 +234,6 @@ through their inputs and prompts, while both challenge the same generator.
   still requires every enabled critic to accept the same attempt before finalizing.
 - 2026-10-11: Labeling generation follows the environment's declared `## Labeling API` in both
   modes; MiniGrid prompts stay byte-identical when no section is declared.
+- 2026-10-12: Labeling generation requires a declared `## Labeling API` (user decision); plain
+  RM compilation without labeling does not. The MiniGrid default surface and MiniGrid-only prompt
+  regions were removed, so MiniGrid prompts changed; earlier MiniGrid bundles stay usable for training.

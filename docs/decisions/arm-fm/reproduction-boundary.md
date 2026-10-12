@@ -15,9 +15,28 @@ semantic rather than byte-for-byte.
 - An experiment task bundle has one paper-layout RM artifact, `reward_machine.txt`.
   Compiler generation passes its accepted numeric RM in memory instead of writing a
   second `.rm` file; both modes use the same downstream embedding and training flow.
-- An environment's `environment.md` may declare a `## Labeling API`; it is the only labeling
-  surface given to generators. Without it the MiniGrid surface applies. Run configs pass
+- An environment used for labeling or training must declare a `## Labeling API` in its
+  `environment.md`; it is the only labeling surface given to generators, and labeling and
+  training commands reject an environment without one. There is no built-in MiniGrid fallback:
+  MiniGrid files declare their surface like any other. Run configs pass
   `env_kwargs` to `gym.make`, and custom environments register in `app/src/arm_fm/custom_envs/`.
+- Paper reproduction has its own prompt profile (`generate-larm --mode paper`). It reads the
+  authors' prompt texts at run time from a local clone of their repository, named per
+  environment in `paper-sources.json`; their repository has no license, so none of their text
+  or artifacts is committed. In this profile only, the generator names the events (the
+  vocabulary comes from the generated RM, not from `environment.md`), critics answer with the
+  authors' verdict strings, and labeling has one function per RM event. Generator and critic are
+  the project's pair (deepseek-v4.1-flash, glm-5.3-flash). Reconstructed and recorded in each
+  manifest: the transcript framing of later rounds, the critic's candidate framing, the state
+  descriptions, the KeyCorridor prompt, and final states inferred as absorbing states. Each draw
+  must pass gates (RM parses, labeling loads, a scripted solve reaches the last RM state on several
+  layouts) before it is trained.
+- The authors' released bundles are imported, not copied (`import-paper-bundle`), to check our
+  trainer against their artifacts. The labeling loader accepts their read-only style: loops with
+  bounded `range`, `getattr`/`hasattr` on public names, non-recursive sibling predicate calls and
+  helper functions. Method calls on the environment are an allowlist of read methods.
+- The MiniGrid pixel pipeline is the authors': tile 8, `ResizeObservation` to 84x84 (OpenCV),
+  grayscale, 4 stacked frames.
 - Learners share the RM wrapper: DQN for MiniGrid/BabyAI, PPO (CleanRL `ppo_atari`) for
   Craftium, selected by the run config's `algorithm`.
 - One run may train on several task bundles (`task_bundles`), one drawn per episode; the policy
@@ -51,7 +70,7 @@ semantic rather than byte-for-byte.
   the CLI.
 - Environment specifics (observation pipeline, encoder, success rule) live in per-family
   adapters; the DQN loop is environment-agnostic for discrete actions.
-- Paper-RM training reuses the compiler bundle's labeling and the shared local embedding
+- Paper-RM training in the compiler comparison reuses the compiler bundle's labeling and the shared local embedding
   endpoint, so comparisons isolate RM generation.
 - Baseline bundles are generated with one model for every role (the existing baseline path),
   recorded in the manifest.
@@ -155,3 +174,8 @@ specifics out of the learner so new environments need no loop changes.
   custom-environment registration package.
 - 2026-10-11: Added PPO for Craftium, multi-task training over several bundles, and RM-judged
   success for missions the environment cannot judge.
+- 2026-10-12: `## Labeling API` became mandatory for labeling and training and the built-in
+  MiniGrid surface was removed (user decision: no backward compatibility, so MiniGrid prompts
+  changed). Experiment guide: `docs/EXPERIMENTS.md`.
+- 2026-10-12: Added the paper prompt profile, released-bundle import, paper-style labeling
+  and the authors' pixel pipeline for validating the reproduction against the paper's DQN results.

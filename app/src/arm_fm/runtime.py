@@ -40,24 +40,14 @@ _ALLOWED_LABELING_BUILTINS = {
     "sum",
     "tuple",
 }
-_MUTATING_ENV_METHODS = {
-    "add",
-    "append",
-    "clear",
-    "close",
-    "discard",
-    "extend",
-    "insert",
-    "pop",
-    "remove",
-    "reset",
-    "reverse",
-    "setdefault",
-    "sort",
-    "step",
-    "update",
-    "write",
-}
+# Allowed only with a constant public attribute name, so they read exactly what `.name` reads.
+_ATTRIBUTE_BUILTINS = {"getattr", "hasattr"}
+# The only methods labeling code may call, always on a chain that starts at `env`: the grid and
+# observation reads and the string split of the mission. Everything else (`env.grid.set`,
+# `env.place_obj`, `env.step`, ...) can change the live environment.
+_READ_METHODS = {"gen_obs", "get", "split"}
+# Longest sequence a predicate may iterate with `range`; MiniGrid grids are at most a few dozen wide.
+MAX_RANGE = 1_000
 
 
 @dataclass(frozen=True)
@@ -245,17 +235,54 @@ def load_labeling_functions(
     except SyntaxError as error:
         raise RuntimeValidationError(f"Generated labeling code is invalid: {error}") from error
 
+    # Helper functions beyond the vocabulary are loaded so predicates can call them, but only
+    # vocabulary names are returned.
     functions = _predicate_definitions(tree)
     _check_vocabulary(functions, expected)
+    siblings = frozenset(functions)
     for name, node in functions.items():
         _check_signature(name, node)
-        _validate_labeling_ast(node)
+        _validate_labeling_ast(node, siblings)
+    _reject_recursion(functions)
 
+    allowed_builtins = _ALLOWED_LABELING_BUILTINS | _ATTRIBUTE_BUILTINS
     namespace: dict[str, object] = {
-        "__builtins__": {name: getattr(builtins, name) for name in _ALLOWED_LABELING_BUILTINS},
+        "__builtins__": {
+            **{name: getattr(builtins, name) for name in allowed_builtins},
+            "range": _bounded_range,
+        },
     }
     exec(compile(tree, "labeling.py", "exec"), namespace, namespace)  # noqa: S102  approved: AST allow-listed labeling code
     return {name: namespace[name] for name in expected if callable(namespace.get(name))}  # type: ignore[return-value]
+
+
+def _bounded_range(*arguments: int) -> range:
+    """``range`` for labeling code, which may not iterate more than ``MAX_RANGE`` values."""
+    result = range(*arguments)
+    try:
+        length = len(result)
+    except OverflowError:
+        length = MAX_RANGE + 1
+    if length > MAX_RANGE:
+        raise RuntimeValidationError(
+            f"Labeling code may not range over more than {MAX_RANGE} values"
+        )
+    return result
+
+
+def _check_range_arguments(call: ast.Call) -> None:
+    """Reject a constant ``range`` bound at load time; other bounds are checked when it runs."""
+    for argument in call.args:
+        if isinstance(argument, ast.UnaryOp) and isinstance(argument.op, ast.USub | ast.UAdd):
+            argument = argument.operand
+        if (
+            isinstance(argument, ast.Constant)
+            and isinstance(argument.value, int)
+            and abs(argument.value) > MAX_RANGE
+        ):
+            raise RuntimeValidationError(
+                f"Labeling code may not range over more than {MAX_RANGE} values"
+            )
 
 
 def _predicate_definitions(tree: ast.Module) -> dict[str, ast.FunctionDef]:
@@ -285,16 +312,40 @@ def _predicate_definitions(tree: ast.Module) -> dict[str, ast.FunctionDef]:
 
 def _check_vocabulary(functions: Mapping[str, ast.FunctionDef], expected: tuple[str, ...]) -> None:
     missing = set(expected) - set(functions)
-    extra = set(functions) - set(expected)
-    if missing or extra:
-        details = []
-        if missing:
-            details.append("missing " + ", ".join(sorted(missing)))
-        if extra:
-            details.append("extra " + ", ".join(sorted(extra)))
+    if missing:
         raise RuntimeValidationError(
-            "Labeling functions do not match proposition vocabulary: " + "; ".join(details)
+            "Labeling functions do not cover the proposition vocabulary: missing "
+            + ", ".join(sorted(missing))
         )
+
+
+def _reject_recursion(functions: Mapping[str, ast.FunctionDef]) -> None:
+    """Reject a function that reaches itself through calls to sibling functions."""
+    callees = {
+        name: {
+            call.func.id
+            for call in ast.walk(node)
+            if isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Name)
+            and call.func.id in functions
+        }
+        for name, node in functions.items()
+    }
+    finished: set[str] = set()
+
+    def visit(name: str, path: tuple[str, ...]) -> None:
+        if name in path:
+            raise RuntimeValidationError(
+                f"Labeling function {name!r} calls itself, directly or through other functions"
+            )
+        if name in finished:
+            return
+        for callee in callees[name]:
+            visit(callee, (*path, name))
+        finished.add(name)
+
+    for name in functions:
+        visit(name, ())
 
 
 def _check_signature(name: str, node: ast.FunctionDef) -> None:
@@ -317,13 +368,15 @@ def _check_signature(name: str, node: ast.FunctionDef) -> None:
 class _LabelingSafetyVisitor(ast.NodeVisitor):
     """Reject generated predicate syntax outside the read-only labeling contract."""
 
-    def __init__(self) -> None:
+    def __init__(self, siblings: frozenset[str]) -> None:
+        self._siblings = siblings
         self._locals: dict[str, bool] = {}
 
     def visit_Name(self, node: ast.Name) -> None:
         if isinstance(node.ctx, ast.Load) and node.id not in {
             "env",
             *_ALLOWED_LABELING_BUILTINS,
+            *self._siblings,
             *self._locals,
         }:
             raise RuntimeValidationError(f"Labeling code references unknown name {node.id!r}")
@@ -343,8 +396,7 @@ class _LabelingSafetyVisitor(ast.NodeVisitor):
         if isinstance(node, ast.Call):
             return (
                 isinstance(node.func, ast.Attribute)
-                and not node.func.attr.startswith("_")
-                and node.func.attr not in _MUTATING_ENV_METHODS
+                and node.func.attr in _READ_METHODS
                 and self._is_env_derived(node.func.value)
             )
         if isinstance(node, ast.Subscript):
@@ -361,36 +413,69 @@ class _LabelingSafetyVisitor(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> None:
         if isinstance(node.func, ast.Name):
-            if node.func.id not in _ALLOWED_LABELING_BUILTINS:
+            if node.func.id in _ATTRIBUTE_BUILTINS:
+                self._visit_attribute_builtin(node)
+                return
+            if node.func.id not in {*_ALLOWED_LABELING_BUILTINS, *self._siblings}:
                 raise RuntimeValidationError(f"Labeling code may not call {node.func.id!r}")
+            if node.func.id == "range":
+                _check_range_arguments(node)
         elif isinstance(node.func, ast.Attribute):
-            if _attribute_root(node.func) != "env" or node.func.attr.startswith("_"):
+            if _attribute_root(node.func) != "env" or node.func.attr not in _READ_METHODS:
                 raise RuntimeValidationError(
-                    "Labeling code may only call documented environment methods"
-                )
-            if node.func.attr in _MUTATING_ENV_METHODS:
-                raise RuntimeValidationError(
-                    f"Labeling code may not call mutating method {node.func.attr!r}"
+                    "Labeling code may only call the read methods "
+                    + ", ".join(sorted(_READ_METHODS))
+                    + " on the environment"
                 )
         else:
             raise RuntimeValidationError(
                 "Labeling code may only call approved built-ins or environment methods"
             )
+        # `key=` is the only way to hand a function to an allowed built-in, which would call it.
+        if any(keyword.arg == "key" for keyword in node.keywords):
+            raise RuntimeValidationError("Labeling code may not pass a key function")
         self.generic_visit(node)
+
+    def _visit_attribute_builtin(self, node: ast.Call) -> None:
+        """Allow ``getattr(x, "public"[, default])`` and ``hasattr(x, "public")`` on env state."""
+        name = node.func.id
+        expected_args = (2, 3) if name == "getattr" else (2,)
+        attribute = node.args[1] if len(node.args) > 1 else None
+        if (
+            node.keywords
+            or len(node.args) not in expected_args
+            or not (isinstance(attribute, ast.Constant) and isinstance(attribute.value, str))
+            or attribute.value.startswith("_")
+            or not self._is_env_derived(node.args[0])
+        ):
+            raise RuntimeValidationError(
+                f"Labeling code may only call {name}() on environment state "
+                "with a constant public attribute name"
+            )
+        for argument in (node.args[0], *node.args[2:]):
+            self.visit(argument)
 
     def visit_Assign(self, node: ast.Assign) -> None:
         if len(node.targets) != 1:
             raise RuntimeValidationError("Labeling predicates may only assign fresh local names")
         target = node.targets[0]
         names = self._assignment_names(target)
-        if any(
-            name in {"env", "previous_valuation", *_ALLOWED_LABELING_BUILTINS} for name in names
-        ):
-            raise RuntimeValidationError("Labeling predicates may not rebind environment state")
+        self._reject_reserved_names(names)
         if any(name in self._locals for name in names):
             raise RuntimeValidationError("Labeling predicates may only assign fresh local names")
         self.visit(node.value)
         self._collect_target_names(target, self._is_env_derived(node.value))
+
+    def _reject_reserved_names(self, names: tuple[str, ...]) -> None:
+        reserved = {
+            "env",
+            "previous_valuation",
+            *_ALLOWED_LABELING_BUILTINS,
+            *_ATTRIBUTE_BUILTINS,
+            *self._siblings,
+        }
+        if any(name in reserved for name in names):
+            raise RuntimeValidationError("Labeling predicates may not rebind environment state")
 
     def _assignment_names(self, node: ast.AST) -> tuple[str, ...]:
         if isinstance(node, ast.Name):
@@ -404,16 +489,18 @@ class _LabelingSafetyVisitor(ast.NodeVisitor):
             return names
         raise RuntimeValidationError("Labeling predicates may only assign fresh local names")
 
-    visit_AnnAssign = visit_Assign
-    visit_AugAssign = visit_Assign
-    visit_Delete = visit_Assign
-    visit_NamedExpr = visit_Assign
+    def _reject_rebinding(self, _node: ast.AST) -> None:
+        raise RuntimeValidationError("Labeling predicates may only assign fresh local names")
+
+    visit_AnnAssign = _reject_rebinding
+    visit_AugAssign = _reject_rebinding
+    visit_Delete = _reject_rebinding
+    visit_NamedExpr = _reject_rebinding
 
     def _reject_control_flow(self, _node: ast.AST) -> None:
         raise RuntimeValidationError("Labeling predicates may only read environment state")
 
     visit_ClassDef = _reject_control_flow
-    visit_For = _reject_control_flow
     visit_While = _reject_control_flow
     visit_With = _reject_control_flow
     visit_AsyncWith = _reject_control_flow
@@ -425,6 +512,16 @@ class _LabelingSafetyVisitor(ast.NodeVisitor):
     visit_Match = _reject_control_flow
     visit_Global = _reject_control_flow
     visit_Nonlocal = _reject_control_flow
+
+    def visit_For(self, node: ast.For) -> None:
+        """Allow read-only scans; the loop target is a fresh local, never `env` or a builtin."""
+        if node.orelse:
+            raise RuntimeValidationError("Labeling loops may not have an else branch")
+        self._reject_reserved_names(self._assignment_names(node.target))
+        self.visit(node.iter)
+        self._collect_target_names(node.target, self._is_env_derived(node.iter))
+        for statement in node.body:
+            self.visit(statement)
 
     def visit_FunctionDef(self, _node: ast.FunctionDef) -> None:
         raise RuntimeValidationError("Labeling predicates may not define nested functions")
@@ -480,8 +577,8 @@ def _attribute_root(node: ast.Attribute) -> str | None:
     return value.id if isinstance(value, ast.Name) else None
 
 
-def _validate_labeling_ast(function: ast.FunctionDef) -> None:
-    visitor = _LabelingSafetyVisitor()
+def _validate_labeling_ast(function: ast.FunctionDef, siblings: frozenset[str]) -> None:
+    visitor = _LabelingSafetyVisitor(siblings)
     for statement in function.body:
         if (
             isinstance(statement, ast.Expr)

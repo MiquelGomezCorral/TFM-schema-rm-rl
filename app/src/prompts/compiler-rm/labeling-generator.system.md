@@ -1,8 +1,8 @@
-# <!-- minigrid-only -->MiniGrid <!-- /minigrid-only -->Labeling-Function Generator
+# Labeling-Function Generator
 
-You are the <!-- minigrid-only -->MiniGrid <!-- /minigrid-only -->labeling-function generator for a Reward Machine compiler. The
+You are the labeling-function generator for a Reward Machine compiler. The
 compiler has already accepted one Reward Machine (RM) for one task. Write the executable
-predicates that turn <!-- minigrid-only -->a MiniGrid<!-- other -->an<!-- /minigrid-only --> observation into the boolean valuation the RM consumes.
+predicates that turn an observation into the boolean valuation the RM consumes.
 
 ## Inputs
 
@@ -41,27 +41,18 @@ vocabulary that the predicates must cover exactly.
 The ordered node identifiers of the machine, for cross-checking the state descriptions.
 
 ### Documented runtime API
-The predicate receives one argument, `env`, exposing exactly this <!-- minigrid-only -->MiniGrid <!-- /minigrid-only -->surface:
+The predicate receives one argument, `env`. The user prompt's Documented runtime API
+section lists the environment surface it exposes, and it also exposes:
 
-<!-- labeling-api -->- `env.mission`: the mission string, for example `get the red key` or `pick up the grey box`.
-- `env.agent_pos`: the agent position as `(x, y)`.
-- `env.agent_dir`: the facing direction as `0` right, `1` down, `2` left, `3` up.
-- `env.grid.get(x, y)`: the object at that cell, or `None` when the cell is empty. Grid
-  coordinates use `0 <= x < env.width` and `0 <= y < env.height`.
-- Object attributes: `type` (for example `key`, `door`, `box`, `wall`, `goal`), `color`,
-  `is_open`, and `is_locked` on doors.
-- `env.carrying`: the carried object, or `None`; it exposes `type` and `color`.
-- `env.width`, `env.height`: grid size.<!-- /labeling-api -->
 - `env.episode_memory["previous_valuation"]`: a read-only mapping proposition to boolean
   from the preceding environment step. It is an empty mapping during the first step.
 
 No other attribute is documented. Do not import object classes or call methods not listed
-here. The predicate sandbox allows only these builtins: `abs`, `all`, `any`, `bool`,
+in that section or here. The predicate sandbox allows only these builtins: `abs`, `all`, `any`, `bool`,
 `dict`, `float`, `int`, `len`, `list`, `max`, `min`, `range`, `round`, `sorted`, `str`,
 `sum`, `tuple`. Never call `zip`, `set`, `enumerate`, `map`, `filter`, `getattr`, or any
 other function; combine values with comparisons, boolean operators, and comprehensions
-instead.<!-- minigrid-only --> Door openness and lock state come from `is_open` and `is_locked`; carry state
-comes from `env.carrying`, never from the RM.<!-- /minigrid-only -->
+instead.
 
 ## Generation contract
 
@@ -78,18 +69,13 @@ Every predicate is a single expression:
 - Do not call `.get` on `env.episode_memory["previous_valuation"]`; use guarded bracket
   access such as `env.episode_memory["previous_valuation"] and
   env.episode_memory["previous_valuation"]["<identifier>"]`.
-<!-- minigrid-only -->- Use `any`/`all` comprehensions for grid scans, always guarding empty cells. This shape
-  checks whether any cell holds a given object type:
-
-  `any(cell is not None and cell.type == "<type>" for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])`
-
-<!-- /minigrid-only -->- Persistent propositions describe only the current observation.
+- Scan collections with `any`/`all` comprehensions, always guarding values that may be
+  missing before reading their attributes.
+- Persistent propositions describe only the current observation.
 - Event propositions compare the current observation with
-  `env.episode_memory["previous_valuation"]`.<!-- minigrid-only --> On the first step that snapshot is empty, so
-  guarded access must stay false.<!-- /minigrid-only -->
-<!-- minigrid-only -->- Mission targets come from `env.mission`. Do not assume a fixed color or object; match the
-  designated one.
-<!-- /minigrid-only -->- A predicate never depends on state descriptions, RM progress, RM rewards, or node
+  `env.episode_memory["previous_valuation"]`. On the first step that snapshot is empty, so
+  guarded access must stay false.
+- A predicate never depends on state descriptions, RM progress, RM rewards, or node
   identities.
 - If a declared event cannot be expressed with this API, do not invent attributes and do
   not reconstruct recursive history. Write the predicate returning `False` and leave a

@@ -28,6 +28,8 @@ from src.arm_fm import (
     resolve_embedding_settings,
 )
 from src.arm_fm.generation import StageAttempt, build_compiler_bundle
+from src.arm_fm.paper_profile import GateResult, critic_verdict, infer_final_states
+from src.arm_fm.probe import EpisodeProbe
 from src.compiler import (
     PaperRewardMachine,
     RuntimeTransition,
@@ -37,6 +39,11 @@ from src.compiler import (
 )
 from src.config import Configuration
 from src.models import EnvironmentDescription
+
+DEMO_MARKDOWN = (
+    "# Demo\n## Propositions\n- `done`: Finished\n"
+    "## Labeling API\n\n- `env.grid.get(x, y)`: the object at a cell\n"
+)
 
 
 class _EmbeddingResponse:
@@ -139,13 +146,54 @@ class ArmFMRuntimeTests(unittest.TestCase):
         unsafe_sources = (
             "def done(env):\n    env.done = True\n    return True\n",
             "def done(env):\n    return env._done\n",
-            "def done(env):\n    return getattr(env, 'done')\n",
+            "def done(env):\n    return getattr(env, '_done')\n",
+            "def done(env):\n    name = 'done'\n    return getattr(env, name)\n",
+            "def done(env):\n    while True:\n        pass\n",
+            "def done(env):\n    return done(env)\n",
+            "def done(env):\n    for other in range(2):\n        pass\n    return True\n"
+            "def other(env):\n    return True\n",
+            "def done(env):\n    env.grid.set(1, 1, None)\n    return True\n",
+            "def done(env):\n    return env.grid.horz_wall(0, 0) is None\n",
+            "def done(env):\n    return env.place_agent() is None\n",
+            "def done(env):\n    return sorted(range(3), key=getattr(env, 'step'))\n",
+            "def done(env):\n    return 5 in range(1000000)\n",
+            "def done(env):\n    return other(env)\ndef other(env):\n    return done(env)\n",
             "import os\ndef done(env):\n    return True\n",
             "def done(env):\n    return open('unsafe')\n",
         )
         for source in unsafe_sources:
             with self.subTest(source=source), self.assertRaises(RuntimeValidationError):
                 load_labeling_functions(source, ("done",))
+
+    def test_labeling_range_is_bounded_when_it_runs(self):
+        huge = load_labeling_functions(
+            "def done(env):\n    return len(range(10**9)) > 0\n", ("done",)
+        )
+        with self.assertRaises(RuntimeValidationError):
+            huge["done"](SimpleNamespace())
+        small = load_labeling_functions(
+            "def done(env):\n    return len(range(env.width)) == 5\n", ("done",)
+        )
+        self.assertTrue(small["done"](SimpleNamespace(width=5)))
+
+    def test_labeling_accepts_paper_style_code_and_returns_only_vocabulary(self):
+        loaded = load_labeling_functions(
+            "def has_key(env):\n"
+            "    return env.carrying is not None and env.carrying.type == 'key'\n"
+            "def no_key(env):\n"
+            "    return not has_key(env)\n"
+            "def door_open(env):\n"
+            "    for i in range(env.width):\n"
+            "        obj = env.grid.get(i, 0)\n"
+            "        if hasattr(obj, 'is_open') and getattr(obj, 'is_open', False):\n"
+            "            return True\n"
+            "    return False\n"
+            "def unused_helper(env):\n"
+            "    return True\n",
+            ("no_key", "door_open"),
+        )
+        self.assertEqual(set(loaded), {"no_key", "door_open"})
+        self.assertTrue(loaded["no_key"](SimpleNamespace(carrying=None)))
 
     def test_labeling_allows_env_derived_public_fields_only(self):
         load_labeling_functions(
@@ -155,9 +203,10 @@ class ArmFMRuntimeTests(unittest.TestCase):
             ("found",),
         )
         public = load_labeling_functions(
-            "def done(env):\n    return env.public().value\n", ("done",)
+            "def done(env):\n    return env.grid.get(0, 0).value\n", ("done",)
         )
-        self.assertTrue(public["done"](SimpleNamespace(public=lambda: SimpleNamespace(value=True))))
+        grid = SimpleNamespace(get=lambda _x, _y: SimpleNamespace(value=True))
+        self.assertTrue(public["done"](SimpleNamespace(grid=grid)))
         for source in (
             "def done(env):\n    return (1).real\n",
             "def done(env):\n    return env.grid.get(0, 0)._type\n",
@@ -265,6 +314,45 @@ REWARD_FUNCTION:
             )
 
 
+class PaperProfileTests(unittest.TestCase):
+    def test_critic_verdict_follows_the_last_verdict_phrase(self):
+        self.assertEqual(
+            critic_verdict("Looks fine.\n\n\u2705 \u201cNO CHANGES NEEDED\u201d"), "accepted"
+        )
+        self.assertEqual(
+            critic_verdict(
+                "End with NO CHANGES NEEDED or CHANGES REQUIRED. CHANGES REQUIRED: a fix"
+            ),
+            "changes",
+        )
+        self.assertEqual(critic_verdict("Nothing conclusive."), "unclear")
+
+    def test_gate_needs_solved_probes_fired_events_and_a_start_that_is_not_final(self):
+        ok = EpisodeProbe("g", 1, steps=8, solved=True, reached_final=True, events_fired={"a"})
+        self.assertTrue(GateResult(("a",), False, [ok]).passed)
+        self.assertFalse(GateResult(("a", "b"), False, [ok]).passed)  # b never fired
+        self.assertFalse(GateResult(("a",), True, [ok]).passed)  # the start is final
+        self.assertFalse(GateResult((), False, [ok]).passed)  # no event
+        early = EpisodeProbe(
+            "g", 1, steps=20, solved=True, reached_final=True, events_fired={"a"}, final_entered=10
+        )
+        self.assertTrue(GateResult(("a",), False, [early]).passed)  # warning only without a limit
+        self.assertFalse(GateResult(("a",), False, [early], max_final_lag=3).passed)
+        self.assertTrue(GateResult(("a",), False, [early], max_final_lag=10).passed)
+        unsolved = EpisodeProbe(
+            "g", 1, steps=8, solved=False, reached_final=True, events_fired={"a"}
+        )
+        self.assertFalse(GateResult(("a",), False, [unsolved]).passed)
+
+    def test_final_states_are_the_ones_that_cannot_be_left(self):
+        rm = parse_paper_reward_machine(
+            "STATES: u0, u1, u2\nINITIAL_STATE: u0\nTRANSITION_FUNCTION:\n"
+            "(u0, a) -> u1\n(u0, else) -> u0\n(u1, b) -> u2\n(u1, else) -> u1\n"
+            "REWARD_FUNCTION:\n(u0, a, u1) -> 1\n(u1, b, u2) -> 1\n"
+        )
+        self.assertEqual(infer_final_states(rm), ("u2",))
+
+
 class ArmFMArtifactTests(unittest.TestCase):
     def setUp(self):
         self.rm = PaperRewardMachine(
@@ -338,9 +426,7 @@ class ArmFMArtifactTests(unittest.TestCase):
         self.assertEqual(bundle.reward_machine.transitions[0].reward, 0.0)
 
     def test_baseline_refinement_records_each_stage(self):
-        environment = EnvironmentDescription.from_markdown(
-            "# Demo\n## Propositions\n- `done`: Finished", source="demo.md"
-        )
+        environment = EnvironmentDescription.from_markdown(DEMO_MARKDOWN, source="demo.md")
         responses = iter(
             [
                 """```plaintext
@@ -372,9 +458,7 @@ REWARD_FUNCTION:
         self.assertFalse(result.bundle.manifest.generation["refined"])
 
     def test_compiler_failure_persists_accepted_rm(self):
-        environment = EnvironmentDescription.from_markdown(
-            "# Demo\n## Propositions\n- `done`: Finished", source="demo.md"
-        )
+        environment = EnvironmentDescription.from_markdown(DEMO_MARKDOWN, source="demo.md")
         compiled = SimpleNamespace(
             environment=environment,
             proposal=SimpleNamespace(task="finish"),
@@ -407,9 +491,7 @@ REWARD_FUNCTION:
     def _compiler_result(**overrides):
         """Minimal accepted compiler result shared by compiler-bundle checks."""
         values = {
-            "environment": EnvironmentDescription.from_markdown(
-                "# Demo\n## Propositions\n- `done`: Finished", source="demo.md"
-            ),
+            "environment": EnvironmentDescription.from_markdown(DEMO_MARKDOWN, source="demo.md"),
             "proposal": SimpleNamespace(task="finish"),
             "text": "numeric",
             "state_descriptions": ("start", "finished"),
@@ -442,10 +524,7 @@ REWARD_FUNCTION:
             embeddings={"u0": [1.0, 0.0], "u1": [0.0, 1.0]},
             embedding_settings={"model": "nomic-embed-text", "dimension": 2},
         )
-        api_description = "env.grid.get(x, y), env.agent_pos"
-        bundle = generate_compiler_bundle(
-            (compiled,), None, Configuration(), api_description=api_description
-        )[0]
+        bundle = generate_compiler_bundle((compiled,), None, Configuration())[0]
         self.assertEqual(bundle.labeling_source, compiled.labeling_source)
         self.assertEqual(bundle.state_descriptions, {"u0": "start", "u1": "finished"})
         self.assertEqual(bundle.manifest.stage_status["labeling"], "complete")
@@ -457,8 +536,12 @@ REWARD_FUNCTION:
         )
         self.assertEqual(bundle.validate(require_complete=True), [])
         self.assertEqual([item["stage"] for item in bundle.attempts], ["compiler", "labeling"])
-        self.assertEqual(bundle.manifest.api_definitions["labeling"], api_description)
-        self.assertEqual(bundle.manifest.generation["labeling_api"], api_description)
+        self.assertEqual(
+            bundle.manifest.api_definitions["labeling"], compiled.environment.labeling_api
+        )
+        self.assertEqual(
+            bundle.manifest.generation["labeling_api"], compiled.environment.labeling_api
+        )
         self.assertTrue(bundle.manifest.generation["first_attempt"])
         self.assertEqual(bundle.manifest.generation["attempt_classification"], "first_attempt")
 
@@ -475,7 +558,6 @@ REWARD_FUNCTION:
         compiled = self._compiler_result()
         bundle = build_compiler_bundle(
             compiled,
-            api_description="env.grid.get(x, y)",
             labeling_source=compiled.labeling_source,
             state_descriptions={"u0": "start", "u1": "finished"},
             attempts=(StageAttempt("labeling", 1, "rejected", compiled.labeling_source),),
@@ -483,9 +565,7 @@ REWARD_FUNCTION:
         self.assertEqual(bundle.manifest.stage_status["labeling"], "failed")
 
     def test_failed_generation_persists_inspectable_bundle(self):
-        environment = EnvironmentDescription.from_markdown(
-            "# Demo\n## Propositions\n- `done`: Finished", source="demo.md"
-        )
+        environment = EnvironmentDescription.from_markdown(DEMO_MARKDOWN, source="demo.md")
         engine = SimpleNamespace(
             model="mock-model",
             provider_name="mock",
@@ -502,9 +582,7 @@ REWARD_FUNCTION:
             self.assertEqual(loaded.manifest.errors, ["provider down"] * 3)
 
     def test_failed_generation_respects_bundle_overwrite(self):
-        environment = EnvironmentDescription.from_markdown(
-            "# Demo\n## Propositions\n- `done`: Finished", source="demo.md"
-        )
+        environment = EnvironmentDescription.from_markdown(DEMO_MARKDOWN, source="demo.md")
         engine = SimpleNamespace(
             model="mock-model",
             provider_name="mock",

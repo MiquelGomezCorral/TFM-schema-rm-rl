@@ -11,7 +11,9 @@ from scripts import (
     evaluate_larm,
     generate_larm,
     generate_rm,
+    import_paper_bundle,
     render_rm,
+    test_rl,
     train_rl,
 )
 from src.config import Configuration
@@ -41,6 +43,12 @@ def cmd_embed_larm(args: argparse.Namespace) -> None:
     embed_larm(CONFIG)
 
 
+def cmd_import_paper_bundle(args: argparse.Namespace) -> None:
+    """Import the authors' released artifacts for one environment as a bundle."""
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    import_paper_bundle(CONFIG)
+
+
 def cmd_evaluate_larm(args: argparse.Namespace) -> None:
     """Judge ARM-FM bundles with the configured provider."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
@@ -51,6 +59,12 @@ def cmd_train_rl(args: argparse.Namespace) -> None:
     """Train one DQN run from a YAML run config."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
     train_rl(CONFIG)
+
+
+def cmd_test_rl(args: argparse.Namespace) -> None:
+    """Test finished runs on unseen maps and render GIFs."""
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    test_rl(CONFIG, args.gifs)
 
 
 # ======================================================================================
@@ -183,7 +197,16 @@ if __name__ == "__main__":
     larm_parser = subparsers.add_parser(
         "generate-larm", help="Generate one inspectable ARM-FM task bundle"
     )
-    larm_parser.add_argument("--mode", choices=("arm-fm", "compiler"), default="arm-fm")
+    larm_parser.add_argument("--mode", choices=("arm-fm", "compiler", "paper"), default="arm-fm")
+    larm_parser.add_argument(
+        "--reference", type=Path, help="paper mode: clone of roger-creus/llms-rm-rl"
+    )
+    larm_parser.add_argument(
+        "--paper-sources", dest="paper_sources", type=Path, help="paper mode: paper-sources.json"
+    )
+    larm_parser.add_argument(
+        "--draws", type=int, default=3, help="paper mode: independent generations (default: 3)"
+    )
     larm_parser.add_argument("--environment", type=Path)
     larm_parser.add_argument("--task", dest="tasks", action="append", default=[])
     larm_parser.add_argument("--bundle", type=Path)
@@ -227,6 +250,28 @@ if __name__ == "__main__":
     embed_parser.set_defaults(func=cmd_embed_larm)
 
     # ======================================================================================
+    #                                   import-paper-bundle
+    # ======================================================================================
+    import_parser = subparsers.add_parser(
+        "import-paper-bundle",
+        help="Import the authors' released RM, labeling and embeddings as a bundle",
+    )
+    import_parser.add_argument(
+        "--reference", required=True, type=Path, help="Local clone of roger-creus/llms-rm-rl"
+    )
+    import_parser.add_argument(
+        "--env",
+        dest="paper_env",
+        required=True,
+        help="Released environment: DoorKey, UnlockToUnlock, BlockedUnlockPickup or KeyCorridorS6R3",
+    )
+    import_parser.add_argument(
+        "--output", dest="bundle", required=True, type=Path, help="Bundle folder to write"
+    )
+    import_parser.add_argument("--overwrite", action="store_true")
+    import_parser.set_defaults(func=cmd_import_paper_bundle)
+
+    # ======================================================================================
     #                                       evaluate-larm
     # ======================================================================================
     evaluate_parser = subparsers.add_parser("evaluate-larm", help="Judge ARM-FM artifacts")
@@ -254,6 +299,40 @@ if __name__ == "__main__":
     # SUPPRESS keeps the global --seed when this one is absent, so both positions work.
     train_parser.add_argument("--seed", type=int, default=argparse.SUPPRESS)
     train_parser.set_defaults(func=cmd_train_rl)
+
+    # ======================================================================================
+    #                                       test-rl
+    # ======================================================================================
+    test_parser = subparsers.add_parser(
+        "test-rl", help="Test finished train-rl runs on unseen maps and render GIFs"
+    )
+    test_parser.add_argument(
+        "--run",
+        dest="exp_name",
+        required=True,
+        metavar="RUN",
+        help="A run folder, or an exp_name to test every finished run under outputs/runs/<exp_name>/",
+    )
+    test_parser.add_argument(
+        "--episodes",
+        dest="final_eval_episodes",
+        type=int,
+        default=100,
+        metavar="N",
+        help="Test episodes",
+    )
+    test_parser.add_argument(
+        "--seed-base",
+        dest="eval_seed_base",
+        type=int,
+        default=2_000_000,
+        metavar="SEED",
+        help="Episode i resets with this seed + i (training uses the run seed, validation 1000000)",
+    )
+    test_parser.add_argument(
+        "--gifs", type=int, default=0, metavar="N", help="Test episodes to render as GIFs"
+    )
+    test_parser.set_defaults(func=cmd_test_rl)
 
     # ======================================================================================
     #                                       CALL

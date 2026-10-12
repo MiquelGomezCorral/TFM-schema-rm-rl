@@ -664,9 +664,14 @@ def evaluate(
     generator seeded with the run seed, never from the training streams.
     """
     generator = torch.Generator().manual_seed(CONFIG.seed)
-    seeds = [CONFIG.eval_seed_base + index for index in range(episode_count)]
-    episodes = [_evaluation_episode(run, agent, seed, generator) for seed in seeds]
+    resets = evaluation_resets(CONFIG, episode_count)
+    episodes = [_evaluation_episode(run, agent, reset["seed"], generator) for reset in resets]
     return evaluation_row(episodes)
+
+
+def evaluation_resets(CONFIG: Configuration, episode_count: int) -> list[dict[str, object]]:
+    """The ``reset`` arguments of the evaluation episodes: episode ``i`` seeds ``eval_seed_base + i``."""
+    return [{"seed": CONFIG.eval_seed_base + index} for index in range(episode_count)]
 
 
 def _evaluation_episode(

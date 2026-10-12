@@ -12,7 +12,6 @@ from .dqn import train_dqn
 from .environments import (
     make_environment,
     make_run_environment,
-    minigrid_labeling_api,
 )
 from .evaluation import (
     EMBEDDING_MODEL,
@@ -33,6 +32,16 @@ from .generation import (
     generate_compiler_bundle,
     record_bundle_embeddings,
     record_bundle_role_models,
+)
+from .paper_profile import (
+    PAPER_REFERENCE_SHA,
+    Engines,
+    PaperPrompts,
+    PaperRun,
+    clone_head,
+    generate_draw,
+    infer_final_states,
+    load_sources,
 )
 from .ppo import train_ppo
 from .runtime import (

@@ -5,11 +5,18 @@ from dataclasses import replace
 from pathlib import Path
 
 from src.arm_fm import (
+    PAPER_REFERENCE_SHA,
     ArtifactBundle,
     BundleManifest,
+    Engines,
+    PaperPrompts,
+    PaperRun,
+    clone_head,
     generate_baseline_bundle,
     generate_compiler_bundle,
+    generate_draw,
     load_bundle,
+    load_sources,
     load_task_manifest,
     record_bundle_embeddings,
     record_bundle_role_models,
@@ -24,13 +31,16 @@ from src.utils import (
     write_embedding_artifact,
 )
 
-from .generate_rm import generate_rm, resolve_labeling_api
+from .generate_rm import generate_rm
 
 
 def generate_larm(CONFIG: Configuration) -> None:
     """Generate one inspectable bundle using baseline or compiler RM generation."""
     if CONFIG.task_manifest is not None:
         generate_manifest(CONFIG)
+        return
+    if CONFIG.mode == "paper":
+        generate_paper(CONFIG)
         return
     if CONFIG.environment is None or CONFIG.bundle is None or len(CONFIG.tasks) != 1:
         raise ValueError("generate-larm requires one task, --environment, and --bundle")
@@ -68,9 +78,7 @@ def generate_larm(CONFIG: Configuration) -> None:
 
         # The compiler pipeline already produced accepted labeling and node descriptions;
         # the adapter reuses them, so no baseline engine or extra provider call is needed.
-        bundles = generate_compiler_bundle(
-            tuple(accepted), None, CONFIG, api_description=resolve_labeling_api(environment)
-        )
+        bundles = generate_compiler_bundle(tuple(accepted), None, CONFIG)
         record_bundle_role_models(bundles[0], CONFIG)
         if CONFIG.embeddings:
             destination = embedding_artifact_path(CONFIG, Path(CONFIG.bundle).name)
@@ -80,14 +88,59 @@ def generate_larm(CONFIG: Configuration) -> None:
         bundles[0].save(CONFIG.bundle, overwrite=CONFIG.overwrite)
     else:
         engine = get_engine(CONFIG, environment)
-        result = generate_baseline_bundle(
-            CONFIG.tasks[0],
-            environment,
-            engine,
-            CONFIG,
-            api_description=resolve_labeling_api(environment),
-        )
+        result = generate_baseline_bundle(CONFIG.tasks[0], environment, engine, CONFIG)
         result.bundle.save(CONFIG.bundle, overwrite=CONFIG.overwrite)
+
+
+def generate_paper(CONFIG: Configuration) -> None:
+    """Generate ``CONFIG.draws`` paper-profile bundles; the first passing one becomes the bundle.
+
+    Every draw is saved next to the bundle as ``<name>-draw<N>`` for inspection. The prompts
+    come from the authors' clone (``--reference``) as named by ``--paper-sources``; the
+    generator and critic roles use the configured generator and critic models.
+    """
+    if CONFIG.reference is None or CONFIG.paper_sources is None or CONFIG.bundle is None:
+        raise ValueError("--mode paper requires --reference, --paper-sources and --bundle")
+    if clone_head(CONFIG.reference) != PAPER_REFERENCE_SHA:
+        raise ValueError(f"--reference must be at commit {PAPER_REFERENCE_SHA}")
+    if not CONFIG.generator_model or not CONFIG.critic_model:
+        raise ValueError("--mode paper needs a generator and a critic model")
+    if CONFIG.generator_model == CONFIG.critic_model:
+        raise ValueError("The generator and critic models must differ")
+    if CONFIG.draws < 1:
+        raise ValueError("--draws must be at least 1")
+
+    sources = load_sources(CONFIG.paper_sources)
+    prompts = PaperPrompts.read(CONFIG.reference, sources)
+    draw_dirs = {
+        number: CONFIG.bundle.with_name(f"{CONFIG.bundle.name}-draw{number}")
+        for number in range(1, CONFIG.draws + 1)
+    }
+    preflight_paths(
+        [CONFIG.bundle, *draw_dirs.values()], overwrite=CONFIG.overwrite, kind="Bundle folder(s)"
+    )
+
+    engines = Engines(
+        get_engine(CONFIG, None, CONFIG.generator_model),
+        get_engine(CONFIG, None, CONFIG.critic_model),
+    )
+    models = {"generator": CONFIG.generator_model, "critic": CONFIG.critic_model}
+    run = PaperRun(prompts, sources, models, engines)
+
+    selected = None
+    for number, directory in draw_dirs.items():
+        draw = generate_draw(number, run)
+        draw.bundle.save(directory, overwrite=CONFIG.overwrite)
+        verdicts = [item.verdict for item in [*draw.rm_stage.rounds, *draw.labeling_stage.rounds]]
+        print(
+            f"draw {number}: passed={draw.passed} verdicts={verdicts} error={draw.error!r} -> {directory}"
+        )
+        if selected is None and draw.passed:
+            selected = draw
+    if selected is None:
+        raise RuntimeError("No draw passed the gates; inspect the draw folders next to the bundle")
+    selected.bundle.save(CONFIG.bundle, overwrite=CONFIG.overwrite)
+    print(f"draw {selected.number} is the bundle: {CONFIG.bundle}")
 
 
 def _persist_compiler_failure(

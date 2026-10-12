@@ -4,7 +4,6 @@ from collections.abc import Sequence
 from dataclasses import asdict, replace
 from pathlib import Path
 
-from src.arm_fm.environments import minigrid_labeling_api
 from src.arm_fm.evaluation import (
     SERVER_EMBEDDING_EXTRACTION,
     EmbeddingCache,
@@ -36,7 +35,6 @@ from src.engines import (
     ProposalValidationError,
     RetryableEngineError,
 )
-from src.models import EnvironmentDescription
 from src.utils import (
     GenerationHooks,
     PipelineStep,
@@ -112,7 +110,7 @@ def _run_pipeline(
 
     if write_outputs:
         progress("Writing Reward Machine outputs.")
-        results = write_run_outputs(results, output_paths, CONFIG, pipeline.labeling_api, progress)
+        results = write_run_outputs(results, output_paths, CONFIG, progress)
         progress("Writing outputs complete.")
     hooks.notify_completion(results, output_paths)
 
@@ -128,7 +126,8 @@ class _Pipeline:
         self.environment, self.generator_engine, self.critic_engine = setup_environment_and_engines(
             CONFIG, progress
         )
-        self.labeling_api = resolve_labeling_api(self.environment) if CONFIG.labeling else ""
+        if CONFIG.labeling:
+            self.environment.require_labeling_api()
 
     def run_task(self, task_index: int, task: str) -> CompilationResult:
         """Return the accepted result for one task, or raise after its last failed attempt."""
@@ -332,7 +331,7 @@ class _Pipeline:
         critic_engine = self.critic_engine if self.CONFIG.rm_critic else None
         try:
             source, attempts = generate_compiler_labeling(
-                task, compiled, self.generator_engine, critic_engine, self.labeling_api
+                task, compiled, self.generator_engine, critic_engine
             )
         except LabelingError as error:
             last = error.attempts[-1] if error.attempts else None
@@ -410,11 +409,6 @@ class _Pipeline:
 #                                   HELPERS
 #
 # ============================================================================
-
-
-def resolve_labeling_api(environment: EnvironmentDescription) -> str:
-    """Return the environment's declared labeling API, or the MiniGrid one when it has none."""
-    return environment.labeling_api or minigrid_labeling_api()
 
 
 def state_embedding_context(compiled: CompilationResult) -> str:

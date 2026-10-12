@@ -6,12 +6,14 @@ from enum import StrEnum
 from pathlib import Path
 from types import UnionType
 from typing import ClassVar, get_args
+from urllib.parse import urlparse
 
 import yaml
 from maikol_utils.file_utils import make_dirs
 from maikol_utils.print_utils import print_warn
 
 LLM_PROVIDERS = ("openai", "opencode", "antigravity")
+DEFAULT_LLAMA_SERVER_PORT = "8934"
 
 
 class PriorityLevel(StrEnum):
@@ -167,7 +169,8 @@ class Configuration:
     rm_critic: bool = True
     labeling: bool = False
     embeddings: bool = False
-    embedding_endpoint: str = "http://127.0.0.1:8934/v1/embeddings"
+    # None means the local llama-server on LLAMA_SERVER_PORT; see llama_server_command.
+    embedding_endpoint: str | None = None
     embedding_model: str = "nomic-embed-text"
     embedding_revision: str = (
         "sha256:970aa74c0a90ef7482477cf803618e776e173c007bf957f635f1015bfcfef0e6"
@@ -185,6 +188,10 @@ class Configuration:
     domain: str | None = None
     task_manifest: Path | None = None
     rm_file: Path | None = None
+    reference: Path | None = None  # import-paper-bundle: clone of the authors' repository
+    paper_env: str | None = None  # import-paper-bundle: released environment name
+    paper_sources: Path | None = None  # generate-larm --mode paper: its paper-sources.json
+    draws: int = 3  # generate-larm --mode paper: independent generations
 
     # ============================== Training (train-rl) ==============================
     # A YAML run config overrides these; defaults follow ARM-FM Table 5.
@@ -330,6 +337,8 @@ class Configuration:
         self.labeling_bundle = _optional_path(self.labeling_bundle)
         self.task_manifest = _optional_path(self.task_manifest)
         self.rm_file = _optional_path(self.rm_file)
+        self.reference = _optional_path(self.reference)
+        self.paper_sources = _optional_path(self.paper_sources)
         self.steps_report = _optional_path(self.steps_report)
         self.trace_dir = _optional_path(self.trace_dir)
         self.manifests = [Path(path) for path in self.manifests]
@@ -393,7 +402,10 @@ class Configuration:
         self.mona_executable = self.mona_executable or os.environ.get("MONA_EXECUTABLE") or "mona"
 
     def _validate_embeddings(self) -> None:
-        self.embedding_endpoint = (self.embedding_endpoint or "").strip()
+        port = os.environ.get("LLAMA_SERVER_PORT") or DEFAULT_LLAMA_SERVER_PORT
+        self.embedding_endpoint = (
+            self.embedding_endpoint or f"http://127.0.0.1:{port}/v1/embeddings"
+        ).strip()
         self.embedding_model = (self.embedding_model or "").strip()
         self.embedding_revision = (self.embedding_revision or "").strip()
         if not self.embeddings:
@@ -409,3 +421,17 @@ class Configuration:
             raise ValueError("Embedding revision must be nonempty when embeddings are enabled")
         if self.embedding_timeout <= 0:
             raise ValueError("Embedding timeout must be positive when embeddings are enabled")
+
+    def llama_server_command(self) -> str:
+        """Return the llama-server command that serves ``embedding_endpoint``.
+
+        The binary and GGUF paths come from ``LLAMA_SERVER_BIN`` and ``LLAMA_SERVER_MODEL``.
+        """
+        port = urlparse(self.embedding_endpoint).port
+        binary = os.environ.get("LLAMA_SERVER_BIN") or "llama-server"
+        model = os.environ.get("LLAMA_SERVER_MODEL") or "<path/to/nomic-embed-text.gguf>"
+        return (
+            f"{binary} -m {model} --host 127.0.0.1 --port {port}"
+            f" --embedding --pooling mean --alias {self.embedding_model}"
+            " --n-gpu-layers 99 --ctx-size 2048"
+        )
