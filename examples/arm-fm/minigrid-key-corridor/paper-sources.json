@@ -1,0 +1,82 @@
+{
+  "environment": "KeyCorridorS6R3",
+  "probe": {
+    "gym_ids": [
+      "MiniGrid-KeyCorridorS6R3-v0"
+    ],
+    "gating_seeds": [
+      1
+    ],
+    "held_out_seeds": [
+      2,
+      3,
+      101,
+      102,
+      103
+    ]
+  },
+  "description_context": "MiniGrid KeyCorridor S6R3: the agent explores the side rooms off a corridor, finds the key of the locked door, unlocks it and picks up the ball behind it. An episode ends on the pickup or at the step limit.",
+  "reconstruction": true,
+  "reconstruction_note": "No authentic prompt exists for this environment: the DoorKey templates carry our environment bullets, mission and stage chain (paper A.2.1).",
+  "mission": "The agent must explore the side rooms of the corridor, find the key that matches the locked door, unlock the door, and pick up the ball behind it.",
+  "sources": {
+    "rm_generator": {
+      "file": "prompts/make_rm/DoorKey/generator.txt",
+      "replace": [
+        {
+          "pattern": "(\\*\\*Environment \\(MiniGrid\\):\\*\\*[ \\t]*\\n).*?(?=\\n\\n\\*\\*Mission:)",
+          "with": "\\g<1>- Agent: color triangle\n- Key: unlocks the locked door of the same color; it lies in one of the side rooms\n- Door: a square in a wall, outlined in its color; one door is locked and guards the target room\n- Ball: circle to pick up; the target ball is in the locked room\n- Episode ends: picking up the target ball (+1) or step limit (0)"
+        },
+        {
+          "pattern": "(\\*\\*Mission:\\*\\*[ \\t]*\\n)\\\".*?\\\"",
+          "with": "\\g<1>\"{MISSION}\""
+        },
+        {
+          "pattern": "(?m)^(\\s*- Model: )[^\\n]*$",
+          "with": "\\g<1>\"Explore side rooms → Find the key → Unlock the locked door → Pick up the ball\""
+        }
+      ]
+    },
+    "rm_critic": {
+      "file": "prompts/make_rm/DoorKey/critic.txt"
+    },
+    "labeling_generator": {
+      "file": "prompts/make_transitions/DoorKey/generator.txt",
+      "replace": [
+        {
+          "pattern": "(?m)^(\\s*)- `Door` has [^\\n]*$",
+          "with": "\\g<1>- `Door` has `.is_open`, `.is_locked` and `.color`"
+        },
+        {
+          "pattern": "(?m)^(\\s*)- `Key` has [^\\n]*$",
+          "with": "\\g<1>- `Key` has `.type == \\\"key\\\"` and `.color`"
+        },
+        {
+          "pattern": "(?m)^(\\s*)- `Goal` has [^\\n]*$",
+          "with": "\\g<1>- `Ball` has `.type == \\\"ball\\\"` and can be carried by the agent"
+        }
+      ]
+    },
+    "labeling_critic": {
+      "file": "prompts/make_transitions/DoorKey/critic.txt",
+      "replace": [
+        {
+          "pattern": "(Task that the given RM should solve:\\s*\\n)\\\".*?\\\"",
+          "with": "\\g<1>\\\"{MISSION}\\\""
+        },
+        {
+          "pattern": "(?m)^(\\s*)- `Door` has [^\\n]*$",
+          "with": "\\g<1>- `Door` has `.is_open`, `.is_locked` and `.color`"
+        },
+        {
+          "pattern": "(?m)^(\\s*)- `Key` has [^\\n]*$",
+          "with": "\\g<1>- `Key` has `.type == \\\"key\\\"` and `.color`"
+        },
+        {
+          "pattern": "(?m)^(\\s*)- `Goal` has [^\\n]*$",
+          "with": "\\g<1>- `Ball` has `.type == \\\"ball\\\"` and can be carried by the agent"
+        }
+      ]
+    }
+  }
+}
