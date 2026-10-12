@@ -87,7 +87,6 @@ def make_run_environment(CONFIG: Configuration) -> RunEnvironment:
         run.env.close()
         raise
     if CONFIG.success == "rm":
-        env = RMAcceptanceTermination(env)
         return replace(run, env=env, is_success=env.is_success)
     return replace(run, env=env)
 
@@ -215,6 +214,7 @@ class RewardMachineObservation(gym.Wrapper):
             env, RewardMachineRuntime(machine), labeling, reward_source=reward_source
         )
         self.final_states = frozenset(machine.final_states)
+        self.accepted = False
         self.embeddings = {
             state: np.asarray(vector, dtype=np.float32)
             for state, vector in bundle.embeddings.items()
@@ -238,33 +238,20 @@ class RewardMachineObservation(gym.Wrapper):
     def step(self, action):
         observation, reward, terminated, truncated, info = self.reward_machine.step(action)
         state = info["rm_state"]
-        info["rm_accept"] = state in self.final_states
+        self.accepted = info["rm_accept"] = state in self.final_states
         return self._observation(observation, state), reward, terminated, truncated, info
+
+    def is_success(self, terminated: bool, _env_reward: float) -> bool:
+        """Success rule of config ``success: rm``, for missions the environment cannot judge.
+
+        The RM already ends the episode, so this only reads whether it ended on a final state.
+        """
+        # reset keeps ``accepted``: PPO's SyncVectorEnv SAME_STEP autoreset resets the RM before
+        # success is read.
+        return terminated and self.accepted
 
     def _observation(self, image: np.ndarray, state: str) -> dict[str, np.ndarray]:
         return {"image": image, "rm_embedding": self.embeddings[state]}
-
-
-class RMAcceptanceTermination(gym.Wrapper):
-    """Count an episode as a success only when it ends on RM acceptance (config ``success: rm``).
-
-    For missions the environment cannot judge. It changes neither the episode nor the reward,
-    since the RM already ends the episode; ``is_success`` just reads whether the last step
-    left the RM in a final state. Wrap it directly around ``RewardMachineObservation``, whose
-    ``info["rm_accept"]`` it reads.
-    """
-
-    def __init__(self, env: gym.Env) -> None:
-        super().__init__(env)
-        self.accepted = False
-
-    def step(self, action):
-        observation, reward, terminated, truncated, info = self.env.step(action)
-        self.accepted = info["rm_accept"]
-        return observation, reward, terminated, truncated, info
-
-    def is_success(self, terminated: bool, _env_reward: float) -> bool:
-        return terminated and self.accepted
 
 
 def _reward_machine_inputs(

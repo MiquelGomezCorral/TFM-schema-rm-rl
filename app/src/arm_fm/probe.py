@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 
 from src.compiler import PaperRewardMachine
 
-from .environments import make_environment
+from .environments import make_environment, terminated_with_reward
 from .runtime import RewardMachineEnvironment, RewardMachineRuntime
 
 LEFT, RIGHT, FORWARD, PICKUP, DROP, TOGGLE = 0, 1, 2, 3, 4, 5
@@ -110,7 +110,7 @@ class _Player:
                 self.episode.final_entered = self.episode.steps
         if terminated or truncated:
             self.done = True
-            self.episode.solved = terminated and info["env_reward"] > 0
+            self.episode.solved = terminated_with_reward(terminated, info["env_reward"])
 
     def execute(self, actions: Sequence[int]) -> None:
         for action in actions:

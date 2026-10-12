@@ -221,7 +221,8 @@ class Configuration:
     reward_source: str = "rm"
     env_kwargs: dict = field(default_factory=dict)  # keyword arguments of gym.make
     algorithm: str = "dqn"
-    # ``env`` ends an episode on the environment's own success, ``rm`` on RM acceptance.
+    # Which rule counts an episode as a success: the environment's own (``env``) or RM
+    # acceptance (``rm``).
     success: str = "env"
     # Several tasks in one run: entries of ``bundle`` plus optional ``labeling_bundle``,
     # ``env_kwargs`` and ``success``. Mutually exclusive with ``bundle``.

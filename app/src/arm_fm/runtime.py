@@ -155,10 +155,6 @@ class RewardMachineEnvironment:
         reward_source: str = "rm",
         terminate_on_rm: bool = True,
     ) -> None:
-        if reward_source not in ("rm", "both"):
-            raise RuntimeValidationError(
-                f"A Reward Machine wrapper needs reward_source rm or both, not {reward_source!r}"
-            )
         self.environment = environment
         self.runtime = runtime
         self.reward_source = reward_source

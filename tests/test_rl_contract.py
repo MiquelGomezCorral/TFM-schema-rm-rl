@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from gymnasium.vector import AutoresetMode, SyncVectorEnv
 from minigrid.core.constants import DIR_TO_VEC
 from minigrid.core.world_object import Key
 
@@ -91,6 +92,31 @@ class RewardMachineTransitionContractTest(unittest.TestCase):
         observation, info = env.reset(seed=1)
         self.assertEqual(info["rm_state"], "u0")
         np.testing.assert_array_equal(observation["rm_embedding"], phi["u0"])
+
+    def test_rm_success_survives_same_step_autoreset(self):
+        CONFIG = Configuration(
+            gym_id="MiniGrid-UnlockPickup-v0", bundle=BUNDLE, success="rm", total_timesteps=8
+        )
+        run = make_run_environment(CONFIG)
+        grid_env = run.env.unwrapped
+        envs = SyncVectorEnv([lambda: run.env], autoreset_mode=AutoresetMode.SAME_STEP)
+        envs.reset(seed=1)
+        done_action, pickup_action = int(grid_env.actions.done), int(grid_env.actions.pickup)
+
+        door = _first(grid_env, "door")
+        grid_env.carrying = Key(door.color)
+        envs.step([done_action])
+        door.is_locked, door.is_open = False, True
+        envs.step([done_action])
+        grid_env.carrying = None
+        _face(grid_env, _first(grid_env, "box").cur_pos)
+        _, _, terminated, _, infos = envs.step([pickup_action])
+
+        # PPO reads success after the step, when the autoreset has already restored the RM.
+        self.assertEqual(run.env.reward_machine.runtime.state, "u0")
+        self.assertTrue(
+            run.is_success(bool(terminated[0]), float(infos["final_info"]["env_reward"][0]))
+        )
 
 
 class RunConfigLoaderTest(unittest.TestCase):

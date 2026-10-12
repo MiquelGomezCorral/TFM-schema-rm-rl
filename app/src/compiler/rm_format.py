@@ -282,7 +282,9 @@ def serialize_paper_reward_machine(machine: PaperRewardMachine) -> str:
         f"STATES: {', '.join(states)}",
         f"INITIAL_STATE: {machine.initial_state}",
     ]
-    lines.append(f"FINAL_STATES: {', '.join(machine.final_states)}".rstrip())
+    lines.append(
+        "FINAL_STATES:" + (f" {', '.join(machine.final_states)}" if machine.final_states else "")
+    )
     if machine.rejecting_states:
         lines.append(f"REJECTING_STATES: {', '.join(machine.rejecting_states)}")
     if machine.default_reward is not None:
@@ -369,7 +371,9 @@ def _rejecting_indexes(
     if final_state is None:
         return ()
     edges = ((transition.source, transition.destination) for transition in transitions)
-    return tuple(sorted(states_without_path_to_final(index.values(), edges, final_state)))
+    return tuple(
+        sorted(states_without_path_to_final(range(len(machine.states)), edges, final_state))
+    )
 
 
 def _split_sections(text: str) -> dict[str, str]:

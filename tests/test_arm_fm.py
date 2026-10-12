@@ -37,6 +37,7 @@ from src.compiler import (
     parse_paper_reward_machine,
     serialize_paper_reward_machine,
 )
+from src.compiler.reward_machine import RewardMachineStructure, Transition
 from src.config import Configuration
 from src.models import EnvironmentDescription
 
@@ -409,14 +410,12 @@ class ArmFMArtifactTests(unittest.TestCase):
             ),
             proposal=SimpleNamespace(task="finish"),
             text="numeric",
-            reward_machine=SimpleNamespace(
+            reward_machine=RewardMachineStructure(
                 states=(0, 1),
                 initial_state=0,
                 final_state=1,
                 rejecting_states=(),
-                transitions=(
-                    SimpleNamespace(source=0, destination=1, condition=("done",), reward=0.0),
-                ),
+                transitions=(Transition(0, 1, ("done",), 0.0),),
             ),
         )
         bundle = adapt_compilation_result(compiled)
@@ -467,14 +466,12 @@ REWARD_FUNCTION:
             state_descriptions=(),
             labeling_source="",
             labeling_attempts=(),
-            reward_machine=SimpleNamespace(
+            reward_machine=RewardMachineStructure(
                 states=(0, 1),
                 initial_state=0,
                 final_state=1,
                 rejecting_states=(),
-                transitions=(
-                    SimpleNamespace(source=0, destination=1, condition=("done",), reward=1.0),
-                ),
+                transitions=(Transition(0, 1, ("done",), 1.0),),
             ),
         )
         engine = SimpleNamespace(
@@ -509,14 +506,12 @@ REWARD_FUNCTION:
                     "raw_response": "",
                 },
             ),
-            "reward_machine": SimpleNamespace(
+            "reward_machine": RewardMachineStructure(
                 states=(0, 1),
                 initial_state=0,
                 final_state=1,
                 rejecting_states=(),
-                transitions=(
-                    SimpleNamespace(source=0, destination=1, condition=("done",), reward=1.0),
-                ),
+                transitions=(Transition(0, 1, ("done",), 1.0),),
             ),
         }
         values.update(overrides)
