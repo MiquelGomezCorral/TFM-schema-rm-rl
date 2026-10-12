@@ -24,9 +24,15 @@ without changing how labels, transitions, and rewards are interpreted.
 - Expect disjoint ordinary guards. If several match, select the first stored transition
   and emit a warning. An `else` row applies only when no ordinary guard matches.
 - Reset the RM and episode-local labeling memory on environment reset.
-- Only declared final states accept the task. Non-final absorbing sinks may represent
-  irreversible violations without a penalty or another failure transition. States
-  remember earlier events; a false proposition now does not erase recorded progress.
+- Only declared final states accept the task. A declared rejecting state (`REJECTING_STATES`)
+  marks an irreversible violation; RMs without that line (such as ARM-FM paper RMs) have none.
+  States remember earlier events; a false proposition now does not erase recorded progress.
+- Entering a final or rejecting state ends the episode, as do the environment's own termination
+  and its time limit, for every RM-wrapped run. A truncated step that did not terminate adds -0.5
+  to the RM reward.
+- The learner reward follows the run's `reward_source`: `rm` (default) the RM reward only,
+  `both` environment + RM reward, `env` no RM at all. `info["env_reward"]` always holds the raw
+  environment reward and `info["rm_reward"]` the RM reward, including the time-limit penalty.
 - App graphs, exported SVGs, and the standalone graph script share the same fallback
   display. Show explicit fallback edges with an `else` label. For every declared state
   without an outgoing `else`, draw a zero-reward self-loop labeled `else`, including
@@ -73,7 +79,8 @@ without expanding the machine or adding a guard-coverage calculation.
 ## Enforcement
 
 - `app/src/arm_fm/runtime.py` owns guard evaluation, explicit fallback selection,
-  zero-reward implicit loops, ordered overlap warnings, and one update per step.
+  zero-reward implicit loops, ordered overlap warnings, one update per step, episode termination
+  on final or rejecting states, the time-limit penalty, and the reward source.
   `tests/test_arm_fm.py` checks the runtime contracts.
 - `app/src/compiler/rm_format.py` owns the shared text parser and serializer; the compiler
   and the runtime both import it, and it never imports `src.arm_fm`.
@@ -98,3 +105,6 @@ without expanding the machine or adding a guard-coverage calculation.
   compiler output's implicit self-loop and zero default reward explicit.
 - 2026-10-12: Recorded that paper-reproduction runs keep one update per step although the
   authors' runtime chains events.
+- 2026-10-12: Added declared rejecting states, episode end on RM final or rejecting states and on
+  the time limit (-0.5), and `reward_source` (default `rm`), following Toro Icarte et al. (JAIR
+  2022), where reaching an RM terminal state ends the episode (user decisions).

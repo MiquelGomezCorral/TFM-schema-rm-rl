@@ -15,10 +15,11 @@ diagnostics to reproduce a failed run without changing compilation semantics.
   its feedback; the web Run status retains this reason rather than only a failed result.
   Expected provider failures also retain their diagnostic message. The generic failure
   message is a fallback only when no specific reason was delivered.
-- Each task exposes nine sequential stages: structured proposal generation, optional task
-  critic, deterministic DECLARE/LTLf materialization, FL-AT/MONA DFA compilation,
-  Reward Machine construction, state-description generation, optional Reward Machine critic,
-  optional MiniGrid labeling generation, and optional local node embeddings.
+- Each task exposes eight sequential stages: structured proposal generation, deterministic
+  DECLARE/LTLf materialization, FL-AT/MONA DFA compilation, Reward Machine construction (FL-AT
+  product and the reward layer), the optional critic, state-description generation, optional
+  labeling generation, and optional local node embeddings. Compile warnings (rule-only task,
+  soft clauses without reward effect) are logged and shown with the result.
 - State descriptions appear in the app's Completed output, paired with their node
   identifiers, and are retained in the existing step trace and optional Markdown report.
   Previously saved traces without descriptions remain readable.

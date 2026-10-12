@@ -17,15 +17,20 @@ Every claim is marked with how it was checked:
    one answer, every clause the task needs. Each clause = one IBM DECLARE template, its
    propositions, and a hard/soft tag.
 2. **IBM nl2ltl** turns each (template, propositions) into an LTLf formula with its own
-   templates and grounding. Its formulas are used for every pattern, unchanged.
+   template classes and `to_ltlf()`. Its formulas are used for every pattern, unchanged. IBM's
+   grounding helper is skipped: **[code]** `ground_notcoexistence` passes the second proposition
+   twice (`dependencies/nl2ltl/nl2ltl/engines/grounding.py:108-111`), so building the template
+   classes directly is both simpler and correct.
 3. **FL-AT fork** compiles each formula to a DFA with MONA and builds the synchronous product
    of all clause DFAs. One small addition: it also returns, for each product state, the tuple
    of per-clause DFA states (`sdict`).
-4. **Our cleanup layer** turns that product into the final Reward Machine: hard pruning,
-   minimization, and rewards.
+4. **Our cleanup layer** turns that product into the final Reward Machine: hard pruning and
+   rewards (minimization deferred).
+5. **One critic** reviews the task, the clauses and the compiled RM before state descriptions.
 
 Out of scope for this redesign: labeling functions, RM state descriptions and embeddings, and
-the RM text format. Other pipeline steps own them.
+the RM text format, except one new optional `REJECTING_STATES:` line and `FINAL_STATES:` being
+allowed to be empty. Other pipeline steps own the rest.
 
 ## Why this shape
 
@@ -131,7 +136,9 @@ the RM text format. Other pipeline steps own them.
   final states. Moving forward pays, staying pays 0, going back costs the same amount, and any
   cycle sums to exactly 0, so loops cannot be farmed. Source: Ng, Harada & Russell 1999. With the
   learner's discount in the formula (`gamma * Phi(next) - Phi(current)`), self-loops pay a tiny
-  `(1 - gamma)` amount instead of 0; both forms are policy-safe.
+  `(1 - gamma)` amount instead of 0. We use the undiscounted difference while the learner uses
+  `gamma = 0.99`: an accepted approximation, since a cycle can then net a small, bounded
+  positive shaping `(1 - gamma) * (Phi(v) - Phi(u))`; it cannot be farmed without limit.
 - **[decision] Longest path, not shortest,** for the shortcut reason above, and because the
   environment may never produce the shortcut. For RMs with cycles, compute it on the graph with
   each cycle collapsed to one node; edges inside a cycle get 0.
@@ -155,9 +162,9 @@ the RM text format. Other pipeline steps own them.
   a soft rule, it still has to open the door to finish. Final = every hard goal clause done and
   every hard rule clause satisfied. Soft clauses only change the reward on the finishing edge
   (bonus if satisfied, penalty if not) or on the edge where they break.
-- **[decision] No end-of-episode check.** Reaching a final state ends the episode, so the rule is
-  judged on that last edge. A task that never reaches final ends by the environment's time
-  limit, and it has already missed the completion reward, so nothing more is added.
+- **[decision] No end-of-episode check in the RM.** Reaching a final state ends the episode, so
+  the rule is judged on that last edge. A task that never reaches final ends by the time limit;
+  the runtime then adds the time-limit penalty (see below) and nothing else.
 - **[decision] States are classified per clause, from each clause's own DFA** (through `sdict`),
   not from the merged RM's "can still reach the goal", which mixes hard and soft violations.
 - **[decision] Regressions exist only if the task or environment states them.** "Drop the key"
@@ -194,13 +201,17 @@ having conflicting clauses.
 
 ### Episodes, rewards and critics
 
-- **[code] Today the RM never ends an episode.** The RL wrapper takes `terminated` only from the
-  environment and returns environment reward + RM reward
-  (`app/src/arm_fm/runtime.py:177-202`).
+- **[code] Before this redesign the RM never ended an episode.** The RL wrapper took `terminated` only from the
+  environment and returned environment reward + RM reward (`app/src/arm_fm/runtime.py`, before Slice 1).
 - **[decision] The episode ends in any of these cases:** the environment terminates, the RM
-  reaches a final state, the RM reaches the well, or the time limit / step limit is hit. Hitting
-  the time limit penalizes the agent.
-- **[decision] Reward source is a flag:** RM only, environment only (no RM), or both.
+  reaches a final state, the RM reaches the well, or the time limit / step limit is hit, for all
+  runs. Only declared finals count: the ARM-FM authors' released RMs declare none, so imported
+  author bundles end on the environment or the time limit (an inferred final can come before the
+  environment goal). Hitting the time limit adds -0.5 to the RM reward. Source:
+  Toro Icarte et al. 2022 end the episode on RM terminal states; ARM-FM never says it.
+- **[decision] Reward source is a flag** `reward_source: rm | env | both`, default `rm`
+  everywhere, paper-reproduction configs included (the original RM papers use the RM as the only
+  reward; this departs from ARM-FM's environment + RM sum). `env` means no RM at all.
 - **[decision] One critic, at the end.** There is one non-deterministic step (the LLM's clauses),
   so there is one thing to critique. The critic gets the task, the generator's clause output and
   the compiled RM, with the generator's guidelines plus critique guidelines. It replaces today's
@@ -208,6 +219,11 @@ having conflicting clauses.
 - **[decision] Rule-only tasks are allowed.** A task with no hard goal clause gets no final state;
   only the time limit ends it. The critic accepts it, and the UI and CLI warn the user.
   Preference-only tasks are worth exploring later.
+- **[decision] A hard goal with no reachable final is an error,** reported as conflicting
+  clauses (e.g. `Existence(p)` + `Absence(p)`), never compiled as a rule-only task.
+- **[decision] Soft clauses without reward effect are allowed and named in the warning.** In a
+  task with no hard goal, soft clauses never reach a finishing edge: soft goals pay nothing and
+  soft rules only pay their break penalty.
 
 ### FL-AT change
 

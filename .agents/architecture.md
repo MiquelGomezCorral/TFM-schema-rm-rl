@@ -16,7 +16,8 @@ automata composition, and the external MONA executable for LTLf-to-DFA compilati
 - `app/src/engines/provider_engines.py`: OpenAI, OpenCode, and no-tools Antigravity CLI adapters.
 - `app/src/compiler/ltlf.py`: `pylogics` AST to FL-AT syntax serialization.
 - `app/src/compiler/pipeline.py`: per-task proposal and deterministic compilation boundaries.
-- `app/src/compiler/reward_machine.py`: guard parsing, DFA normalization, and clause composition.
+- `app/src/compiler/reward_machine.py`: guard parsing and the shared RM structures.
+- `app/src/compiler/reward_layer.py`: hard/soft clause labels, wells, pruning, and rewards over FL-AT's product.
 - `app/src/compiler/rm_format.py`: the shared ARM-FM RM text format (parse/serialize), below `src.arm_fm`.
 - `app/src/arm_fm/`: ARM-FM bundles, the string-state RM runtime, embeddings, per-family
   environment adapters plus the RM gym wrapper (`environments.py`), and the CleanRL-adapted
@@ -31,10 +32,10 @@ automata composition, and the external MONA executable for LTLf-to-DFA compilati
 ## Boundaries
 
 The environment Markdown owns the allowed proposition vocabulary. The selected provider may
-select only an IBM DECLARE pattern, declared propositions, and a proposed reward. Antigravity
+select only an IBM DECLARE template, declared propositions, and a hard/soft priority per clause. Antigravity
 uses its cached Google account through a schema-constrained `agy` subprocess whose custom agent
-exposes no tools. IBM templates own LTLf construction. FL-AT and MONA own DFA and Reward Machine
-topology. The serializer owns the reference repository's text format.
+exposes no tools. IBM templates own LTLf construction. FL-AT and MONA own the DFAs and their
+product; the reward layer owns wells, pruning, finality, and rewards. The serializer owns the reference repository's text format.
 
 The nested packages `dependencies/nl2ltl` and `dependencies/Flat` are editable
 development dependencies pinned by parent gitlinks. Their maintained forks are
@@ -43,19 +44,18 @@ executable. The compiler stops after Reward Machine generation and its optional
 postprocessing; the separate ARM-FM path owns the RL runtime.
 
 The local web UI is a thin adapter over `scripts.generate_rm`, injected by `app/app.py`. Optional
-`GenerationHooks` fan out run-scoped logging records and typed nine-stage progress events
+`GenerationHooks` fan out run-scoped logging records and typed eight-stage progress events
 to the CLI, local persistent diagnostics, and the web controller while exposing completed
 in-memory results and authoritative output paths. The web layer does not own proposal,
 critic, compilation, serialization, or output-path behavior.
 
 ## Flow
 
-Environment Markdown + task -> constrained proposal generator -> task critic ->
-DECLARE/LTLf materialization -> FL-AT/MONA DFA compilation -> local RM composition and
-serialization -> state descriptions -> RM critic -> optional MiniGrid labeling ->
-optional local state embeddings -> task-specific Reward Machine -> reference-format text.
-Each critic may be disabled; disabling both prints a warning and is reserved for explicit
-fallback runs that accept the compiler's first result per task. The complete
+Environment Markdown + task -> constrained proposal generator -> DECLARE/LTLf materialization
+-> FL-AT/MONA DFA compilation -> FL-AT product + reward layer and serialization -> critic ->
+state descriptions -> optional labeling -> optional local state embeddings -> task-specific
+Reward Machine -> reference-format text. The critic may be disabled; disabling it prints a
+warning and is reserved for explicit fallback runs that accept the compiler's first result per task. The complete
 refinement attempt is bounded to three runs per task.
 
 The web flow supplies the same inputs to that pipeline, polls local in-memory run state,

@@ -12,8 +12,8 @@ Record closed decisions here. Do not reopen them unless the user explicitly asks
 - The LLM never writes LTL or Reward Machine topology directly.
 - Generator responses from the selected provider are schema-constrained to supported patterns, declared
   propositions, and compiler-supported priority semantics for each task clause.
-- Automated task and RM critics replace human approval. Each may be disabled independently,
-  at least one must remain enabled, and both use the configured provider/model.
+- One automated critic after compilation replaces human approval; it may be disabled for a warned
+  fallback run and uses the configured critic model.
 - A task receives at most three complete generator/critic attempts; outputs are written
   only after every submitted task is accepted.
 - The selected provider's model is required through `--model` or its provider-specific model
@@ -56,9 +56,9 @@ Record closed decisions here. Do not reopen them unless the user explicitly asks
 - Support multiple ordinary-language task rows and one independently compiled RM per task.
 - Reuse `scripts.generate_rm` (injected into the web app) through narrow timed-progress and completion hooks; do not
   duplicate or move critic or formal compiler behavior into the web layer.
-- Expose both critic toggles, default both on, and reject a run with neither selected.
+- Expose one critic toggle, default on; disabling it is a warned fallback run.
 - Render the exact completed text and in-memory Reward Machine structures returned by the pipeline, using its authoritative output paths.
-- Present the structured nine-stage tracker by default while retaining the full plain-text
+- Present the structured eight-stage tracker by default while retaining the full plain-text
   Log view; task navigation observes the sequential pipeline and does not introduce
   parallel execution.
 - Retain full local, gitignored diagnostics for every run until manually deleted; logs

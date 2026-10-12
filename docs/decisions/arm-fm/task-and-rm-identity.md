@@ -15,8 +15,8 @@ tasks, while keeping the generator and critic responsibilities stable.
 - Shared-policy transfer follows ARM-FM: train with separate task RMs and condition the
   policy on the active RM state's language description or embedding.
 - The public input is an ordinary-language task, not an instruction or a caller-supplied
-  priority override. In compiler mode, the model infers the supported clause pattern and, for precedence,
-  whether ordering is soft or hard.
+  priority override. In compiler mode, the model infers each clause's IBM DECLARE template and
+  whether the clause is hard or soft.
 - The generator system prompt owns stable role, safety, supported-template, grounding,
   and output-format rules. The user prompt supplies the environment Markdown, task,
   candidate output (for critics), and use-case-specific additions.
@@ -24,37 +24,37 @@ tasks, while keeping the generator and critic responsibilities stable.
 - In compiler mode, the model translates ordinary language into normalized clauses and declared
   propositions. It does not write LTLf, invent propositions, or design RM topology;
   deterministic code and the formal compiler own those steps.
-- The compiler proposal schema and runtime validation share each supported pattern's
-  exact arity and allowed priorities. Invalid combinations are rejected, not coerced:
-  `Existence` and `ExistenceTwo` take one proposition with priority `none`;
-  `Precedence` takes two with priority `soft` or `hard`.
-- A precedence clause already requires both events. Hard ordering requires the first
-  event before the first occurrence of the second; reverse or simultaneous first
-  occurrence fails. Soft ordering permits those completions while preferring the
-  requested order. `ExistenceTwo` requires two distinct time points.
-- In compiler mode, the task critic reviews semantic fidelity and proposition grounding before compilation;
-  the independent RM critic reviews the serialized compiled machine with its generated
-  state descriptions as explanatory context. Both return a
-  strict acceptance decision and nonempty feedback, never corrected artifacts.
-- A separate compiler state-description request runs after RM construction and before the
-  RM critic. Its system prompt defines the inputs and tagging rules; its user prompt supplies
+- The compiler proposal schema and runtime validation share IBM nl2ltl's 8 DECLARE templates
+  and their exact arity: `Existence`, `ExistenceTwo` and `Absence` take one proposition;
+  `RespondedExistence`, `Response`, `Precedence`, `ChainResponse` and `NotCoExistence` take two.
+  Every clause has priority `hard` or `soft`. Invalid combinations are rejected, not coerced.
+  Template objects are built from IBM's template classes and every formula is IBM's `to_ltlf()`;
+  IBM's grounding helper is not used because it builds `NotCoExistence(b, b)`.
+- Clause formulas follow IBM exactly; for example `Precedence(a, b)` means no `b` before `a`
+  and also holds when neither occurs. Hard and soft never change a formula: soft changes only
+  rewards; hard also changes the RM structure (a hard violation leads to the rejecting state and a
+  pending hard obligation blocks finishing). The reward layer is described in
+  `docs/COMPILER_REWARD_DESIGN.md`.
+- In compiler mode, one critic reviews the compiled candidate after RM construction: it receives
+  the environment, task, validated clauses, and the compiled RM with its final and rejecting
+  states and compile warnings. It returns a strict acceptance decision and nonempty feedback,
+  never corrected artifacts.
+- A separate compiler state-description request runs after the critic accepts the RM. Its system prompt defines the inputs and tagging rules; its user prompt supplies
   the environment, original task, all validated clauses, compiled RM, rejecting-state metadata,
   and ordered node identifiers. It returns one JSON list of nonempty strings in node order,
   with 1–4 sentences describing each state's progress and remaining objectives.
 - Description generation uses the configured provider and generator model. Malformed descriptions
   and transient provider failures permit at most three tagging requests against the same
   compiled candidate; exhaustion stops the run without regenerating that candidate.
-  An RM-critic rejection follows the existing bounded proposal retry loop, with fresh
-  descriptions for the next candidate. Disabling critics does not disable tagging.
+  A critic rejection follows the existing bounded proposal retry loop. Disabling the critic
+  does not disable tagging.
 - Descriptions remain separate from RM topology, rewards, and text. They distinguish
   successful completion from irreversible rejection, preserve conjunctive requirements,
-  and follow the machine's event memory and fallback semantics. The RM critic uses them
-  to understand state intent, but grounds its verdict in the task, environment, and actual
-  transitions rather than treating generated prose as proof or extra requirements.
-- Compiler critics use paper-inspired checklists adapted to deterministic compilation.
-  The task critic checks logic, grounding, completeness, compactness, and format;
-  the RM critic also checks event coverage and reward safety using
-  [RM execution](rm-execution.md). Generic worked examples illustrate acceptance and
+  and follow the machine's event memory and fallback semantics.
+- The compiler critic uses a paper-inspired checklist adapted to deterministic compilation:
+  logic, grounding, completeness, compactness, format, event coverage, and reward safety using
+  [RM execution](rm-execution.md). Rule-only tasks and warned soft clauses without reward effect
+  are valid output. Generic worked examples illustrate acceptance and
   concrete rejection without declaring propositions for the submitted environment.
 - A correct candidate is accepted without optional changes. Rejection identifies a
   necessary defect in an actual clause, header, or transition; an RM semantic defect
@@ -65,12 +65,12 @@ tasks, while keeping the generator and critic responsibilities stable.
   Prompt feedback begins with `NO CHANGES NEEDED` or `CHANGES REQUIRED`. These are
   prompt instructions, not an additional execution-evidence gate or automated override
   of a critic's verdict.
-- In compiler mode, each task has at most three generator attempts. Each critic may be disabled;
-  disabling both prints a warning and accepts the compiler's first result. Enabled critics use the
+- In compiler mode, each task has at most three generator attempts. The critic may be disabled;
+  disabling it prints a warning and accepts the compiler's first result. Enabled critics use the
   configured provider and critic model.
 - Compiler model selection is role-specific: one generator model writes clauses and state
-  descriptions; a different critic model reviews both the clauses and the compiled RM.
-  Create the generator engine and, when either critic is enabled, the critic engine once
+  descriptions; a different critic model reviews the clauses and the compiled RM.
+  Create the generator engine and, when the critic is enabled, the critic engine once
   per run, sharing the loaded environment and selected provider. OpenCode compiler runs
   read `OPENCODE_MODEL_GENERATOR` and `OPENCODE_MODEL_CRITIC` for these roles.
   Missing critic configuration must not silently reuse the generator model. ARM-FM baseline
@@ -91,9 +91,9 @@ tasks, while keeping the generator and critic responsibilities stable.
   and state descriptions without changing their topology or rewards.
 - Compiler text uses the existing ARM-FM `TRANSITION_FUNCTION` and `REWARD_FUNCTION`
   sections. Generated headers are `REWARD_MACHINE:`, `STATES:`, `INITIAL_STATE:`,
-  `FINAL_STATES:`, and `DEFAULT_REWARD: 0`. `STATES` includes all states, including
-  accepting and rejecting states; compiler imports require exactly one final state
-  distinct from the initial state.
+  `FINAL_STATES:` (zero or one state; empty for rule-only tasks), `REJECTING_STATES:`
+  (the one rejecting well, only when present), and `DEFAULT_REWARD: 0`. `STATES` includes all
+  states, including accepting and rejecting states.
 - Transition rows are `(source, guard) -> destination`, including zero-reward state
   changes. Reward rows are `(source, guard, destination) -> reward` and generated text
   lists only nonzero rewards; omitted rewards are zero. Guards use `!`, `&`, `|`, and
@@ -109,7 +109,7 @@ tasks, while keeping the generator and critic responsibilities stable.
   The expert receives the environment, task, validated clauses, accepted RM and node
   descriptions, declared propositions, explicit runtime API, and bounded feedback.
   It uses the generator engine; its associated critic uses the critic engine when
-  `rm_critic` is enabled. AST validation always applies. At most three labeling
+  the compiler critic is enabled. AST validation always applies. At most three labeling
   candidates are tried against the same accepted RM; exhaustion stops the run.
 - Compiler bundles reuse accepted compiler labeling and node descriptions without
   additional generation calls. Persist predicates in `labeling.py` before execution;
@@ -119,13 +119,14 @@ tasks, while keeping the generator and critic responsibilities stable.
 ## Protected invariants
 
 - Every compiler clause uses only propositions declared by that environment.
-- In compiler mode, one task's clauses have conjunction semantics; unsupported disjunction, optional
-  branches, or incompatible clauses are rejected rather than weakened.
+- In compiler mode, one task's clauses have conjunction semantics; incompatible hard clauses are
+  rejected rather than weakened, and a soft clause may be violated only at its recorded cost,
+  never silently dropped.
 - Separate tasks remain separate RMs even when they share propositions or subgoals.
 - Task terminology is used consistently across CLI, web, configuration, prompts, and
   output; the removed instruction and priority-override interfaces are not aliases.
-- In compiler mode, the RM is accepted/finalized only after every enabled critic accepts the same attempt;
-  the RM critic necessarily reviews the already compiled candidate.
+- In compiler mode, the RM is accepted/finalized only after the enabled critic accepts the same
+  compiled attempt.
 - Compiler presentation and critic improvements must preserve ARM-FM baseline prompts
   and published evidence. A declared `## Labeling API` replaces only the marked labeling-API
   regions and `${api}` in both modes; it is the only labeling surface (no MiniGrid default).
@@ -135,7 +136,7 @@ tasks, while keeping the generator and critic responsibilities stable.
   justify rejection; correct conjunctive decomposition and zero-reward progress rows
   are valid compiler output.
 - In compiler mode, all generation steps use the generator model and all enabled critics
-  use the critic model. When either critic is enabled, the resolved model identifiers must
+  use the critic model. When the critic is enabled, the resolved model identifiers must
   differ; an identical pair is a configuration error. Provider failures do not silently
   fall back to another provider or exchange the models' roles.
 - Every completed compiler result carries a description for each declared node in the
@@ -190,7 +191,7 @@ through their inputs and prompts, while both challenge the same generator.
 ## Enforcement
 
 - Task and clause boundaries are implemented in `app/src/compiler/pipeline.py` and
-  `app/src/compiler/reward_machine.py`.
+  `app/src/compiler/reward_layer.py`.
 - Compiler text serialization and import reuse the ARM-FM format in
   `app/src/compiler/rm_format.py`, which the runtime also imports;
   `tests/test_reward_machine_format.py` checks interoperability.
@@ -219,8 +220,7 @@ through their inputs and prompts, while both challenge the same generator.
 - Reusable prompt contracts and rendering functions are packaged under `app/src/prompts`,
   while deterministic compiler ownership remains in `app/src/compiler/`.
 - Compiler critic instructions and worked examples live in
-  `app/src/prompts/compiler-rm/reward-ltlf-reviewer.system.md` and
-  `app/src/prompts/compiler-rm/reward-machine-reviewer.system.md`; baseline prompts
+  `app/src/prompts/compiler-rm/reward-machine-critic.system.md`; baseline prompts
   remain separate under `app/src/prompts/arm_fm/`. Model compliance and preservation
   of baseline prompts and published evidence are Review-only. Runtime enforcement
   is listed in [RM execution](rm-execution.md).
@@ -237,3 +237,6 @@ through their inputs and prompts, while both challenge the same generator.
 - 2026-10-12: Labeling generation requires a declared `## Labeling API` (user decision); plain
   RM compilation without labeling does not. The MiniGrid default surface and MiniGrid-only prompt
   regions were removed, so MiniGrid prompts changed; earlier MiniGrid bundles stay usable for training.
+- 2026-10-12: Compiler redesign (user decisions): IBM's 8 templates and formulas, hard/soft per
+  clause, FL-AT's product with a reward layer, one critic after compilation, zero or one final
+  state plus `REJECTING_STATES`. Design and sources: `docs/COMPILER_REWARD_DESIGN.md`.

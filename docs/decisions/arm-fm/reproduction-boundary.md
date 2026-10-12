@@ -41,8 +41,14 @@ semantic rather than byte-for-byte.
   Craftium, selected by the run config's `algorithm`.
 - One run may train on several task bundles (`task_bundles`), one drawn per episode; the policy
   sees only the observation and the current RM-state embedding, and each task keeps its own RM
-  and labeling. `success: rm` ends an episode on RM acceptance without adding reward, for tasks
-  the environment cannot judge.
+  and labeling. `success: rm` counts an exit on RM acceptance, for tasks the environment cannot
+  judge.
+- Paper-reproduction runs follow [RM execution](rm-execution.md): only declared final and
+  rejecting states end an episode, and the reward is RM-only by default. The authors' released RMs
+  declare no final state, so imported author bundles keep none (the inferred one is recorded only
+  in the manifest) and end on environment termination or the time limit, as the authors' runs do;
+  `reward_source: both` restores their env + RM sum. Our paper-mode RMs declare their finals and end
+  there. The RM-only default departs from the authors (user decisions, 2026-10-12).
 - The environment Markdown owns the allowed proposition vocabulary. Propositions describe
   observable state conditions or explicitly documented progress events; raw actions are
   not RM events.
@@ -179,3 +185,6 @@ specifics out of the learner so new environments need no loop changes.
   changed). Experiment guide: `docs/EXPERIMENTS.md`.
 - 2026-10-12: Added the paper prompt profile, released-bundle import, paper-style labeling
   and the authors' pixel pipeline for validating the reproduction against the paper's DQN results.
+- 2026-10-12: Paper-reproduction runs use RM-only reward by default and end on declared RM finals
+  (user decisions); imported author bundles declare no final, because an inferred final can come
+  before the environment goal (UnlockToUnlock, KeyCorridorS6R3).
