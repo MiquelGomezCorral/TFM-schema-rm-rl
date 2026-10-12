@@ -52,6 +52,7 @@ def _coerce_number(numeric_type: type, value: object) -> int | float:
 
 ALGORITHMS = ("dqn", "ppo")
 SUCCESS_MODES = ("env", "rm")
+REWARD_SOURCES = ("rm", "env", "both")
 TASK_BUNDLE_KEYS = ("bundle", "labeling_bundle", "env_kwargs", "success")
 PPO_POSITIVE = (
     "ppo_num_envs",
@@ -77,6 +78,15 @@ def _is_finite_number(value: object) -> bool:
 def _check_env_kwargs(value: object, where: str) -> None:
     if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
         raise ValueError(f"{where} must be a mapping with string keys")
+
+
+def _check_removed_keys(yaml_data: dict, config_path: Path) -> None:
+    """Name the replacement of ``use_rm``, which a bare unknown-key error would not."""
+    if "use_rm" in yaml_data:
+        raise ValueError(
+            f"{config_path}: use_rm was replaced by reward_source "
+            f"({', '.join(REWARD_SOURCES)}); use_rm: false is reward_source: env"
+        )
 
 
 def _task_bundle(entry: object, index: int) -> dict:
@@ -152,6 +162,8 @@ class Configuration:
     MAX_TASK_CLAUSES: ClassVar[int] = 25
     CLAUSE_COMPLETION_REWARD: ClassVar[float] = 0.1
     TASK_COMPLETION_REWARD: ClassVar[float] = 1.0
+    # Added to the RM reward on the step where the time limit ends an episode the RM did not.
+    TIME_LIMIT_PENALTY: ClassVar[float] = -0.5
 
     # ============================== Runtime options ==============================
 
@@ -204,7 +216,9 @@ class Configuration:
     layout: str = "fixed"
     layout_seed: int | None = None  # None means the run seed
     labeling_bundle: Path | None = None
-    use_rm: bool = True
+    # The learner's reward: ``rm`` the RM reward alone, ``both`` environment + RM reward, ``env``
+    # the plain environment with no RM. The flag is run-wide.
+    reward_source: str = "rm"
     env_kwargs: dict = field(default_factory=dict)  # keyword arguments of gym.make
     algorithm: str = "dqn"
     # ``env`` ends an episode on the environment's own success, ``rm`` on RM acceptance.
@@ -287,6 +301,7 @@ class Configuration:
         if not isinstance(yaml_data, dict):
             raise ValueError(f"{config_path} must be a YAML mapping")
 
+        _check_removed_keys(yaml_data, config_path)
         field_types = {item.name: item.type for item in fields(self)}
         unknown = sorted(str(key) for key in yaml_data.keys() - field_types.keys())
         if unknown:
@@ -351,12 +366,20 @@ class Configuration:
             )
         if self.success not in SUCCESS_MODES:
             raise ValueError(f"success must be one of {', '.join(SUCCESS_MODES)}: {self.success!r}")
+        if self.reward_source not in REWARD_SOURCES:
+            raise ValueError(
+                f"reward_source must be one of {', '.join(REWARD_SOURCES)}: {self.reward_source!r}"
+            )
+        if self.reward_source == "env" and self.success == "rm":
+            raise ValueError("success: rm needs a Reward Machine; reward_source: env has none")
         _check_env_kwargs(self.env_kwargs, "env_kwargs")
 
         if not isinstance(self.task_bundles, list):
             raise ValueError("task_bundles must be a list of mappings")
         if self.task_bundles and self.bundle is not None:
             raise ValueError("task_bundles and bundle are mutually exclusive")
+        if self.task_bundles and self.reward_source == "env":
+            raise ValueError("task_bundles needs a Reward Machine; reward_source: env has none")
         self.task_bundles = [
             _task_bundle(entry, index) for index, entry in enumerate(self.task_bundles)
         ]

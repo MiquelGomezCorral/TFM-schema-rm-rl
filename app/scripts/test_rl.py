@@ -134,6 +134,8 @@ def _test_run(CONFIG: Configuration, directory: Path, gifs: int) -> dict[str, ob
 
 def _run_config(saved: dict[str, Any], seed_base: int) -> Configuration:
     """The run's own settings, rebuilt from its ``config.yaml``, testing from ``seed_base``."""
+    if "use_rm" in saved:
+        raise ValueError("This run predates reward_source (its config.yaml has use_rm); retrain it")
     names = {item.name for item in fields(Configuration)}
     settings = {key: value for key, value in saved.items() if key in names}
     config = Configuration(**{**settings, "yaml_config_name": None})

@@ -10,7 +10,6 @@ Usage:
 
 import json
 import re
-from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -31,8 +30,8 @@ def import_paper_bundle(CONFIG: Configuration) -> None:
     The RM events are the guard names of ``RM-vFINAL.txt``; ``FNS-vFINAL.py`` is copied as is
     and may define more functions than the RM uses. The task text is the mission quoted in the
     authors' generation trace, which for KeyCorridorS6R3 is the DoorKey mission. The released
-    RM names no final state, so the states that cannot be left are our inference, recorded in the
-    manifest.
+    RM names no final state and the bundle keeps it that way, so only the environment ends an
+    episode; the states that cannot be left are our inference, recorded in the manifest only.
 
     Raises:
         ValueError: If an option is missing, the environment is unknown, or the clone lacks a file.
@@ -46,8 +45,6 @@ def import_paper_bundle(CONFIG: Configuration) -> None:
     machine_dir = CONFIG.reference / "reward_machines" / CONFIG.paper_env
     embedding_dir = CONFIG.reference / "state_embeddings" / CONFIG.paper_env
     machine = parse_paper_reward_machine((machine_dir / "RM-vFINAL.txt").read_text("utf-8"))
-    # The released RM names no final state; the one that cannot be left is our inference.
-    machine = replace(machine, final_states=infer_final_states(machine))
     generator = f"authors-released @ {clone_head(CONFIG.reference)}"
     task, trace = _mission(machine_dir)
 
@@ -61,7 +58,10 @@ def import_paper_bundle(CONFIG: Configuration) -> None:
         environment=CONFIG.paper_env,
         proposition_semantics=dict.fromkeys(machine.propositions, _EVENT_NOTE),
         provenance={"generator": generator, "status": "imported", "mission_source": trace},
-        generation={"generator": generator, "final_states_inferred": list(machine.final_states)},
+        generation={
+            "generator": generator,
+            "final_states_inferred": list(infer_final_states(machine)),
+        },
         validation={"structural": True},
         stage_status=dict.fromkeys(_STAGES, "complete"),
         inputs={"task": task},

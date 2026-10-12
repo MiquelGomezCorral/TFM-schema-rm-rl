@@ -46,7 +46,11 @@ class RuntimeTransition:
 
 @dataclass(frozen=True)
 class PaperRewardMachine:
-    """A paper-style RM with optional, possibly multiple final states."""
+    """A paper-style RM with optional, possibly multiple final states and rejecting states.
+
+    Both kinds end an episode; only a final state accepts the task. Paper RMs declare no
+    rejecting state.
+    """
 
     states: tuple[str, ...]
     initial_state: str
@@ -54,27 +58,39 @@ class PaperRewardMachine:
     final_states: tuple[str, ...] = ()
     propositions: tuple[str, ...] = ()
     default_reward: float | None = None
+    rejecting_states: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         states = tuple(str(state) for state in self.states)
         finals = tuple(self.final_states)
-        _check_states(states, self.initial_state, finals)
+        rejecting = tuple(self.rejecting_states)
+        _check_states(states, self.initial_state, finals, rejecting)
         _check_transitions(self.transitions, set(states))
         _check_default_reward(self.default_reward)
         proposition_names = tuple(self.propositions) or _guard_propositions(self.transitions)
         _check_guards(self.transitions, proposition_names)
         object.__setattr__(self, "states", states)
         object.__setattr__(self, "final_states", finals)
+        object.__setattr__(self, "rejecting_states", rejecting)
         object.__setattr__(self, "propositions", proposition_names)
 
 
-def _check_states(states: tuple[str, ...], initial_state: str, finals: tuple[str, ...]) -> None:
+def _check_states(
+    states: tuple[str, ...],
+    initial_state: str,
+    finals: tuple[str, ...],
+    rejecting: tuple[str, ...],
+) -> None:
     if not states or len(set(states)) != len(states):
         raise RuntimeValidationError("Reward Machine states must be nonempty and unique")
     if initial_state not in states:
         raise RuntimeValidationError("Reward Machine initial state is not declared")
     if not set(finals) <= set(states):
         raise RuntimeValidationError("Reward Machine final state is not declared")
+    if not set(rejecting) <= set(states):
+        raise RuntimeValidationError("Reward Machine rejecting state is not declared")
+    if set(finals) & set(rejecting):
+        raise RuntimeValidationError("A Reward Machine state cannot be both final and rejecting")
 
 
 def _check_transitions(transitions: Sequence[RuntimeTransition], declared: set[str]) -> None:
@@ -115,11 +131,13 @@ def serialize_reward_machine(reward_machine: RewardMachineStructure) -> str:
 
 def parse_reward_machine(text: str) -> RewardMachineStructure:
     """Read ARM-FM text, including explicit self-loops and ``else`` fallback rows."""
-    machine = parse_paper_reward_machine(text, require_final_states=True)
-    if len(machine.final_states) != 1:
-        raise ValueError("Compiler Reward Machine imports require exactly one FINAL_STATES entry")
+    machine = parse_paper_reward_machine(text)
+    if len(machine.final_states) > 1:
+        raise ValueError("Compiler Reward Machine imports allow at most one FINAL_STATES entry")
     if machine.initial_state in machine.final_states:
         raise ValueError("Initial and final states must differ")
+    if machine.initial_state in machine.rejecting_states:
+        raise ValueError("Initial and rejecting states must differ")
     return paper_to_structure(machine)
 
 
@@ -154,6 +172,7 @@ def parse_paper_reward_machine(
     )
     if require_final_states and ("FINAL_STATES" not in sections or not parsed_finals):
         raise RuntimeValidationError("Reward Machine must declare FINAL_STATES")
+    rejecting = _parse_names(sections.get("REJECTING_STATES", ""), "rejecting state")
     default_reward = _parse_default_reward(sections.get("DEFAULT_REWARD"))
     transitions = _parse_transitions(sections["TRANSITION_FUNCTION"], states)
     rewards = _parse_rewards(sections["REWARD_FUNCTION"])
@@ -164,6 +183,7 @@ def parse_paper_reward_machine(
         final_states=parsed_finals,
         propositions=tuple(propositions),
         default_reward=default_reward,
+        rejecting_states=rejecting,
     )
 
 
@@ -262,8 +282,9 @@ def serialize_paper_reward_machine(machine: PaperRewardMachine) -> str:
         f"STATES: {', '.join(states)}",
         f"INITIAL_STATE: {machine.initial_state}",
     ]
-    if machine.final_states:
-        lines.append(f"FINAL_STATES: {', '.join(machine.final_states)}")
+    lines.append(f"FINAL_STATES: {', '.join(machine.final_states)}".rstrip())
+    if machine.rejecting_states:
+        lines.append(f"REJECTING_STATES: {', '.join(machine.rejecting_states)}")
     if machine.default_reward is not None:
         lines.append(f"DEFAULT_REWARD: {_format_reward(machine.default_reward)}")
     lines.append("TRANSITION_FUNCTION:")
@@ -295,24 +316,26 @@ def compiler_machine_to_paper(
                 float(item.reward),
             )
         )
+    final_state = reward_machine.final_state
     return PaperRewardMachine(
         states=tuple(state_names[state] for state in states),
         initial_state=state_names[reward_machine.initial_state],
         transitions=tuple(transitions),
-        final_states=(state_names[reward_machine.final_state],),
+        final_states=() if final_state is None else (state_names[final_state],),
         propositions=tuple(propositions),
         default_reward=0.0,
+        rejecting_states=tuple(state_names[state] for state in reward_machine.rejecting_states),
     )
 
 
 def paper_to_structure(machine: PaperRewardMachine) -> RewardMachineStructure:
     """Convert a parsed paper Reward Machine into the compiler's numeric structure."""
-    if len(machine.final_states) != 1:
-        raise ValueError("The graph renderer needs exactly one FINAL_STATES entry")
+    if len(machine.final_states) > 1:
+        raise ValueError("The graph renderer allows at most one FINAL_STATES entry")
 
     names = list(machine.states)
     index = {name: position for position, name in enumerate(names)}
-    final_state = index[machine.final_states[0]]
+    final_state = index[machine.final_states[0]] if machine.final_states else None
     transitions = tuple(
         Transition(
             index[transition.source],
@@ -322,16 +345,31 @@ def paper_to_structure(machine: PaperRewardMachine) -> RewardMachineStructure:
         )
         for transition in machine.transitions
     )
-    edges = ((transition.source, transition.destination) for transition in transitions)
     return RewardMachineStructure(
         states=tuple(range(len(names))),
         initial_state=index[machine.initial_state],
         final_state=final_state,
-        rejecting_states=tuple(
-            sorted(states_without_path_to_final(range(len(names)), edges, final_state))
-        ),
+        rejecting_states=_rejecting_indexes(machine, index, final_state, transitions),
         transitions=transitions,
     )
+
+
+def _rejecting_indexes(
+    machine: PaperRewardMachine,
+    index: Mapping[str, int],
+    final_state: int | None,
+    transitions: Sequence[Transition],
+) -> tuple[int, ...]:
+    """The declared rejecting states, else the states with no path to the final one.
+
+    Inferring needs a final state: a machine without one has nothing to be cut off from.
+    """
+    if machine.rejecting_states:
+        return tuple(sorted(index[name] for name in machine.rejecting_states))
+    if final_state is None:
+        return ()
+    edges = ((transition.source, transition.destination) for transition in transitions)
+    return tuple(sorted(states_without_path_to_final(index.values(), edges, final_state)))
 
 
 def _split_sections(text: str) -> dict[str, str]:
@@ -358,6 +396,7 @@ def _split_sections(text: str) -> dict[str, str]:
             "INITIAL_STATE",
             "FINAL_STATE",
             "FINAL_STATES",
+            "REJECTING_STATES",
             "DEFAULT_REWARD",
         }:
             sections[header.group(1)] = [header.group(2)]

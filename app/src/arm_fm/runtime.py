@@ -20,6 +20,7 @@ from src.compiler.rm_format import (
     RuntimeTransition,
     RuntimeValidationError,
 )
+from src.config import Configuration
 
 _ALLOWED_LABELING_BUILTINS = {
     "abs",
@@ -137,18 +138,38 @@ class RewardMachineRuntime:
 
 
 class RewardMachineEnvironment:
-    """Small Gym-compatible adapter that combines environment and RM rewards."""
+    """Small Gym-compatible adapter that runs the RM beside an environment.
+
+    The episode ends when the environment ends or, with ``terminate_on_rm``, the RM enters a
+    final or rejecting state. A step that hits the time limit without terminating adds the
+    time-limit penalty to the RM reward. ``info`` carries the raw ``env_reward`` and the
+    ``rm_reward``; the returned reward is the RM reward (``reward_source`` ``rm``) or env + RM
+    (``both``).
+    """
 
     def __init__(
         self,
         environment: object,
         runtime: RewardMachineRuntime,
         labeling: Mapping[str, Callable[[object], bool]] | str,
-        propositions: Sequence[str] | None = None,
+        reward_source: str = "rm",
+        terminate_on_rm: bool = True,
     ) -> None:
+        if reward_source not in ("rm", "both"):
+            raise RuntimeValidationError(
+                f"A Reward Machine wrapper needs reward_source rm or both, not {reward_source!r}"
+            )
         self.environment = environment
         self.runtime = runtime
-        self.propositions = tuple(propositions or runtime.machine.propositions)
+        self.reward_source = reward_source
+        # Without terminate_on_rm the RM never ends the episode: the scripted probe plays on
+        # to the environment goal.
+        self.terminal_states = (
+            frozenset((*runtime.machine.final_states, *runtime.machine.rejecting_states))
+            if terminate_on_rm
+            else frozenset()
+        )
+        self.propositions = runtime.machine.propositions
         self.labeling = (
             load_labeling_functions(labeling, self.propositions)
             if isinstance(labeling, str)
@@ -183,6 +204,10 @@ class RewardMachineEnvironment:
             truncated = False
         valuation = self.runtime.evaluate_labeling(self.environment, self.labeling)
         rm_step = self.runtime.step(valuation)
+        terminated = bool(terminated) or rm_step.destination in self.terminal_states
+        rm_reward = rm_step.reward
+        if truncated and not terminated:
+            rm_reward += Configuration.TIME_LIMIT_PENALTY
         self.execution_evidence.append(
             {
                 "valuation": dict(valuation),
@@ -196,10 +221,12 @@ class RewardMachineEnvironment:
             {
                 "valuation": valuation,
                 "rm_state": rm_step.destination,
-                "rm_reward": rm_step.reward,
+                "env_reward": float(reward),
+                "rm_reward": rm_reward,
             }
         )
-        return observation, float(reward) + rm_step.reward, terminated, truncated, info
+        learner_reward = rm_reward + (float(reward) if self.reward_source == "both" else 0.0)
+        return observation, learner_reward, terminated, truncated, info
 
 
 class _LabelingContext:

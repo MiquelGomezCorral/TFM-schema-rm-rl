@@ -25,11 +25,14 @@ class Transition:
 
 @dataclass(frozen=True)
 class RewardMachineStructure:
-    """A numeric Reward Machine with one success final state."""
+    """A numeric Reward Machine with at most one success final state.
+
+    A rule-only machine (no hard goal) has no final state: ``final_state`` is ``None``.
+    """
 
     states: tuple[int, ...]
     initial_state: int
-    final_state: int
+    final_state: int | None
     rejecting_states: tuple[int, ...]
     transitions: tuple[Transition, ...]
 

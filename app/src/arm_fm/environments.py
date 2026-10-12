@@ -54,13 +54,14 @@ def make_environment(environment_id: str, **kwargs: Any) -> Any:
 
 
 def make_run_environment(CONFIG: Configuration) -> RunEnvironment:
-    """Build a fresh run environment from ``CONFIG``, wrapped with the RM when ``use_rm``.
+    """Build a fresh run environment from ``CONFIG``; ``reward_source: env`` adds no RM wrapper.
 
     Every call owns its own RM runtime and labeling memory, so train and eval
     environments never share RM state.
 
     With ``task_bundles`` it builds one such environment per task and returns them as one
-    ``MultiTaskEnvironment``. With ``success: rm`` an episode ends on RM acceptance.
+    ``MultiTaskEnvironment``. With ``success: rm`` an episode counts as a success only when it
+    ends on RM acceptance.
 
     Raises:
         ValueError: If the family, observation, gym id or RM inputs are missing or unknown.
@@ -76,14 +77,12 @@ def make_run_environment(CONFIG: Configuration) -> RunEnvironment:
         )
 
     # Load the RM first so a bad bundle fails before an engine or env exists.
-    rm_inputs = _reward_machine_inputs(CONFIG) if CONFIG.use_rm else None
+    rm_inputs = _reward_machine_inputs(CONFIG) if CONFIG.reward_source != "env" else None
     run = adapter(CONFIG)
     if rm_inputs is None:
-        if CONFIG.success == "rm":
-            raise ValueError("success: rm needs use_rm: true")
         return run
     try:
-        env = RewardMachineObservation(run.env, *rm_inputs)
+        env = RewardMachineObservation(run.env, *rm_inputs, CONFIG.reward_source)
     except Exception:
         run.env.close()
         raise
@@ -197,7 +196,8 @@ class RewardMachineObservation(gym.Wrapper):
 
     ``RewardMachineEnvironment`` is not a ``gym.Env`` (``gym.Wrapper`` would reject it), so
     this wrapper composes one over the preprocessed env and delegates reset and step to it:
-    one RM update per step, reward = env + RM, RM reset on env reset. Observations are
+    one RM update per step, the episode ends on an RM final or rejecting state, the reward
+    follows ``reward_source``, RM reset on env reset. Observations are
     ``{"image": obs, "rm_embedding": phi(u)}`` with phi(u_I) after reset. ``info`` gains
     ``env_reward``, ``rm_reward``, ``rm_state`` and ``rm_accept`` (state is final).
     """
@@ -207,10 +207,13 @@ class RewardMachineObservation(gym.Wrapper):
         env: gym.Env,
         bundle: ArtifactBundle,
         labeling: Mapping[str, Callable[[object], bool]],
+        reward_source: str,
     ) -> None:
         super().__init__(env)
         machine = bundle.reward_machine
-        self.reward_machine = RewardMachineEnvironment(env, RewardMachineRuntime(machine), labeling)
+        self.reward_machine = RewardMachineEnvironment(
+            env, RewardMachineRuntime(machine), labeling, reward_source=reward_source
+        )
         self.final_states = frozenset(machine.final_states)
         self.embeddings = {
             state: np.asarray(vector, dtype=np.float32)
@@ -235,8 +238,6 @@ class RewardMachineObservation(gym.Wrapper):
     def step(self, action):
         observation, reward, terminated, truncated, info = self.reward_machine.step(action)
         state = info["rm_state"]
-        # RewardMachineEnvironment returns only the sum, so this can differ by one ulp.
-        info["env_reward"] = reward - info["rm_reward"]
         info["rm_accept"] = state in self.final_states
         return self._observation(observation, state), reward, terminated, truncated, info
 
@@ -245,11 +246,12 @@ class RewardMachineObservation(gym.Wrapper):
 
 
 class RMAcceptanceTermination(gym.Wrapper):
-    """End an episode when the RM reaches a final state (config ``success: rm``).
+    """Count an episode as a success only when it ends on RM acceptance (config ``success: rm``).
 
-    For missions the environment cannot judge. It adds no reward: the episode just ends, and
-    ``is_success`` counts an exit only when the episode ended on RM acceptance. Wrap it
-    directly around ``RewardMachineObservation``, whose ``info["rm_accept"]`` it reads.
+    For missions the environment cannot judge. It changes neither the episode nor the reward,
+    since the RM already ends the episode; ``is_success`` just reads whether the last step
+    left the RM in a final state. Wrap it directly around ``RewardMachineObservation``, whose
+    ``info["rm_accept"]`` it reads.
     """
 
     def __init__(self, env: gym.Env) -> None:
@@ -259,7 +261,7 @@ class RMAcceptanceTermination(gym.Wrapper):
     def step(self, action):
         observation, reward, terminated, truncated, info = self.env.step(action)
         self.accepted = info["rm_accept"]
-        return observation, reward, terminated or self.accepted, truncated, info
+        return observation, reward, terminated, truncated, info
 
     def is_success(self, terminated: bool, _env_reward: float) -> bool:
         return terminated and self.accepted
@@ -273,7 +275,7 @@ def _reward_machine_inputs(
     The RM, state descriptions and embeddings always come from ``bundle``.
     """
     if CONFIG.bundle is None:
-        raise ValueError("use_rm needs a bundle in the run config")
+        raise ValueError("reward_source rm or both needs a bundle in the run config")
     bundle = load_bundle(CONFIG.bundle)
     bundle.validate(require_complete=True)
 

@@ -68,7 +68,10 @@ def _probe_episode(
     env = make_environment(gym_id)
     episode = EpisodeProbe(gym_id, seed)
     try:
-        wrapped = RewardMachineEnvironment(env, RewardMachineRuntime(machine), labeling_source)
+        # The probe plays on to the env goal, so the RM must not end the episode at a final.
+        wrapped = RewardMachineEnvironment(
+            env, RewardMachineRuntime(machine), labeling_source, terminate_on_rm=False
+        )
         wrapped.reset(seed=seed)
         episode.rm_path = [wrapped.runtime.state]
         player = _Player(wrapped, episode, final_states)
@@ -98,7 +101,7 @@ class _Player:
     def act(self, action: int) -> None:
         if self.done:
             raise ProbeError("the episode already ended")
-        _, reward, terminated, truncated, info = self.env.step(action)
+        _, _, terminated, truncated, info = self.env.step(action)
         self.episode.steps += 1
         self.episode.events_fired |= {name for name, value in info["valuation"].items() if value}
         if info["rm_state"] != self.episode.rm_path[-1]:
@@ -107,7 +110,7 @@ class _Player:
                 self.episode.final_entered = self.episode.steps
         if terminated or truncated:
             self.done = True
-            self.episode.solved = terminated and reward - info["rm_reward"] > 0
+            self.episode.solved = terminated and info["env_reward"] > 0
 
     def execute(self, actions: Sequence[int]) -> None:
         for action in actions:

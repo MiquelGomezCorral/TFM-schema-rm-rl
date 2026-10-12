@@ -413,6 +413,7 @@ class ArmFMArtifactTests(unittest.TestCase):
                 states=(0, 1),
                 initial_state=0,
                 final_state=1,
+                rejecting_states=(),
                 transitions=(
                     SimpleNamespace(source=0, destination=1, condition=("done",), reward=0.0),
                 ),
@@ -470,6 +471,7 @@ REWARD_FUNCTION:
                 states=(0, 1),
                 initial_state=0,
                 final_state=1,
+                rejecting_states=(),
                 transitions=(
                     SimpleNamespace(source=0, destination=1, condition=("done",), reward=1.0),
                 ),
@@ -511,6 +513,7 @@ REWARD_FUNCTION:
                 states=(0, 1),
                 initial_state=0,
                 final_state=1,
+                rejecting_states=(),
                 transitions=(
                     SimpleNamespace(source=0, destination=1, condition=("done",), reward=1.0),
                 ),

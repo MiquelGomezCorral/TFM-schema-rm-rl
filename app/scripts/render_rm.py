@@ -31,7 +31,7 @@ def render_rm(CONFIG: Configuration) -> None:
 
 def render_reward_machine(text: str) -> str:
     """Return a standalone SVG document for one paper-format Reward Machine."""
-    machine = parse_paper_reward_machine(text, require_final_states=True)
+    machine = parse_paper_reward_machine(text)
     return render_structure_svg(paper_to_structure(machine))
 
 

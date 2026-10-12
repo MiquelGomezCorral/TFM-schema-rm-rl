@@ -384,15 +384,18 @@ class RolloutCollector:
             rollout.actions[step] = action
             rollout.logprobs[step] = logprob
 
-            observation, reward, terminated, truncated, infos = self.envs.step(action.cpu().numpy())
+            observation, rewards, terminated, truncated, infos = self.envs.step(
+                action.cpu().numpy()
+            )
             done = np.logical_or(terminated, truncated)
-            reward = torch.as_tensor(reward, dtype=torch.float32, device=self.device)
+            reward = torch.as_tensor(rewards, dtype=torch.float32, device=self.device)
             timed_out = np.nonzero(truncated & ~terminated)[0]
             rollout.rewards[step] = self._bootstrap_timeouts(
                 CONFIG, agent, reward, timed_out, infos
             )
 
-            self._record_episodes(recorder, reward, terminated, truncated, infos)
+            # The logged returns use the env's float64 rewards, not the float32 training tensor.
+            self._record_episodes(recorder, rewards, terminated, truncated, infos)
             self.next_observation = _to_tensors(_as_dict(observation), self.device)
             self.next_done = torch.as_tensor(done, dtype=torch.float32, device=self.device)
 
@@ -440,7 +443,7 @@ class RolloutCollector:
     def _record_episodes(
         self,
         recorder: RunRecorder,
-        reward: Tensor,
+        reward: np.ndarray,
         terminated: np.ndarray,
         truncated: np.ndarray,
         infos: dict,

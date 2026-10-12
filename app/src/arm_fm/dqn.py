@@ -88,7 +88,7 @@ RUN_SETTINGS = (
     "observation",
     "layout",
     "layout_seed",
-    "use_rm",
+    "reward_source",
     "bundle",
     "labeling_bundle",
     "env_kwargs",
@@ -223,8 +223,6 @@ def _check_settings(CONFIG: Configuration) -> None:
 
 
 def _check_task_bundles(CONFIG: Configuration) -> None:
-    if not CONFIG.use_rm:
-        raise ValueError("task_bundles needs use_rm: true")
     if CONFIG.labeling_bundle is not None:
         raise ValueError("labeling_bundle belongs inside each task_bundles entry, not the run")
     # Evaluation cycles the tasks from the first, so a shorter evaluation skips the last ones.
@@ -265,7 +263,7 @@ class QNetwork(nn.Module):
     """Encoder features, plus an RM-embedding MLP (d -> d/4 -> d/4) for Dict observations.
 
     The concatenated features feed Linear 512 -> ReLU -> |A|. A Box observation space
-    (``use_rm: false``) has no embedding branch.
+    (``reward_source: env``) has no embedding branch.
     """
 
     def __init__(
@@ -505,10 +503,15 @@ def _training_reset_seeds(CONFIG: Configuration) -> Iterator[int | None]:
 
 @dataclass
 class EpisodeTracker:
-    """Returns, length and final RM fields of one episode; RM fields stay None without an RM."""
+    """Returns, length and final RM fields of one episode; RM fields stay None without an RM.
+
+    ``total_return`` sums the rewards the learner received, which follow the run's
+    ``reward_source``; ``env_return`` and ``rm_return`` are logged apart from it.
+    """
 
     env_return: float = 0.0
     rm_return: float | None = None
+    total_return: float = 0.0
     length: int = 0
     exited: bool = False
     rm_state: str | None = None
@@ -516,14 +519,11 @@ class EpisodeTracker:
     task: str | None = None  # set by a multi-task env
     seed: int | None = None  # the reset seed of an evaluation episode
 
-    @property
-    def total_return(self) -> float:
-        return self.env_return + (self.rm_return or 0.0)
-
     def record(self, step: tuple, is_success: Callable[[bool, float], bool]) -> None:
         _, reward, terminated, _, info = step
         env_reward = info.get("env_reward", reward)
         self.env_return += env_reward
+        self.total_return += reward
         self.length += 1
         self.exited = is_success(terminated, env_reward)
         self.task = info.get("task")
@@ -776,10 +776,10 @@ def _success_modes(CONFIG: Configuration) -> dict[str, str]:
 def run_method(settings: Mapping[str, Any]) -> str:
     """Name a run's method from its saved ``config.yaml`` settings.
 
-    Returns ``sparse`` without a Reward Machine, else ``compiler`` or ``paper`` by the
+    Returns ``sparse`` with ``reward_source: env``, else ``compiler`` or ``paper`` by the
     ``rm_mode`` in the manifest of the run's bundle (a multi-task run reads its first task's).
     """
-    if not settings["use_rm"]:
+    if settings["reward_source"] == "env":
         return "sparse"
     bundle = settings["bundle"] or settings["task_bundles"][0]["bundle"]
     manifest = json.loads((Path(bundle) / "manifest.json").read_text(encoding="utf-8"))
