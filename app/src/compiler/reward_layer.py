@@ -7,12 +7,13 @@ the reward checks. FL-AT's own rewards and accepting states are ignored.
 
 import itertools
 from collections import defaultdict, deque
-from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import NamedTuple
 
+import networkx as nx
 from flat_tool import automatas_to_rm
 
 from src.config import Configuration
@@ -73,20 +74,15 @@ class RewardLayerResult:
 def build_reward_machine(dfas: Sequence[dict], soft: Sequence[bool]) -> RewardLayerResult:
     """Compile the clause DFAs into one Reward Machine with hard pruning and rewards.
 
-    Without a hard goal clause the machine has no final state (a rule-only task).
-
-    Args:
-        dfas (Sequence[dict]): One MONA DFA per clause, in clause order.
-        soft (Sequence[bool]): Whether each clause is soft; the others are hard.
-
-    Returns:
-        RewardLayerResult: The machine, whether the task has a hard goal, and the soft
-            clauses without any reward effect.
-
-    Raises:
-        ValueError: A clause DFA is not total, the clauses conflict (no step reaches a final
-            state while every hard clause holds) or the rewards contain a positive cycle.
+    ``soft[i]`` marks clause ``i`` soft; the others are hard. Without a hard goal clause the
+    machine has no final state (a rule-only task). Raises ``ValueError`` on a non-total DFA,
+    conflicting clauses, or a positive reward cycle.
     """
+    if len(dfas) != len(soft):
+        raise ValueError(
+            f"Expected one DFA per clause, got {len(dfas)} DFAs for {len(soft)} clauses"
+        )
+
     for index, dfa in enumerate(dfas):
         _check_complete(index, dfa)
 
@@ -113,10 +109,7 @@ def build_reward_machine(dfas: Sequence[dict], soft: Sequence[bool]) -> RewardLa
 def _clause_labels(dfa: dict) -> dict[str, ClauseState]:
     """Label each DFA state: accepting, one that can still reach accepting, or neither."""
     accepting = set(dfa["accepting_states"])
-    predecessors = _adjacency(
-        (destination, source) for (source, _), destination in dfa["transitions"].items()
-    )
-    can_accept = _closure(accepting, predecessors)
+    can_accept = _reaching(_graph(dfa["states"], _dfa_edges(dfa)), accepting)
     return {
         state: (
             ClauseState.SATISFIED
@@ -149,11 +142,14 @@ def _check_complete(index: int, dfa: dict) -> None:
 
 def _is_goal(dfa: dict) -> bool:
     """A goal clause is still unsatisfied after a step where no proposition is true."""
-    transitions = (
-        (source, guard, destination) for (source, guard), destination in dfa["transitions"].items()
-    )
-    quiet = _quiet_destination(transitions, dfa["initial_state"], dfa["alphabet"])
+    quiet = _quiet_destination(_dfa_edges(dfa), dfa["initial_state"], dfa["alphabet"])
     return quiet not in dfa["accepting_states"]
+
+
+def _dfa_edges(dfa: dict) -> list[tuple[str, str, str]]:
+    return [
+        (source, guard, destination) for (source, guard), destination in dfa["transitions"].items()
+    ]
 
 
 def _quiet_destination(
@@ -199,12 +195,12 @@ def _prune_by_hard_clauses(
     any. Finals absorb, so their outgoing edges are dropped before anything else is judged.
     """
     labels = product.labels
-    violated = {
+    edges = product.edges
+    dead = {
         state
         for state, states in labels.items()
         if any(states[index] is ClauseState.VIOLATED for index in hard_clauses)
     }
-    edges = _redirect(product.edges, violated)
 
     finals: set[str] = set()
     if hard_goal:
@@ -214,17 +210,17 @@ def _prune_by_hard_clauses(
             if all(states[index] is ClauseState.SATISFIED for index in hard_clauses)
         }
         edges = [edge for edge in edges if edge.source not in finals]
-        can_finish = _closure(finals, _adjacency((e.destination, e.source) for e in edges))
-        edges = _redirect(edges, set(labels) - can_finish)
+        dead = set(labels) - _reaching(_graph(labels, edges), finals)
 
-    reachable = _closure({product.initial}, _adjacency((e.source, e.destination) for e in edges))
+    edges = _redirect(edges, dead)
+    reachable = nx.descendants(_graph(labels, edges), product.initial) | {product.initial}
     kept = [edge for edge in edges if edge.source in reachable]
     if hard_goal and not any(edge.destination in finals for edge in kept):
         raise ValueError(
             "Task has conflicting clauses: no step reaches a final state while every hard "
             "clause holds"
         )
-    return kept, finals & reachable
+    return kept, finals
 
 
 def _redirect(edges: Iterable[_Edge], targets: set[str]) -> list[_Edge]:
@@ -289,31 +285,27 @@ def _progress(edges: Sequence[_Edge], finals: set[str], product: _Product) -> di
         return {}
 
     inner = [edge for edge in edges if edge.destination != _WELL]
-    successors = _adjacency((edge.source, edge.destination) for edge in inner)
-    states = set(successors) | {edge.destination for edge in inner}
-    components = _components(states, successors)
-    component_of = {state: index for index, members in enumerate(components) for state in members}
-
-    remaining: dict[str, int] = {}
-    for index, members in enumerate(components):
-        if finals.isdisjoint(members):
-            leaving = {
-                child
-                for node in members
-                for child in successors.get(node, ())
-                if component_of[child] != index
-            }
-            steps = 1 + max(remaining[child] for child in leaving)
+    graph = _graph((), inner)
+    dag = nx.condensation(graph)
+    components = dag.graph["mapping"]
+    steps: dict[int, int] = {}
+    for component in reversed(list(nx.topological_sort(dag))):
+        if finals.isdisjoint(dag.nodes[component]["members"]):
+            steps[component] = 1 + max(steps[child] for child in dag.successors(component))
         else:
-            steps = 0
-        remaining.update(dict.fromkeys(members, steps))
+            steps[component] = 0
+    remaining = {state: steps[component] for state, component in components.items()}
 
     # A rule clause's pre-step start (never re-entered) scores like its quiet successor, so an
     # idle first step pays 0.
     start = product.initial
     quiet = _quiet_destination(edges, start, product.alphabet)
-    returns_to_start = start in _closure(successors.get(start, ()), successors)
-    if quiet != _WELL and not returns_to_start:
+    alone = (
+        start in components
+        and len(dag.nodes[components[start]]["members"]) == 1
+        and not graph.has_edge(start, start)
+    )
+    if quiet != _WELL and alone:
         remaining[start] = remaining[quiet]
 
     return {
@@ -387,61 +379,14 @@ def _structure(
 # ======================================================================================
 
 
-def _adjacency(pairs: Iterable[tuple[str, str]]) -> dict[str, set[str]]:
-    adjacency: dict[str, set[str]] = defaultdict(set)
-    for source, destination in pairs:
-        adjacency[source].add(destination)
-    return adjacency
+def _graph(nodes: Iterable[str], edges: Iterable[tuple[str, str, str]]) -> nx.DiGraph:
+    """The directed graph of ``(source, guard, destination)`` edges plus the given ``nodes``."""
+    graph = nx.DiGraph()
+    graph.add_nodes_from(nodes)
+    graph.add_edges_from((source, destination) for source, _, destination in edges)
+    return graph
 
 
-def _closure(starts: Iterable[str], neighbors: Mapping[str, Iterable[str]]) -> set[str]:
-    """The states reachable from ``starts`` through ``neighbors``, starts included."""
-    seen = set(starts)
-    queue = deque(seen)
-    while queue:
-        for neighbor in neighbors.get(queue.popleft(), ()):
-            if neighbor not in seen:
-                seen.add(neighbor)
-                queue.append(neighbor)
-    return seen
-
-
-def _components(states: Iterable[str], successors: Mapping[str, Iterable[str]]) -> list[list[str]]:
-    """Strongly connected components (Tarjan), each listed after every component it reaches."""
-    order: dict[str, int] = {}
-    lowest: dict[str, int] = {}
-    stack: list[str] = []
-    work: list[tuple[str, Iterator[str]]] = []  # the depth-first path with each node's children
-    components: list[list[str]] = []
-
-    def visit(state: str) -> None:
-        order[state] = lowest[state] = len(order)
-        stack.append(state)
-        work.append((state, iter(successors.get(state, ()))))
-
-    for root in states:
-        if root in order:
-            continue
-        visit(root)
-        while work:
-            node, children = work[-1]
-            child = next(children, None)
-            if child is None:
-                work.pop()
-                if work:
-                    parent = work[-1][0]
-                    lowest[parent] = min(lowest[parent], lowest[node])
-                if lowest[node] == order[node]:
-                    components.append(_pop_component(stack, node))
-            elif child not in order:
-                visit(child)
-            elif child in stack:
-                lowest[node] = min(lowest[node], order[child])
-    return components
-
-
-def _pop_component(stack: list[str], root: str) -> list[str]:
-    start = stack.index(root)
-    component = stack[start:]
-    del stack[start:]
-    return component
+def _reaching(graph: nx.DiGraph, targets: set[str]) -> set[str]:
+    """The targets and every node with a path to one of them."""
+    return targets.union(*(nx.ancestors(graph, target) for target in targets))

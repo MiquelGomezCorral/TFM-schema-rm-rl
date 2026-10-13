@@ -82,11 +82,6 @@ class RewardLayerTests(unittest.TestCase):
         step = runtime.step({"goal": False, "lava": True})
         self.assertEqual((step.destination, step.reward), (machine.rejecting_states[0], -1.0))
 
-        runtime.reset()
-        runtime.step({"goal": False, "lava": False})
-        step = runtime.step({"goal": True, "lava": False})
-        self.assertEqual((step.destination, step.reward), (machine.final_states[0], 1.1))
-
     def test_an_idle_first_step_pays_nothing_and_finishing_pays_the_same_either_way(self):
         clauses, soft, propositions = (GOAL, NO_LAVA), (False, False), ("goal", "lava")
 

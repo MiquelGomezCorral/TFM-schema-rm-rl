@@ -125,7 +125,7 @@ def _evaluate(expression, valuation: dict[str, bool]) -> bool:
 
 
 def parse_boolean_guard(guard: str, propositions: Sequence[str] | set[str]):
-    """Parse a Boolean guard for consumers outside the numeric compiler."""
+    """Parse a Boolean guard into an expression tree."""
     names = {str(proposition).lower() for proposition in propositions}
     return _GuardParser(str(guard).lower(), names).parse()
 
