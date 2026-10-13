@@ -31,7 +31,7 @@ def _transition_tuples(structure):
 
 
 class RewardMachineFormatTests(unittest.TestCase):
-    def test_compiler_output_preserves_zero_reward_progress(self):
+    def test_compiler_output_round_trips_through_the_runtime(self):
         environment = EnvironmentDescription.from_markdown(
             "# Demo\n## Propositions\n- `done`: Completion event", source="demo.md"
         )
@@ -70,6 +70,7 @@ TRANSITION_FUNCTION:
 (u0, done) -> u1
 (u1, done) -> u2
 REWARD_FUNCTION:
+(u0, done, u1) -> 0.1
 (u1, done, u2) -> 1.1
 """
         self.assertEqual(result.text, expected)
@@ -77,7 +78,7 @@ REWARD_FUNCTION:
         runtime = RewardMachineRuntime(parse_paper_reward_machine(result.text))
         for valuation, destination, reward in (
             (False, "u0", 0),
-            (True, "u1", 0),
+            (True, "u1", 0.1),
             (False, "u1", 0),
             (True, "u2", 1.1),
             (True, "u2", 0),

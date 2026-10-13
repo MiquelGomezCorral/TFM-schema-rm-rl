@@ -14,11 +14,8 @@ from src.engines.structured import ProposalSelection
 from src.models import EnvironmentDescription
 
 from .ltlf import to_flat_syntax
-from .reward_machine import (
-    RewardMachineStructure,
-    compose_reward_machines,
-    normalize_reward_machine,
-)
+from .reward_layer import RewardLayerResult, build_reward_machine
+from .reward_machine import RewardMachineStructure
 from .rm_format import serialize_reward_machine
 
 
@@ -49,6 +46,7 @@ class CompilationResult:
     proposal: Proposal
     reward_machine: RewardMachineStructure
     text: str
+    warnings: tuple[str, ...] = ()
     state_descriptions: tuple[str, ...] = ()
     labeling_source: str = ""
     labeling_attempts: tuple[dict[str, object], ...] = ()
@@ -113,17 +111,28 @@ def build_compilation_result(
     dfas: Sequence[dict],
 ) -> CompilationResult:
     """Build and serialize a task-specific Reward Machine from compiled DFAs."""
-    clause_machines = tuple(
-        (
-            normalize_reward_machine(dfa, clause.pattern, clause.propositions, clause.priority),
-            clause.propositions,
-        )
-        for clause, dfa in zip(proposal.clauses, dfas, strict=True)
-    )
-    reward_machine = compose_reward_machines(clause_machines)
+    # NONE (Existence, ExistenceTwo) counts as hard until the engine schema is hard | soft.
+    soft = [clause.priority is PriorityLevel.SOFT for clause in proposal.clauses]
+    layer = build_reward_machine(dfas, soft)
     return CompilationResult(
         environment=environment,
         proposal=proposal,
-        reward_machine=reward_machine,
-        text=serialize_reward_machine(reward_machine),
+        reward_machine=layer.reward_machine,
+        text=serialize_reward_machine(layer.reward_machine),
+        warnings=_warnings(proposal, layer),
     )
+
+
+def _warnings(proposal: Proposal, layer: RewardLayerResult) -> tuple[str, ...]:
+    """Name what the user should know about: no hard goal, and soft clauses that pay nothing."""
+    warnings = []
+    if not layer.hard_goal:
+        warnings.append(
+            "Rule-only task: no hard goal clause, so the machine has no final state; "
+            "episodes end on a well, the environment's end, or the time limit"
+        )
+    for index in layer.inert_soft_clauses:
+        clause = proposal.clauses[index]
+        name = f"{clause.pattern}({', '.join(clause.propositions)})"
+        warnings.append(f"Soft clause {name} has no reward effect")
+    return tuple(warnings)

@@ -160,8 +160,14 @@ class Configuration:
     PROPOSAL_ATTEMPTS: ClassVar[int] = 3
     TAGGING_ATTEMPTS: ClassVar[int] = 3
     MAX_TASK_CLAUSES: ClassVar[int] = 25
-    CLAUSE_COMPLETION_REWARD: ClassVar[float] = 0.1
+    # Paid per step closer to the final state, measured on the longest remaining path.
+    PROGRESS_REWARD: ClassVar[float] = 0.1
     TASK_COMPLETION_REWARD: ClassVar[float] = 1.0
+    WELL_REWARD: ClassVar[float] = -1.0
+    # Soft clauses: paid when one breaks, and on the finishing edge by how each one ends.
+    SOFT_BREAK_REWARD: ClassVar[float] = -0.5
+    SOFT_PENDING_AT_FINISH_REWARD: ClassVar[float] = -0.5
+    SOFT_SATISFIED_AT_FINISH_REWARD: ClassVar[float] = 0.25
     # Added to the RM reward on the step where the time limit ends an episode the RM did not.
     TIME_LIMIT_PENALTY: ClassVar[float] = -0.5
 
