@@ -11,9 +11,8 @@ from typing import Literal
 PromptFamily = Literal["compiler", "arm_fm"]
 PromptAgent = Literal[
     "creator",
-    "ltlf_reviewer",
+    "critic",
     "rm_tagger",
-    "rm_reviewer",
     "labeling_generator",
     "labeling_reviewer",
     "rm_generator",
@@ -29,13 +28,12 @@ PROMPTS = {
         "directory": "compiler-rm",
         "files": {
             "creator": "reward-ltlf-creator",
-            "ltlf_reviewer": "reward-ltlf-reviewer",
+            "critic": "reward-machine-critic",
             "rm_tagger": "reward-machine-tagger",
-            "rm_reviewer": "reward-machine-reviewer",
             "labeling_generator": "labeling-generator",
             "labeling_reviewer": "labeling-reviewer",
         },
-        "optional": {"case_specific", "history", "state_descriptions"},
+        "optional": {"case_specific", "history", "warnings"},
     },
     "arm_fm": {
         "directory": "arm_fm",

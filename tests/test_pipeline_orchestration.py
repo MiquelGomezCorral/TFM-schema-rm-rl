@@ -4,6 +4,7 @@ import subprocess
 import sys
 import unittest
 from contextlib import ExitStack
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -43,7 +44,7 @@ SELECTION = ProposalSelection(
     "finish done",
     "Existence",
     ("done",),
-    PriorityLevel.NONE,
+    PriorityLevel.HARD,
     Existence(Atomic("done")),
 )
 
@@ -75,12 +76,12 @@ class EmbeddingResponse:
 class Engine:
     def __init__(self):
         self.environment = ENV
-        self.tasks = []
-        self.rms = []
+        self.candidates = []
+        self.clauses = []
+        self.warnings = []
         self.histories = []
         self.proposals = []
         self.tag_nodes = []
-        self.descriptions = []
         self.tag_results = []
         self.labeling_requests = []
         self.labeling_reviews = []
@@ -94,13 +95,6 @@ class Engine:
             raise value
         return value
 
-    def review_task(self, task, candidate):
-        self.tasks.append(candidate)
-        value = self.task_results.pop(0)
-        if isinstance(value, BaseException):
-            raise value
-        return value
-
     def describe_states(self, task, clauses, candidate, rejecting, nodes):
         self.tag_nodes.append(tuple(nodes))
         value = self.tag_results.pop(0) if self.tag_results else None
@@ -110,10 +104,11 @@ class Engine:
             return tuple(f"description {node}" for node in nodes)
         return value
 
-    def review_reward_machine(self, task, candidate, state_descriptions=""):
-        self.rms.append(candidate)
-        self.descriptions.append(state_descriptions)
-        value = self.rm_results.pop(0)
+    def review_candidate(self, task, clauses_json, candidate, warnings=()):
+        self.clauses.append(clauses_json)
+        self.candidates.append(candidate)
+        self.warnings.append(tuple(warnings))
+        value = self.verdicts.pop(0)
         if isinstance(value, BaseException):
             raise value
         return value
@@ -149,14 +144,12 @@ class OrchestrationTests(unittest.TestCase):
         self.addCleanup(self.logs_patch.stop)
         self.logs_patch.start()
         self.engine = Engine()
-        self.engine.task_results = []
-        self.engine.rm_results = []
+        self.engine.verdicts = []
         self.critic = Engine()
-        self.critic.task_results = []
-        self.critic.rm_results = []
+        self.critic.verdicts = []
         self.saved = Mock()
 
-    def execute(self, tasks=("finish",), **flags):
+    def execute(self, tasks=("finish",), *, hooks=None, compiled=None, **flags):
         CONFIG = Configuration(environment="demo.md", tasks=list(tasks), output="out.rm", **flags)
         with (
             patch(
@@ -169,45 +162,20 @@ class OrchestrationTests(unittest.TestCase):
             ),
             patch("src.utils.generation_pipeline.save_results", self.saved),
             patch("scripts.generate_rm.compile_dfas", return_value=()),
-            patch("scripts.generate_rm.build_compilation_result", return_value=result()),
+            patch(
+                "scripts.generate_rm.build_compilation_result",
+                return_value=compiled or result(),
+            ),
         ):
-            return generate_rm(CONFIG)
+            return generate_rm(CONFIG, hooks)
 
     def test_first_attempt_acceptance(self):
-        self.critic.task_results = [CriticResult(True, "task ok")]
-        self.critic.rm_results = [CriticResult(True, "rm ok")]
+        self.critic.verdicts = [CriticResult(True, "ok")]
         self.assertTrue(self.execute())
         self.saved.assert_called_once()
 
-    def test_task_rejection_skips_compile_and_history(self):
-        self.critic.task_results = [
-            CriticResult(False, "fix task"),
-            CriticResult(True, "ok"),
-        ]
-        self.critic.rm_results = [CriticResult(True, "ok")]
-        with (
-            patch(
-                "scripts.generate_rm.setup_environment_and_engines",
-                return_value=(ENV, self.engine, self.critic),
-            ),
-            patch(
-                "src.utils.generation_pipeline.derive_output_paths", return_value=(Path("out.rm"),)
-            ),
-            patch("src.utils.generation_pipeline.save_results", self.saved),
-            patch("scripts.generate_rm.compile_dfas", return_value=()) as compile_mock,
-            patch("scripts.generate_rm.build_compilation_result", return_value=result()),
-        ):
-            self.assertTrue(
-                generate_rm(Configuration(environment="demo.md", tasks=["finish"], output="out.rm"))
-            )
-        self.assertEqual(compile_mock.call_count, 1)
-        self.assertIn("fix task", self.engine.histories[1])
-        self.assertIn("task critic", self.engine.histories[1])
-        self.assertIn('"source": "task critic"', self.engine.histories[1])
-
-    def test_rm_critic_failure_keeps_compiled_rm_in_history(self):
-        self.critic.task_results = [CriticResult(True, "ok")] * 2
-        self.critic.rm_results = [
+    def test_critic_failure_keeps_compiled_rm_in_history(self):
+        self.critic.verdicts = [
             RetryableEngineError("critic unavailable"),
             CriticResult(True, "ok"),
         ]
@@ -229,11 +197,10 @@ class OrchestrationTests(unittest.TestCase):
             )
         self.assertIn("rm-before-retry", self.engine.histories[1])
         self.assertIn("critic unavailable", self.engine.histories[1])
-        self.assertIn('"source": "RM critic"', self.engine.histories[1])
+        self.assertIn('"source": "critic"', self.engine.histories[1])
 
-    def test_rm_rejection_recompiles_and_history(self):
-        self.critic.task_results = [CriticResult(True, "ok")] * 2
-        self.critic.rm_results = [
+    def test_critic_rejection_recompiles_and_keeps_history(self):
+        self.critic.verdicts = [
             CriticResult(False, "fix rm"),
             CriticResult(True, "ok"),
         ]
@@ -255,28 +222,30 @@ class OrchestrationTests(unittest.TestCase):
             )
         self.assertIn("rm-1", self.engine.histories[1])
         self.assertIn("fix rm", self.engine.histories[1])
-        self.assertIn('"source": "RM critic"', self.engine.histories[1])
+        self.assertIn('"source": "critic"', self.engine.histories[1])
 
     def test_exhaustion_and_later_task_failure_write_nothing(self):
-        self.critic.task_results = [CriticResult(False, "no")] * 3
+        self.critic.verdicts = [CriticResult(False, "no")] * 3
         self.assertFalse(self.execute())
         self.saved.assert_not_called()
-        self.critic.task_results = []
-        self.critic.rm_results = [CriticResult(False, "no")] * 3
-        self.saved.reset_mock()
-        self.assertFalse(self.execute(("one", "two"), task_critic=False))
+        self.critic.verdicts = [CriticResult(True, "ok")] + [CriticResult(False, "no")] * 3
+        self.assertFalse(self.execute(("one", "two")))
         self.saved.assert_not_called()
 
-    def test_each_critic_toggle(self):
-        self.critic.rm_results = [CriticResult(True, "ok")]
-        self.assertTrue(self.execute(task_critic=False))
-        self.assertFalse(self.critic.tasks)
-        self.assertTrue(self.engine.tag_nodes)
-        self.critic.rms.clear()
-        self.engine.tag_nodes.clear()
-        self.critic.task_results = [CriticResult(True, "ok")]
-        self.assertTrue(self.execute(rm_critic=False))
-        self.assertFalse(self.critic.rms)
+    def test_compile_warnings_reach_the_progress_log_and_the_critic(self):
+        warning = "Rule-only task: no hard goal clause"
+        messages = []
+        self.critic.verdicts = [CriticResult(True, "ok")]
+        compiled = replace(result(), warnings=(warning,))
+        self.assertTrue(
+            self.execute(hooks=GenerationHooks(progress=messages.append), compiled=compiled)
+        )
+        self.assertTrue(any(f"warning — {warning}" in message for message in messages))
+        self.assertEqual(self.critic.warnings, [(warning,)])
+
+    def test_critic_toggle(self):
+        self.assertTrue(self.execute(critic=False))
+        self.assertFalse(self.critic.candidates)
         self.assertTrue(self.engine.tag_nodes)
 
     def test_multiple_task_output_names_are_numbered(self):
@@ -298,7 +267,7 @@ class OrchestrationTests(unittest.TestCase):
         propose.assert_not_called()
 
     def test_retryable_immediate_and_mona_failures(self):
-        self.critic.rm_results = [CriticResult(True, "ok")]
+        self.critic.verdicts = [CriticResult(True, "ok")]
         self.engine.proposals = [RetryableEngineError("rate"), (SELECTION,)]
         with (
             patch(
@@ -318,7 +287,6 @@ class OrchestrationTests(unittest.TestCase):
                         environment="demo.md",
                         tasks=["finish"],
                         output="out.rm",
-                        task_critic=False,
                     )
                 )
             )
@@ -329,7 +297,6 @@ class OrchestrationTests(unittest.TestCase):
             self.assertFalse(
                 generate_rm(Configuration(environment="demo.md", tasks=["finish"], output="out.rm"))
             )
-        self.critic.task_results = [CriticResult(True, "ok")]
         with (
             patch(
                 "scripts.generate_rm.setup_environment_and_engines",
@@ -345,7 +312,7 @@ class OrchestrationTests(unittest.TestCase):
             )
 
     def test_compiler_failure_is_recorded_as_compiler_source(self):
-        self.critic.rm_results = [CriticResult(True, "ok")]
+        self.critic.verdicts = [CriticResult(True, "ok")]
         with (
             patch(
                 "scripts.generate_rm.setup_environment_and_engines",
@@ -366,14 +333,13 @@ class OrchestrationTests(unittest.TestCase):
                         environment="demo.md",
                         tasks=["finish"],
                         output="out.rm",
-                        task_critic=False,
                     )
                 )
             )
         self.assertIn('"source": "compiler"', self.engine.histories[1])
 
     def test_malformed_proposal_is_recorded_as_generator_source(self):
-        self.critic.rm_results = [CriticResult(True, "ok")]
+        self.critic.verdicts = [CriticResult(True, "ok")]
         self.engine.proposals = [ProposalValidationError("malformed"), (SELECTION,)]
         with (
             patch(
@@ -393,7 +359,6 @@ class OrchestrationTests(unittest.TestCase):
                         environment="demo.md",
                         tasks=["finish"],
                         output="out.rm",
-                        task_critic=False,
                     )
                 )
             )
@@ -415,20 +380,16 @@ class OrchestrationTests(unittest.TestCase):
         help_text = subprocess.run(
             command, capture_output=True, text=True, env=env, check=True
         ).stdout
-        self.assertIn("--no-task-critic", help_text)
-        self.assertIn("--no-rm-critic", help_text)
+        self.assertIn("--no-critic", help_text)
 
-    def test_structured_pipeline_critic_precedes_ltlf_materialization(self):
+    def test_critic_reviews_the_compiled_machine_before_tagging(self):
         order = []
         engine = SimpleNamespace(
             environment=ENV,
             propose_task=lambda task, history="": order.append("generator") or (SELECTION,),
-            review_task=lambda task, candidate: (
-                order.append("task critic") or CriticResult(True, "ok")
-            ),
             describe_states=lambda *args: order.append("tagger") or ("first", "second"),
-            review_reward_machine=lambda task, candidate, state_descriptions="": (
-                order.append("RM critic") or CriticResult(True, "ok")
+            review_candidate=lambda task, clauses, candidate, warnings=(): (
+                order.append("critic") or CriticResult(True, "ok")
             ),
         )
         CONFIG = Configuration(environment="demo.md", tasks=["finish"], output="out.rm")
@@ -457,11 +418,11 @@ class OrchestrationTests(unittest.TestCase):
             self.assertTrue(generate_rm(CONFIG))
         self.assertEqual(
             order,
-            ["generator", "task critic", "LTLf", "DFA", "RM", "tagger", "RM critic"],
+            ["generator", "LTLf", "DFA", "RM", "critic", "tagger"],
         )
 
     def test_tagging_retries_exhaust_without_restarting_proposals(self):
-        self.critic.task_results = [CriticResult(True, "ok")]
+        self.critic.verdicts = [CriticResult(True, "ok")]
         self.engine.tag_results = [RetryableEngineError("malformed descriptions")] * 3
         failures = []
         events = []
@@ -484,7 +445,7 @@ class OrchestrationTests(unittest.TestCase):
         self.assertFalse(status)
         self.assertEqual(len(self.engine.histories), 1)
         self.assertEqual(len(self.engine.tag_nodes), 3)
-        self.assertFalse(self.critic.rms)
+        self.assertEqual(len(self.critic.candidates), 1)
         self.saved.assert_not_called()
         self.assertIn("State-description tagging failed", failures[-1])
         self.assertIn("malformed descriptions", failures[-1])
@@ -493,8 +454,7 @@ class OrchestrationTests(unittest.TestCase):
         self.assertIn("State-description tagging failed", failed[-1].detail)
 
     def test_labeling_runs_after_rm_acceptance_with_role_engines(self):
-        self.critic.task_results = [CriticResult(True, "ok")]
-        self.critic.rm_results = [CriticResult(True, "ok")]
+        self.critic.verdicts = [CriticResult(True, "ok")]
         CONFIG = Configuration(
             environment="demo.md", tasks=["finish"], output="out.rm", labeling=True
         )
@@ -526,8 +486,7 @@ class OrchestrationTests(unittest.TestCase):
         self.assertIn('"done"', review["propositions_json"])
 
     def test_labeling_disabled_skips_stage_and_provider(self):
-        self.critic.task_results = [CriticResult(True, "ok")]
-        self.critic.rm_results = [CriticResult(True, "ok")]
+        self.critic.verdicts = [CriticResult(True, "ok")]
         events = []
         with (
             patch(
@@ -557,8 +516,7 @@ class OrchestrationTests(unittest.TestCase):
         self.assertEqual(self.critic.labeling_reviews, [])
 
     def test_labeling_retries_exhaust_without_restarting_proposals(self):
-        self.critic.task_results = [CriticResult(True, "ok")]
-        self.critic.rm_results = [CriticResult(True, "ok")]
+        self.critic.verdicts = [CriticResult(True, "ok")]
         self.engine.labeling_results = [RuntimeError("provider down")] * 3
         failures = []
         events = []
@@ -587,15 +545,14 @@ class OrchestrationTests(unittest.TestCase):
             )
         self.assertFalse(status)
         self.assertEqual(len(self.engine.labeling_requests), 3)
-        self.assertEqual(len(self.critic.rms), 1)
+        self.assertEqual(len(self.critic.candidates), 1)
         self.assertEqual(len(self.engine.histories), 1)
         self.assertIn("Labeling generation failed after 3 requests", failures[-1])
         failed = [event for event in events if event.state is StepState.FAILED]
         self.assertEqual(failed[-1].step, PipelineStep.LABELING)
 
     def test_labeling_bundles_are_written_and_preflighted(self):
-        self.critic.task_results = [CriticResult(True, "ok")]
-        self.critic.rm_results = [CriticResult(True, "ok")]
+        self.critic.verdicts = [CriticResult(True, "ok")]
         with TemporaryDirectory() as directory:
             root = Path(directory)
             output_path = root / "RMs" / "out.rm"
@@ -604,7 +561,6 @@ class OrchestrationTests(unittest.TestCase):
                 tasks=["finish"],
                 output="out.rm",
                 labeling=True,
-                rm_critic=False,
                 generator_model="generator-model",
                 critic_model="critic-model",
             )
@@ -636,6 +592,7 @@ class OrchestrationTests(unittest.TestCase):
             self.assertEqual(completion[-1][0].bundle_path, bundle_path)
             self.saved.assert_called_once()
             manifest = json.loads((bundle_path / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["validation"], {"structural": True, "critic": True})
             self.assertEqual(manifest["stage_status"]["labeling"], "complete")
             self.assertEqual(manifest["stage_status"]["descriptions"], "complete")
             self.assertIn("env.grid.get", manifest["api_definitions"]["labeling"])
@@ -654,8 +611,7 @@ class OrchestrationTests(unittest.TestCase):
                     "critic_model": "critic-model",
                 },
             )
-            self.critic.task_results = [CriticResult(True, "ok")]
-            self.critic.rm_results = [CriticResult(True, "ok")]
+            self.critic.verdicts = [CriticResult(True, "ok")]
             self.saved.reset_mock()
             with (
                 patches[0],
@@ -699,8 +655,7 @@ class OrchestrationTests(unittest.TestCase):
                 return value
 
             def run(value):
-                self.critic.task_results = [CriticResult(True, "ok")]
-                self.critic.rm_results = [CriticResult(True, "ok")]
+                self.critic.verdicts = [CriticResult(True, "ok")]
                 patches = (
                     patch(
                         "scripts.generate_rm.setup_environment_and_engines",
@@ -780,13 +735,12 @@ class OrchestrationTests(unittest.TestCase):
         with self.assertRaisesRegex(EnvironmentValidationError, "## Labeling API"):
             undeclared.require_labeling_api()
 
-    def test_rm_rejection_tags_the_next_candidate_afresh(self):
-        self.critic.task_results = [CriticResult(True, "ok")] * 2
-        self.critic.rm_results = [
+    def test_rejected_candidate_is_never_tagged(self):
+        self.critic.verdicts = [
             CriticResult(False, "fix rm"),
             CriticResult(True, "ok"),
         ]
-        self.engine.tag_results = [("a0", "a1"), ("b0", "b1")]
+        self.engine.tag_results = [("b0", "b1")]
         compiled = [result("rm-1"), result("rm-2")]
         with (
             patch(
@@ -803,16 +757,11 @@ class OrchestrationTests(unittest.TestCase):
             self.assertTrue(
                 generate_rm(Configuration(environment="demo.md", tasks=["finish"], output="out.rm"))
             )
-        self.assertEqual(self.engine.tag_nodes, [("u0", "u1"), ("u0", "u1")])
-        self.assertEqual(len(self.critic.descriptions), 2)
-        self.assertIn('"u0": "a0"', self.critic.descriptions[0])
-        self.assertNotIn("b0", self.critic.descriptions[0])
-        self.assertIn('"u0": "b0"', self.critic.descriptions[1])
-        self.assertNotIn("a0", self.critic.descriptions[1])
+        self.assertEqual(self.critic.candidates, ["rm-1", "rm-2"])
+        self.assertEqual(self.engine.tag_nodes, [("u0", "u1")])
 
-    def test_critic_context_keeps_node_order_beyond_ten_states(self):
-        self.critic.task_results = [CriticResult(True, "ok")]
-        self.critic.rm_results = [CriticResult(True, "ok")]
+    def test_labeling_context_keeps_node_order_beyond_ten_states(self):
+        self.critic.verdicts = [CriticResult(True, "ok")]
         self.engine.tag_results = [tuple(f"description {index}" for index in range(11))]
         compiled = [
             CompilationResult(
@@ -833,16 +782,24 @@ class OrchestrationTests(unittest.TestCase):
             patch("src.utils.generation_pipeline.save_results", self.saved),
             patch("scripts.generate_rm.compile_dfas", return_value=()),
             patch("scripts.generate_rm.build_compilation_result", side_effect=compiled),
+            patch("src.utils.generation_pipeline._preflight_labeling_bundles"),
+            patch(
+                "src.utils.generation_pipeline._write_labeling_bundles",
+                return_value=(Path("out-bundle"),),
+            ),
         ):
             self.assertTrue(
-                generate_rm(Configuration(environment="demo.md", tasks=["finish"], output="out.rm"))
+                generate_rm(
+                    Configuration(
+                        environment="demo.md", tasks=["finish"], output="out.rm", labeling=True
+                    )
+                )
             )
-        context = self.critic.descriptions[0]
+        context = self.critic.labeling_reviews[0]["state_descriptions_json"]
         self.assertLess(context.index('"u2"'), context.index('"u10"'))
 
     def test_trace_keeps_identified_state_descriptions(self):
-        self.critic.task_results = [CriticResult(True, "ok")]
-        self.critic.rm_results = [CriticResult(True, "ok")]
+        self.critic.verdicts = [CriticResult(True, "ok")]
         self.engine.tag_results = [("first stage", "task satisfied")]
         artifacts = []
         trace_dir = Path(self.log_directory.name) / "traces"
@@ -871,13 +828,12 @@ class OrchestrationTests(unittest.TestCase):
         self.assertIn('"u1": "task satisfied"', tasks[0]["steps"]["state_descriptions"])
 
     def test_role_engines_are_created_once_and_reused(self):
-        self.critic.task_results = [
-            CriticResult(False, "task"),
+        self.critic.verdicts = [
+            CriticResult(False, "no"),
             CriticResult(True, "ok"),
-            CriticResult(False, "task"),
+            CriticResult(False, "no"),
             CriticResult(True, "ok"),
         ]
-        self.critic.rm_results = [CriticResult(True, "ok"), CriticResult(True, "ok")]
         CONFIG = Configuration(environment="demo.md", tasks=["one", "two"], output="batch.rm")
         with (
             patch(
@@ -896,8 +852,7 @@ class OrchestrationTests(unittest.TestCase):
         setup.assert_called_once()
         self.assertEqual(len(self.engine.histories), 4)
         self.assertEqual(len(self.engine.tag_nodes), 2)
-        self.assertEqual(len(self.critic.tasks), 4)
-        self.assertEqual(len(self.critic.rms), 2)
+        self.assertEqual(len(self.critic.candidates), 4)
 
     def test_compiler_setup_requires_and_separates_role_models(self):
         with TemporaryDirectory() as directory:
@@ -943,8 +898,7 @@ class OrchestrationTests(unittest.TestCase):
             CONFIG = Configuration(
                 environment=environment_path,
                 generator_model="generator",
-                task_critic=False,
-                rm_critic=False,
+                critic=False,
             )
             with patch(
                 "src.utils.generation.get_engine", return_value=generator_engine

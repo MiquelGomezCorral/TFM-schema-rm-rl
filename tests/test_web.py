@@ -49,17 +49,8 @@ class WebTests(unittest.TestCase):
             },
         }
         for failure, expected, calls in (
-            (
-                "generator",
-                "Last generator feedback: Precedence requires priority 'soft' or 'hard'",
-                3,
-            ),
-            (
-                "task_critic",
-                "Last task critic feedback: Rejected task interpretation",
-                6,
-            ),
-            ("rm_critic", "Last RM critic feedback: Rejected reward machine", 9),
+            ("generator", "Last generator feedback: Unsupported priority: 'none'", 3),
+            ("critic", "Last critic feedback: Rejected candidate", 6),
             ("provider", "Experiment provider is unavailable", 0),
         ):
             with self.subTest(failure=failure), TemporaryDirectory() as directory:
@@ -81,13 +72,9 @@ class WebTests(unittest.TestCase):
                                 "clauses": [
                                     {
                                         "normalized_clause": "Finish",
-                                        "pattern": "Precedence"
-                                        if failure == "generator"
-                                        else "Existence",
-                                        "propositions": ["done", "next"]
-                                        if failure == "generator"
-                                        else ["done"],
-                                        "priority": "none",
+                                        "pattern": "Existence",
+                                        "propositions": ["done"],
+                                        "priority": "none" if failure == "generator" else "hard",
                                     }
                                 ]
                             }
@@ -95,9 +82,7 @@ class WebTests(unittest.TestCase):
                     return json.dumps(
                         {
                             "accepted": name != failure,
-                            "feedback": "Rejected task interpretation"
-                            if name == "task_critic"
-                            else "Rejected reward machine",
+                            "feedback": "Rejected candidate",
                         }
                     )
 
@@ -272,6 +257,7 @@ class WebTests(unittest.TestCase):
                 bundle_path=Path("out-bundle"),
                 embedding_path=Path("out-embeddings") / "embeddings.json",
                 embedding_settings={"model": "nomic-embed-text", "dimension": 2},
+                warnings=("Rule-only task: no hard goal clause",),
             ),
         )
         controller._output_paths = (Path("out.rm"),)
@@ -285,6 +271,7 @@ class WebTests(unittest.TestCase):
         render = app.callback_map[result_key]["callback"].__wrapped__
         summary, tabs, bodies, elements, export_name, export_disabled = render(0)
         self.assertIn("out.rm", summary)
+        self.assertIn("Warning: Rule-only task", summary)
         self.assertIn("Bundle: out-bundle", summary)
         self.assertIn("Embedding: nomic-embed-text dim=2", summary)
         self.assertIn("Embeddings: out-embeddings", summary)
@@ -348,12 +335,11 @@ class WebTests(unittest.TestCase):
 def controller_steps():
     return (
         PipelineStep.GENERATE,
-        PipelineStep.TASK_CRITIC,
         PipelineStep.LTLF,
         PipelineStep.DFA,
         PipelineStep.REWARD_MACHINE,
+        PipelineStep.CRITIC,
         PipelineStep.STATE_DESCRIPTIONS,
-        PipelineStep.RM_CRITIC,
         PipelineStep.LABELING,
     )
 

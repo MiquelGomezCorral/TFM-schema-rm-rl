@@ -6,8 +6,10 @@ import subprocess
 import unittest
 from unittest.mock import ANY, patch
 
+from nl2ltl.declare.base import TemplateEnum
+
 from src.arm_fm.generation import _extract_artifact
-from src.compiler import parse_paper_reward_machine
+from src.compiler import materialize_proposal, parse_paper_reward_machine
 from src.engines import (
     AntigravityEngine,
     GenericEngine,
@@ -16,12 +18,26 @@ from src.engines import (
     OpenCodeEngine,
     RetryableEngineError,
 )
+from src.engines.errors import ProposalValidationError
+from src.engines.structured import SUPPORTED_TEMPLATES, parse_proposal, proposal_schema
 from src.models import EnvironmentDescription
 
 ENVIRONMENT = EnvironmentDescription.from_markdown(
     "# Demo\n## Propositions\n- `done`: Finished",
     source="demo.md",
 )
+
+# IBM's formula for each template over propositions a and b, in FL-AT's flat syntax.
+IBM_FLAT_FORMULAS = {
+    "Existence": "(Fa)",
+    "ExistenceTwo": "(F(a&(X(Fa))))",
+    "Absence": "(~(Fa))",
+    "RespondedExistence": "((Fa)->(Fb))",
+    "Response": "(G(a->(Fb)))",
+    "Precedence": "(((~b)Ua)|(G(~b)))",
+    "ChainResponse": "(G(a->(Xb)))",
+    "NotCoExistence": "((Fa)->(~(Fb)))",
+}
 
 
 class EngineTests(unittest.TestCase):
@@ -30,14 +46,47 @@ class EngineTests(unittest.TestCase):
             "translate",
             "propose_task",
             "propose",
-            "review_task",
+            "review_candidate",
             "describe_states",
-            "review_reward_machine",
             "_request_structured",
         }
 
         for provider in (OpenAIEngine, OpenCodeEngine, AntigravityEngine):
             self.assertTrue(methods.isdisjoint(provider.__dict__))
+
+    def test_every_ibm_template_validates_with_its_arity_and_uses_ibm_formulas(self) -> None:
+        environment = EnvironmentDescription.from_markdown(
+            "# Demo\n## Propositions\n- `a`: First\n- `b`: Second", source="demo.md"
+        )
+        variants = proposal_schema("Task", environment)["properties"]["clauses"]["items"]["anyOf"]
+        patterns = {name for item in variants for name in item["properties"]["pattern"]["enum"]}
+        self.assertEqual(patterns, {template.value for template in TemplateEnum})
+        self.assertEqual(set(IBM_FLAT_FORMULAS), set(SUPPORTED_TEMPLATES))
+
+        for pattern, (_, arity) in SUPPORTED_TEMPLATES.items():
+            clause = {
+                "normalized_clause": pattern,
+                "pattern": pattern,
+                "propositions": ["a", "b"][:arity],
+                "priority": "soft",
+            }
+            selections = parse_proposal(json.dumps({"clauses": [clause]}), environment, "Test")
+            proposal = materialize_proposal("Task", selections)
+            self.assertEqual(proposal.clauses[0].ltlf_formula, IBM_FLAT_FORMULAS[pattern])
+
+            clause["propositions"] = ["a", "b"][: 3 - arity]
+            with self.assertRaises(ProposalValidationError):
+                parse_proposal(json.dumps({"clauses": [clause]}), environment, "Test")
+
+        valid = {
+            "normalized_clause": "a before b",
+            "pattern": "Precedence",
+            "propositions": ["a", "b"],
+            "priority": "hard",
+        }
+        for invalid in ({"propositions": ["a", "a"]}, {"priority": "none"}):
+            with self.assertRaises(ProposalValidationError):
+                parse_proposal(json.dumps({"clauses": [valid | invalid]}), environment, "Test")
 
     @patch("src.engines.provider_engines.OpenAI")
     def test_providers_read_their_own_environment(self, openai) -> None:
@@ -71,7 +120,7 @@ class EngineTests(unittest.TestCase):
                     "normalized_clause": "finish",
                     "pattern": "Existence",
                     "propositions": ["done"],
-                    "priority": "none",
+                    "priority": "hard",
                 }
             ],
         }
@@ -162,7 +211,7 @@ class EngineTests(unittest.TestCase):
             ),
             stderr="",
         )
-        self.assertTrue(engine.review_task("Finish", "{}").accepted)
+        self.assertTrue(engine.review_candidate("Finish", "[]", "REWARD_MACHINE:").accepted)
 
     @patch("src.engines.provider_engines.subprocess.run")
     def test_antigravity_provider_errors_are_safe_and_typed(self, run) -> None:
@@ -324,9 +373,8 @@ class EngineTests(unittest.TestCase):
         responses = iter(
             [
                 '{"clauses":[{"normalized_clause":"finish","pattern":"Existence",'
-                '"propositions":["done"],"priority":"none"}]}',
-                '{"accepted":true,"feedback":"task ok"}',
-                '{"accepted":true,"feedback":"machine ok"}',
+                '"propositions":["done"],"priority":"hard"}]}',
+                '{"accepted":true,"feedback":"candidate ok"}',
             ]
         )
         requests = []
@@ -338,25 +386,20 @@ class EngineTests(unittest.TestCase):
         engine = GenericEngine(ENVIRONMENT, "test-model", "Test", request)
 
         proposal = engine.propose_task("Finish")
-        task_review = engine.review_task("Finish", '{"clauses": []}')
-        machine_review = engine.review_reward_machine("Finish", '{"states": [0]}')
-
-        self.assertEqual(proposal[0].normalized_clause, "finish")
-        self.assertTrue(task_review.accepted)
-        self.assertTrue(machine_review.accepted)
-        self.assertEqual(
-            [request[-1] for request in requests],
-            ["declare_proposal", "task_critic", "rm_critic"],
+        review = engine.review_candidate(
+            "Finish", '[{"pattern": "Existence"}]', "REWARD_MACHINE:", ("Rule-only task",)
         )
 
-    def test_generic_engine_tags_states_and_includes_them_in_the_rm_review(
-        self,
-    ) -> None:
+        self.assertEqual(proposal[0].normalized_clause, "finish")
+        self.assertTrue(review.accepted)
+        self.assertEqual([request[-1] for request in requests], ["declare_proposal", "critic"])
+        self.assertIn('[{"pattern": "Existence"}]', requests[1][2])
+        self.assertIn("- Rule-only task", requests[1][2])
+
+    def test_generic_engine_tags_states(self) -> None:
         requests = []
-        reviews = []
 
         def request(model, system, user, schema, name):
-            reviews.append(user)
             return '{"accepted":true,"feedback":"ok"}'
 
         def request_text(model, system, user):
@@ -372,16 +415,11 @@ class EngineTests(unittest.TestCase):
             "[]",
             ("u0", "u1"),
         )
-        review = engine.review_reward_machine(
-            "Finish", "REWARD_MACHINE:", '{"u0": "first progress"}'
-        )
 
         self.assertEqual(descriptions, ("first progress", "task satisfied"))
-        self.assertTrue(review.accepted)
         self.assertIn('["u0", "u1"]', requests[0])
         self.assertIn("### Reward Machine", requests[0])
         self.assertIn('"pattern": "Existence"', requests[0])
-        self.assertIn('{"u0": "first progress"}', reviews[0])
 
     def test_state_tagger_output_shapes_are_validated(self) -> None:
         nodes = ("u0", "u1")
@@ -418,7 +456,7 @@ class EngineTests(unittest.TestCase):
 
     @patch("src.engines.provider_engines.subprocess.run")
     def test_opencode_go_pi_validates_proposal_and_critic(self, run) -> None:
-        proposal = '{"clauses":[{"normalized_clause":"finish","pattern":"Existence","propositions":["done"],"priority":"none"}]}'
+        proposal = '{"clauses":[{"normalized_clause":"finish","pattern":"Existence","propositions":["done"],"priority":"hard"}]}'
         critic = '{"accepted":true,"feedback":"task is grounded"}'
 
         def event(text):
@@ -439,7 +477,7 @@ class EngineTests(unittest.TestCase):
 
         engine = OpenCodeEngine(ENVIRONMENT, "opencode-go/mimo-v2.5")
         self.assertEqual(engine.propose_task("Finish")[0].normalized_clause, "finish")
-        self.assertTrue(engine.review_task("Finish", proposal).accepted)
+        self.assertTrue(engine.review_candidate("Finish", proposal, "REWARD_MACHINE:").accepted)
         command = run.call_args_list[0].args[0]
         self.assertEqual(command[command.index("--model") + 1], "opencode-go/mimo-v2.5")
         for flag in (

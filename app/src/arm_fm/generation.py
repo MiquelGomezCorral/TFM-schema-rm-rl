@@ -319,10 +319,7 @@ def adapt_compilation_result(
         },
         provenance={"status": "reconstructed", "generator": "compiler-adaptation"},
         generation={"compiler_text": result.text},
-        validation={
-            "structural": True,
-            "critic": True,
-        },
+        validation={"structural": True},
         inputs={
             "task": result.proposal.task,
             "environment_markdown": getattr(result.environment, "markdown", ""),
@@ -367,13 +364,17 @@ def build_compiler_bundle(
 
 
 def record_bundle_role_models(bundle: ArtifactBundle, CONFIG: Configuration) -> None:
-    """Record the resolved compiler role models on one bundle manifest."""
+    """Record the resolved compiler role models and whether a critic accepted the machine.
+
+    A run without the critic records no critic validation: a recorded ``False`` would make
+    ``validate(require_complete=True)`` reject the bundle for training.
+    """
+    if CONFIG.critic:
+        bundle.manifest.validation["critic"] = True
     bundle.manifest.effective_settings.update(
         {
             "generator_model": CONFIG.generator_model,
-            "critic_model": CONFIG.critic_model
-            if (CONFIG.task_critic or CONFIG.rm_critic)
-            else None,
+            "critic_model": CONFIG.critic_model if CONFIG.critic else None,
         }
     )
 

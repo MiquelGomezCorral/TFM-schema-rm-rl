@@ -32,12 +32,11 @@ class RunState(StrEnum):
 
 STEP_ORDER = (
     PipelineStep.GENERATE,
-    PipelineStep.TASK_CRITIC,
     PipelineStep.LTLF,
     PipelineStep.DFA,
     PipelineStep.REWARD_MACHINE,
+    PipelineStep.CRITIC,
     PipelineStep.STATE_DESCRIPTIONS,
-    PipelineStep.RM_CRITIC,
     PipelineStep.LABELING,
     PipelineStep.EMBEDDINGS,
 )
@@ -99,8 +98,7 @@ class RunRequest:
     tasks: Sequence[str]
     output_filename: str
     environment_filename: str | None = None
-    task_critic: bool = True
-    rm_critic: bool = True
+    critic: bool = True
     labeling: bool = False
     embeddings: bool = False
     steps_report: bool = False
@@ -182,8 +180,7 @@ class RunController:
                     environment=environment_path,
                     tasks=list(request.tasks),
                     output=Path(request.output_filename),
-                    task_critic=request.task_critic,
-                    rm_critic=request.rm_critic,
+                    critic=request.critic,
                     labeling=request.labeling,
                     embeddings=request.embeddings,
                 )
@@ -283,8 +280,7 @@ class RunController:
 
 def _initial_task(index: int, task: str, request: RunRequest) -> TaskSnapshot:
     skipped = {
-        PipelineStep.TASK_CRITIC: not request.task_critic,
-        PipelineStep.RM_CRITIC: not request.rm_critic,
+        PipelineStep.CRITIC: not request.critic,
         PipelineStep.LABELING: not request.labeling,
         PipelineStep.EMBEDDINGS: not request.embeddings,
     }

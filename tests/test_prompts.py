@@ -27,43 +27,45 @@ class PromptTests(unittest.TestCase):
             case_specific="The episode is finite.",
             history='[{"proposal":"old","feedback":"try again"}]',
         )
-        reviewer = render_prompt(
+        critic = render_prompt(
             "compiler",
-            "ltlf_reviewer",
+            "critic",
             environment_markdown=environment,
             task="Eventually finish.",
-            candidate_proposal='{"clauses": []}',
+            clauses_json='{"clauses": []}',
+            reward_machine='{"s": "0"}',
+            warnings="- Rule-only task",
+        )
+        no_warnings = render_prompt(
+            "compiler",
+            "critic",
+            environment_markdown=environment,
+            task="task",
+            clauses_json="[]",
+            reward_machine="rm",
         )
 
         self.assertTrue(read_prompt("compiler", "creator"))
-        self.assertTrue(read_prompt("compiler", "ltlf_reviewer"))
+        self.assertTrue(read_prompt("compiler", "critic"))
         self.assertIn("Eventually finish.", creator)
         self.assertIn("The episode is finite.", creator)
         self.assertIn("try again", creator)
-        self.assertIn('{"clauses": []}', reviewer)
-        self.assertIn("None.", reviewer)
-        self.assertNotIn("${", creator + reviewer)
-        self.assertTrue(read_prompt("compiler", "rm_reviewer"))
-        rm_reviewer = render_prompt(
-            "compiler",
-            "rm_reviewer",
-            environment_markdown=environment,
-            task="task",
-            candidate_rm='{"s": "0"}',
-            state_descriptions='{"u0": "start"}',
-        )
-        self.assertIn('{"s": "0"}', rm_reviewer)
-        self.assertIn('{"u0": "start"}', rm_reviewer)
+        self.assertIn('{"clauses": []}', critic)
+        self.assertIn('{"s": "0"}', critic)
+        self.assertIn("- Rule-only task", critic)
+        self.assertIn("None.", no_warnings)
+        self.assertNotIn("${", creator + critic)
 
         with self.assertRaises(ValueError):
             render_prompt("compiler", "creator", environment_markdown="", task="task")
         with self.assertRaises(ValueError):
             render_prompt(
                 "compiler",
-                "ltlf_reviewer",
+                "critic",
                 environment_markdown=environment,
                 task="task",
-                candidate_proposal="",
+                clauses_json="",
+                reward_machine="rm",
             )
 
     def test_tagger_prompt_renders_the_ordered_tagging_context(self) -> None:

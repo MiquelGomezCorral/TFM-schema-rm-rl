@@ -17,11 +17,10 @@ DEFAULT_LLAMA_SERVER_PORT = "8934"
 
 
 class PriorityLevel(StrEnum):
-    """Supported ordering-priority levels for task clauses."""
+    """How a task clause is enforced: ``hard`` shapes the machine, ``soft`` only its rewards."""
 
-    NONE = "none"
-    SOFT = "soft"
     HARD = "hard"
+    SOFT = "soft"
 
 
 def _optional_path(value: Path | str | None) -> Path | None:
@@ -183,8 +182,7 @@ class Configuration:
     judge_model: str = "Qwen3-30B-A3B-Instruct-2507"
     mona_executable: str | None = None
     overwrite: bool = False
-    task_critic: bool = True
-    rm_critic: bool = True
+    critic: bool = True
     labeling: bool = False
     embeddings: bool = False
     # None means the local llama-server on LLAMA_SERVER_PORT; see llama_server_command.
@@ -280,10 +278,8 @@ class Configuration:
         self._resolve_models()
         self._validate_embeddings()
 
-        if not self.task_critic and not self.rm_critic:
-            print_warn(
-                "Both critics are disabled: every compiler result is accepted without review."
-            )
+        if not self.critic:
+            print_warn("The critic is disabled: every compiler result is accepted without review.")
 
     def _load_yaml_configuration(self, yaml_file: str) -> None:
         """Set fields from a YAML run config under CONFIG_PATH, or from an existing path.

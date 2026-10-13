@@ -72,22 +72,6 @@ class GenericEngine:
         )
         return parse_proposal(response_text, self.environment, self.provider_name)
 
-    def review_task(self, task: str, candidate_proposal: str) -> CriticResult:
-        """Review a task interpretation before compilation."""
-        response = self._request_structured(
-            read_prompt("compiler", "ltlf_reviewer"),
-            render_prompt(
-                "compiler",
-                "ltlf_reviewer",
-                environment_markdown=self.environment.markdown,
-                task=task,
-                candidate_proposal=candidate_proposal,
-            ),
-            critic_schema(),
-            "task_critic",
-        )
-        return parse_critic(response)
-
     def describe_states(
         self,
         task: str,
@@ -112,25 +96,27 @@ class GenericEngine:
         )
         return parse_state_descriptions(response_text, nodes)
 
-    def review_reward_machine(
+    def review_candidate(
         self,
         task: str,
+        clauses_json: str,
         candidate_rm: str,
-        state_descriptions: str = "",
+        warnings: Sequence[str] = (),
     ) -> CriticResult:
-        """Review a serialized Reward Machine with its state descriptions as context."""
+        """Review one compiled candidate: its clauses against the task, and the machine."""
         response = self._request_structured(
-            read_prompt("compiler", "rm_reviewer"),
+            read_prompt("compiler", "critic"),
             render_prompt(
                 "compiler",
-                "rm_reviewer",
+                "critic",
                 environment_markdown=self.environment.markdown,
                 task=task,
-                candidate_rm=candidate_rm,
-                state_descriptions=state_descriptions,
+                clauses_json=clauses_json,
+                reward_machine=candidate_rm,
+                warnings="\n".join(f"- {warning}" for warning in warnings),
             ),
             critic_schema(),
-            "rm_critic",
+            "critic",
         )
         return parse_critic(response)
 

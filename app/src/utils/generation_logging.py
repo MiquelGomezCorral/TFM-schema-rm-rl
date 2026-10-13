@@ -17,12 +17,11 @@ class PipelineStep(StrEnum):
     """Observable stages of one task attempt."""
 
     GENERATE = "generate"
-    TASK_CRITIC = "task_critic"
     LTLF = "ltlf"
     DFA = "dfa"
     REWARD_MACHINE = "reward_machine"
+    CRITIC = "critic"
     STATE_DESCRIPTIONS = "state_descriptions"
-    RM_CRITIC = "rm_critic"
     LABELING = "labeling"
     EMBEDDINGS = "embeddings"
 
@@ -39,12 +38,11 @@ class StepState(StrEnum):
 
 _STEP_LABELS = {
     PipelineStep.GENERATE: "Generating proposal",
-    PipelineStep.TASK_CRITIC: "Task critic",
     PipelineStep.LTLF: "Building LTLf",
     PipelineStep.DFA: "Compiling DFA",
     PipelineStep.REWARD_MACHINE: "Building Reward Machine",
+    PipelineStep.CRITIC: "Critic",
     PipelineStep.STATE_DESCRIPTIONS: "Generating state descriptions",
-    PipelineStep.RM_CRITIC: "Reward Machine critic",
     PipelineStep.LABELING: "Generating MiniGrid labeling",
     PipelineStep.EMBEDDINGS: "Embedding state descriptions",
 }

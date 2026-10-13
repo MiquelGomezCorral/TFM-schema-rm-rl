@@ -113,16 +113,10 @@ if __name__ == "__main__":
         help="Allow replacing an existing output file",
     )
     generate_parser.add_argument(
-        "--task-critic",
+        "--critic",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Enable the task critic (default: enabled)",
-    )
-    generate_parser.add_argument(
-        "--rm-critic",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Enable the Reward Machine critic (default: enabled)",
+        help="Enable the critic that reviews each compiled candidate (default: enabled)",
     )
     generate_parser.add_argument(
         "--labeling",
@@ -215,8 +209,7 @@ if __name__ == "__main__":
     larm_parser.add_argument("--model")
     larm_parser.add_argument("--judge-model", default="Qwen3-30B-A3B-Instruct-2507")
     larm_parser.add_argument("--overwrite", action="store_true")
-    larm_parser.add_argument("--task-critic", action=argparse.BooleanOptionalAction, default=True)
-    larm_parser.add_argument("--rm-critic", action=argparse.BooleanOptionalAction, default=True)
+    larm_parser.add_argument("--critic", action=argparse.BooleanOptionalAction, default=True)
     larm_parser.add_argument(
         "--embeddings",
         action=argparse.BooleanOptionalAction,

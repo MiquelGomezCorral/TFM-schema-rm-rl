@@ -15,7 +15,6 @@ from src.arm_fm.generation import (
     MAX_ATTEMPTS,
     LabelingError,
     clauses_json,
-    descriptions_json,
     generate_compiler_labeling,
     pair_state_descriptions,
     rejecting_states_json,
@@ -152,16 +151,13 @@ class _Pipeline:
         compiled: CompilationResult | None = None
         try:
             selections, proposal_text = self._generate_proposal(task, history)
-            if not self._review_task(task, proposal_text, history):
-                return None
-
             proposal = self._materialize_ltlf(task, selections)
             dfas = self._compile_dfa(proposal)
             compiled = self._build_reward_machine(proposal, dfas)
-            compiled = self._describe_states(task, compiled)
-            if not self._review_reward_machine(task, proposal_text, compiled, history):
+            if not self._review_candidate(task, proposal_text, compiled, history):
                 return None
 
+            compiled = self._describe_states(task, compiled)
             compiled = self._generate_labeling(task, compiled)
             return self._embed_states(compiled)
 
@@ -193,26 +189,6 @@ class _Pipeline:
         self.progress.complete()
 
         return selections, proposal_text
-
-    def _review_task(self, task: str, proposal_text: str, history: list[dict[str, object]]) -> bool:
-        if not self.CONFIG.task_critic:
-            self.progress.stage_skip(PipelineStep.TASK_CRITIC)
-            return True
-        self.progress.start(PipelineStep.TASK_CRITIC)
-
-        critic = self.critic_engine.review_task(task, proposal_text)
-
-        self.progress.artifact(
-            "Task critic verdict",
-            {"accepted": critic.accepted, "feedback": critic.feedback},
-        )
-        if critic.accepted:
-            self.progress.complete(StepState.COMPLETED)
-        else:
-            self.progress.complete(StepState.FAILED, critic.feedback)
-            append_history(history, proposal_text, None, PipelineStep.TASK_CRITIC, critic.feedback)
-
-        return critic.accepted
 
     def _materialize_ltlf(self, task: str, selections: Sequence[ProposalSelection]) -> Proposal:
         self.progress.start(PipelineStep.LTLF)
@@ -247,6 +223,8 @@ class _Pipeline:
         compiled = build_compilation_result(self.environment, proposal, dfas)
 
         self.progress.artifact("Serialized Reward Machine", compiled.text)
+        for warning in compiled.warnings:
+            self.progress(f"Task {self.progress.current_task + 1}: warning — {warning}")
         self.progress.complete()
         return compiled
 
@@ -287,37 +265,32 @@ class _Pipeline:
             f"State-description tagging failed after {attempts} requests: {last_error}"
         )
 
-    def _review_reward_machine(
+    def _review_candidate(
         self,
         task: str,
         proposal_text: str,
         compiled: CompilationResult,
         history: list[dict[str, object]],
     ) -> bool:
-        if not self.CONFIG.rm_critic:
-            self.progress.stage_skip(PipelineStep.RM_CRITIC)
+        """Have the critic judge the clauses and the machine they compiled to."""
+        if not self.CONFIG.critic:
+            self.progress.stage_skip(PipelineStep.CRITIC)
             return True
-        self.progress.start(PipelineStep.RM_CRITIC)
+        self.progress.start(PipelineStep.CRITIC)
 
-        critic = self.critic_engine.review_reward_machine(
-            task, compiled.text, descriptions_json(compiled)
+        critic = self.critic_engine.review_candidate(
+            task, clauses_json(compiled), compiled.text, compiled.warnings
         )
 
         self.progress.artifact(
-            "Reward Machine critic verdict",
+            "Critic verdict",
             {"accepted": critic.accepted, "feedback": critic.feedback},
         )
         if critic.accepted:
             self.progress.complete(StepState.COMPLETED)
         else:
             self.progress.complete(StepState.FAILED, critic.feedback)
-            append_history(
-                history,
-                proposal_text,
-                compiled,
-                PipelineStep.RM_CRITIC,
-                critic.feedback,
-            )
+            append_history(history, proposal_text, compiled, PipelineStep.CRITIC, critic.feedback)
 
         return critic.accepted
 
@@ -328,10 +301,9 @@ class _Pipeline:
             return compiled
         self.progress.start(PipelineStep.LABELING)
 
-        critic_engine = self.critic_engine if self.CONFIG.rm_critic else None
         try:
             source, attempts = generate_compiler_labeling(
-                task, compiled, self.generator_engine, critic_engine
+                task, compiled, self.generator_engine, self.critic_engine
             )
         except LabelingError as error:
             last = error.attempts[-1] if error.attempts else None

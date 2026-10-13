@@ -28,16 +28,24 @@ Each clause contains:
 - `normalized_clause`: the requirement expressed in natural language.
 - `pattern`: the temporal pattern selected by the compiler.
 - `propositions`: the ordered proposition identifiers bound to that pattern.
-- `priority`: whether ordering is mandatory, preferred, or inapplicable.
+- `priority`: `hard` for a requirement, `soft` for a preference.
 
-The supported patterns are:
+The supported patterns are IBM DECLARE templates:
 - `Existence(a)`: a must hold at least once.
 - `ExistenceTwo(a)`: a must hold at two distinct time points.
-- `Precedence(a, b)`: both must occur, with a before b.
+- `Absence(a)`: a never holds.
+- `RespondedExistence(a, b)`: if a ever holds, b also holds at some time,
+  before, with, or after a.
+- `Response(a, b)`: every time a holds, b holds on that step or later.
+- `Precedence(a, b)`: b does not hold before a has held. It also holds when
+  neither occurs, so it requires neither a nor b by itself.
+- `ChainResponse(a, b)`: every time a holds, b holds on the very next step.
+- `NotCoExistence(a, b)`: a and b never both hold during the episode.
 
-For Precedence, `hard` requires strict ordering; reverse or simultaneous
-occurrence fails. `soft` expresses a preference; reverse or simultaneous
-occurrence remains valid. Unary patterns use `none`.
+A `hard` clause is a requirement: a hard goal must be reached to finish, and a
+hard rule broken for good fails the task. A `soft` clause is a preference: it
+never decides whether the task is finished, breaking it costs reward, and
+honoring it earns a little.
 
 All clauses belong to the same task and apply together. Their list order
 does not impose an execution order.
@@ -46,7 +54,9 @@ does not impose an execution order.
 The final compiled machine, expressed as text containing:
 - `STATES`: the state identifiers.
 - `INITIAL_STATE`: the starting state.
-- `FINAL_STATES`: the successful completion states.
+- `FINAL_STATES`: the successful completion state. It is empty for a task made
+  only of rules or of preference-only goals, which has no completion state.
+- `REJECTING_STATES`: the failure state, when the machine has one.
 - `DEFAULT_REWARD`: the reward used when no explicit reward applies.
 - `TRANSITION_FUNCTION`: rows shaped as
   (source, condition) -> destination
@@ -64,9 +74,9 @@ An explicit `else` applies when no ordinary condition matches and follows
 its declared destination. Without an explicit `else`, unmatched observations
 leave the state unchanged and emit zero reward.
 
-The input also includes the compiler's rejecting-state identifiers as
+The input also repeats the compiler's rejecting-state identifiers as
 metadata alongside the machine. Rejecting states represent irreversible
-failure to satisfy the task.
+failure to satisfy a requirement.
 
 Use the machine to determine actual progress, remaining requirements, and
 possible transitions. Reward magnitude alone does not establish completion,

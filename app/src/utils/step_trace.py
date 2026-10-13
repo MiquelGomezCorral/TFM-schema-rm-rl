@@ -31,7 +31,7 @@ from .svg import render_structure_svg
 
 TRACE_FORMAT = "schema-rm-trace/1"
 
-# Report order, which is not the pipeline order: both critic verdicts come after the
+# Report order, which is not the pipeline order: the critic verdict comes after the
 # artifact stages.
 STEP_OUTPUT_ORDER = (
     PipelineStep.GENERATE,
@@ -41,8 +41,7 @@ STEP_OUTPUT_ORDER = (
     PipelineStep.STATE_DESCRIPTIONS,
     PipelineStep.LABELING,
     PipelineStep.EMBEDDINGS,
-    PipelineStep.TASK_CRITIC,
-    PipelineStep.RM_CRITIC,
+    PipelineStep.CRITIC,
 )
 _STEP_TITLES = {
     PipelineStep.GENERATE: "Validated proposal (clauses)",
@@ -52,8 +51,7 @@ _STEP_TITLES = {
     PipelineStep.STATE_DESCRIPTIONS: "State descriptions",
     PipelineStep.LABELING: "MiniGrid labeling source",
     PipelineStep.EMBEDDINGS: "State embeddings",
-    PipelineStep.TASK_CRITIC: "Task critic verdict",
-    PipelineStep.RM_CRITIC: "Reward Machine critic verdict",
+    PipelineStep.CRITIC: "Critic verdict",
 }
 _SVG_WIDTH = 420
 _SKIP_NOTE = "skipped (disabled for this run)"

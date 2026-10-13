@@ -18,11 +18,14 @@ the accepted clauses encode.
 
 ### Clauses
 A JSON list of accepted clauses with `normalized_clause`, `pattern`, `propositions`, and
-`priority`. Supported patterns are `Existence(a)`, `ExistenceTwo(a)`, and
-`Precedence(a, b)`. Clauses apply together; their list order imposes no execution order.
+`priority` (`hard` or `soft`). Supported patterns are the IBM DECLARE templates
+`Existence(a)`, `ExistenceTwo(a)`, `Absence(a)`, `RespondedExistence(a, b)`,
+`Response(a, b)`, `Precedence(a, b)`, `ChainResponse(a, b)`, and `NotCoExistence(a, b)`.
+Clauses apply together; their list order imposes no execution order.
 
 ### Reward Machine
-The accepted serialized machine: `STATES`, `INITIAL_STATE`, `FINAL_STATES`,
+The accepted serialized machine: `STATES`, `INITIAL_STATE`, `FINAL_STATES` (empty for a
+task made only of rules or preference-only goals), `REJECTING_STATES` (the failure state, when present),
 `DEFAULT_REWARD`, `TRANSITION_FUNCTION`, and `REWARD_FUNCTION`, using declared
 propositions in guards. Use it to understand which propositions matter and how the
 machine advances. Never derive an observation fact from the RM state, its progress, or

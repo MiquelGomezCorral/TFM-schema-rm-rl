@@ -358,8 +358,7 @@ def _run_flags(
 ) -> dict[str, bool]:
     """Turn the four checklist values into the run request's boolean flags."""
     return {
-        "task_critic": _is_checked(critic_options, "task_critic"),
-        "rm_critic": _is_checked(critic_options, "rm_critic"),
+        "critic": _is_checked(critic_options, "critic"),
         "labeling": _is_checked(labeling_options, "labeling"),
         "embeddings": _is_checked(embeddings_options, "embeddings"),
         "steps_report": _is_checked(steps_report_options, "steps_report"),
@@ -548,8 +547,10 @@ def _render_generated(
 
 
 def _result_summary(result: CompilationResult, output_path: Path) -> str:
-    """Describe one completed output, with its bundle and embedding artifacts when present."""
+    """Describe one completed output: its compile warnings, bundle and embedding artifacts."""
     summary = f"{output_path} | {result.proposal.task}"
+    for warning in result.warnings:
+        summary += f" | Warning: {warning}"
     if result.bundle_path:
         summary += f" | Bundle: {result.bundle_path}"
     if result.embedding_settings:

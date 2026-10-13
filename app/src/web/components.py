@@ -90,10 +90,7 @@ TASK_NAV_BUTTON_CLASS = (
     "text-muted hover:border-accent hover:text-accent focus-visible:outline-2"
 )
 
-CRITIC_OPTIONS = [
-    {"label": " Task interpretation critic", "value": "task_critic"},
-    {"label": " Reward Machine critic", "value": "rm_critic"},
-]
+CRITIC_OPTIONS = [{"label": " Critic", "value": "critic"}]
 STEPS_REPORT_OPTIONS = [{"label": " Step report (.md)", "value": "steps_report"}]
 LABELING_OPTIONS = [{"label": " MiniGrid labeling", "value": "labeling"}]
 EMBEDDINGS_OPTIONS = [{"label": " Local state embeddings", "value": "embeddings"}]
@@ -122,8 +119,7 @@ STEP_TAB_LABELS = {
     PipelineStep.STATE_DESCRIPTIONS: "State descriptions",
     PipelineStep.LABELING: "Labeling",
     PipelineStep.EMBEDDINGS: "Embeddings",
-    PipelineStep.TASK_CRITIC: "Task critic",
-    PipelineStep.RM_CRITIC: "RM critic",
+    PipelineStep.CRITIC: "Critic",
 }
 
 
@@ -260,12 +256,11 @@ def _section_icon(name: str, *, boxed: bool = True) -> html.Span:
 
 STEP_LABELS = {
     "generate": "Generate and validate interpretation",
-    "task_critic": "Task interpretation critic",
     "ltlf": "Build LTLf from DECLARE templates",
     "dfa": "Compile DFA with FL-AT / MONA",
     "reward_machine": "Build Reward Machine",
+    "critic": "Critic review of clauses and Reward Machine",
     "state_descriptions": "Describe each Reward Machine state",
-    "rm_critic": "Reward Machine critic",
     "labeling": "Generate MiniGrid labeling functions",
     "embeddings": "Embed each Reward Machine state description",
 }
@@ -633,7 +628,7 @@ def output_controls() -> html.Aside:
             html.Fieldset(
                 [
                     html.Legend(
-                        "Automatic critics",
+                        "Automatic critic",
                         className=(
                             "critic-legend px-[0.35rem] text-[0.7rem] font-[750] "
                             "uppercase tracking-[0.06em] text-muted"
@@ -642,7 +637,7 @@ def output_controls() -> html.Aside:
                     dcc.Checklist(
                         id="critic-options",
                         options=CRITIC_OPTIONS,
-                        value=["task_critic", "rm_critic"],
+                        value=["critic"],
                         className="critic-options grid gap-[0.45rem] !text-text",
                     ),
                 ],

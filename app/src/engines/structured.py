@@ -5,7 +5,16 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from nl2ltl.declare.base import Template
-from nl2ltl.declare.declare import Existence, ExistenceTwo, Precedence
+from nl2ltl.declare.declare import (
+    Absence,
+    ChainResponse,
+    Existence,
+    ExistenceTwo,
+    NotCoExistence,
+    Precedence,
+    RespondedExistence,
+    Response,
+)
 from pylogics.syntax.ltl import Atomic
 
 from src.config import Configuration, PriorityLevel
@@ -17,10 +26,16 @@ from .errors import CriticValidationError, ProposalValidationError, RetryableEng
 #                                   STRUCTURED TYPES
 # ======================================================================================
 
-SUPPORTED_TEMPLATES: dict[str, tuple[type[Template], int, tuple[PriorityLevel, ...]]] = {
-    "Existence": (Existence, 1, (PriorityLevel.NONE,)),
-    "ExistenceTwo": (ExistenceTwo, 1, (PriorityLevel.NONE,)),
-    "Precedence": (Precedence, 2, (PriorityLevel.SOFT, PriorityLevel.HARD)),
+# IBM nl2ltl's DECLARE templates by name, with the number of propositions each takes.
+SUPPORTED_TEMPLATES: dict[str, tuple[type[Template], int]] = {
+    "Existence": (Existence, 1),
+    "ExistenceTwo": (ExistenceTwo, 1),
+    "Absence": (Absence, 1),
+    "RespondedExistence": (RespondedExistence, 2),
+    "Response": (Response, 2),
+    "Precedence": (Precedence, 2),
+    "ChainResponse": (ChainResponse, 2),
+    "NotCoExistence": (NotCoExistence, 2),
 }
 
 
@@ -51,12 +66,13 @@ def proposal_schema(task: str, environment: EnvironmentDescription) -> dict:
     if not task.strip():
         raise ValueError("Tasks must be nonempty")
 
+    # One clause shape per arity: the pattern enum and the proposition count go together.
     clause_schemas = [
         {
             "type": "object",
             "properties": {
                 "normalized_clause": {"type": "string", "minLength": 1},
-                "pattern": {"type": "string", "enum": [pattern]},
+                "pattern": {"type": "string", "enum": _patterns_with_arity(arity)},
                 "propositions": {
                     "type": "array",
                     "items": {
@@ -66,15 +82,12 @@ def proposal_schema(task: str, environment: EnvironmentDescription) -> dict:
                     "minItems": arity,
                     "maxItems": arity,
                 },
-                "priority": {
-                    "type": "string",
-                    "enum": [priority.value for priority in priorities],
-                },
+                "priority": {"type": "string", "enum": [level.value for level in PriorityLevel]},
             },
             "required": ["normalized_clause", "pattern", "propositions", "priority"],
             "additionalProperties": False,
         }
-        for pattern, (_, arity, priorities) in SUPPORTED_TEMPLATES.items()
+        for arity in sorted({size for _, size in SUPPORTED_TEMPLATES.values()})
     ]
     return {
         "type": "object",
@@ -89,6 +102,10 @@ def proposal_schema(task: str, environment: EnvironmentDescription) -> dict:
         "required": ["clauses"],
         "additionalProperties": False,
     }
+
+
+def _patterns_with_arity(arity: int) -> list[str]:
+    return [name for name, (_, size) in SUPPORTED_TEMPLATES.items() if size == arity]
 
 
 def critic_schema() -> dict:
@@ -218,7 +235,7 @@ def _validate_clause(
     symbols = clause["propositions"]
     if not isinstance(symbols, list) or any(not isinstance(symbol, str) for symbol in symbols):
         raise ProposalValidationError("Propositions must be a list of identifiers")
-    template_class, arity, priorities = SUPPORTED_TEMPLATES[pattern]
+    template_class, arity = SUPPORTED_TEMPLATES[pattern]
     if len(symbols) != arity:
         raise ProposalValidationError(
             f"{pattern} requires {arity} proposition(s), received {len(symbols)}"
@@ -234,9 +251,6 @@ def _validate_clause(
         priority = PriorityLevel(clause["priority"])
     except (TypeError, ValueError) as error:
         raise ProposalValidationError(f"Unsupported priority: {clause['priority']!r}") from error
-    if priority not in priorities:
-        allowed = " or ".join(repr(value.value) for value in priorities)
-        raise ProposalValidationError(f"{pattern} requires priority {allowed}")
 
     template = template_class(*(Atomic(symbol) for symbol in symbols))
     return ProposalSelection(

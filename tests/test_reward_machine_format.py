@@ -42,7 +42,7 @@ class RewardMachineFormatTests(unittest.TestCase):
                     "Finish twice",
                     "ExistenceTwo",
                     ("done",),
-                    PriorityLevel.NONE,
+                    PriorityLevel.HARD,
                     "unused",
                 ),
             ),

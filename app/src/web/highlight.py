@@ -49,8 +49,7 @@ _FORMATS = {
     PipelineStep.STATE_DESCRIPTIONS: _JSON_TOKENS,
     PipelineStep.LABELING: _PYTHON_TOKENS,
     PipelineStep.EMBEDDINGS: _JSON_TOKENS,
-    PipelineStep.TASK_CRITIC: _JSON_TOKENS,
-    PipelineStep.RM_CRITIC: _JSON_TOKENS,
+    PipelineStep.CRITIC: _JSON_TOKENS,
 }
 
 

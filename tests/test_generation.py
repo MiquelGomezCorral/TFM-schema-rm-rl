@@ -2,9 +2,11 @@ import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from scripts import generate_rm
+from src.arm_fm import record_bundle_role_models
 from src.config import Configuration
 from src.engines import AntigravityEngine
 from src.models import EnvironmentDescription
@@ -26,12 +28,19 @@ class GenerationTests(unittest.TestCase):
         self.addCleanup(self.logs_patch.stop)
         self.logs_patch.start()
 
-    def test_both_critics_disabled_warns_without_raising(self):
+    def test_disabled_critic_warns_without_raising(self):
         with patch("src.config.config.print_warn") as warning:
-            CONFIG = Configuration(task_critic=False, rm_critic=False)
-        self.assertFalse(CONFIG.task_critic)
-        self.assertFalse(CONFIG.rm_critic)
-        self.assertIn("Both critics", warning.call_args.args[0])
+            CONFIG = Configuration(critic=False)
+        self.assertFalse(CONFIG.critic)
+        self.assertIn("critic is disabled", warning.call_args.args[0])
+
+    def test_bundle_records_critic_validation_only_when_a_critic_ran(self):
+        for critic in (True, False):
+            manifest = SimpleNamespace(validation={"structural": True}, effective_settings={})
+            record_bundle_role_models(
+                SimpleNamespace(manifest=manifest), Configuration(critic=critic)
+            )
+            self.assertEqual(manifest.validation.get("critic"), True if critic else None)
 
     def test_embeddings_configuration_defaults_and_validation(self):
         CONFIG = Configuration(embeddings=True)

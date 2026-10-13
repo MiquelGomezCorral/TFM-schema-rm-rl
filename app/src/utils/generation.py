@@ -19,8 +19,7 @@ from .generation_logging import PipelineStep, Progress
 
 _HISTORY_SOURCES = {
     PipelineStep.GENERATE: "generator",
-    PipelineStep.TASK_CRITIC: "task critic",
-    PipelineStep.RM_CRITIC: "RM critic",
+    PipelineStep.CRITIC: "critic",
     PipelineStep.LTLF: "compiler",
     PipelineStep.DFA: "compiler",
     PipelineStep.REWARD_MACHINE: "compiler",
@@ -94,7 +93,7 @@ def setup_environment_and_engines(
     """Load the environment and create the compiler's role engines for one run.
 
     The generator engine proposes clauses and state descriptions. The critic
-    engine reviews both artifacts and is None only when both critics are disabled.
+    engine reviews the compiled candidate and is None only when the critic is disabled.
 
     Raises:
         ValueError: An enabled critic has no critic model, or the resolved
@@ -108,8 +107,8 @@ def setup_environment_and_engines(
     generator_engine = get_engine(CONFIG, environment, CONFIG.generator_model)
     progress(f"Generator engine ready: role=generator model={CONFIG.generator_model}.")
 
-    if not CONFIG.task_critic and not CONFIG.rm_critic:
-        progress("Both critics are disabled; no critic engine created.")
+    if not CONFIG.critic:
+        progress("The critic is disabled; no critic engine created.")
         return environment, generator_engine, None
 
     if not CONFIG.critic_model:
