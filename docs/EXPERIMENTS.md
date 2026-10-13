@@ -81,8 +81,8 @@ can carry, what blocks movement, the step limit.
 ## Objective and episode boundary
 
 What counts as success for each task, how the environment detects it, when an episode terminates and when it
-only truncates. Say plainly when the environment cannot judge a task (then the RM's acceptance ends the
-episode: `success: rm` in the config).
+only truncates. Say plainly when the environment cannot judge a task (then RM acceptance counts as the
+success: `success: rm` in the config; the RM's final and rejecting states end every RM run anyway).
 
 ## Proposition semantics
 
@@ -141,10 +141,10 @@ python app/main.py generate-larm --mode compiler \
   --embeddings
 ```
 
-One command does the whole compiler path: the task critic checks the task, the compiler builds the RM, the RM
-critic checks it, then the labeling functions and the state descriptions are generated and the descriptions
-are embedded. `--no-task-critic` / `--no-rm-critic` turn the critics off (a warning says every result is then
-accepted unchecked).
+One command does the whole compiler path: the LLM picks the clauses, the compiler builds the RM, one critic
+checks the clauses against the task and the RM, then the state descriptions and the labeling functions are
+generated and the descriptions are embedded. `--no-critic` turns the critic off (a warning says every result is
+then accepted unchecked).
 
 To look at a compiler RM alone, without a bundle, use `generate-rm` (it also draws SVGs):
 
@@ -225,7 +225,7 @@ gym_id: MiniGrid-KeyCorridorS6R3-v0
 env_family: minigrid
 observation: symbolic
 layout: procedural
-use_rm: false
+reward_source: env
 total_timesteps: 1500000
 learning_starts: 20000
 eval_frequency: 25000
@@ -248,14 +248,14 @@ success_threshold: 0.9
 ```yaml
 # compiler.yaml: same as sparse, plus
 exp_name: <env>-compiler
-use_rm: true
+reward_source: rm          # the default; `both` adds the environment reward
 bundle: outputs/bundles/<Env>-1
 ```
 
 ```yaml
 # paper.yaml: same as sparse, plus
 exp_name: <env>-paper
-use_rm: true
+reward_source: rm          # the default; `both` reproduces the authors' env + RM sum
 bundle: outputs/bundles/<Env>-paper-1
 labeling_bundle: outputs/bundles/<Env>-1
 ```
@@ -263,7 +263,9 @@ labeling_bundle: outputs/bundles/<Env>-1
 Other keys you may need:
 
 - `env_kwargs: {...}`: arguments for `gym.make` (for example a BabyAI mission).
-- `success: rm`: the RM's acceptance ends the episode, for tasks the environment cannot judge.
+- `success: rm`: RM acceptance counts as the success, for tasks the environment cannot judge. Every RM run ends
+  its episode on the RM's declared final or rejecting state, on the environment's end, or at the time limit
+  (-0.5 RM reward); `reward_source: rm | env | both` (default `rm`) picks the reward.
 - `task_bundles:`: one agent trained on several tasks, one drawn per episode (see
 
 `configs/babyai-chosen-mission/wave3/compiler-multi.yaml`).
@@ -333,7 +335,7 @@ success and RM states reached, plus mean ± std;
 
 - the GIFs of each agent (`GIFS_PER_RUN` per run, default 2).
 
-The agent is read from each run: `sparse` when `use_rm` is false, otherwise `compiler` or `paper` from the
+The agent is read from each run: `sparse` when `reward_source` is `env`, otherwise `compiler` or `paper` from the
 bundle's `manifest.json`. Runs without a `test.json` show an empty test column.
 
 The results page is the same notebook exported to a single HTML file:
@@ -376,9 +378,10 @@ done
 
 Each bundle holds `reward_machine.txt` (events are the guard names), `labeling.py` (the authors' file as is),
 `state_descriptions.json`, `embeddings.json` (their 1536-d `u*.npy`) and a manifest with
-`provenance.generator: authors-released @ <commit>`. The released RM names no final state, so the importer marks the
-states that cannot be left as final (our inference, in `generation.final_states_inferred`); import again with
-`--overwrite` to add them to a bundle made before, which changes only the `rm_accept` metrics. The `ours` bundles go to `outputs/bundles/paper-ours-<Env>`.
+`provenance.generator: authors-released @ <commit>`. The released RM names no final state, and the importer keeps
+it that way: the states that cannot be left are recorded only as our inference in
+`generation.final_states_inferred`, because only declared finals end an episode and an inferred final can come
+before the environment goal (UnlockToUnlock, KeyCorridorS6R3). The `ours` bundles go to `outputs/bundles/paper-ours-<Env>`.
 
 **Generate the `ours` bundles**, one per environment (all DoorKey sizes share one). The paper profile reads the
 authors' prompts from the clone at run time, as named by `examples/arm-fm/<env>/paper-sources.json`, and runs the
@@ -449,7 +452,7 @@ python app/main.py test-rl --run paper-doorkey-5x5-fixed-authors --episodes 100
 Runs land in `outputs/runs/paper-<setting>-<agent>/seed<N>-<UTC>-<pid>/`; `test-rl` adds `test.json` to each.
 
 **Read the result** in the `PAPER COMPARISON` section of `notebooks/rl_results.ipynb`. It maps every run to a setting
-(`gym_id` and `layout`) and an agent (`use_rm` and the bundle provenance), then compares it with
+(`gym_id` and `layout`) and an agent (`reward_source` and the bundle provenance), then compares it with
 `examples/arm-fm/paper-dqn-targets.json`, the paper's values read by eye from the figures. Its first cell states the
 rule: the outcome (`solved`, `partial`, `failed`) must match the paper's; the speed is the ratio of the RM crossing to the
 `sparse` crossing, not absolute steps, because the paper's curves rise before Table 5's learning start; the greedy test

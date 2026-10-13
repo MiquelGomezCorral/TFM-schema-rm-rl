@@ -35,14 +35,14 @@ multi-task training.
 
 | Template | Current use |
 |---|---|
-| `Existence` | Supported. Uses IBM's `to_ltlf()` directly. |
-| `ExistenceTwo` | Supported. Uses IBM's `to_ltlf()` directly. |
-| `Precedence` | Supported as the selected pattern, but the final formula is built by `schema-rm-rl` for inferred `soft` or `hard` ordering. |
-| `Absence` | Not executable in V1 because its reward and violation behavior is not defined yet. |
-| `RespondedExistence` | Not executable in V1 because its reward and violation behavior is not defined yet. |
-| `Response` | Not executable in V1 because its reward and violation behavior is not defined yet. |
-| `ChainResponse` | Not executable in V1 because its reward and violation behavior is not defined yet. |
-| `NotCoExistence` | Not executable in V1 because its reward and violation behavior is not defined yet. |
+| `Existence` | Supported. IBM's `to_ltlf()`. |
+| `ExistenceTwo` | Supported. IBM's `to_ltlf()`. |
+| `Absence` | Supported. IBM's `to_ltlf()`. |
+| `RespondedExistence` | Supported. IBM's `to_ltlf()`. |
+| `Response` | Supported. IBM's `to_ltlf()`. |
+| `Precedence` | Supported. IBM's `to_ltlf()` (`(!b U a) \| G(!b)`); hard/soft is handled by the reward layer, not the formula. |
+| `ChainResponse` | Supported. IBM's `to_ltlf()`. |
+| `NotCoExistence` | Supported. IBM's `to_ltlf()`. Built from the template class directly: IBM's `ground_notcoexistence` passes the second proposition twice. |
 
 Each IBM template also provides:
 

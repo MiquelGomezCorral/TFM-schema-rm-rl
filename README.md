@@ -225,16 +225,18 @@ python app/main.py generate-rm \
 ```
 
 Each task may contain several ordinary-language requirements. The model normalizes
-them into conjunctive clauses and infers `soft` ordering only from explicit preference
-language; categorical ordering is `hard`. Unary clauses use `none`.
+them into conjunctive clauses, each an IBM DECLARE template with declared propositions and a
+`hard` or `soft` priority; `soft` comes only from explicit preference language ("if possible",
+"preferably", ...).
 
-The command displays timed progress for every task attempt and critic stage. Both critics
-run by default; use `--no-task-critic` or `--no-rm-critic` to disable one. Disabling both
-is allowed for a controlled fallback run, prints a warning, and then accepts the
-compiler's first result for each task. Each task has at most three attempts, and no output
-is written unless every task is accepted. The stages are structured proposal generation,
-task critic, DECLARE/LTLf materialization, FL-AT/MONA DFA compilation, Reward Machine
-construction, and Reward Machine critic.
+The command displays timed progress for every task attempt and stage. One critic runs by
+default after the Reward Machine is built; `--no-critic` disables it for a controlled fallback
+run, prints a warning, and then accepts the compiler's first result for each task. Each task
+has at most three attempts, and no output is written unless every task is accepted. The stages
+are structured proposal generation, DECLARE/LTLf materialization, FL-AT/MONA DFA compilation,
+Reward Machine construction (FL-AT's product plus the reward layer), the critic, state
+descriptions, and optional labeling and embeddings. Compile warnings (a rule-only task with no
+final state, soft clauses without reward effect) appear in the log and the web result.
 
 Each accepted task's clauses are compiled through MONA and composed into one
 task-specific Reward Machine. Separate tasks are never composed. `--output`
@@ -302,11 +304,13 @@ python app/main.py train-rl --config minigrid-unlock-pickup/rm-task1-symbolic.ya
 ```
 
 The learner is adapted from CleanRL's MIT `dqn_atari.py` (upstream SHA in
-`app/src/arm_fm/dqn.py`) and uses Stable-Baselines3 replay buffers. With `use_rm: true` the
-run loads `bundle` (RM, labeling, state embeddings): each step evaluates the labeling, makes
-one RM transition, adds the RM reward to the env reward, and feeds the Q-network the
-embedding of the current RM state. `labeling_bundle` can take `labeling.py` from another
-bundle with the same propositions. With `use_rm: false` it is plain sparse-reward DQN.
+`app/src/arm_fm/dqn.py`) and uses Stable-Baselines3 replay buffers. `reward_source` picks the
+reward: `rm` (default) the RM reward only, `both` environment + RM reward, `env` no RM at all
+(plain sparse-reward DQN). With an RM the run loads `bundle` (RM, labeling, state embeddings):
+each step evaluates the labeling, makes one RM transition, and feeds the Q-network the embedding
+of the current RM state. The episode ends when the environment ends it, when the RM enters a
+declared final or rejecting state, or at the time limit, which adds -0.5 to the RM reward.
+`labeling_bundle` can take `labeling.py` from another bundle with the same propositions.
 RM configs need their local bundle under `outputs/bundles/`, which is gitignored, and bundle
 paths are relative to the repository root, so run `train-rl` from there.
 
@@ -342,7 +346,7 @@ be installed separately and available on `PATH` (or configured through
 
 Upload a UTF-8 environment Markdown file or paste it into the editor, add one or more
 tasks, and provide one base output filename. The UI
-validates each task automatically with the selected critics. Multiple tasks retain the CLI's numbered output
+validates each task automatically with the critic. Multiple tasks retain the CLI's numbered output
 behavior under `Configuration.OUTPUT_PATH`, for example `batch-1.rm`, `batch-2.rm`, and
 `batch-3.rm`. Each completed file is shown with its exact path, serialized text, and
 read-only state graph.
@@ -360,9 +364,9 @@ or multi-user isolation.
 
 ## Limitations and licensing
 
-- `Absence`, `RespondedExistence`, `Response`, `ChainResponse`, and
-  `NotCoExistence` do not have executable V1 reward semantics and are rejected rather
-  than assigned ambiguous rewards.
+- Clause choice depends on the generator model: the small flash models sometimes pick a weak
+  template or add an unrequested clause, and a critic acceptance does not prove the clause set
+  matches the task.
 - Structured output requires a compatible provider model. An unsupported model is an
   API or CLI error and is not silently retried or downgraded.
 - The upstream FL-AT repository does not declare a license. Its public adaptation fork
@@ -376,21 +380,21 @@ flowchart TD
     A["Input<br/>environment.md + task"]
     B["Validate input<br/>fix the allowed proposition vocabulary"]
     C["LLM<br/>only natural-language interpretation step"]
-    D{"Critics accept within 3 attempts"}
+    D{"Critic accepts within 3 attempts"}
     X["Stop<br/>write nothing"]
-    E["IBM nl2ltl templates + our priority rules<br/>build the formal formula"]
-    F["FL-AT + MONA<br/>compile the formula into an automaton"]
-    G["Our RM compiler<br/>minimize + assign one-time rewards"]
+    E["IBM nl2ltl templates<br/>build one LTLf formula per clause"]
+    F["FL-AT + MONA<br/>one DFA per clause and their product"]
+    G["Our reward layer<br/>hard wells, pruning, progress and soft rewards"]
     H["One executable .rm file"]
 
     A -->|"description + proposition declarations + task"| B
     B -->|"validated description + fixed proposition IDs"| C
-    C -->|"normalized clauses + patterns + proposition IDs + priorities"| D
+    C -->|"clauses: template + proposition IDs + hard/soft"| E
+    E -->|"LTLf formulas"| F
+    F -->|"product + per-clause states"| G
+    G -->|"compact Reward Machine"| D
     D -- Reject --> X
-    D -->|"Accepted interpretation"| E
-    E -->|"LTLf formula"| F
-    F -->|"DFA"| G
-    G -->|"compact Reward Machine"| H
+    D -->|"Accepted"| H
 ```
 
 Input validation is not another interpretation step. It only checks that the Markdown
@@ -402,25 +406,25 @@ There is only one NLP step in the current pipeline. The configured OpenCode, Ope
 Antigravity model reads
 the task and chooses constrained clauses, proposition IDs, and inferred priorities. IBM
 `nl2ltl` is not running a second language model here: we use its deterministic DECLARE
-template classes to turn the accepted choice into a `pylogics` LTLf formula. The LLM
+template classes to turn each chosen clause into a `pylogics` LTLf formula. The LLM
 does not generate LTLf, automaton states, transitions, numeric rewards, or output files.
-Everything after critic acceptance is deterministic code and formal compilation.
+Everything between the LLM answer and the critic is deterministic code and formal compilation.
 
-The main ownership boundary is: **FL-AT and MONA compile the critic-accepted LTLf formula
-into the formal DFA; `schema-rm-rl` converts that DFA into the executable Reward
-Machine.** The current pipeline calls FL-AT's `compile_dfa()` entry point, not its
-original `compile_reward_machine()` path.
+The main ownership boundary is: **FL-AT and MONA compile each LTLf formula into a DFA and build
+their product; `schema-rm-rl`'s reward layer turns that product into the executable Reward
+Machine.** The pipeline calls FL-AT's `compile_dfa()` per clause and its `automatas_to_rm()`
+product, which the fork extends to return each product state's per-clause DFA states. Design,
+decisions and sources: `docs/COMPILER_REWARD_DESIGN.md`.
 
 | Tool | What this project uses | What this project does not use, and why |
 |---|---|---|
-| IBM `nl2ltl` | The `Existence`, `ExistenceTwo`, and `Precedence` DECLARE templates, their argument checks, and `pylogics` formula objects. `Existence` and `ExistenceTwo` use the template's `to_ltlf()` method. | Its GPT and Rasa engines, grounding, filters, confidence ranking, and generic `translate()` wrapper are unnecessary because this project has a schema-constrained provider engine and critic gates. PPLTL is unused because FL-AT receives LTLf. Other DECLARE templates are rejected until their executable reward and violation semantics are defined. |
-| FL-AT | The LTLf lexer, parser, translation to MONA logic, MONA process invocation, and DFA output parser exposed through `flat_tool.compile_dfa()`. | PDDL3, PLTL, and regular-expression inputs are outside the current LTLf pipeline. FL-AT's old CLI, automata composition, reward assignment, and RM serializer are unused because this project creates one RM per task and owns its one-time reward and compact runtime semantics. |
-| `schema-rm-rl` | Environment parsing, LLM request validation, priority semantics, bounded critics, LTLf serialization, DFA normalization and minimization, reward assignment, and RM serialization. | It does not invent formal automaton topology; MONA remains responsible for compiling the accepted formula. |
+| IBM `nl2ltl` | All 8 DECLARE templates (`Existence`, `ExistenceTwo`, `Absence`, `RespondedExistence`, `Response`, `Precedence`, `ChainResponse`, `NotCoExistence`), built from its template classes, and their `to_ltlf()` formulas. | Its GPT and Rasa engines and filters: this project has its own schema-constrained engine and critic. Its grounding helper: `ground_notcoexistence` builds `NotCoExistence(b, b)`. PPLTL is unused because FL-AT receives LTLf. |
+| FL-AT | The LTLf lexer, parser, translation to MONA logic, MONA process invocation, DFA output parser (`flat_tool.compile_dfa()`), and the synchronous product of clause DFAs (`automatas_to_rm()`, plus the fork's `state_tuples`). | PDDL3, PLTL, and regular-expression inputs; FL-AT's old CLI, its rewards and accepting set (they repeat rewards every accepting step), and its RM serializer. |
+| `schema-rm-rl` | Environment parsing, LLM request validation, the bounded critic, LTLf serialization, the reward layer (per-clause satisfied/pending/violated labels, hard wells, pruning, longest-path progress shaping, soft bonuses and penalties), and RM serialization. | It does not invent formal automaton topology; MONA and FL-AT build the DFAs and their product. |
 
-For precedence, the IBM template supplies the constrained pattern and argument order,
-but this project builds the final formula itself. Non-hard priorities require both
-events while allowing either order. Hard priority requires strict preferred ordering
-and rejects reverse or simultaneous completion.
+Every pattern uses IBM's own formula. Hard and soft never change a formula: soft clauses only
+change rewards (a one-time penalty when broken, a bonus or penalty on the finishing edge), while a
+hard violation leads to a rejecting well and a pending hard obligation blocks finishing.
 
 ## MONA's role
 

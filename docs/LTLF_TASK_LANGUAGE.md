@@ -39,24 +39,21 @@ The catalogue defines semantics, not keywords. The examples are guidance for the
 language model; matching must be based on meaning and grounded propositions rather
 than exact wording.
 
-| Pattern | Canonical LTLf | Meaning on a finite trace | Example ordinary language |
+| Template | IBM LTLf (`to_ltlf()`) | Meaning on a finite trace | Example ordinary language |
 |---|---|---|---|
-| `Existence(a)` | `F(a)` | `a` is true at least once. | “Make sure a happens”; “eventually reach a”; “at some point, do a”. |
-| `ExistenceTwo(a)` | `F(a & X(F(a)))` | `a` is true at two distinct time points. | “Do a twice”; “repeat a”; “after doing a, do it again”. |
-| `Always(a)` | `G(a)` | `a` is true at every time point. | “Always keep a true”; “a must hold throughout”; “never leave a”. |
-| `Next(a)` | `X(a)` | `a` is true at the immediately following time point. | “Do a next”; “a must happen immediately”; “on the next step, a”. |
-| `Absence(a)` | `!F(a)` | `a` is never true. Equivalent to `G(!a)`. | “Never do a”; “avoid a”; “a must not happen”. |
-| `EventuallyAlways(a)` | `F(G(a))` | From some time point through the end, `a` remains true. | “Eventually keep a true”; “reach a and stay there”; “after some point, always a”. |
-| `Precedence(a,b)` | project-defined | Both occur and `a` is preferred or required before `b`, according to priority. | “Do a before b”; “prefer a first”; “b only after a”. |
+| `Existence(a)` | `F(a)` | `a` is true at least once. | "Make sure a happens"; "eventually reach a". |
+| `ExistenceTwo(a)` | `F(a & X(F(a)))` | `a` is true at two distinct time points. | "Do a twice"; "after doing a, do it again". |
+| `Absence(a)` | `!F(a)` | `a` is never true. | "Never do a"; "avoid a". |
+| `RespondedExistence(a,b)` | `F(a) -> F(b)` | If `a` happens, `b` happens too, in any order. | "If you open the door, also hold the key at some point". |
+| `Response(a,b)` | `G(a -> F(b))` | Every `a` is followed later by `b`. | "Every time you pick up a, place it somewhere afterwards". |
+| `Precedence(a,b)` | `(!b U a) \| G(!b)` | No `b` before `a`; also true when neither happens. A required `b` needs `Existence(b)` too. | "Open the door only after taking the key". |
+| `ChainResponse(a,b)` | `G(a -> X(b))` | Every `a` is followed by `b` on the very next step. | "Right after a, do b". |
+| `NotCoExistence(a,b)` | `F(a) -> !F(b)` | `a` and `b` never both happen. | "Never do both a and b". |
 
-`!F(a)` is the canonical representation of absence; `G(!a)` is accepted as an
-equivalent explanation, not as a second pattern. `F(G(a))` is not equivalent to
-`F(a)`: the former requires `a` to remain true through the rest of the trace.
-
-Only `Existence`, `ExistenceTwo`, and project-defined `Precedence` are currently
-executable. `Always`, `Next`, `Absence`, and `EventuallyAlways` remain candidate
-patterns from the teacher's table. They are not exposed as executable until their
-online reward and failure behavior is implemented and reviewed.
+All 8 are executable, each with a `hard` or `soft` priority. The formula is always IBM's; the
+priority only changes how the reward layer treats the clause (see
+`docs/COMPILER_REWARD_DESIGN.md`). Patterns outside IBM's set (`Always`, `Next`,
+`EventuallyAlways`) are not exposed.
 
 ## Natural-language interpretation contract
 
@@ -97,31 +94,21 @@ one task-specific RM per task and trains a shared policy conditioned on the curr
 RM state's language description or embedding. Transfer comes from that shared policy
 and shared subgoal representation, not from physically joining all task automata.
 
-The current structured output for a composite task is a list of 1–10 normalized clauses
-with conjunction semantics (“all clauses must hold”). Disjunction, optional branches,
-and arbitrary Boolean nesting remain unsupported. Each clause is compiled separately,
-then the reachable conjunction product is built. If the product has no reachable state
-where every clause is accepting, the task is rejected as incompatible rather than
-compiled into an RM that can never finish.
+The structured output for a composite task is a list of 1–25 normalized clauses with
+conjunction semantics ("all hard clauses must hold"). Disjunction and arbitrary Boolean
+nesting remain unsupported; preferences are soft clauses. Each clause is compiled to its own
+DFA, then FL-AT builds the reachable product. If the task has a hard goal clause but no
+reachable final state, it is rejected as having conflicting clauses rather than compiled
+into an RM that can never finish; a task with no hard goal clause compiles as rule-only.
 
-## Reward semantics required before extending execution
+## Reward semantics
 
-- `Existence`: reward once when its required occurrence is first completed.
-- `ExistenceTwo`: reward once on the second distinct occurrence.
-- `Next`: reward on the next step if satisfied; otherwise enter a rejecting state.
-- `Absence` and `Always`: treat violations as immediate rejection. Successful
-  completion can only be confirmed when the finite trace ends.
-- `EventuallyAlways`: successful completion can only be confirmed at trace end;
-  rewarding an apparent stabilization earlier would allow a later violation after the
-  reward has already been collected.
-- Composite tasks: unary and preferred-order clause completion pays `+0.10` once;
-  soft reverse or simultaneous completion pays `0`; hard reverse or simultaneous
-  completion enters an absorbing zero-reward rejecting sink. Completion of every clause
-  adds `+1.00`. Rewards must not be repeatable through cycles.
-
-These terminal-trace semantics require an explicit episode-end signal from the future
-RL runtime. Until that interface exists, terminal-only patterns remain specification
-candidates rather than executable patterns.
+The reward layer computes every reward from the clause DFAs; the full rules and their sources are
+in `docs/COMPILER_REWARD_DESIGN.md`. In short: progress shaping pays `0.1` per step closer to the
+goal (longest remaining path, idle steps pay 0, cycles sum to 0), finishing pays `+1`, a hard
+violation enters one rejecting well (`-1`, episode ends), a pending hard obligation blocks
+finishing, and each soft clause pays `-0.5` once when it breaks, `-0.5` if still pending at the
+finish and `+0.25` if satisfied at the finish. A task with no hard goal clause has no final state.
 
 ## Relationship to ARM-FM
 
@@ -130,7 +117,7 @@ for that task's subgoals. Its multi-task experiment associates tasks with separa
 RMs and trains one policy using the language embedding of the active RM state. A novel
 composite task receives its own RM and reuses familiar subgoal representations. The
 recommended contract above preserves this separation while keeping the present
-pipeline safer than ARM-FM: the model selects constrained semantics, bounded critics
-accept or reject the result within three attempts, and deterministic formal tools own
-the automaton. Both critics may be disabled, which warns and accepts every compiler
+pipeline safer than ARM-FM: the model selects constrained semantics, one bounded critic
+accepts or rejects the result within three attempts, and deterministic formal tools own
+the automaton. The critic may be disabled, which warns and accepts every compiler
 result without review, and a failed task prevents all batch output writes.

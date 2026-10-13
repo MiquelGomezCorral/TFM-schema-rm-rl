@@ -63,6 +63,7 @@ and renders the returned Reward Machine structure and serialized text.
 
 Training: `train-rl --config <run>.yaml --seed N` -> `Configuration` loads the YAML ->
 family adapter (MiniGrid: symbolic 7x7x3 or 84x84 grayscale frame stack, encoder, success
-rule) -> optional RM wrapper (labeling -> one RM step -> reward = env + RM, observation gains
+rule) -> optional RM wrapper (labeling -> one RM step -> reward per `reward_source` (default RM only),
+episode ends on RM final/rejecting states or the time limit (-0.5), observation gains
 the RM state embedding) -> DQN with SB3 replay -> periodic greedy evaluation on a separate env
 -> run folder `outputs/runs/<exp_name>/seed<seed>-<UTC>-<pid>/`.
