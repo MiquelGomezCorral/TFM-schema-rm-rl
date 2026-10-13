@@ -19,7 +19,7 @@ tasks, while keeping the generator and critic responsibilities stable.
   whether the clause is hard or soft.
 - The generator system prompt owns stable role, safety, supported-template, grounding,
   and output-format rules. The user prompt supplies the environment Markdown, task,
-  candidate output (for critics), and use-case-specific additions.
+  candidate output (for critics), and, for labeling, the environment's declared API.
   Environment-specific facts do not belong in the shared system prompt.
 - In compiler mode, the model translates ordinary language into normalized clauses and declared
   propositions. It does not write LTLf, invent propositions, or design RM topology;
@@ -40,7 +40,7 @@ tasks, while keeping the generator and critic responsibilities stable.
   states and compile warnings. It returns a strict acceptance decision and nonempty feedback,
   never corrected artifacts.
 - A separate compiler state-description request runs after the critic accepts the RM. Its system prompt defines the inputs and tagging rules; its user prompt supplies
-  the environment, original task, all validated clauses, compiled RM, rejecting-state metadata,
+  the environment, original task, all validated clauses, compiled RM (its `REJECTING_STATES:` line names the well),
   and ordered node identifiers. It returns one JSON list of nonempty strings in node order,
   with 1–4 sentences describing each state's progress and remaining objectives.
 - Description generation uses the configured provider and generator model. Malformed descriptions
@@ -48,6 +48,12 @@ tasks, while keeping the generator and critic responsibilities stable.
   compiled candidate; exhaustion stops the run without regenerating that candidate.
   A critic rejection follows the existing bounded proposal retry loop. Disabling the critic
   does not disable tagging.
+- Every request through the OpenAI SDK (OpenAI, OpenCode) repeats an HTTP 400 up to
+  `Configuration.PROVIDER_RETRIES` (10) times, 1 s apart, before it counts as a failure; these
+  repeats use no proposal or tagging attempt. OpenCode's random 400 sticks to the
+  `x-opencode-session` id: repeating with the same id never recovered in a probe (0/9), a new id
+  did (9/9), so every repeat sends a new session id. Command-line adapters (Pi, Antigravity) do
+  not repeat.
 - Descriptions remain separate from RM topology, rewards, and text. They distinguish
   successful completion from irreversible rejection, preserve conjunctive requirements,
   and follow the machine's event memory and fallback semantics.
@@ -240,3 +246,6 @@ through their inputs and prompts, while both challenge the same generator.
 - 2026-10-12: Compiler redesign (user decisions): IBM's 8 templates and formulas, hard/soft per
   clause, FL-AT's product with a reward layer, one critic after compilation, zero or one final
   state plus `REJECTING_STATES`. Design and sources: `docs/COMPILER_REWARD_DESIGN.md`.
+- 2026-10-13: One template catalog (meanings, IBM formulas, cue words, worked examples) shared by
+  the creator and the critic; provider HTTP 400s repeated 1 s apart inside each request (user decisions
+  at the result gate).

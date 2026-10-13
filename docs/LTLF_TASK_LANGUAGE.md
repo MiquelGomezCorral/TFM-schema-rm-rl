@@ -37,7 +37,10 @@ metadata is justified.
 
 The catalogue defines semantics, not keywords. The examples are guidance for the
 language model; matching must be based on meaning and grounded propositions rather
-than exact wording.
+than exact wording. The model reads the same catalogue, with cue words and worked
+examples, from one prompt file that both the creator and the critic load:
+`app/src/prompts/compiler-rm/declare-templates.md`. Extend it there; a new template also
+needs an entry in `SUPPORTED_TEMPLATES` (`app/src/engines/structured.py`).
 
 | Template | IBM LTLf (`to_ltlf()`) | Meaning on a finite trace | Example ordinary language |
 |---|---|---|---|

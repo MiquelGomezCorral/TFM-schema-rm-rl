@@ -142,14 +142,53 @@ allowed to be empty. Other pipeline steps own the rest.
 - **[decision] Longest path, not shortest,** for the shortcut reason above, and because the
   environment may never produce the shortcut. For RMs with cycles, compute it on the graph with
   each cycle collapsed to one node; edges inside a cycle get 0.
-- **[run + decision] An idle first step pays 0.** MONA gives each rule clause a pre-step start
-  state that is left on the first step and never re-entered, so the start would sit one step further
-  from the goal than the resting state and an idle first step would pay +0.1. The start state
-  therefore gets the score of the state that "nothing happens" leads to (only when the start is not
-  on a cycle and that state is not the well); potentials still telescope.
+- **[run + decision] The duplicate start is dropped, so an idle first step pays 0.** MONA gives
+  each rule clause a "no step yet" start state that is left on the first step and never re-entered.
+  On every input it goes where the state after an idle step goes, so the product carried one extra
+  start that would sit one step further from the goal and pay +0.1 for doing nothing. After the hard
+  passes, `_drop_pre_step_start` removes that start and makes its idle successor the start, but only
+  when nothing re-enters it, the successor is neither the well nor a final, and both states go to
+  the same state on every valuation; otherwise the RM is left as is. Same machine, one state fewer:
+  19 of the 25 T2.1 RMs (every task with a rule clause) lost exactly that state, with every reward
+  and walk total unchanged (`samples/start_merge_check.py`, 25/25). This replaced an earlier fix
+  that only gave the start its successor's progress score.
 - **[decision] No infinities.** Wells get no progress score, only a fixed finite penalty
   (Ng's theorem also needs a bounded score). Some papers use -infinity for rejecting states; we
   do not need it.
+
+### Why loops pay nothing, and how we check it
+
+Two things keep every loop at 0: how the rewards are built, and one check on the finished RM.
+
+- **[code] By construction.** Progress is a difference of one score per state, so around any loop
+  the differences cancel. States on the same loop share one score (the loop is collapsed to one
+  node before scoring), so edges inside a loop pay 0 progress. The other rewards cannot repeat:
+  `+1` and the soft finish terms are paid only on edges into the final, the `-1` only on edges
+  into the well, and both are absorbing. A soft break pays once because a broken clause stays
+  broken (its DFA cannot leave a violated state). Dropping the duplicate start removes a state and
+  its edges and adds none, so it cannot open a loop.
+- **[code] Checked on every RM.** After the rewards are set, `_has_positive_cycle` in
+  `app/src/compiler/reward_layer.py` runs Bellman-Ford on the undiscounted rewards: if the best
+  total reachable at some state still grows after as many rounds as there are states, a loop pays
+  more than 0, and the compile fails with "Reward Machine has a positive reward cycle".
+- **[run] Tested.** The T2.1 live test (27 clause sets, all eight templates, hard and soft)
+  checked every RM for a positive loop with its own networkx code: none found, 253/253 checks.
+
+### Graph passes and the library behind them
+
+The reward layer runs its graph passes with [networkx](https://networkx.org/) 3.6 (declared in
+`requirements.txt` and `pyproject.toml`; it also arrives through FL-AT's `dd`). Each call, where
+it is used in `app/src/compiler/reward_layer.py`, and the algorithm behind it:
+
+| Call | Used for | Algorithm |
+|---|---|---|
+| `nx.descendants` | prune states the start cannot reach (pass 5) | breadth-first search |
+| `nx.ancestors` (in `_reaching`) | find states that can still reach a final or a clause's accepting states (passes 1 and 4) | breadth-first search on the reversed edges |
+| `nx.condensation` | collapse every loop into one node before scoring progress (`_progress`) | strongly connected components: Tarjan's algorithm with Nuutila's changes (Tarjan 1972; Nuutila & Soisalon-Soininen 1994) |
+| `nx.topological_sort` | visit the collapsed graph from the finals backwards to get each state's longest remaining path | topological order (Manber 1989); the longest path itself is a short loop of ours: `steps = 0` at a final, else `1 + max(steps of the successors)` |
+
+The positive-loop check is our own Bellman-Ford (Bellman 1958), about ten lines, run on
+the finished RM.
 
 ### Hard and soft
 
@@ -191,6 +230,10 @@ allowed to be empty. Other pipeline steps own the rest.
    Otherwise the agent could wander forever in a part of the RM that can never finish.
 5. **Prune states unreachable from the start.** After the redirects, states that were targets can
    be left with no incoming edges.
+   Then **drop the duplicate start** when it matches its idle successor on every input (see
+   Rewards above). Apart from joining the finals into one node and hard violations into one well,
+   this is the only merge the layer does. It keeps every reward because no catalog template is
+   broken by an idle step, so the soft terms price the old start and its successor alike.
 6. **Minimization: deferred (decision 2026-10-12).** It works only with the right starting
    groups: one final group, one well group, and the other states split by which soft clauses are
    violated. **[run]** On FL-AT's RM for "reach the goal, if possible never touch lava", Moore's
@@ -256,6 +299,11 @@ having conflicting clauses.
 | LTL2Action, 2021 ([arXiv](https://arxiv.org/abs/2102.06858)) | none | +1 when the formula is satisfied, -1 when falsified, then the episode ends | [paper] |
 | Middleton et al. 2020, "FL-AT: A Formal Language-Automaton Transmogrifier", ICAPS demo ([PDF](https://www.cs.toronto.edu/~toryn/docs/MiddletonICAPS2020flat.pdf)) | none | The FL-AT tool itself | [paper] |
 | IBM nl2ltl, Fuggitti & Chakraborti 2023 ([repo](https://github.com/IBM/nl2ltl)) | `dependencies/nl2ltl` | DECLARE templates, grounding and formulas, reused as is | [code] |
+| networkx 3.6 ([docs](https://networkx.org/documentation/stable/reference/algorithms/component.html)) | installed package | The graph passes above; the algorithm references below come from its docstrings | [code], read by us |
+| Tarjan 1972, "Depth-first search and linear graph algorithms", SIAM J. Computing 1(2):146-160 | none | Strongly connected components in linear time, behind `nx.condensation` | [paper], cited by networkx |
+| Nuutila & Soisalon-Soininen 1994, "On finding the strongly connected components in a directed graph", Information Processing Letters 49(1):9-14 | none | The memory-saving change to Tarjan's algorithm that networkx uses | [paper], cited by networkx |
+| Manber 1989, *Introduction to Algorithms: A Creative Approach*, Addison-Wesley | none | The topological sort behind `nx.topological_sort` | [book], cited by networkx |
+| Bellman 1958, "On a routing problem", Quarterly of Applied Mathematics 16(1):87-90 | none | Bellman-Ford relaxation; our check keeps the largest total instead of the smallest, so a total that still grows after n rounds means a loop that pays | [paper] |
 
 Detailed research notes with quotes live in the project's private agent memory
 (`agent-memory/plans/rm-reward-research/` and `agent-memory/plans/compiler-ibm-flat/`).
@@ -268,7 +316,9 @@ single paper describes this exact scheme; the combination is ours.
 ## Still open
 
 - Soft details per template (bonus and penalty values, where each is paid).
-- Verify each template's RM shape against these rules, `ChainResponse` included.
-- Test that our runtime's guard parser accepts FL-AT's guard strings (`!door_open&has_key`, `true`).
+- ~~Verify each template's RM shape against these rules, `ChainResponse` included.~~ Done in the
+  T2.1 live test (27 clause sets, all eight templates, hard and soft).
+- ~~Test that our runtime's guard parser accepts FL-AT's guard strings (`!door_open&has_key`, `true`).~~
+  Done: the T3.5 live test ran a compiled bundle's FL-AT guards through the runtime for one episode.
 - Product size: the product grows as the product of the clause DFA sizes; reductions exist
   (De Giacomo et al. 2020 transducer merge) if it becomes a problem.
