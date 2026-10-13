@@ -51,7 +51,7 @@ allowed to be empty. Other pipeline steps own the rest.
 
 ## Facts we checked
 
-### Current compiler
+### Compiler before the redesign (as of commit `3066c95`)
 
 - **[code] It does not post-process FL-AT's Reward Machine.** It calls only
   `flat_tool.compile_dfa` per clause (`app/src/compiler/pipeline.py:102`) and rebuilds the RM
@@ -63,7 +63,7 @@ allowed to be empty. Other pipeline steps own the rest.
   rest in three places: the LLM's output schema (`app/src/engines/structured.py:20`),
   `_validate_clause` (`app/src/engines/structured.py:216`), and the DFA step, which requires one
   accepting state that never leaves (`app/src/compiler/reward_machine.py:508`).
-- **[code] Rewards today:** 0.1 once when a clause completes, +1.0 when the task completes.
+- **[code] Rewards then:** 0.1 once when a clause completes, +1.0 when the task completes.
 - **[run] It almost always ends up hard.** In `docs/artifacts/ARM-FM-vs-COMPILER.md`, 9 of 12
   compiler RMs have an absorbing rejecting sink and none has a penalty edge.
 
@@ -142,6 +142,11 @@ allowed to be empty. Other pipeline steps own the rest.
 - **[decision] Longest path, not shortest,** for the shortcut reason above, and because the
   environment may never produce the shortcut. For RMs with cycles, compute it on the graph with
   each cycle collapsed to one node; edges inside a cycle get 0.
+- **[run + decision] An idle first step pays 0.** MONA gives each rule clause a pre-step start
+  state that is left on the first step and never re-entered, so the start would sit one step further
+  from the goal than the resting state and an idle first step would pay +0.1. The start state
+  therefore gets the score of the state that "nothing happens" leads to (only when the start is not
+  on a cycle and that state is not the well); potentials still telescope.
 - **[decision] No infinities.** Wells get no progress score, only a fixed finite penalty
   (Ng's theorem also needs a bounded score). Some papers use -infinity for rejecting states; we
   do not need it.
@@ -174,9 +179,10 @@ allowed to be empty. Other pipeline steps own the rest.
 ### Cleanup passes, in order
 
 1. **Label each clause's DFA states** as satisfied (accepting), pending (not accepting, accepting
-   still reachable) or violated (accepting never reachable again). This is a reachability check
-   on a small DFA, so it is exact, not a guess. (Matches the four-valued monitors of De Giacomo
-   et al. 2020.)
+   still reachable) or violated (accepting never reachable again). This is a reachability check on a
+   small DFA, so it is exact, not a guess (matches the four-valued monitors of De Giacomo et al.
+   2020). Each clause DFA must be total, with exactly one transition per valuation; a missing or
+   duplicated transition is a compile error naming the clause.
 2. **Redirect hard violations:** every edge whose target has a hard clause violated goes to one
    shared well instead.
 3. **Remove "final" where a hard clause is not satisfied** (for example "goal done, `Response`
