@@ -188,7 +188,7 @@ allowed to be empty. Other pipeline steps own the rest.
 6. **Minimization: deferred (decision 2026-10-12).** It works only with the right starting
    groups: one final group, one well group, and the other states split by which soft clauses are
    violated. **[run]** On FL-AT's RM for "reach the goal, if possible never touch lava", Moore's
-   refinement (our `_equivalence_partitions`, `app/src/compiler/reward_machine.py:530`) started
+   refinement (our former `_equivalence_partitions`, `app/src/compiler/reward_machine.py:530` at commit `5b74afe`) started
    from final / not final only merges the clean and the touched sections (S1 with S2, S3 with S4):
    the mirror edge S1 -> S2 looks like "stay in my group", the same as S2's own lava self-loop.
    With the soft-violation split they stay apart. The gain (fewer states to describe and embed)
@@ -217,7 +217,7 @@ having conflicting clauses.
   the compiled RM, with the generator's guidelines plus critique guidelines. It replaces today's
   task critic and RM critic.
 - **[decision] Rule-only tasks are allowed.** A task with no hard goal clause gets no final state;
-  only the time limit ends it. The critic accepts it, and the UI and CLI warn the user.
+  only a well, the environment's end, or the time limit ends it. The critic accepts it, and the UI and CLI warn the user.
   Preference-only tasks are worth exploring later.
 - **[decision] A hard goal with no reachable final is an error,** reported as conflicting
   clauses (e.g. `Existence(p)` + `Absence(p)`), never compiled as a rule-only task.
