@@ -70,13 +70,10 @@ Conditions are evaluated against the current observation. At most one
 transition is taken per step. If multiple ordinary conditions match,
 the first listed matching transition applies.
 
-An explicit `else` applies when no ordinary condition matches and follows
-its declared destination. Without an explicit `else`, unmatched observations
-leave the state unchanged and emit zero reward.
+An observation that matches no condition leaves the state unchanged and
+emits zero reward.
 
-The input also repeats the compiler's rejecting-state identifiers as
-metadata alongside the machine. Rejecting states represent irreversible
-failure to satisfy a requirement.
+Rejecting states represent irreversible failure to satisfy a requirement.
 
 Use the machine to determine actual progress, remaining requirements, and
 possible transitions. Reward magnitude alone does not establish completion,

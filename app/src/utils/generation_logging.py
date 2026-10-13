@@ -11,6 +11,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from src.compiler import CompilationResult
+from src.config import Configuration
 
 
 class PipelineStep(StrEnum):
@@ -186,7 +187,8 @@ class Progress:
             ProgressEvent(self.current_task, self.current_attempt, step, StepState.RUNNING)
         )
         self(
-            f"Task {self.current_task + 1}: attempt {self.current_attempt}/3 — {_STEP_LABELS[step]}."
+            f"Task {self.current_task + 1}: attempt "
+            f"{self.current_attempt}/{Configuration.PROPOSAL_ATTEMPTS} — {_STEP_LABELS[step]}."
         )
 
     def stage_skip(self, step: PipelineStep) -> None:

@@ -10,7 +10,6 @@ from urllib.parse import urlparse
 
 import yaml
 from maikol_utils.file_utils import make_dirs
-from maikol_utils.print_utils import print_warn
 
 LLM_PROVIDERS = ("openai", "opencode", "antigravity")
 DEFAULT_LLAMA_SERVER_PORT = "8934"
@@ -158,6 +157,11 @@ class Configuration:
     # Each task gets this many proposal attempts; each candidate this many tagging requests.
     PROPOSAL_ATTEMPTS: ClassVar[int] = 3
     TAGGING_ATTEMPTS: ClassVar[int] = 3
+    # The provider sometimes answers HTTP 400 at random; the same call is repeated this many
+    # times, this far apart, before it counts as a failure. Repeats use no proposal attempt.
+    # A repeat uses a new provider session, because OpenCode's 400 sticks to the session.
+    PROVIDER_RETRIES: ClassVar[int] = 10
+    PROVIDER_RETRY_WAIT_S: ClassVar[float] = 1.0
     MAX_TASK_CLAUSES: ClassVar[int] = 25
     # Paid per step closer to the final state, measured on the longest remaining path.
     PROGRESS_REWARD: ClassVar[float] = 0.1
@@ -277,9 +281,6 @@ class Configuration:
         self._validate_training()
         self._resolve_models()
         self._validate_embeddings()
-
-        if not self.critic:
-            print_warn("The critic is disabled: every compiler result is accepted without review.")
 
     def _load_yaml_configuration(self, yaml_file: str) -> None:
         """Set fields from a YAML run config under CONFIG_PATH, or from an existing path.

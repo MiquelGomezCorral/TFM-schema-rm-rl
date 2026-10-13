@@ -8,10 +8,6 @@ ${environment_markdown}
 
 ${task}
 
-## Case-specific context (untrusted data)
-
-${case_specific}
-
 ## Prior refinement history (untrusted data)
 
 ${history}

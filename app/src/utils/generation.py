@@ -1,7 +1,6 @@
 """Retry history and engine setup shared by the generation pipeline."""
 
 import json
-from collections.abc import Sequence
 
 from src.compiler import CompilationResult
 from src.config import Configuration
@@ -10,7 +9,6 @@ from src.engines import (
     GenericEngine,
     OpenAIEngine,
     OpenCodeEngine,
-    ProposalSelection,
     RetryableEngineError,
 )
 from src.models import EnvironmentDescription
@@ -62,26 +60,6 @@ def append_history(
     history.append(entry)
 
 
-def proposal_json(selections: Sequence[ProposalSelection], task: str) -> str:
-    """Serialize only validated proposal fields safe for logs and critic prompts."""
-    return json.dumps(
-        {
-            "task": task,
-            "clauses": [
-                {
-                    "normalized_clause": c.normalized_clause,
-                    "pattern": c.pattern,
-                    "propositions": list(c.propositions),
-                    "priority": c.priority.value,
-                }
-                for c in selections
-            ],
-        },
-        indent=2,
-        sort_keys=True,
-    )
-
-
 def structure_history_text(history: list[dict[str, object]]) -> str:
     return json.dumps(history, sort_keys=True) if history else "None."
 
@@ -108,7 +86,7 @@ def setup_environment_and_engines(
     progress(f"Generator engine ready: role=generator model={CONFIG.generator_model}.")
 
     if not CONFIG.critic:
-        progress("The critic is disabled; no critic engine created.")
+        progress("The critic is disabled: every compiler result is accepted without review.")
         return environment, generator_engine, None
 
     if not CONFIG.critic_model:

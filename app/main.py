@@ -1,6 +1,7 @@
 """Application command-line entry point."""
 
 import argparse
+import sys
 from pathlib import Path
 
 import dotenv
@@ -22,7 +23,8 @@ from src.config import Configuration
 def cmd_generate_rm(args: argparse.Namespace) -> None:
     """Generate a Reward Machine from parsed CLI configuration."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
-    generate_rm(CONFIG)
+    if not generate_rm(CONFIG):
+        sys.exit(1)
 
 
 def cmd_render_rm(args: argparse.Namespace) -> None:
@@ -209,7 +211,13 @@ if __name__ == "__main__":
     larm_parser.add_argument("--model")
     larm_parser.add_argument("--judge-model", default="Qwen3-30B-A3B-Instruct-2507")
     larm_parser.add_argument("--overwrite", action="store_true")
-    larm_parser.add_argument("--critic", action=argparse.BooleanOptionalAction, default=True)
+    larm_parser.add_argument(
+        "--critic",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="compiler mode only: review each compiled candidate with the critic "
+        "(arm-fm and paper modes always run their own critic; default: enabled)",
+    )
     larm_parser.add_argument(
         "--embeddings",
         action=argparse.BooleanOptionalAction,

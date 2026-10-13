@@ -4,9 +4,11 @@ import json
 import os
 import subprocess
 import unittest
-from unittest.mock import ANY, patch
+from unittest.mock import ANY, Mock, patch
 
+from httpx import Request, Response
 from nl2ltl.declare.base import TemplateEnum
+from openai import BadRequestError
 
 from src.arm_fm.generation import _extract_artifact
 from src.compiler import materialize_proposal, parse_paper_reward_machine
@@ -407,7 +409,6 @@ class EngineTests(unittest.TestCase):
             "Finish",
             '[{"pattern": "Existence"}]',
             "REWARD_MACHINE:",
-            "[]",
             ("u0", "u1"),
         )
 
@@ -415,6 +416,20 @@ class EngineTests(unittest.TestCase):
         self.assertIn('["u0", "u1"]', requests[0])
         self.assertIn("### Reward Machine", requests[0])
         self.assertIn('"pattern": "Existence"', requests[0])
+
+    @patch("src.engines.generic_engine.sleep")
+    @patch.object(GenericEngine, "_renew_session")
+    def test_transient_bad_request_is_repeated_before_it_counts_as_a_failure(
+        self, renew_session, sleep
+    ) -> None:
+        response = Response(400, request=Request("POST", "https://provider.test/v1"))
+        failure = BadRequestError("Error code: 400", response=response, body=None)
+        request_text = Mock(side_effect=[failure, failure, "finished"])
+        engine = GenericEngine(ENVIRONMENT, "test-model", "Test", lambda *args: "", request_text)
+
+        self.assertEqual(engine.request_text("system", "user"), "finished")
+        self.assertEqual(sleep.call_count, 2)
+        self.assertEqual(renew_session.call_count, 2)
 
     def test_state_tagger_output_shapes_are_validated(self) -> None:
         nodes = ("u0", "u1")
@@ -441,11 +456,11 @@ class EngineTests(unittest.TestCase):
                 self.subTest(response=response),
                 self.assertRaises(RetryableEngineError),
             ):
-                engine_for(response).describe_states("Finish", "[]", "m", "[]", nodes)
+                engine_for(response).describe_states("Finish", "[]", "m", nodes)
 
         accepted = engine_for('[" first ", "second"]')
         self.assertEqual(
-            accepted.describe_states("Finish", "[]", "m", "[]", nodes),
+            accepted.describe_states("Finish", "[]", "m", nodes),
             ("first", "second"),
         )
 

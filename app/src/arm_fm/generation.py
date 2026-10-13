@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from src.compiler import (
+    ClauseProposal,
     CompilationResult,
     PaperRewardMachine,
     compiler_machine_to_paper,
@@ -17,6 +18,7 @@ from src.compiler import (
     serialize_paper_reward_machine,
 )
 from src.config import Configuration
+from src.engines import ProposalSelection
 from src.models import EnvironmentDescription
 from src.prompts import read_prompt, render_prompt
 
@@ -514,7 +516,7 @@ def generate_compiler_labeling(
     labeling_api = compiled.environment.require_labeling_api()
     attempts: list[StageAttempt] = []
     context = {
-        "clauses_json": clauses_json(compiled),
+        "clauses_json": clauses_json(compiled.proposal.clauses),
         "state_descriptions_json": descriptions_json(compiled),
         "nodes_json": json.dumps(list(state_identifiers(compiled).values())),
         "propositions_json": json.dumps(
@@ -525,9 +527,10 @@ def generate_compiler_labeling(
     }
 
     def request(history: str) -> str:
-        return _compiler_request(
+        return _request_text(
             engine,
             "labeling_generator",
+            family="compiler",
             environment_markdown=compiled.environment.markdown,
             task=task,
             reward_machine=compiled.text,
@@ -602,8 +605,8 @@ def state_identifiers(compiled: CompilationResult) -> dict[int, str]:
     return dict(zip(compiled.reward_machine.states, machine.states, strict=True))
 
 
-def clauses_json(compiled: CompilationResult) -> str:
-    """Serialize validated clauses for the critic, tagging and labeling prompts."""
+def clauses_json(clauses: Iterable[ClauseProposal | ProposalSelection]) -> str:
+    """Serialize clauses, as proposed or as compiled, for logs, history and prompts."""
     return json.dumps(
         [
             {
@@ -612,17 +615,11 @@ def clauses_json(compiled: CompilationResult) -> str:
                 "propositions": list(clause.propositions),
                 "priority": clause.priority.value,
             }
-            for clause in compiled.proposal.clauses
+            for clause in clauses
         ],
         indent=2,
         sort_keys=True,
     )
-
-
-def rejecting_states_json(compiled: CompilationResult) -> str:
-    """Serialize the compiler's rejecting states as shared node identities."""
-    identifiers = state_identifiers(compiled)
-    return json.dumps([identifiers[state] for state in compiled.reward_machine.rejecting_states])
 
 
 def descriptions_json(compiled: CompilationResult) -> str:
@@ -640,26 +637,16 @@ def descriptions_json(compiled: CompilationResult) -> str:
 # ======================================================================================
 
 
-def _request_text(engine: object, role: str, **values: str) -> str:
+def _request_text(engine: object, role: str, family: str = "arm_fm", **values: str) -> str:
+    """Render one prompt of ``family`` and send it through the engine's text request path."""
     request = getattr(engine, "request_text", None)
     if request is None:
-        raise RuntimeError("ARM-FM generation requires an engine with request_text")
-    return str(request(read_prompt("arm_fm", role), render_prompt("arm_fm", role, **values)))
-
-
-def _compiler_request(engine: object, role: str, **values: str) -> str:
-    """Render one compiler labeling prompt through the engine's text request path."""
-    request = getattr(engine, "request_text", None)
-    if request is None:
-        raise RuntimeError("Compiler labeling generation requires an engine with request_text")
-    return str(request(read_prompt("compiler", role), render_prompt("compiler", role, **values)))
+        raise RuntimeError("Prompted generation requires an engine with request_text")
+    return str(request(read_prompt(family, role), render_prompt(family, role, **values)))
 
 
 def _critic(engine: object, role: str, **values: str) -> tuple[bool, str, str]:
-    request = getattr(engine, "request_text", None)
-    if request is None:
-        raise RuntimeError("ARM-FM critic requires an engine with request_text")
-    response = str(request(read_prompt("arm_fm", role), render_prompt("arm_fm", role, **values)))
+    response = _request_text(engine, role, **values)
     try:
         parsed = json.loads(_extract_artifact(response))
     except json.JSONDecodeError as error:

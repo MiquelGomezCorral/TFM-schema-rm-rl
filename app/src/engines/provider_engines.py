@@ -127,6 +127,13 @@ class OpenCodeEngine(GenericEngine):
             self._request_chat_completions_text,
         )
 
+    def _renew_session(self) -> None:
+        if self.model == OPENCODE_GO_MODEL:
+            return
+        self._client = self._client.with_options(
+            default_headers={"x-opencode-session": str(uuid4())}
+        )
+
     def _request_chat_completions(
         self, model: str, system: str, user: str, schema: dict, name: str
     ) -> str:

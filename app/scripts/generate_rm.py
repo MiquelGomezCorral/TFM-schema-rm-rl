@@ -17,7 +17,6 @@ from src.arm_fm.generation import (
     clauses_json,
     generate_compiler_labeling,
     pair_state_descriptions,
-    rejecting_states_json,
     state_identifiers,
 )
 from src.compiler import (
@@ -43,7 +42,6 @@ from src.utils import (
     attach_step_trace,
     preflight_paths,
     prepare_outputs,
-    proposal_json,
     record_attempt_failure,
     setup_environment_and_engines,
     structure_history_text,
@@ -183,7 +181,7 @@ class _Pipeline:
 
         history_text = structure_history_text(history)
         selections = self.generator_engine.propose_task(task, history=history_text)
-        proposal_text = proposal_json(selections, task)
+        proposal_text = clauses_json(selections)
 
         self.progress.artifact("Validated proposal", proposal_text)
         self.progress.complete()
@@ -240,11 +238,7 @@ class _Pipeline:
         for tagging_attempt in range(1, attempts + 1):
             try:
                 descriptions = self.generator_engine.describe_states(
-                    task,
-                    facts["Clauses"],
-                    facts["Reward Machine"],
-                    facts["Rejecting states"],
-                    nodes,
+                    task, facts["Clauses"], facts["Reward Machine"], nodes
                 )
             except RetryableEngineError as error:
                 last_error = error
@@ -279,7 +273,7 @@ class _Pipeline:
         self.progress.start(PipelineStep.CRITIC)
 
         critic = self.critic_engine.review_candidate(
-            task, clauses_json(compiled), compiled.text, compiled.warnings
+            task, clauses_json(compiled.proposal.clauses), compiled.text, compiled.warnings
         )
 
         self.progress.artifact(
@@ -398,7 +392,6 @@ def _tagger_facts(compiled: CompilationResult) -> dict[str, str]:
     return {
         "Environment": compiled.environment.markdown,
         "Task": compiled.proposal.task,
-        "Clauses": clauses_json(compiled),
+        "Clauses": clauses_json(compiled.proposal.clauses),
         "Reward Machine": compiled.text,
-        "Rejecting states": rejecting_states_json(compiled),
     }

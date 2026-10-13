@@ -2,7 +2,11 @@
 
 import json
 from collections.abc import Callable, Sequence
+from time import sleep
 
+from openai import BadRequestError
+
+from src.config import Configuration
 from src.models import EnvironmentDescription
 from src.prompts import read_prompt, render_prompt
 
@@ -46,10 +50,7 @@ class GenericEngine:
         """Request an unconstrained artifact while retaining provider error mapping."""
         if self._request_text is None:
             raise RuntimeError(f"{self.provider_name} does not provide text artifact requests")
-        try:
-            return self._request_text(self.model, system, user)
-        except Exception as error:
-            raise classify_provider_error(error) from error
+        return self._call_provider(self._request_text, system, user)
 
     def propose_task(
         self,
@@ -77,7 +78,6 @@ class GenericEngine:
         task: str,
         clauses_json: str,
         candidate_rm: str,
-        rejecting_states_json: str,
         nodes: Sequence[str],
     ) -> tuple[str, ...]:
         """Request one validated description per ordered node identifier."""
@@ -90,7 +90,6 @@ class GenericEngine:
                 task=task,
                 clauses_json=clauses_json,
                 reward_machine=candidate_rm,
-                rejecting_states_json=rejecting_states_json,
                 nodes_json=json.dumps(list(nodes)),
             ),
         )
@@ -157,7 +156,28 @@ class GenericEngine:
         schema: dict,
         name: str,
     ) -> str:
-        try:
-            return self._request(self.model, system, user, schema, name)
-        except Exception as error:
-            raise classify_provider_error(error) from error
+        return self._call_provider(self._request, system, user, schema, name)
+
+    def _call_provider(self, request: Callable[..., str], *arguments: str | dict) -> str:
+        """Call the provider and map its errors, repeating a transient HTTP 400 first.
+
+        OpenCode answers some valid requests with a random HTTP 400 that sticks to the
+        session: the same call succeeds on a new session. Each repeat starts a new session
+        first. The repeats happen here, so they never use up a refinement attempt; a 400
+        that survives every repeat is mapped like any other provider error.
+        """
+        repeats = 0
+        while True:
+            try:
+                return request(self.model, *arguments)
+            except BadRequestError as error:
+                repeats += 1
+                if repeats > Configuration.PROVIDER_RETRIES:
+                    raise classify_provider_error(error) from error
+                self._renew_session()
+                sleep(Configuration.PROVIDER_RETRY_WAIT_S)
+            except Exception as error:
+                raise classify_provider_error(error) from error
+
+    def _renew_session(self) -> None:
+        """Start a new provider session; a provider whose errors stick to one overrides this."""

@@ -24,7 +24,6 @@ class PromptTests(unittest.TestCase):
             "creator",
             environment_markdown=environment,
             task="Eventually finish.",
-            case_specific="The episode is finite.",
             history='[{"proposal":"old","feedback":"try again"}]',
         )
         critic = render_prompt(
@@ -48,7 +47,6 @@ class PromptTests(unittest.TestCase):
         self.assertTrue(read_prompt("compiler", "creator"))
         self.assertTrue(read_prompt("compiler", "critic"))
         self.assertIn("Eventually finish.", creator)
-        self.assertIn("The episode is finite.", creator)
         self.assertIn("try again", creator)
         self.assertIn('{"clauses": []}', critic)
         self.assertIn('{"s": "0"}', critic)
@@ -81,7 +79,6 @@ class PromptTests(unittest.TestCase):
             task="Finish",
             clauses_json=clauses,
             reward_machine="REWARD_MACHINE:\nSTATES: u0, u1",
-            rejecting_states_json="[]",
             nodes_json='["u0", "u1"]',
         )
 
@@ -98,7 +95,6 @@ class PromptTests(unittest.TestCase):
                 task="Finish",
                 clauses_json=clauses,
                 reward_machine="REWARD_MACHINE:",
-                rejecting_states_json="[]",
                 nodes_json='["u0"]',
             )
 

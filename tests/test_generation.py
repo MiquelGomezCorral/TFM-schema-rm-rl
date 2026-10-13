@@ -28,12 +28,6 @@ class GenerationTests(unittest.TestCase):
         self.addCleanup(self.logs_patch.stop)
         self.logs_patch.start()
 
-    def test_disabled_critic_warns_without_raising(self):
-        with patch("src.config.config.print_warn") as warning:
-            CONFIG = Configuration(critic=False)
-        self.assertFalse(CONFIG.critic)
-        self.assertIn("critic is disabled", warning.call_args.args[0])
-
     def test_bundle_records_critic_validation_only_when_a_critic_ran(self):
         for critic in (True, False):
             manifest = SimpleNamespace(validation={"structural": True}, effective_settings={})

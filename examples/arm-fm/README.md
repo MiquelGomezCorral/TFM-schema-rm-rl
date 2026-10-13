@@ -62,9 +62,8 @@ out of scope.
 
 ## Prompt layout
 
-The reusable creator and reviewer prompts now live in `app/src/prompts`. Their public
-Python functions render the user templates and append use-case information only under
-`Case-specific context`. They are not yet wired into the runtime engines.
+The reusable creator and reviewer prompts now live in `app/src/prompts`. They are not
+yet wired into the runtime engines.
 
 ## Reconstruction artefacts
 

@@ -5,6 +5,7 @@ from collections.abc import Mapping
 import dash_cytoscape as cyto
 from dash import dcc, html
 
+from src.config import Configuration
 from src.utils import STEP_OUTPUT_ORDER, PipelineStep, render_step_text
 
 from .highlight import highlight_step
@@ -281,12 +282,13 @@ STEP_STATUS_SYMBOLS = {
 
 
 def _task_status(task: TaskSnapshot) -> str:
+    limit = Configuration.PROPOSAL_ATTEMPTS
     if task.state is StepState.RUNNING:
-        return f"Task {task.index + 1} of {{total}} · Attempt {task.attempt} of 3"
+        return f"Task {task.index + 1} of {{total}} · Attempt {task.attempt} of {limit}"
     if task.state is StepState.COMPLETED:
-        return f"Task {task.index + 1} of {{total}} · Accepted on attempt {task.attempt} of 3"
+        return f"Task {task.index + 1} of {{total}} · Accepted on attempt {task.attempt} of {limit}"
     if task.state is StepState.FAILED:
-        return f"Task {task.index + 1} of {{total}} · Failed on attempt {task.attempt} of 3"
+        return f"Task {task.index + 1} of {{total}} · Failed on attempt {task.attempt} of {limit}"
     return f"Task {task.index + 1} of {{total}} · Not started"
 
 

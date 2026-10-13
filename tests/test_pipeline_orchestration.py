@@ -94,7 +94,7 @@ class Engine:
             raise value
         return value
 
-    def describe_states(self, task, clauses, candidate, rejecting, nodes):
+    def describe_states(self, task, clauses, candidate, nodes):
         self.tag_nodes.append(tuple(nodes))
         value = self.tag_results.pop(0) if self.tag_results else None
         if isinstance(value, BaseException):

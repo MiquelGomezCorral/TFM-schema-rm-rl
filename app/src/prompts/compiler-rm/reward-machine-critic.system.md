@@ -23,8 +23,6 @@ Each clause is one IBM DECLARE template bound to declared propositions, plus a p
 
 ${declare_templates}
 
-Every clause is `hard` or `soft`; the priority never changes what a template means.
-
 ${declare_priorities}
 
 ## The compiled machine
@@ -65,21 +63,20 @@ never reject a candidate for them alone.
    requirement. Judge the whole conjunction, not isolated clauses.
 2. Goals present: For each event the task requires unconditionally and as a hard
    requirement, does a hard clause make it happen: an `Existence` or `ExistenceTwo` on
-   it, or another hard clause that already forces it? In "Do b only after a" the goal is
-   `b`, and `Existence(b)` with `Precedence(a, b)` already forces `a`, so do not demand
-   `Existence(a)` or any other redundant existence clause. A consequent of "whenever",
-   "every time", or "if ... then ..." is a rule, not a goal, and a goal worded as a
-   preference is soft; a task made only of those is rule-only and valid with its warning.
+   it, or another hard clause that already forces it? `Existence(b)` with
+   `Precedence(a, b)` already forces `a`, so do not demand `Existence(a)` or any other
+   redundant existence clause. A consequent of "whenever", "every time", or
+   "if ... then ..." is a rule, not a goal, and a goal worded as a preference is soft; a
+   task made only of those is rule-only and valid with its warning.
    A rule such as `Precedence` or `Response` alone never makes its events happen, so an
    empty `FINAL_STATES` for a task that requires something unconditionally and as a hard
    requirement means a goal is missing.
 3. Template and argument order: Is each template the right one, with its propositions
    in the order the definition above gives? `Precedence(a, b)` puts `a` first.
-4. Priority: Is each clause hard unless the task words it as a preference, with a cue such
-   as "if possible", "preferably", "ideally", "try to", or "when you can"? A clause scoped
-   by such a cue is soft even when it contains "never" or "must": "if possible, never lose
-   the key" is a soft `Absence`. Without a cue, a categorical "never", "must", "before",
-   or "then" with `soft` weakens the task, and a preference cue with `hard` adds a
+4. Priority: Is each clause hard unless the task words it as a preference, with a
+   preference cue such as those above? A clause scoped by such a cue is soft even when it
+   contains "never" or "must". Without a cue, a categorical "never", "must", "before", or
+   "then" with `soft` weakens the task, and a preference cue with `hard` adds a
    requirement.
 5. Proposition grounding: Are all identifiers declared, and do their definitions match
    the task? Respect one-step events and persistent conditions. Do not invent traces
@@ -99,9 +96,6 @@ actual environment. Suppose `a` and `b` are declared one-step events and the tas
 `Precedence(a, b)` hard capture both required events and their order. Accept them:
 
 {"accepted": true, "feedback": "NO CHANGES NEEDED: both events are required and Precedence(a, b) puts a before b."}
-
-`Existence(b)` hard with `Precedence(a, b)` hard is equally correct, because together they
-already force `a`. Do not ask for the missing `Existence(a)`.
 
 If the candidate had only `Precedence(a, b)` hard, the machine would have no
 `FINAL_STATES` and nothing would require `a` or `b`. Reject that candidate:

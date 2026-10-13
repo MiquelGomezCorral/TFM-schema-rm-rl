@@ -1,7 +1,6 @@
 from .generation import (
     append_history,
     get_engine,
-    proposal_json,
     record_attempt_failure,
     setup_environment_and_engines,
     structure_history_text,
