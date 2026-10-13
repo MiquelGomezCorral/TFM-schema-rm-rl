@@ -588,7 +588,7 @@ def output_controls() -> html.Aside:
     return html.Aside(
         [
             _section_heading(
-                "wand-sparkles", "Generate", "Critics validate each task automatically."
+                "wand-sparkles", "Generate", "The critic validates each task automatically."
             ),
             _field(
                 "Base output filename",

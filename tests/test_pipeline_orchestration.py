@@ -77,7 +77,6 @@ class Engine:
     def __init__(self):
         self.environment = ENV
         self.candidates = []
-        self.clauses = []
         self.warnings = []
         self.histories = []
         self.proposals = []
@@ -105,7 +104,6 @@ class Engine:
         return value
 
     def review_candidate(self, task, clauses_json, candidate, warnings=()):
-        self.clauses.append(clauses_json)
         self.candidates.append(candidate)
         self.warnings.append(tuple(warnings))
         value = self.verdicts.pop(0)

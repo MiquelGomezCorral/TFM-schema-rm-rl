@@ -30,16 +30,7 @@ class RunState(StrEnum):
     FAILED = "failed"
 
 
-STEP_ORDER = (
-    PipelineStep.GENERATE,
-    PipelineStep.LTLF,
-    PipelineStep.DFA,
-    PipelineStep.REWARD_MACHINE,
-    PipelineStep.CRITIC,
-    PipelineStep.STATE_DESCRIPTIONS,
-    PipelineStep.LABELING,
-    PipelineStep.EMBEDDINGS,
-)
+STEP_ORDER = tuple(PipelineStep)
 
 
 @dataclass(frozen=True)

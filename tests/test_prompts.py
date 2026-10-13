@@ -55,6 +55,10 @@ class PromptTests(unittest.TestCase):
         self.assertIn("- Rule-only task", critic)
         self.assertIn("None.", no_warnings)
         self.assertNotIn("${", creator + critic)
+        for agent in ("creator", "critic"):
+            system = read_prompt("compiler", agent)
+            self.assertNotIn("${", system)
+            self.assertIn("`NotCoExistence(a, b)`", system)
 
         with self.assertRaises(ValueError):
             render_prompt("compiler", "creator", environment_markdown="", task="task")

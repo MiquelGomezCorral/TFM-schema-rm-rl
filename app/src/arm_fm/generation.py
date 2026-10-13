@@ -603,7 +603,7 @@ def state_identifiers(compiled: CompilationResult) -> dict[int, str]:
 
 
 def clauses_json(compiled: CompilationResult) -> str:
-    """Serialize validated clauses for the tagging and labeling prompts."""
+    """Serialize validated clauses for the critic, tagging and labeling prompts."""
     return json.dumps(
         [
             {

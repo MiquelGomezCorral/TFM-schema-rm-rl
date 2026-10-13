@@ -22,6 +22,11 @@ PromptAgent = Literal[
 ]
 PromptKind = Literal["system", "user"]
 
+# The creator and critic system prompts share one description of IBM's templates and of the
+# hard/soft priorities; their placeholders take the two parts of this file, split at the marker.
+DECLARE_FILE = "declare-templates.md"
+DECLARE_SPLIT = "<!-- priorities -->"
+
 # Per family: its folder, each agent's file stem, and the fields a user prompt may leave empty.
 PROMPTS = {
     "compiler": {
@@ -50,14 +55,19 @@ PROMPTS = {
 
 
 def read_prompt(family: PromptFamily, agent: PromptAgent, kind: PromptKind = "system") -> str:
-    """Load one packaged prompt file as stripped UTF-8 text."""
+    """Load one packaged prompt file as stripped UTF-8 text, with shared guidance filled in."""
     prompts = PROMPTS[family]
     if agent not in prompts["files"]:
         raise ValueError(f"Unknown {family} prompt agent: {agent}")
 
-    name = f"{prompts['files'][agent]}.{kind}.md"
-    path = files(__package__).joinpath(prompts["directory"], name)
-    return path.read_text(encoding="utf-8").strip()
+    folder = files(__package__).joinpath(prompts["directory"])
+    text = folder.joinpath(f"{prompts['files'][agent]}.{kind}.md").read_text(encoding="utf-8")
+    if "${declare_templates}" in text:
+        guidance = folder.joinpath(DECLARE_FILE).read_text(encoding="utf-8")
+        templates, priorities = (part.strip() for part in guidance.split(DECLARE_SPLIT))
+        text = text.replace("${declare_templates}", templates)
+        text = text.replace("${declare_priorities}", priorities)
+    return text.strip()
 
 
 def render_prompt(family: PromptFamily, agent: PromptAgent, **values: str) -> str:

@@ -43,9 +43,7 @@ IBM_FLAT_FORMULAS = {
 class EngineTests(unittest.TestCase):
     def test_provider_classes_inherit_the_shared_workflow(self) -> None:
         methods = {
-            "translate",
             "propose_task",
-            "propose",
             "review_candidate",
             "describe_states",
             "_request_structured",
@@ -211,7 +209,7 @@ class EngineTests(unittest.TestCase):
             ),
             stderr="",
         )
-        self.assertTrue(engine.review_candidate("Finish", "[]", "REWARD_MACHINE:").accepted)
+        self.assertTrue(engine.review_candidate("Finish", "[]", "REWARD_MACHINE:", ()).accepted)
 
     @patch("src.engines.provider_engines.subprocess.run")
     def test_antigravity_provider_errors_are_safe_and_typed(self, run) -> None:
@@ -399,14 +397,11 @@ class EngineTests(unittest.TestCase):
     def test_generic_engine_tags_states(self) -> None:
         requests = []
 
-        def request(model, system, user, schema, name):
-            return '{"accepted":true,"feedback":"ok"}'
-
         def request_text(model, system, user):
             requests.append(user)
             return '["first progress", "task satisfied"]'
 
-        engine = GenericEngine(ENVIRONMENT, "test-model", "Test", request, request_text)
+        engine = GenericEngine(ENVIRONMENT, "test-model", "Test", lambda *args: "", request_text)
 
         descriptions = engine.describe_states(
             "Finish",
@@ -477,7 +472,7 @@ class EngineTests(unittest.TestCase):
 
         engine = OpenCodeEngine(ENVIRONMENT, "opencode-go/mimo-v2.5")
         self.assertEqual(engine.propose_task("Finish")[0].normalized_clause, "finish")
-        self.assertTrue(engine.review_candidate("Finish", proposal, "REWARD_MACHINE:").accepted)
+        self.assertTrue(engine.review_candidate("Finish", proposal, "REWARD_MACHINE:", ()).accepted)
         command = run.call_args_list[0].args[0]
         self.assertEqual(command[command.index("--model") + 1], "opencode-go/mimo-v2.5")
         for flag in (

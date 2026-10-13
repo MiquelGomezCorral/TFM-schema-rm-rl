@@ -23,6 +23,7 @@ from src.utils import (
 from src.web.application import create_app
 from src.web.components import create_layout, render_steps
 from src.web.runner import (
+    STEP_ORDER,
     RunController,
     RunRequest,
     RunState,
@@ -317,7 +318,7 @@ class WebTests(unittest.TestCase):
             TaskSnapshot(
                 0,
                 "finish",
-                steps=tuple(StepSnapshot(step) for step in controller_steps()),
+                steps=tuple(StepSnapshot(step) for step in STEP_ORDER),
             ),
         )
         controller._record_event(ProgressEvent(0, 1, PipelineStep.GENERATE, StepState.RUNNING))
@@ -330,18 +331,6 @@ class WebTests(unittest.TestCase):
         self.assertEqual(snapshot.tasks[0].retry_note, "bad proposal")
         self.assertEqual(snapshot.tasks[0].state, StepState.RUNNING)
         self.assertIn("Task 1 of 1", str(render_steps(snapshot.tasks)))
-
-
-def controller_steps():
-    return (
-        PipelineStep.GENERATE,
-        PipelineStep.LTLF,
-        PipelineStep.DFA,
-        PipelineStep.REWARD_MACHINE,
-        PipelineStep.CRITIC,
-        PipelineStep.STATE_DESCRIPTIONS,
-        PipelineStep.LABELING,
-    )
 
 
 if __name__ == "__main__":

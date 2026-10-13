@@ -101,7 +101,7 @@ class GenericEngine:
         task: str,
         clauses_json: str,
         candidate_rm: str,
-        warnings: Sequence[str] = (),
+        warnings: Sequence[str],
     ) -> CriticResult:
         """Review one compiled candidate: its clauses against the task, and the machine."""
         response = self._request_structured(
