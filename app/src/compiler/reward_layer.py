@@ -1,8 +1,8 @@
 """Turn FL-AT's clause product into the task Reward Machine.
 
 FL-AT builds the synchronous product of the clause DFAs and says which DFA state each product
-state is in. Everything else lives here: hard pruning, the rejecting well, finals, rewards and
-the reward checks. FL-AT's own rewards and accepting states are ignored.
+state is in. Everything else lives here: hard pruning, the start merge, the rejecting well,
+finals, rewards and the reward checks. FL-AT's own rewards and accepting states are ignored.
 """
 
 import itertools
@@ -92,8 +92,9 @@ def build_reward_machine(dfas: Sequence[dict], soft: Sequence[bool]) -> RewardLa
 
     product = _clause_product(dfas)
     edges, finals = _prune_by_hard_clauses(product, hard_clauses, hard_goal)
+    initial, edges = _drop_pre_step_start(edges, product, finals)
     priced, paying = _price_edges(edges, product, finals, soft_clauses)
-    machine = _structure(product.initial, priced, finals)
+    machine = _structure(initial, priced, finals)
     if _has_positive_cycle(machine):
         raise ValueError("Reward Machine has a positive reward cycle")
 
@@ -156,11 +157,22 @@ def _quiet_destination(
     transitions: Iterable[tuple[str, str, str]], source: str, alphabet: Collection[str]
 ) -> str:
     """Where ``source`` goes on a step where no proposition is true."""
-    quiet = dict.fromkeys(alphabet, False)
+    return _destination(transitions, source, alphabet, dict.fromkeys(alphabet, False))
+
+
+def _destination(
+    transitions: Iterable[tuple[str, str, str]],
+    source: str,
+    alphabet: Collection[str],
+    valuation: dict[str, bool],
+) -> str:
+    """Where ``source`` goes on one valuation of ``alphabet``."""
     for start, guard, destination in transitions:
-        if start == source and evaluate_boolean_guard(parse_boolean_guard(guard, alphabet), quiet):
+        if start == source and evaluate_boolean_guard(
+            parse_boolean_guard(guard, alphabet), valuation
+        ):
             return destination
-    raise ValueError(f"State {source} has no transition when no proposition is true")
+    raise ValueError(f"State {source} has no transition on {valuation}")
 
 
 def _clause_product(dfas: Sequence[dict]) -> _Product:
@@ -231,6 +243,36 @@ def _redirect(edges: Iterable[_Edge], targets: set[str]) -> list[_Edge]:
 
 
 # ======================================================================================
+#                                      START STATE
+# ======================================================================================
+
+
+def _drop_pre_step_start(
+    edges: list[_Edge], product: _Product, finals: set[str]
+) -> tuple[str, list[_Edge]]:
+    """Return the start state and the edges, without MONA's "no step yet" start when it is a twin.
+
+    A rule clause gives the product a start that nothing re-enters and that goes to the same
+    state as its idle successor on every input. Then the successor becomes the start and the old
+    start and its edges are dropped; otherwise nothing changes. Rewards stay the same because no
+    catalog template is broken by an idle step, so the soft terms price both states alike.
+    """
+    start = product.initial
+    alphabet = sorted(product.alphabet)
+    idle = _quiet_destination(edges, start, alphabet)
+    if idle in {start, _WELL} or idle in finals or any(edge.destination == start for edge in edges):
+        return start, edges
+
+    for values in itertools.product((False, True), repeat=len(alphabet)):
+        valuation = dict(zip(alphabet, values, strict=True))
+        if _destination(edges, start, alphabet, valuation) != _destination(
+            edges, idle, alphabet, valuation
+        ):
+            return start, edges
+    return idle, [edge for edge in edges if edge.source != start]
+
+
+# ======================================================================================
 #                                        REWARDS
 # ======================================================================================
 
@@ -243,7 +285,7 @@ def _price_edges(
 ) -> tuple[list[tuple[_Edge, float]], set[int]]:
     """Reward each edge from its destination's clause labels; also return the soft clauses paid."""
     labels = product.labels
-    progress = _progress(edges, finals, product)
+    progress = _progress(edges, finals)
     paying: set[int] = set()
     priced = []
     for edge in edges:
@@ -275,7 +317,7 @@ def _soft_term(before: ClauseState, after: ClauseState, finishing: bool) -> floa
     return term
 
 
-def _progress(edges: Sequence[_Edge], finals: set[str], product: _Product) -> dict[_Edge, float]:
+def _progress(edges: Sequence[_Edge], finals: set[str]) -> dict[_Edge, float]:
     """Potential-based shaping: pay per step closer to a final along the longest path.
 
     Each cycle is collapsed to one node, so edges inside a cycle pay nothing and no cycle can
@@ -295,18 +337,6 @@ def _progress(edges: Sequence[_Edge], finals: set[str], product: _Product) -> di
         else:
             steps[component] = 0
     remaining = {state: steps[component] for state, component in components.items()}
-
-    # A rule clause's pre-step start (never re-entered) scores like its quiet successor, so an
-    # idle first step pays 0.
-    start = product.initial
-    quiet = _quiet_destination(edges, start, product.alphabet)
-    alone = (
-        start in components
-        and len(dag.nodes[components[start]]["members"]) == 1
-        and not graph.has_edge(start, start)
-    )
-    if quiet != _WELL and alone:
-        remaining[start] = remaining[quiet]
 
     return {
         edge: Configuration.PROGRESS_REWARD * (remaining[edge.source] - remaining[edge.destination])

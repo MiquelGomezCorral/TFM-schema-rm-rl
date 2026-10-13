@@ -91,6 +91,12 @@ class RewardLayerTests(unittest.TestCase):
         self.assertEqual(after_idle[0], 0.0)
         self.assertEqual(after_idle[1], at_once[0])
 
+    def test_a_rule_clause_adds_no_no_step_yet_start(self):
+        machine = build_reward_machine((GOAL, NO_LAVA), (False, False)).reward_machine
+
+        # The start, the final and the well; an idle first step stays in the start.
+        self.assertEqual(len(machine.states), 3)
+
     def test_soft_clauses_pay_their_break_once_and_how_they_end_at_the_finish(self):
         # A soft rule: the break pays -0.5 once (-0.4 with the +0.1 progress of the same step), and
         # finishing pays +0.25 only while it holds (1.45 = 0.2 progress + 1 + 0.25).
