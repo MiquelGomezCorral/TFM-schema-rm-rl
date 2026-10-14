@@ -27,6 +27,8 @@ Pick the template from the task's own wording:
 | "if `a` (ever) happens, `b` must also happen at some point / at any time, before or after" | `RespondedExistence(a, b)` |
 | "whenever `a`, `b` later / afterwards / at some later point / eventually", "every time `a` happens, `b` follows" | `Response(a, b)` |
 | "after", "only after", "not before", "never `b` before `a`", "first `a`, then `b` is allowed" | `Precedence(a, b)`, plus `Existence(b)` when `b` is required |
+| a command "do `a` before `b`", "do `a`, then `b`", "first `a`, then `b`" | `Existence(a)` + `Precedence(a, b)`, plus `Existence(b)` when `b` is also commanded |
+| a listed sequence "`a`, `b`, `c`, and then `d`" | `Existence` of every listed event, and `Precedence` between each consecutive pair; no order between events the list does not relate |
 | "right after", "immediately after", "in the very next step" | `ChainResponse(a, b)` |
 | "never both", "not both during the episode" | `NotCoExistence(a, b)` |
 
@@ -47,6 +49,8 @@ Worked examples, with neutral identifiers:
 - "Do `c`, and preferably `b` right after `a`": `Existence(c)` hard and
   `ChainResponse(a, b)` soft. Do not add a `Precedence` or any other order rule the task
   never states.
+- "Do `a`, `b`, and then `c`": `Existence` hard on `a`, `b`, and `c`, with `Precedence(a, b)`
+  and `Precedence(b, c)` hard. Do not add `Precedence(a, c)`; the chain already implies it.
 
 <!-- priorities -->
 
@@ -64,4 +68,7 @@ preference cue is soft even when it contains "never" or "must": "if possible, ne
 is a soft `Absence(c)`, and "preferably reach `a`" is a soft `Existence(a)`.
 
 Mark a clause hard or soft on its own wording, not on the rest of the task. Tasks may mix
-both, and each clause of one task gets its own priority.
+both, and each clause of one task gets its own priority. A preference cue scopes the phrase
+or requirement it modifies, not the whole sentence and not the task: in "Reach `g`, and
+ideally `b` right after `a`" the cue covers only "`b` right after `a`", so `Existence(g)` is
+hard and `ChainResponse(a, b)` is soft, with no hard order clause.
