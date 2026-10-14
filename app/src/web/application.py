@@ -8,7 +8,7 @@ from functools import lru_cache
 from pathlib import Path, PurePosixPath
 
 import dash_cytoscape as cyto
-from dash import ALL, Dash, Input, Output, State, ctx, dcc, no_update
+from dash import ALL, Dash, Input, Output, State, ctx, dcc, html, no_update
 from dash.exceptions import PreventUpdate
 
 from src.compiler import CompilationResult, parse_reward_machine
@@ -33,6 +33,7 @@ from .components import (
     INPUT_REGION_CLASS,
     LABELING_OPTIONS,
     OUTPUT_REGION_CLASS,
+    REASONING_OPTIONS,
     RUN_SIDEBAR_CLASS,
     STATUS_CLASSES,
     STEPS_REPORT_OPTIONS,
@@ -117,6 +118,7 @@ def create_app(controller: RunController) -> Dash:
     _register_input_callbacks(app)
     _register_start_callback(app, controller)
     _register_poll_callback(app, controller)
+    _register_warning_callback(app, controller)
     _register_result_callback(app, controller)
     _register_graph_callbacks(app)
     return app
@@ -162,6 +164,8 @@ def _register_start_callback(app: Dash, controller: RunController) -> None:
         State("environment-upload", "contents"),
         State({"type": "task-input", "index": ALL}, "value"),
         State("output-filename", "value"),
+        State("reasoning-level", "value"),
+        State("attempts", "value"),
         State("critic-options", "value"),
         State("steps-report-toggle", "value"),
         State("labeling-toggle", "value"),
@@ -175,14 +179,24 @@ def _register_start_callback(app: Dash, controller: RunController) -> None:
         upload_contents: str | None,
         task_values: list[str | None],
         output_filename: str | None,
-        *toggles: list[str] | None,
+        *options: object,
     ) -> str:
-        """Start a run from the form; ``toggles`` are the four checklist values in layout order."""
+        """Start a run from the form.
+
+        ``options`` are the reasoning level, the attempt limit, then the four checklist values
+        in layout order.
+        """
+        reasoning, attempts, *toggles = options
         if not (markdown or "").strip():
             return "Enter or upload environment Markdown first."
         tasks = tuple((value or "").strip() for value in task_values or [])
         if not tasks or any(not task for task in tasks):
             return "Every task row must contain text."
+        if attempts not in Configuration.ATTEMPT_LIMITS:
+            limits = Configuration.ATTEMPT_LIMITS
+            return (
+                f"Enter a whole number from {limits.start} to {limits.stop - 1} critic rejections."
+            )
         submitted_name = (output_filename or "").strip()
         output_name = _available_output_filename(submitted_name, len(tasks))
         request = RunRequest(
@@ -190,6 +204,8 @@ def _register_start_callback(app: Dash, controller: RunController) -> None:
             tasks=tasks,
             output_filename=output_name,
             environment_filename=_resolve_environment_filename(markdown, upload_contents, filename),
+            reasoning=reasoning,
+            attempts=int(attempts),
             **_run_flags(*toggles),
         )
         try:
@@ -217,6 +233,8 @@ def _register_poll_callback(app: Dash, controller: RunController) -> None:
         Output("output-filename", "disabled"),
         Output("generate-button", "disabled"),
         Output("critic-options", "options"),
+        Output("reasoning-level", "options"),
+        Output("attempts", "disabled"),
         Output("output-selector", "options"),
         Output("output-selector", "value"),
         Output("output-selector", "disabled"),
@@ -255,6 +273,29 @@ def _register_poll_callback(app: Dash, controller: RunController) -> None:
         return status_text, status_class, *panels
 
 
+def _register_warning_callback(app: Dash, controller: RunController) -> None:
+    @app.callback(
+        Output("run-warnings", "className"),
+        Output("run-warnings-count", "children"),
+        Output("run-warnings-list", "children"),
+        Output("warnings-shown", "data"),
+        Input("poll-interval", "n_intervals"),
+        State("warnings-shown", "data"),
+    )
+    def poll_warnings(
+        _n_intervals: int, shown: list[str] | None = None
+    ) -> tuple[object, object, object, object]:
+        """Show the run's warnings, or change nothing while they match what is shown.
+
+        Skipping the update keeps the list open while the user reads it.
+        """
+        warnings = list(controller.snapshot().warnings)
+        if warnings == (shown or []):
+            return no_update, no_update, no_update, no_update
+        visible = "run-warnings block" if warnings else "run-warnings hidden"
+        return visible, f"warn ({len(warnings)})", [html.Li(item) for item in warnings], warnings
+
+
 def _register_result_callback(app: Dash, controller: RunController) -> None:
     @app.callback(
         Output("result-summary", "children"),
@@ -268,19 +309,23 @@ def _register_result_callback(app: Dash, controller: RunController) -> None:
         Input("imported-reward-machine", "data"),
         Input("run-status", "children"),
         Input("result-tabs", "value"),
+        State("rm-graph", "elements"),
     )
     def render_selected_result(
         selected_index: int | str | None,
         imported_data: dict[str, str] | None = None,
         _run_status: str | None = None,
         selected_step: str | None = None,
+        drawn_elements: list | None = None,
     ) -> _PanelUpdate:
         step = _selected_step(selected_step)
         if selected_index is None:
-            return _empty_panel("No completed output selected.", step)
-        if _is_imported_value(selected_index):
-            return _render_imported(imported_data, _imported_task_index(selected_index), step)
-        return _render_generated(controller.snapshot(), selected_index, step)
+            panel = _empty_panel("No completed output selected.", step)
+        elif _is_imported_value(selected_index):
+            panel = _render_imported(imported_data, _imported_task_index(selected_index), step)
+        else:
+            panel = _render_generated(controller.snapshot(), selected_index, step)
+        return _keep_drawn_graph(panel, drawn_elements)
 
 
 def _register_graph_callbacks(app: Dash) -> None:
@@ -444,6 +489,8 @@ def _poll_panels(
         active,
         active,
         _locked(CRITIC_OPTIONS, active),
+        _locked(REASONING_OPTIONS, active),
+        active,
         options,
         selected if selected != selected_index else no_update,
         not bool(options),
@@ -577,6 +624,20 @@ def _render_generated(
         _graph_elements(result.reward_machine),
         output_path.stem,
     )
+
+
+def _keep_drawn_graph(panel: _PanelUpdate, drawn_elements: list | None) -> _PanelUpdate:
+    """Leave the graph alone when it already shows this machine.
+
+    A step tab click or a status poll renders the same machine again; rewriting its elements
+    would redraw the graph and drop the positions the user dragged. Positions live outside
+    ``data``, so equal ``data`` means the same machine.
+    """
+    summary, tabs, bodies, elements, *rest = panel
+    drawn = [element["data"] for element in drawn_elements or []]
+    if drawn == [element["data"] for element in elements]:
+        elements = no_update
+    return summary, tabs, bodies, elements, *rest
 
 
 @lru_cache(maxsize=16)

@@ -114,6 +114,10 @@ def _run_pipeline(
     progress("Generation completed successfully.")
 
 
+class _RerunError(Exception):
+    """One attempt failed on a provider or content error; the same attempt runs again."""
+
+
 class _Pipeline:
     """The stages of one run: settings, engines and progress shared by every task attempt."""
 
@@ -127,12 +131,16 @@ class _Pipeline:
             self.environment.require_labeling_api()
 
     def run_task(self, task_index: int, task: str) -> CompilationResult:
-        """Return the accepted result for one task, or raise after its last failed attempt."""
-        attempts = Configuration.PROPOSAL_ATTEMPTS
+        """Return the accepted result for one task, or raise after the last critic rejection.
+
+        Only a critic rejection uses up an attempt; a provider or content failure reruns the
+        same attempt (see ``_run_attempt``).
+        """
+        attempts = self.CONFIG.attempts
         history: list[dict[str, object]] = []
         for attempt in range(1, attempts + 1):
-            self.progress.begin_attempt(task_index, attempt)
-            compiled = self._attempt(task, history)
+            self.progress.begin_attempt(task_index, attempt, attempts)
+            compiled = self._run_attempt(task_index, task, history)
             if compiled is not None:
                 self.progress(f"Task {task_index + 1}: attempt {attempt}/{attempts} accepted.")
                 return compiled
@@ -143,8 +151,31 @@ class _Pipeline:
             f"Last {last_failure['source']} feedback: {last_failure['feedback']}"
         )
 
+    def _run_attempt(
+        self, task_index: int, task: str, history: list[dict[str, object]]
+    ) -> CompilationResult | None:
+        """Rerun one attempt until the critic answers; ``None`` means it rejected the candidate.
+
+        This is the safety fuse: after ``UNCOUNTED_RETRIES`` reruns the run fails with the last
+        error, the only way out besides the critic's verdict.
+        """
+        reruns = self.CONFIG.UNCOUNTED_RETRIES
+        for _ in range(reruns + 1):
+            try:
+                return self._attempt(task, history)
+            except _RerunError as failure:
+                last_error = failure
+        raise RetryableEngineError(
+            f"Task {task_index + 1} attempt {self.progress.current_attempt}/"
+            f"{self.progress.attempt_limit} failed {reruns} reruns in a row. Last error: {last_error}"
+        )
+
     def _attempt(self, task: str, history: list[dict[str, object]]) -> CompilationResult | None:
-        """Run every stage once; ``None`` means a critic or a retryable failure rejected it."""
+        """Run every stage once; ``None`` means the critic rejected the candidate.
+
+        Raises:
+            _RerunError: A provider or content failure; the attempt number is kept.
+        """
         proposal_text: str | None = None
         compiled: CompilationResult | None = None
         try:
@@ -161,7 +192,7 @@ class _Pipeline:
 
         except (RetryableEngineError, ValueError) as error:
             record_attempt_failure(self.progress, history, proposal_text, compiled, error)
-            return None
+            raise _RerunError(str(error)) from error
         except ImmediateEngineError as error:
             self.progress.fail(str(error))
             raise
@@ -222,7 +253,7 @@ class _Pipeline:
 
         self.progress.artifact("Serialized Reward Machine", compiled.text)
         for warning in compiled.warnings:
-            self.progress(f"Task {self.progress.current_task + 1}: warning — {warning}")
+            self.progress.warn(warning)
         self.progress.complete()
         return compiled
 
@@ -240,11 +271,10 @@ class _Pipeline:
                 descriptions = self.generator_engine.describe_states(
                     task, facts["Clauses"], facts["Reward Machine"], nodes
                 )
-            except RetryableEngineError as error:
+            except (RetryableEngineError, ProposalValidationError) as error:
                 last_error = error
-                self.progress(
-                    f"Task {self.progress.current_task + 1}: state tagging attempt "
-                    f"{tagging_attempt}/{attempts} failed — {error}"
+                self.progress.warn(
+                    f"state tagging request {tagging_attempt}/{attempts} failed: {error}"
                 )
                 continue
 

@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 from collections.abc import Iterator
+from functools import partial
 from typing import Any
 from uuid import uuid4
 
@@ -20,6 +21,9 @@ ANTIGRAVITY_AGENT = "schema-rm-provider"
 ANTIGRAVITY_TIMEOUT_SECONDS = 305
 OPENCODE_GO_MODEL = "opencode-go/mimo-v2.5"
 PI_TIMEOUT_SECONDS = 305
+# Levels a provider names differently; every other level is sent as is.
+_OPENAI_EFFORT = {"max": "xhigh"}
+_PI_THINKING = {"none": "off"}
 
 
 # ======================================================================================
@@ -52,9 +56,11 @@ class OpenAIEngine(GenericEngine):
         self,
         environment: EnvironmentDescription,
         model: str | None,
+        reasoning: str = "none",
     ) -> None:
         model = _required_model(model, "OpenAI")
         self._client = OpenAI(api_key=_required_env("OPENAI_API_KEY"), max_retries=0)
+        self.reasoning = reasoning
         super().__init__(
             environment,
             model,
@@ -80,7 +86,7 @@ class OpenAIEngine(GenericEngine):
                     "schema": schema,
                 }
             },
-            reasoning={"effort": "none"},
+            reasoning={"effort": _OPENAI_EFFORT.get(self.reasoning, self.reasoning)},
         )
         return responses_text(response)
 
@@ -91,6 +97,7 @@ class OpenAIEngine(GenericEngine):
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
+            reasoning={"effort": _OPENAI_EFFORT.get(self.reasoning, self.reasoning)},
         )
         return responses_text(response)
 
@@ -102,6 +109,7 @@ class OpenCodeEngine(GenericEngine):
         self,
         environment: EnvironmentDescription,
         model: str | None,
+        reasoning: str = "none",
     ) -> None:
         model = _required_model(model, "OpenCode")
         if model == OPENCODE_GO_MODEL:
@@ -109,8 +117,8 @@ class OpenCodeEngine(GenericEngine):
                 environment,
                 model,
                 "OpenCode Go",
-                _request_pi,
-                _request_pi_text,
+                partial(_request_pi, reasoning=reasoning),
+                partial(_request_pi_text, reasoning=reasoning),
             )
             return
         self._client = OpenAI(
@@ -119,6 +127,7 @@ class OpenCodeEngine(GenericEngine):
             max_retries=0,
             default_headers={"x-opencode-session": str(uuid4())},
         )
+        self.reasoning = reasoning
         super().__init__(
             environment,
             model,
@@ -147,7 +156,7 @@ class OpenCodeEngine(GenericEngine):
                 "type": "json_schema",
                 "json_schema": {"name": name, "strict": True, "schema": schema},
             },
-            reasoning_effort="none",
+            reasoning_effort=self.reasoning,
         )
         return completion_text(response)
 
@@ -158,6 +167,7 @@ class OpenCodeEngine(GenericEngine):
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
+            reasoning_effort=self.reasoning,
         )
         return completion_text(response)
 
@@ -169,6 +179,7 @@ class AntigravityEngine(GenericEngine):
         self,
         environment: EnvironmentDescription,
         model: str | None,
+        _reasoning: str = "none",  # AGY has no reasoning option; the setup logs that once
     ) -> None:
         model = _required_model(model, "Antigravity")
         super().__init__(
@@ -191,16 +202,18 @@ def _request_pi(
     user: str,
     schema: dict,
     _name: str,
+    *,
+    reasoning: str,
 ) -> str:
     """Request strict-parser JSON through Pi when server-side schemas are unavailable."""
     prompt = (
         f"{user}\n\nReturn only a JSON object matching this schema, with no markdown or commentary:\n"
         f"{json.dumps(schema, ensure_ascii=False, separators=(',', ':'))}"
     )
-    return _request_pi_text(model, system, prompt)
+    return _request_pi_text(model, system, prompt, reasoning=reasoning)
 
 
-def _request_pi_text(model: str, system: str, user: str) -> str:
+def _request_pi_text(model: str, system: str, user: str, *, reasoning: str) -> str:
     """Run one no-tool Pi request and extract the final assistant text event."""
     command = [
         "pi",
@@ -211,7 +224,7 @@ def _request_pi_text(model: str, system: str, user: str) -> str:
         "--no-context-files",
         "--no-session",
         "--thinking",
-        "minimal",
+        _PI_THINKING.get(reasoning, reasoning),
         "--mode",
         "json",
         "--print",

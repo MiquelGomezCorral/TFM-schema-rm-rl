@@ -78,6 +78,7 @@ def attach_step_trace(CONFIG: Configuration, hooks: GenerationHooks) -> Generati
         artifact=writer.receive_artifact,
         run_started=hooks.run_started,
         failure=hooks.failure,
+        warning=hooks.warning,
     )
 
 

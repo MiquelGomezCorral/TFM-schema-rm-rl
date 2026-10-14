@@ -50,6 +50,7 @@ class TaskSnapshot:
     index: int
     task: str
     attempt: int = 0
+    attempts: int = Configuration.attempts  # the limit the attempt counts against
     steps: tuple[StepSnapshot, ...] = ()
     retry_note: str | None = None
 
@@ -79,6 +80,7 @@ class RunSnapshot:
     active_task_index: int | None = None
     log_path: Path | None = None
     run_id: int = 0
+    warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -90,6 +92,8 @@ class RunRequest:
     output_filename: str
     environment_filename: str | None = None
     critic: bool = True
+    reasoning: str = Configuration.reasoning
+    attempts: int = Configuration.attempts
     labeling: bool = False
     embeddings: bool = False
     steps_report: bool = False
@@ -103,6 +107,7 @@ class RunController:
         self._lock = Lock()
         self._status = RunState.IDLE
         self._logs: list[str] = []
+        self._warnings: list[str] = []
         self._results: tuple[CompilationResult, ...] = ()
         self._output_paths: tuple[Path, ...] = ()
         self._error: str | None = None
@@ -130,6 +135,7 @@ class RunController:
                 active_task_index=self._active_task_index,
                 log_path=self._log_path,
                 run_id=self._run_id,
+                warnings=tuple(self._warnings),
             )
 
     def start(self, request: RunRequest) -> None:
@@ -143,6 +149,7 @@ class RunController:
             self._run_id += 1
             self._status = RunState.RUNNING
             self._logs = []
+            self._warnings = []
             self._results = ()
             self._output_paths = ()
             self._error = None
@@ -172,6 +179,8 @@ class RunController:
                     tasks=list(request.tasks),
                     output=Path(request.output_filename),
                     critic=request.critic,
+                    reasoning=request.reasoning,
+                    attempts=request.attempts,
                     labeling=request.labeling,
                     embeddings=request.embeddings,
                 )
@@ -187,6 +196,7 @@ class RunController:
                     run_started=self._record_log_path,
                     completion=self._retain_results,
                     failure=self._record_failure,
+                    warning=self._record_warning,
                 )
                 succeeded = self._generate_rm(CONFIG, hooks)
             with self._lock:
@@ -205,6 +215,10 @@ class RunController:
         with self._lock:
             self._logs.append(str(message))
 
+    def _record_warning(self, message: str) -> None:
+        with self._lock:
+            self._warnings.append(str(message))
+
     def _record_failure(self, message: str) -> None:
         with self._lock:
             self._error = message
@@ -214,10 +228,17 @@ class RunController:
             if not 0 <= event.task_index < len(self._tasks):
                 return
             task = self._tasks[event.task_index]
-            if event.attempt > task.attempt:
-                task = _reset_task(task, event.attempt)
-            elif event.attempt < task.attempt:
+            if event.attempt < task.attempt:
                 return
+            # A new attempt, or the same one rerun after a provider or content failure,
+            # starts every stage again.
+            rerun = (
+                event.attempt == task.attempt
+                and event.step is PipelineStep.GENERATE
+                and event.state is StepState.RUNNING
+            )
+            if event.attempt > task.attempt or rerun:
+                task = _reset_task(task, event.attempt)
             steps = list(task.steps)
             step_index = next(
                 (index for index, item in enumerate(steps) if item.step is event.step),
@@ -240,6 +261,7 @@ class RunController:
                     index=task.index,
                     task=task.task,
                     attempt=event.attempt,
+                    attempts=task.attempts,
                     steps=tuple(steps),
                     retry_note=retry_note,
                 ),
@@ -278,6 +300,7 @@ def _initial_task(index: int, task: str, request: RunRequest) -> TaskSnapshot:
     return TaskSnapshot(
         index=index,
         task=task,
+        attempts=request.attempts,
         steps=tuple(
             StepSnapshot(
                 step,
@@ -293,6 +316,7 @@ def _reset_task(task: TaskSnapshot, attempt: int) -> TaskSnapshot:
         index=task.index,
         task=task.task,
         attempt=attempt,
+        attempts=task.attempts,
         steps=tuple(
             StepSnapshot(
                 step.step,

@@ -26,6 +26,9 @@ from .errors import CriticValidationError, ProposalValidationError, RetryableEng
 #                                   STRUCTURED TYPES
 # ======================================================================================
 
+_ACCEPTED_PREFIX = "NO CHANGES NEEDED"
+_REJECTED_PREFIX = "CHANGES REQUIRED"
+
 # IBM nl2ltl's DECLARE templates by name, with the number of propositions each takes.
 SUPPORTED_TEMPLATES: dict[str, tuple[type[Template], int]] = {
     "Existence": (Existence, 1),
@@ -139,7 +142,14 @@ def parse_critic(response_text: str) -> CriticResult:
     feedback = output["feedback"]
     if not isinstance(feedback, str) or not feedback.strip():
         raise CriticValidationError("Critic feedback must be nonempty")
-    return CriticResult(output["accepted"], feedback.strip())
+    feedback = feedback.strip()
+    # Only the opening words count; a verdict that contradicts its own boolean is malformed.
+    opening = feedback[:20].upper()
+    if not output["accepted"] and opening.startswith(_ACCEPTED_PREFIX):
+        raise CriticValidationError(f"Critic rejected the candidate but wrote: {feedback[:60]}")
+    if output["accepted"] and opening.startswith(_REJECTED_PREFIX):
+        raise CriticValidationError(f"Critic accepted the candidate but wrote: {feedback[:60]}")
+    return CriticResult(output["accepted"], feedback)
 
 
 def parse_proposal(

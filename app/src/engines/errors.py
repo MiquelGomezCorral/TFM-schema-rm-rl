@@ -30,7 +30,7 @@ class ImmediateEngineError(RuntimeError):
 def classify_provider_error(error: Exception) -> Exception:
     """Map public OpenAI SDK failures to the application retry policy."""
     if isinstance(error, (ProposalValidationError, CriticValidationError)):
-        return RetryableEngineError(str(error))
+        return error  # a content failure stays one, so its feedback reaches the generator
     if isinstance(error, (RateLimitError, APIConnectionError, APITimeoutError)):
         return RetryableEngineError(str(error))
     if isinstance(error, APIStatusError):

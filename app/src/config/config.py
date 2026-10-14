@@ -12,6 +12,8 @@ import yaml
 from maikol_utils.file_utils import make_dirs
 
 LLM_PROVIDERS = ("openai", "opencode", "antigravity")
+# One level for the generator and the critic; each provider adapter maps it to its own option.
+REASONING_LEVELS = ("none", "low", "medium", "high", "max")
 DEFAULT_LLAMA_SERVER_PORT = "8934"
 
 
@@ -162,9 +164,11 @@ class Configuration:
     #                                   REWARD MACHINE
     # ======================================================================================
 
-    # Each task gets this many proposal attempts; each candidate this many tagging requests.
-    PROPOSAL_ATTEMPTS: ClassVar[int] = 3
+    # Each candidate gets this many tagging requests. Only a critic rejection uses one of
+    # ``attempts``; a provider or content failure reruns the attempt, at most this many times.
     TAGGING_ATTEMPTS: ClassVar[int] = 3
+    UNCOUNTED_RETRIES: ClassVar[int] = 10
+    ATTEMPT_LIMITS: ClassVar[range] = range(1, 11)
     # The provider sometimes answers HTTP 400 at random; the same call is repeated this many
     # times, this far apart, before it counts as a failure. Repeats use no proposal attempt.
     # A repeat uses a new provider session, because OpenCode's 400 sticks to the session.
@@ -195,6 +199,8 @@ class Configuration:
     mona_executable: str | None = None
     overwrite: bool = False
     critic: bool = True
+    reasoning: str = "none"
+    attempts: int = 3
     labeling: bool = False
     embeddings: bool = False
     # None means the local llama-server on LLAMA_SERVER_PORT; see llama_server_command.
@@ -290,6 +296,7 @@ class Configuration:
         self._validate_training()
         self._resolve_models()
         self._validate_embeddings()
+        self._validate_generation()
 
     def _load_yaml_configuration(self, yaml_file: str) -> None:
         """Set fields from a YAML run config under CONFIG_PATH, or from an existing path.
@@ -415,6 +422,17 @@ class Configuration:
             raise ValueError("ppo_gae_lambda must be between 0 and 1")
         if (self.ppo_num_envs * self.ppo_num_steps) % self.ppo_num_minibatches:
             raise ValueError("ppo_num_envs * ppo_num_steps must divide by ppo_num_minibatches")
+
+    def _validate_generation(self) -> None:
+        if self.reasoning not in REASONING_LEVELS:
+            raise ValueError(
+                f"reasoning must be one of {', '.join(REASONING_LEVELS)}: {self.reasoning!r}"
+            )
+        if self.attempts not in self.ATTEMPT_LIMITS:
+            raise ValueError(
+                f"attempts must be between {self.ATTEMPT_LIMITS.start} and "
+                f"{self.ATTEMPT_LIMITS.stop - 1}: {self.attempts!r}"
+            )
 
     def _resolve_models(self) -> None:
         # dotenv already strips inline `# comments` from unquoted .env values.

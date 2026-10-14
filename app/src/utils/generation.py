@@ -31,13 +31,18 @@ def record_attempt_failure(
     compiled: CompilationResult | None,
     error: Exception,
 ) -> None:
-    """Fail the current stage and keep the error as retry context for the next attempt."""
-    outcome = "retryable failure" if isinstance(error, RetryableEngineError) else "rejected"
+    """Fail the current stage and warn that the attempt is kept, not used up.
+
+    A content failure also goes to ``history`` so the generator sees why; a provider failure
+    does not, because there is nothing to learn from it.
+    """
     progress.fail(str(error))
-    append_history(history, proposal_text, compiled, progress.current_step, error)
-    progress(
-        f"Task {progress.current_task + 1}: attempt {progress.current_attempt}/{Configuration.PROPOSAL_ATTEMPTS} {outcome} — {error}"
-    )
+    if isinstance(error, RetryableEngineError):
+        reason = f"provider failed: {error}"
+    else:
+        reason = f"proposal invalid: {error}"
+        append_history(history, proposal_text, compiled, progress.current_step, error)
+    progress.warn(f"{reason}, attempt {progress.current_attempt}/{progress.attempt_limit} kept")
 
 
 def append_history(
@@ -83,7 +88,12 @@ def setup_environment_and_engines(
 
     environment = EnvironmentDescription.from_file(CONFIG.environment)
     generator_engine = get_engine(CONFIG, environment, CONFIG.generator_model)
-    progress(f"Generator engine ready: role=generator model={CONFIG.generator_model}.")
+    progress(
+        f"Generator engine ready: role=generator model={CONFIG.generator_model} "
+        f"reasoning={CONFIG.reasoning}."
+    )
+    if CONFIG.llm_provider == "antigravity" and CONFIG.reasoning != "none":
+        progress("Reasoning level ignored by Antigravity.")
 
     if not CONFIG.critic:
         progress("The critic is disabled: every compiler result is accepted without review.")
@@ -100,7 +110,10 @@ def setup_environment_and_engines(
         )
 
     critic_engine = get_engine(CONFIG, environment, CONFIG.critic_model)
-    progress(f"Critic engine ready: role=critic model={CONFIG.critic_model}.")
+    progress(
+        f"Critic engine ready: role=critic model={CONFIG.critic_model} "
+        f"reasoning={CONFIG.reasoning}."
+    )
 
     progress("Environment and engine setup complete.")
     return environment, generator_engine, critic_engine
@@ -118,5 +131,5 @@ def get_engine(
         "antigravity": AntigravityEngine,
     }
     return engine_types[CONFIG.llm_provider](
-        environment, model if model is not None else CONFIG.model
+        environment, model if model is not None else CONFIG.model, CONFIG.reasoning
     )

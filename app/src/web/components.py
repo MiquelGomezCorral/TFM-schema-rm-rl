@@ -5,7 +5,7 @@ from collections.abc import Mapping
 import dash_cytoscape as cyto
 from dash import dcc, html
 
-from src.config import Configuration
+from src.config import REASONING_LEVELS, Configuration
 from src.utils import STEP_OUTPUT_ORDER, PipelineStep, render_step_text
 
 from .highlight import highlight_step
@@ -91,7 +91,29 @@ TASK_NAV_BUTTON_CLASS = (
     "text-muted hover:border-accent hover:text-accent focus-visible:outline-2"
 )
 
+TEXT_INPUT_CLASS = (
+    "text-input min-h-[2.55rem] w-full border border-border-strong "
+    "!border-border-strong !bg-surface-raised px-[0.72rem] py-[0.65rem] "
+    "!text-text outline-0 transition duration-150 ease-out "
+    "placeholder:!text-[#8295b2] focus-visible:outline-3 "
+    "focus-visible:outline-offset-2 "
+    "focus-visible:outline-[rgba(56,189,248,0.35)]"
+)
+FIELDSET_CLASS = (
+    "m-0 min-w-0 rounded-[0.55rem] border border-border-strong "
+    "bg-surface-raised px-3 pb-3 pt-[0.65rem] text-text"
+)
+WARNING_BADGE_CLASS = (
+    "run-warning-badge cursor-pointer rounded-full border border-[#fb7185] px-2 py-1 "
+    "text-[0.68rem] font-bold text-[#fda4af]"
+)
+WARNING_LIST_CLASS = (
+    "run-warning-list m-0 mt-2 grid list-none gap-1 overflow-auto p-0 text-[0.74rem] "
+    "leading-[1.4] text-muted"
+)
+
 CRITIC_OPTIONS = [{"label": " Critic", "value": "critic"}]
+REASONING_OPTIONS = [{"label": f" {level}", "value": level} for level in REASONING_LEVELS]
 STEPS_REPORT_OPTIONS = [{"label": " Step report (.md)", "value": "steps_report"}]
 LABELING_OPTIONS = [{"label": " MiniGrid labeling", "value": "labeling"}]
 EMBEDDINGS_OPTIONS = [{"label": " Local state embeddings", "value": "embeddings"}]
@@ -282,7 +304,7 @@ STEP_STATUS_SYMBOLS = {
 
 
 def _task_status(task: TaskSnapshot) -> str:
-    limit = Configuration.PROPOSAL_ATTEMPTS
+    limit = task.attempts
     if task.state is StepState.RUNNING:
         return f"Task {task.index + 1} of {{total}} · Attempt {task.attempt} of {limit}"
     if task.state is StepState.COMPLETED:
@@ -599,14 +621,7 @@ def output_controls() -> html.Aside:
                     type="text",
                     value="reward-machine.rm",
                     placeholder="reward-machine.rm",
-                    className=(
-                        "text-input min-h-[2.55rem] w-full border border-border-strong "
-                        "!border-border-strong !bg-surface-raised px-[0.72rem] py-[0.65rem] "
-                        "!text-text outline-0 transition duration-150 ease-out "
-                        "placeholder:!text-[#8295b2] focus-visible:outline-3 "
-                        "focus-visible:outline-offset-2 "
-                        "focus-visible:outline-[rgba(56,189,248,0.35)]"
-                    ),
+                    className=TEXT_INPUT_CLASS,
                     disabled=False,
                 ),
             ),
@@ -642,11 +657,40 @@ def output_controls() -> html.Aside:
                         value=["critic"],
                         className="critic-options grid gap-[0.45rem] !text-text",
                     ),
+                    _field(
+                        "Critic rejections allowed",
+                        dcc.Input(
+                            id="attempts",
+                            type="number",
+                            min=Configuration.ATTEMPT_LIMITS.start,
+                            max=Configuration.ATTEMPT_LIMITS.stop - 1,
+                            step=1,
+                            value=Configuration.attempts,
+                            className=TEXT_INPUT_CLASS,
+                            disabled=False,
+                        ),
+                    ),
                 ],
-                className=(
-                    "critic-controls m-0 min-w-0 rounded-[0.55rem] border "
-                    "border-border-strong bg-surface-raised px-3 pb-3 pt-[0.65rem] text-text"
-                ),
+                className=f"critic-controls {FIELDSET_CLASS}",
+            ),
+            html.Fieldset(
+                [
+                    html.Legend(
+                        "Reasoning",
+                        className=(
+                            "reasoning-legend px-[0.35rem] text-[0.7rem] font-[750] "
+                            "uppercase tracking-[0.06em] text-muted"
+                        ),
+                    ),
+                    dcc.RadioItems(
+                        id="reasoning-level",
+                        options=REASONING_OPTIONS,
+                        value=Configuration.reasoning,
+                        inline=True,
+                        className="outputs-options flex flex-wrap gap-2 !text-text",
+                    ),
+                ],
+                className=f"reasoning-controls {FIELDSET_CLASS}",
             ),
             html.Fieldset(
                 [
@@ -676,10 +720,7 @@ def output_controls() -> html.Aside:
                         className=OUTPUTS_OPTIONS_CLASS,
                     ),
                 ],
-                className=(
-                    "outputs-controls m-0 min-w-0 rounded-[0.55rem] border "
-                    "border-border-strong bg-surface-raised px-3 pb-3 pt-[0.65rem] text-text"
-                ),
+                className=f"outputs-controls {FIELDSET_CLASS}",
             ),
             html.Div(
                 id="run-feedback",
@@ -703,6 +744,16 @@ def output_controls() -> html.Aside:
                     "status-heading flex items-center gap-[0.9rem] "
                     "max-[560px]:flex-col max-[560px]:items-stretch"
                 ),
+            ),
+            html.Details(
+                [
+                    html.Summary(
+                        "warn (0)", id="run-warnings-count", className=WARNING_BADGE_CLASS
+                    ),
+                    html.Ul(id="run-warnings-list", className=WARNING_LIST_CLASS),
+                ],
+                id="run-warnings",
+                className="run-warnings hidden",
             ),
             dcc.Tabs(
                 id="run-tabs",
@@ -1094,6 +1145,7 @@ def create_layout(stylesheet: list[dict] | None = None) -> html.Main:
             ),
             dcc.Store(id="imported-reward-machine", data=None),
             dcc.Store(id="graph-attached", data=None),
+            dcc.Store(id="warnings-shown", data=[]),
             dcc.Store(id="graph-focus-state", data=False),
             dcc.Store(id="graph-export-name", data=None),
             dcc.Store(id="graph-export-payload", data=None),

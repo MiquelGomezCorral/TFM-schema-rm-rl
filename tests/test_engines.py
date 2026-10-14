@@ -20,8 +20,13 @@ from src.engines import (
     OpenCodeEngine,
     RetryableEngineError,
 )
-from src.engines.errors import ProposalValidationError
-from src.engines.structured import SUPPORTED_TEMPLATES, parse_proposal, proposal_schema
+from src.engines.errors import CriticValidationError, ProposalValidationError
+from src.engines.structured import (
+    SUPPORTED_TEMPLATES,
+    parse_critic,
+    parse_proposal,
+    proposal_schema,
+)
 from src.models import EnvironmentDescription
 
 ENVIRONMENT = EnvironmentDescription.from_markdown(
@@ -369,6 +374,23 @@ class EngineTests(unittest.TestCase):
                 with self.assertRaises(ImmediateEngineError):
                     engine.propose_task("Finish")
 
+    def test_critic_verdict_must_agree_with_its_feedback_prefix(self) -> None:
+        def verdict(accepted: bool, feedback: str) -> str:
+            return json.dumps({"accepted": accepted, "feedback": feedback})
+
+        for accepted, feedback in (
+            (False, "no changes needed: the clauses are right"),
+            (True, "CHANGES REQUIRED: add Existence(a)"),
+        ):
+            with self.subTest(feedback=feedback), self.assertRaises(CriticValidationError):
+                parse_critic(verdict(accepted, feedback))
+
+        # Consistent verdicts, and a phrase that only appears later, are left alone.
+        self.assertFalse(parse_critic(verdict(False, "CHANGES REQUIRED: add it")).accepted)
+        self.assertTrue(parse_critic(verdict(True, "NO CHANGES NEEDED: ok")).accepted)
+        late = "The clause is wrong, so this is not a case of NO CHANGES NEEDED."
+        self.assertFalse(parse_critic(verdict(False, late)).accepted)
+
     def test_generic_engine_uses_the_shared_prompt_pipeline(self) -> None:
         responses = iter(
             [
@@ -499,7 +521,7 @@ class EngineTests(unittest.TestCase):
             "json",
         ):
             self.assertIn(flag, command)
-        self.assertEqual(command[command.index("--thinking") + 1], "minimal")
+        self.assertEqual(command[command.index("--thinking") + 1], "off")
         self.assertEqual(run.call_args_list[0].kwargs["cwd"].name, "TFM-schema-rm-rl")
 
     @patch("src.engines.provider_engines.subprocess.run")

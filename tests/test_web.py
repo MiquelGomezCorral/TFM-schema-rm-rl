@@ -7,6 +7,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from xml.etree import ElementTree
 
+from dash import no_update
+
 from scripts import generate_rm
 from src.compiler.reward_machine import RewardMachineStructure, Transition
 from src.config import Configuration, GraphStyle
@@ -51,7 +53,7 @@ class WebTests(unittest.TestCase):
             },
         }
         for failure, expected, calls in (
-            ("generator", "Last generator feedback: Unsupported priority: 'none'", 3),
+            ("generator", "Last error: Unsupported priority: 'none'", 11),
             ("critic", "Last critic feedback: Rejected candidate", 6),
             ("provider", "Experiment provider is unavailable", 0),
         ):
@@ -337,6 +339,8 @@ class WebTests(unittest.TestCase):
         active = poll(0, None, [{"index": 0}])
         self.assertTrue(active[3])
         self.assertTrue(all(item["disabled"] for item in active[10]))
+        self.assertTrue(all(item["disabled"] for item in active[11]))  # reasoning radios
+        self.assertTrue(active[12])  # attempts input
         self.assertTrue(all(item["disabled"] for item in active[-1]))
         controller._status = RunState.COMPLETED
         controller._results = (
@@ -400,6 +404,33 @@ class WebTests(unittest.TestCase):
         for tab in tabs.children:
             self.assertEqual(tab.style["backgroundColor"], "#101a2b")
             self.assertEqual(tab.selected_style["backgroundColor"], "#17243a")
+
+    def test_rerun_of_the_same_attempt_restarts_the_stages(self):
+        controller = RunController(generate_rm)
+        controller._tasks = (
+            TaskSnapshot(0, "finish", steps=tuple(StepSnapshot(step) for step in STEP_ORDER)),
+        )
+        for step, state in (
+            (PipelineStep.GENERATE, StepState.RUNNING),
+            (PipelineStep.CRITIC, StepState.FAILED),
+            (PipelineStep.GENERATE, StepState.RUNNING),
+        ):
+            controller._record_event(ProgressEvent(0, 1, step, state, detail="timeout"))
+        task = controller.snapshot().tasks[0]
+        self.assertEqual(task.state, StepState.RUNNING)
+        self.assertEqual(task.retry_note, "timeout")
+        self.assertIn("Attempt 1 of 3", str(render_steps((task,))))
+
+    def test_warning_list_follows_the_run_not_the_count(self):
+        controller = RunController(generate_rm)
+        app = create_app(controller)
+        key = next(key for key in app.callback_map if "run-warnings-count.children" in key)
+        poll = app.callback_map[key]["callback"].__wrapped__
+        controller._warnings = ["Task 1: second run"]
+        update = poll(0, ["Task 1: first run"])
+        self.assertEqual(update[1], "warn (1)")
+        self.assertEqual(update[3], ["Task 1: second run"])
+        self.assertIs(poll(0, ["Task 1: second run"])[0], no_update)
 
     def test_structured_steps_and_retry_reset(self):
         controller = RunController(generate_rm)

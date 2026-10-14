@@ -30,7 +30,7 @@ from src.compiler import (
     parse_paper_reward_machine,
     serialize_paper_reward_machine,
 )
-from src.engines import RetryableEngineError
+from src.engines import ProposalValidationError, RetryableEngineError
 from src.prompts import read_prompt, render_prompt
 
 from .artifacts import ArtifactBundle, BundleManifest
@@ -292,10 +292,10 @@ def _with_transcript(first_prompt: str, transcript: Sequence[tuple[str, str]]) -
 
 
 def _ask(engine: Any, user: str, system: str = SYSTEM_PROMPT) -> str:
-    """One request; a timeout or server error is retried once."""
+    """One request; a timeout, server error or empty answer is retried once."""
     try:
         return str(engine.request_text(system, user))
-    except RetryableEngineError:
+    except (RetryableEngineError, ProposalValidationError):
         return str(engine.request_text(system, user))
 
 

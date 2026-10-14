@@ -1,3 +1,3 @@
 """Project configuration."""
 
-from .config import Configuration, GraphStyle, PriorityLevel
+from .config import REASONING_LEVELS, Configuration, GraphStyle, PriorityLevel

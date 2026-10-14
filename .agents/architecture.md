@@ -24,7 +24,8 @@ automata composition, and the external MONA executable for LTLf-to-DFA compilati
   DQN (`dqn.py`).
 - `configs/`: YAML run configs for `train-rl`, one file per run.
 - `app/src/web/`: reusable Dash layout, callbacks, run state, and RM visualization.
-- `app/assets/`: local responsive web styling.
+- `app/src/utils/layout.py` + `settle.py`: the circle layout of Reward Machine graphs.
+- `app/assets/`: local responsive web styling, plus the shared graph script (`rm_graph.js/.css`).
 - `examples/`: documented environment descriptions.
 - `dependencies/nl2ltl/`: pinned submodule of the maintained IBM `nl2ltl` fork.
 - `dependencies/Flat/`: pinned submodule of the maintained FL-AT fork.
@@ -56,7 +57,7 @@ Environment Markdown + task -> constrained proposal generator -> DECLARE/LTLf ma
 state descriptions -> optional labeling -> optional local state embeddings -> task-specific
 Reward Machine -> reference-format text. The critic may be disabled; disabling it prints a
 warning and is reserved for explicit fallback runs that accept the compiler's first result per task. The complete
-refinement attempt is bounded to three runs per task.
+refinement attempt is bounded to `--attempts` runs per task (default 3); only a critic rejection uses one.
 
 The web flow supplies the same inputs to that pipeline, polls local in-memory run state,
 and renders the returned Reward Machine structure and serialized text.

@@ -20,6 +20,7 @@ from src.config import Configuration, PriorityLevel
 from src.engines import (
     CriticResult,
     ImmediateEngineError,
+    OpenCodeEngine,
     ProposalValidationError,
     RetryableEngineError,
 )
@@ -172,7 +173,7 @@ class OrchestrationTests(unittest.TestCase):
         self.assertTrue(self.execute())
         self.saved.assert_called_once()
 
-    def test_critic_failure_keeps_compiled_rm_in_history(self):
+    def test_critic_provider_failure_reruns_the_attempt_without_history(self):
         self.critic.verdicts = [
             RetryableEngineError("critic unavailable"),
             CriticResult(True, "ok"),
@@ -193,9 +194,7 @@ class OrchestrationTests(unittest.TestCase):
             self.assertTrue(
                 generate_rm(Configuration(environment="demo.md", tasks=["finish"], output="out.rm"))
             )
-        self.assertIn("rm-before-retry", self.engine.histories[1])
-        self.assertIn("critic unavailable", self.engine.histories[1])
-        self.assertIn('"source": "critic"', self.engine.histories[1])
+        self.assertEqual(self.engine.histories, ["None.", "None."])
 
     def test_critic_rejection_recompiles_and_keeps_history(self):
         self.critic.verdicts = [
@@ -221,6 +220,102 @@ class OrchestrationTests(unittest.TestCase):
         self.assertIn("rm-1", self.engine.histories[1])
         self.assertIn("fix rm", self.engine.histories[1])
         self.assertIn('"source": "critic"', self.engine.histories[1])
+
+    def test_only_a_critic_rejection_uses_an_attempt_and_other_failures_warn(self):
+        self.engine.proposals = [
+            RetryableEngineError("provider down"),
+            RetryableEngineError("timeout"),
+            ProposalValidationError("malformed"),
+        ]
+        self.critic.verdicts = [CriticResult(False, "fix rm"), CriticResult(True, "ok")]
+        messages, warnings = [], []
+
+        accepted = self.execute(
+            hooks=GenerationHooks(progress=messages.append, warning=warnings.append)
+        )
+
+        self.assertTrue(accepted)
+        self.assertTrue(any("attempt 2/3 accepted" in message for message in messages))
+        self.assertEqual(len(warnings), 3)
+        self.assertIn("provider failed: provider down, attempt 1/3 kept", warnings[0])
+        self.assertIn("proposal invalid: malformed, attempt 1/3 kept", warnings[2])
+        history = json.loads(self.engine.histories[-1])
+        self.assertEqual([item["source"] for item in history], ["generator", "critic"])
+
+    def test_empty_provider_answer_is_a_content_failure_with_history(self):
+        proposal = (
+            '{"clauses":[{"normalized_clause":"finish done","pattern":"Existence",'
+            '"propositions":["done"],"priority":"hard"}]}'
+        )
+
+        def answer(content):
+            message = SimpleNamespace(content=content, refusal=None)
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+        self.critic.verdicts = [CriticResult(True, "ok")]
+        warnings = []
+        with (
+            patch.dict(os.environ, {"OPENCODE_API_KEY": "key"}),
+            patch("src.engines.provider_engines.OpenAI") as openai,
+        ):
+            create = openai.return_value.chat.completions.create
+            create.side_effect = [
+                SimpleNamespace(choices=[]),
+                answer(proposal),
+                answer('["start", "done"]'),
+            ]
+            self.engine = OpenCodeEngine(ENV, "model")
+            self.assertTrue(self.execute(hooks=GenerationHooks(warning=warnings.append)))
+
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("proposal invalid: OpenCode returned no structured proposal", warnings[0])
+        retry_prompt = create.call_args_list[1].kwargs["messages"][1]["content"]
+        self.assertIn("OpenCode returned no structured proposal", retry_prompt)
+
+    def test_empty_tagging_answer_stays_inside_the_tagging_loop(self):
+        def answer(content):
+            message = SimpleNamespace(content=content, refusal=None)
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+        proposal = (
+            '{"clauses":[{"normalized_clause":"finish done","pattern":"Existence",'
+            '"propositions":["done"],"priority":"hard"}]}'
+        )
+        empty = SimpleNamespace(choices=[])
+        for tagging, accepted in (
+            ([empty, answer('["start", "done"]')], True),
+            ([empty, empty, empty], False),
+        ):
+            self.critic = Engine()
+            self.critic.verdicts = [CriticResult(True, "ok")]
+            warnings, failures = [], []
+            hooks = GenerationHooks(warning=warnings.append, failure=failures.append)
+            with (
+                patch.dict(os.environ, {"OPENCODE_API_KEY": "key"}),
+                patch("src.engines.provider_engines.OpenAI") as openai,
+            ):
+                create = openai.return_value.chat.completions.create
+                create.side_effect = [answer(proposal), *tagging]
+                self.engine = OpenCodeEngine(ENV, "model")
+                self.assertEqual(self.execute(hooks=hooks), accepted)
+
+            # One proposal and one critic review, however the tagging requests end.
+            self.assertEqual(create.call_count, 1 + len(tagging))
+            self.assertEqual(len(self.critic.candidates), 1)
+            self.assertEqual(len(warnings), len(tagging) - (1 if accepted else 0))
+            self.assertIn("state tagging request 1/3 failed", warnings[0])
+            if not accepted:
+                self.assertIn("State-description tagging failed after 3 requests", failures[0])
+
+    def test_state_tagging_retry_warns(self):
+        self.critic.verdicts = [CriticResult(True, "ok")]
+        self.engine.tag_results = [RetryableEngineError("bad json")]
+        warnings = []
+
+        self.assertTrue(self.execute(hooks=GenerationHooks(warning=warnings.append)))
+
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("state tagging request 1/3 failed: bad json", warnings[0])
 
     def test_exhaustion_and_later_task_failure_write_nothing(self):
         self.critic.verdicts = [CriticResult(False, "no")] * 3

@@ -17,14 +17,19 @@ from scripts import (
     test_rl,
     train_rl,
 )
-from src.config import Configuration
+from src.config import REASONING_LEVELS, Configuration
+from src.utils import GenerationHooks
 
 
 def cmd_generate_rm(args: argparse.Namespace) -> None:
     """Generate a Reward Machine from parsed CLI configuration."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
-    if not generate_rm(CONFIG):
+    if not generate_rm(CONFIG, GenerationHooks(warning=_print_warning)):
         sys.exit(1)
+
+
+def _print_warning(message: str) -> None:
+    print(f"warning: {message}", file=sys.stderr)
 
 
 def cmd_render_rm(args: argparse.Namespace) -> None:
@@ -119,6 +124,21 @@ if __name__ == "__main__":
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Enable the critic that reviews each compiled candidate (default: enabled)",
+    )
+    generate_parser.add_argument(
+        "--reasoning",
+        choices=REASONING_LEVELS,
+        default=Configuration.reasoning,
+        help="Reasoning level of the generator and the critic (default: %(default)s)",
+    )
+    generate_parser.add_argument(
+        "--attempts",
+        type=int,
+        choices=Configuration.ATTEMPT_LIMITS,
+        default=Configuration.attempts,
+        metavar="N",
+        help="Critic rejections allowed per task, 1 to 10; other failures retry for free "
+        "(default: %(default)s)",
     )
     generate_parser.add_argument(
         "--labeling",
@@ -222,6 +242,12 @@ if __name__ == "__main__":
         default=True,
         help="compiler mode only: review each compiled candidate with the critic "
         "(arm-fm and paper modes always run their own critic; default: enabled)",
+    )
+    larm_parser.add_argument(
+        "--reasoning",
+        choices=REASONING_LEVELS,
+        default=Configuration.reasoning,
+        help="Reasoning level of every model call (default: %(default)s)",
     )
     larm_parser.add_argument(
         "--embeddings",

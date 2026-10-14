@@ -11,7 +11,6 @@ from enum import StrEnum
 from pathlib import Path
 
 from src.compiler import CompilationResult
-from src.config import Configuration
 
 
 class PipelineStep(StrEnum):
@@ -81,6 +80,7 @@ class GenerationHooks:
     artifact: Callable[[StepArtifact], None] | None = None
     run_started: Callable[[Path], None] | None = None
     failure: Callable[[str], None] | None = None
+    warning: Callable[[str], None] | None = None
 
     def notify_progress(self, message: str) -> None:
         if self.progress is not None:
@@ -101,6 +101,10 @@ class GenerationHooks:
     def notify_failure(self, message: str) -> None:
         if self.failure is not None:
             self.failure(message)
+
+    def notify_warning(self, message: str) -> None:
+        if self.warning is not None:
+            self.warning(message)
 
     def notify_completion(
         self,
@@ -125,6 +129,7 @@ class Progress:
         self.current_step = PipelineStep.GENERATE
         self.current_task = -1  # Replaced by begin_attempt before any artifact publishes.
         self.current_attempt = 0
+        self.attempt_limit = 0
         self.stage_started = self.started
         self._logger: logging.Logger | None = None
         self.log_path: Path | None = None
@@ -174,10 +179,17 @@ class Progress:
         )
         return self(f"{label}:\n{body}")
 
-    def begin_attempt(self, task_index: int, attempt: int) -> None:
-        """Name the task attempt that the following stages belong to."""
+    def begin_attempt(self, task_index: int, attempt: int, limit: int) -> None:
+        """Name the task attempt, out of ``limit``, that the following stages belong to."""
         self.current_task = task_index
         self.current_attempt = attempt
+        self.attempt_limit = limit
+
+    def warn(self, message: str) -> None:
+        """Log a warning for the current task and send it to the warning observer."""
+        task_message = f"Task {self.current_task + 1}: {message}"
+        self(f"Task {self.current_task + 1}: warning — {message}")
+        self.hooks.notify_warning(task_message)
 
     def start(self, step: PipelineStep) -> None:
         """Start a stage of the current attempt using its standard label."""
@@ -188,7 +200,7 @@ class Progress:
         )
         self(
             f"Task {self.current_task + 1}: attempt "
-            f"{self.current_attempt}/{Configuration.PROPOSAL_ATTEMPTS} — {_STEP_LABELS[step]}."
+            f"{self.current_attempt}/{self.attempt_limit} — {_STEP_LABELS[step]}."
         )
 
     def stage_skip(self, step: PipelineStep) -> None:

@@ -10,7 +10,7 @@ from src.config import Configuration
 from src.models import EnvironmentDescription
 from src.prompts import read_prompt, render_prompt
 
-from .errors import classify_provider_error
+from .errors import RetryableEngineError, classify_provider_error
 from .structured import (
     CriticResult,
     ProposalSelection,
@@ -164,7 +164,7 @@ class GenericEngine:
         OpenCode answers some valid requests with a random HTTP 400 that sticks to the
         session: the same call succeeds on a new session. Each repeat starts a new session
         first. The repeats happen here, so they never use up a refinement attempt; a 400
-        that survives every repeat is mapped like any other provider error.
+        that survives every repeat is retryable like the other transient provider errors.
         """
         repeats = 0
         while True:
@@ -173,7 +173,7 @@ class GenericEngine:
             except BadRequestError as error:
                 repeats += 1
                 if repeats > Configuration.PROVIDER_RETRIES:
-                    raise classify_provider_error(error) from error
+                    raise RetryableEngineError(str(error)) from error
                 self._renew_session()
                 sleep(Configuration.PROVIDER_RETRY_WAIT_S)
             except Exception as error:

@@ -151,7 +151,7 @@ class GenerationTests(unittest.TestCase):
                 Path(directory),
             )
             progress(progress.log_path.as_posix())
-            progress.begin_attempt(0, 1)
+            progress.begin_attempt(0, 1, 3)
             progress.start(PipelineStep.GENERATE)
             progress.artifact("Proposal", '{\n  "clauses": []\n}')
             progress.complete()
