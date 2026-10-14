@@ -18,6 +18,7 @@ automata composition, and the external MONA executable for LTLf-to-DFA compilati
 - `app/src/compiler/pipeline.py`: per-task proposal and deterministic compilation boundaries.
 - `app/src/compiler/reward_machine.py`: guard parsing and the shared RM structures.
 - `app/src/compiler/reward_layer.py`: hard/soft clause labels, wells, pruning, and rewards over FL-AT's product.
+- `app/src/compiler/constraints.py`: the environment's constraints remove the states and transitions it cannot reach.
 - `app/src/compiler/rm_format.py`: the shared ARM-FM RM text format (parse/serialize), below `src.arm_fm`.
 - `app/src/arm_fm/`: ARM-FM bundles, the string-state RM runtime, embeddings, per-family
   environment adapters plus the RM gym wrapper (`environments.py`), and the CleanRL-adapted
@@ -36,7 +37,8 @@ The environment Markdown owns the allowed proposition vocabulary. The selected p
 select only an IBM DECLARE template, declared propositions, and a hard/soft priority per clause. Antigravity
 uses its cached Google account through a schema-constrained `agy` subprocess whose custom agent
 exposes no tools. IBM templates own LTLf construction. FL-AT and MONA own the DFAs and their
-product; the reward layer owns wells, pruning, finality, and rewards. The serializer owns the reference repository's text format.
+product; the reward layer owns wells, hard pruning, finality, and rewards; the constraint pass then removes
+what the environment cannot reach. The serializer owns the reference repository's text format.
 
 The nested packages `dependencies/nl2ltl` and `dependencies/Flat` are editable
 development dependencies pinned by parent gitlinks. Their maintained forks are
@@ -53,7 +55,8 @@ critic, compilation, serialization, or output-path behavior.
 ## Flow
 
 Environment Markdown + task -> constrained proposal generator -> DECLARE/LTLf materialization
--> FL-AT/MONA DFA compilation -> FL-AT product + reward layer and serialization -> critic ->
+-> FL-AT/MONA DFA compilation -> FL-AT product + reward layer, then the environment's constraints
+remove unreachable states, and serialization -> critic ->
 state descriptions -> optional labeling -> optional local state embeddings -> task-specific
 Reward Machine -> reference-format text. The critic may be disabled; disabling it prints a
 warning and is reserved for explicit fallback runs that accept the compiler's first result per task. The complete

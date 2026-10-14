@@ -10,6 +10,7 @@ from src.config import Configuration, PriorityLevel
 from src.engines.structured import ProposalSelection
 from src.models import EnvironmentDescription
 
+from .constraints import ConstraintPruning, prune_by_constraints
 from .ltlf import to_flat_syntax
 from .reward_layer import RewardLayerResult, build_reward_machine
 from .reward_machine import RewardMachineStructure
@@ -82,15 +83,19 @@ def build_compilation_result(
     proposal: Proposal,
     dfas: Sequence[dict],
 ) -> CompilationResult:
-    """Build and serialize a task-specific Reward Machine from compiled DFAs."""
+    """Build and serialize a task-specific Reward Machine from compiled DFAs.
+
+    The environment's constraints then remove the states and transitions it cannot reach.
+    """
     soft = [clause.priority is PriorityLevel.SOFT for clause in proposal.clauses]
     layer = build_reward_machine(dfas, soft)
+    pruning = prune_by_constraints(layer.reward_machine, environment.constraints)
     return CompilationResult(
         environment=environment,
         proposal=proposal,
-        reward_machine=layer.reward_machine,
-        text=serialize_reward_machine(layer.reward_machine),
-        warnings=_warnings(proposal, layer),
+        reward_machine=pruning.reward_machine,
+        text=serialize_reward_machine(pruning.reward_machine),
+        warnings=(*_warnings(proposal, layer), *_pruning_warnings(pruning)),
     )
 
 
@@ -107,3 +112,13 @@ def _warnings(proposal: Proposal, layer: RewardLayerResult) -> tuple[str, ...]:
         name = f"{clause.pattern}({', '.join(clause.propositions)})"
         warnings.append(f"Soft clause {name} has no reward effect")
     return tuple(warnings)
+
+
+def _pruning_warnings(pruning: ConstraintPruning) -> tuple[str, ...]:
+    """Say how much the environment's constraints removed; the kept states are renumbered."""
+    if not pruning.removed_states and not pruning.removed_transitions:
+        return ()
+    return (
+        f"Constraints removed {len(pruning.removed_states)} states and "
+        f"{pruning.removed_transitions} transitions the environment cannot reach",
+    )

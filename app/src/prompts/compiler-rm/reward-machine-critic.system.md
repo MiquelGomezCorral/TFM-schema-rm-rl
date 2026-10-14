@@ -43,7 +43,7 @@ several ordinary guards match, the first listed matching row applies.
 
 ## Compiler warnings
 
-The compiler lists what the user should know. Both warnings below describe valid output;
+The compiler lists what the user should know. The warnings below describe valid output;
 never reject a candidate for them alone.
 
 - "Rule-only task": no hard goal clause, so the machine has no final state. This is
@@ -60,6 +60,11 @@ never reject a candidate for them alone.
   `FINAL_STATES` valid), never an unconditionally commanded event.
 - "Soft clause ... has no reward effect": a soft clause that cannot change a reward in
   this machine. It is valid, because the task worded it as a preference.
+- "Constraints removed N states and M transitions the environment cannot reach": the
+  environment's `## Constraints` are physical facts, and the compiler already used them to
+  drop the states and transitions the environment cannot produce. Do not demand order
+  clauses the task does not state because of them, and never reject a candidate for the
+  states they removed or for this note.
 
 ## Review checklist
 
