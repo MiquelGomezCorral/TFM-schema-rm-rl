@@ -62,9 +62,10 @@ a registered Gymnasium id of a supported family needs an adapter in `app/src/arm
 ## 1. Describe the environment
 
 Create `examples/arm-fm/<env>/environment.md`. It is the only thing the generator LLMs know about the
-environment, so it must say everything they need to write a correct Reward Machine and correct labeling code,
-and nothing else. Leave out gym ids, URLs, provenance and implementation history: they cost tokens and give
-the model nothing to use.
+environment, so it must say everything they need to write a correct Reward Machine and correct labeling code.
+The required sections, the evidence rules (every fact cites its source or says `unknown`, never a guess) and the
+constraint and trace formats are in [ENVIRONMENT_AUTHORING.md](ENVIRONMENT_AUTHORING.md); this section keeps only
+the shape and the lessons.
 
 Required shape. Every command rejects a file without `## Propositions`; every command that generates
 labeling or trains also rejects one without `## Labeling API`:
@@ -466,9 +467,17 @@ The KeyCorridorS6R3 trace quotes the DoorKey mission, so that bundle's `task` te
 UnlockToUnlock RM sets `entered_goal_room` to `x < 5`, which fires before the ball is picked up on that layout, so its
 +1.0 `got_ball` reward is not paid.
 
+## Future work: what the environment file is worth
+
+An ablation, not run yet: take the upgraded environment files and remove one section at a time (the example
+trace, the constraints, the can/cannot list, the proposition semantics table), run the benchmark tasks
+(`examples/benchmark/`) three times per variant at the same reasoning level, and compare clause accuracy,
+critic rejections and the unreachable-state count of the compiled machines. It measures what the models miss
+when the environment is described poorly, which is the case for most environments found in the wild.
+
 ## Checklist for one environment
 
-1. `environment.md` with all six sections, `tasks.md`, `tasks.json`.
+1. `environment.md` with the sections of `ENVIRONMENT_AUTHORING.md`, `tasks.md`, `tasks.json`.
 2. Compiler bundle and paper bundle, both drawn and probed.
 3. Three configs; a short smoke run of each.
 4. Full runs: 3 agents × 3 seeds.

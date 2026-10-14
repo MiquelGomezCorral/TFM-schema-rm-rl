@@ -80,6 +80,9 @@ tasks, while keeping the generator and critic responsibilities stable.
   model.
 - The creator assumes the task is feasible in its environment; there is no refusal field.
   Whether a task can be done at all is the environment author's and the user's responsibility.
+- The environment's `## Constraints` are declared facts the compiler applies to drop the states
+  and transitions the environment cannot reach; they are never clauses and the model does not
+  write them.
 - The generator and the critic run at one shared reasoning level (`--reasoning`: `none`, `low`,
   `medium`, `high`, `max`; default `none`), sent on every provider request of the run.
 - Compiler model selection is role-specific: one generator model writes clauses and state
