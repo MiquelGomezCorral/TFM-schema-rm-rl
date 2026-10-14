@@ -21,6 +21,7 @@ from .generation_pipeline import (
     write_embedding_artifact,
     write_run_outputs,
 )
+from .html_graph import render_elements_html, render_structure_html
 from .step_trace import (
     STEP_OUTPUT_ORDER,
     attach_step_trace,
@@ -30,6 +31,5 @@ from .step_trace import (
 from .svg import render_elements_svg, render_structure_svg
 from .visualization import (
     CYTOSCAPE_STYLESHEET,
-    format_reward_label,
     reward_machine_to_elements,
 )

@@ -3,21 +3,24 @@
 import base64
 import re
 from collections.abc import Mapping
+from copy import deepcopy
+from functools import lru_cache
 from pathlib import Path, PurePosixPath
 
 import dash_cytoscape as cyto
-from dash import ALL, Dash, Input, Output, State, ctx, dcc, html, no_update
+from dash import ALL, Dash, Input, Output, State, ctx, dcc, no_update
 from dash.exceptions import PreventUpdate
 
 from src.compiler import CompilationResult, parse_reward_machine
+from src.compiler.reward_machine import RewardMachineStructure
 from src.config import Configuration
 from src.utils import (
     CYTOSCAPE_STYLESHEET,
     STEP_OUTPUT_ORDER,
     PipelineStep,
     derive_output_names,
-    format_reward_label,
     load_step_trace,
+    render_elements_html,
     render_elements_svg,
     reward_machine_to_elements,
 )
@@ -45,6 +48,9 @@ from .runner import RunController, RunRequest, RunSnapshot, RunState
 
 IMPORTED_RM_VALUE = "imported"
 
+# Summary, tab strip, bodies, graph elements, export name, then both export buttons' disabled.
+_PanelUpdate = tuple[str, object, list, list, str | None, bool, bool]
+
 _OUTPUT_SUFFIX = ".rm"
 _DEFAULT_OUTPUT_STEM = "reward-machine"
 _UNSAFE_OUTPUT_NAME = re.compile(r"[^A-Za-z0-9._-]+")
@@ -53,19 +59,52 @@ _UPLOAD_STATUS_CLASS = "field-hint text-[0.76rem] leading-[1.4] text-muted"
 _UPLOAD_ERROR_CLASS = "field-hint text-[0.76rem] leading-[1.4] text-[#fda4af]"
 
 _EXPORT_CLIENT_SCRIPT = """
-function (n_clicks) {
-    if (!n_clicks || !window.cy) {
+function (svg_clicks, html_clicks) {
+    if (!(svg_clicks || html_clicks) || !window.cy) {
         return window.dash_clientside.no_update;
     }
+    document.getElementById("graph-export-menu").open = false;
+    const format = window.dash_clientside.callback_context.triggered_id === "graph-export-html-button"
+        ? "html"
+        : "svg";
     const positions = Object.fromEntries(
         window.cy.nodes().map((node) => {
             const point = node.position();
             return [node.id(), [point.x, point.y]];
         })
     );
-    return {elements: window.cy.elements().jsons(), positions: positions};
+    return {format: format, elements: window.cy.elements().jsons(), positions: positions};
 }
 """
+
+# Hover and transition panel come from assets/rm_graph.js, shared with the HTML export.
+# Dash rewrites the elements on every step tab or status change, and the graph component
+# writes them back with its own fields, so the panel closes only when a signature of the
+# element data (ids, states, transition cases) differs from the last one stored.
+_ATTACH_CLIENT_SCRIPT = """
+function (elements, previous_signature) {
+    const text = JSON.stringify((elements || []).map((element) => element.data));
+    let hash = 0;
+    for (let index = 0; index < text.length; index++) {
+        hash = (hash * 31 + text.charCodeAt(index)) | 0;
+    }
+    const signature = text.length + ":" + hash;
+    if (window.cy && window.rmGraph) {
+        const graph = window.rmGraph.attach(
+            window.cy, document.getElementById("rm-graph").parentElement
+        );
+        if (signature !== previous_signature) {
+            graph.close();
+        }
+    }
+    return signature;
+}
+"""
+
+_EXPORT_FORMATS = {
+    "svg": (render_elements_svg, "image/svg+xml"),
+    "html": (render_elements_html, "text/html"),
+}
 
 
 def create_app(controller: RunController) -> Dash:
@@ -224,6 +263,7 @@ def _register_result_callback(app: Dash, controller: RunController) -> None:
         Output("rm-graph", "elements"),
         Output("graph-export-name", "data"),
         Output("graph-export-button", "disabled"),
+        Output("graph-export-html-button", "disabled"),
         Input("output-selector", "value"),
         Input("imported-reward-machine", "data"),
         Input("run-status", "children"),
@@ -234,7 +274,7 @@ def _register_result_callback(app: Dash, controller: RunController) -> None:
         imported_data: dict[str, str] | None = None,
         _run_status: str | None = None,
         selected_step: str | None = None,
-    ) -> tuple[str, object, list, list, str | None, bool]:
+    ) -> _PanelUpdate:
         step = _selected_step(selected_step)
         if selected_index is None:
             return _empty_panel("No completed output selected.", step)
@@ -244,20 +284,6 @@ def _register_result_callback(app: Dash, controller: RunController) -> None:
 
 
 def _register_graph_callbacks(app: Dash) -> None:
-    app.callback(
-        Output("graph-transition-pin", "data"),
-        Input("rm-graph", "tapEdgeData"),
-        Input("rm-graph", "tapNodeData"),
-        Input("graph-transition-close", "n_clicks"),
-        Input("output-selector", "value"),
-        Input("imported-reward-machine", "data"),
-        prevent_initial_call=True,
-    )(_update_transition_pin)
-    app.callback(
-        Output("graph-transition-inspector", "className"),
-        Output("graph-transition-content", "children"),
-        Input("graph-transition-pin", "data"),
-    )(_render_transition_inspector)
     app.callback(
         Output("graph-focus-state", "data"),
         Output("workspace", "className"),
@@ -280,7 +306,14 @@ def _register_graph_callbacks(app: Dash) -> None:
         _EXPORT_CLIENT_SCRIPT,
         Output("graph-export-payload", "data"),
         Input("graph-export-button", "n_clicks"),
+        Input("graph-export-html-button", "n_clicks"),
         prevent_initial_call=True,
+    )
+    app.clientside_callback(
+        _ATTACH_CLIENT_SCRIPT,
+        Output("graph-attached", "data"),
+        Input("rm-graph", "elements"),
+        State("graph-attached", "data"),
     )
 
 
@@ -497,7 +530,7 @@ def _navigate(task_selected: int, total_tasks: int, trigger: str | dict | None) 
 
 def _render_imported(
     imported_data: dict[str, str] | None, task_index: int | None, step: PipelineStep
-) -> tuple[str, object, list, list, str | None, bool]:
+) -> _PanelUpdate:
     imported = _imported_reward_machine(imported_data)
     task = _imported_task(imported, task_index)
     if imported is None or task is None:
@@ -520,14 +553,14 @@ def _render_imported(
         summary,
         steps,
         step,
-        reward_machine_to_elements(reward_machine),
+        _graph_elements(reward_machine),
         Path(name).stem,
     )
 
 
 def _render_generated(
     snapshot: RunSnapshot, selected_index: int | str, step: PipelineStep
-) -> tuple[str, object, list, list, str | None, bool]:
+) -> _PanelUpdate:
     if not snapshot.results:
         return _empty_panel("No completed output selected.", step)
     if not _is_generated_index(selected_index, len(snapshot.results)):
@@ -541,9 +574,23 @@ def _render_generated(
         _result_summary(result, output_path),
         steps,
         step,
-        reward_machine_to_elements(result.reward_machine),
+        _graph_elements(result.reward_machine),
         output_path.stem,
     )
+
+
+@lru_cache(maxsize=16)
+def _laid_out_elements(machine: RewardMachineStructure) -> list:
+    return reward_machine_to_elements(machine)
+
+
+def _graph_elements(machine: RewardMachineStructure) -> list:
+    """Return the graph elements of a machine, laid out once.
+
+    A step tab click or a status poll renders the same machine again, and the structure
+    is frozen, so the layout is cached per machine; the caller gets its own copy.
+    """
+    return deepcopy(_laid_out_elements(machine))
 
 
 def _result_summary(result: CompilationResult, output_path: Path) -> str:
@@ -575,32 +622,6 @@ def _is_imported_value(value: object) -> bool:
 # ======================================================================================
 
 
-def _update_transition_pin(
-    tapped_edge: dict | None,
-    _tapped_node: dict | None,
-    _close_clicks: int | None,
-    _selected_output: int | str | None,
-    _imported_reward_machine: dict[str, str] | None,
-) -> dict | None:
-    triggered_props = ctx.triggered_prop_ids
-    if "rm-graph.tapEdgeData" in triggered_props:
-        return tapped_edge
-    if {
-        "output-selector.value",
-        "imported-reward-machine.data",
-        "rm-graph.tapNodeData",
-        "graph-transition-close.n_clicks",
-    } & triggered_props.keys():
-        return None
-    raise PreventUpdate
-
-
-def _render_transition_inspector(pinned_edge: dict | None) -> tuple[str, object]:
-    if not isinstance(pinned_edge, dict) or not isinstance(pinned_edge.get("cases"), list):
-        return _transition_inspector_class(False), []
-    return _transition_inspector_class(True), _transition_inspector_children(pinned_edge)
-
-
 def _toggle_graph_focus(
     _n_clicks: int | None,
     focused: bool | None,
@@ -627,114 +648,22 @@ def _toggle_graph_focus(
 
 
 def _export_graph(payload: object, name: object) -> object:
-    """Render the live graph, keeping the node positions the user arranged."""
-    if not isinstance(payload, dict):
+    """Render the live graph as SVG or HTML, keeping the node positions the user arranged."""
+    if not isinstance(payload, dict) or payload.get("format") not in _EXPORT_FORMATS:
         raise PreventUpdate
     elements = _export_elements(payload.get("elements"))
     positions = _export_positions(payload.get("positions"))
     if elements is None or positions is None:
         raise PreventUpdate
-    svg = render_elements_svg(elements, positions or None)
-    return dcc.send_string(svg, _export_filename(name), type="image/svg+xml")
+    export_format = payload["format"]
+    render, mime_type = _EXPORT_FORMATS[export_format]
+    document = render(elements, positions or None)
+    return dcc.send_string(document, _export_filename(name, export_format), type=mime_type)
 
 
 # ======================================================================================
 #                                      HELPERS
 # ======================================================================================
-
-
-def _transition_inspector_class(visible: bool) -> str:
-    """Return the fixed-position inspector classes without changing graph layout."""
-    base = (
-        "graph-transition-inspector absolute left-3 top-3 z-10 max-h-[calc(100%_-_1.5rem)] "
-        "w-[min(28rem,calc(100%_-_1.5rem))] overflow-auto rounded-[0.65rem] border "
-        "border-border-strong bg-[#101a2b] p-3 text-text shadow-[0_12px_30px_rgb(0_0_0_/_35%)]"
-    )
-    return (
-        f"{base} pointer-events-auto visible"
-        if visible
-        else f"{base} pointer-events-none invisible"
-    )
-
-
-def _transition_inspector_children(edge: dict) -> list[object]:
-    """Render all formal grouped transition cases as readable chips."""
-    source = str(edge.get("source", "")).removeprefix("state-")
-    target = str(edge.get("target", "")).removeprefix("state-")
-    cases = edge.get("cases", [])
-    children: list[object] = [
-        html.Div(
-            [
-                html.Span(f"u{source} → u{target}", className="font-bold text-text"),
-                html.Span(
-                    f"{len(cases)} formal case{'s' if len(cases) != 1 else ''}",
-                    className="text-[0.7rem] text-muted",
-                ),
-            ],
-            className="flex items-baseline justify-between gap-3",
-        )
-    ]
-    for index, case in enumerate(cases, start=1):
-        if not isinstance(case, dict):
-            continue
-        condition = case.get("condition", [])
-        if isinstance(condition, str):
-            condition = [condition]
-        if not isinstance(condition, list):
-            condition = []
-        literals = [
-            html.Span(
-                str(literal),
-                className=(
-                    "rounded-[0.3rem] px-1.5 py-0.5 font-mono text-[0.68rem] "
-                    + (
-                        "bg-[#be123c] text-[#ffe4e6]"
-                        if str(literal).startswith("!")
-                        else "bg-[#eef2ff] text-[#24314d]"
-                    )
-                ),
-            )
-            for literal in condition
-        ] or [
-            html.Span(
-                "true",
-                className="rounded-[0.3rem] bg-[#eef2ff] px-1.5 py-0.5 font-mono text-[0.68rem] text-[#24314d]",
-            )
-        ]
-        reward = case.get("reward", 0)
-        try:
-            numeric_reward = float(reward)
-        except (TypeError, ValueError):
-            numeric_reward = 0.0
-        reward_class = (
-            "text-[#86efac]"
-            if numeric_reward > 0
-            else "text-[#be123c]"
-            if numeric_reward < 0
-            else "text-[#dce7f7]"
-        )
-        children.append(
-            html.Div(
-                [
-                    html.Div(
-                        [
-                            html.Span(
-                                f"Case {index}",
-                                className="text-[0.68rem] font-bold text-muted",
-                            ),
-                            html.Span(
-                                f"· r={format_reward_label(numeric_reward)}",
-                                className=f"text-[0.68rem] font-bold {reward_class}",
-                            ),
-                        ],
-                        className="flex items-center gap-1",
-                    ),
-                    html.Div(literals, className="flex flex-wrap gap-1"),
-                ],
-                className="grid gap-1 rounded-[0.45rem] border border-border bg-surface-raised p-2",
-            )
-        )
-    return children
 
 
 def _decode_uploaded_markdown(contents: str) -> str:
@@ -757,7 +686,7 @@ def _panel(
     selected: PipelineStep,
     elements: list,
     export_name: str | None,
-) -> tuple[str, object, list, list, str | None, bool]:
+) -> _PanelUpdate:
     """Return one panel update: summary, tab strip, stacked bodies and the graph."""
     return (
         summary,
@@ -766,12 +695,11 @@ def _panel(
         elements,
         export_name,
         not elements,
+        not elements,
     )
 
 
-def _empty_panel(
-    summary: str, selected: PipelineStep
-) -> tuple[str, object, list, list, str | None, bool]:
+def _empty_panel(summary: str, selected: PipelineStep) -> _PanelUpdate:
     """Return a panel update that shows only a message."""
     return _panel(summary, {}, selected, [], None)
 
@@ -890,13 +818,13 @@ def _export_positions(raw: object) -> dict | None:
     return positions
 
 
-def _export_filename(name: object) -> str:
+def _export_filename(name: object, extension: str) -> str:
     """Name the export after the selected output, sanitized for filesystems."""
     if isinstance(name, str):
         stem = _UNSAFE_OUTPUT_NAME.sub("-", name.strip()).strip("-")
         if stem:
-            return f"{stem}.svg"
-    return "reward-machine.svg"
+            return f"{stem}.{extension}"
+    return f"reward-machine.{extension}"
 
 
 def _output_stem(name: str | None) -> str:

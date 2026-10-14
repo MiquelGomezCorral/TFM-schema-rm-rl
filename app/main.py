@@ -28,7 +28,7 @@ def cmd_generate_rm(args: argparse.Namespace) -> None:
 
 
 def cmd_render_rm(args: argparse.Namespace) -> None:
-    """Render paper-format Reward Machines from a text file to SVG."""
+    """Render paper-format Reward Machines from a text file to SVG and optional HTML."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
     render_rm(CONFIG)
 
@@ -171,7 +171,7 @@ if __name__ == "__main__":
     #                                       render-rm
     # ======================================================================================
     render_parser = subparsers.add_parser(
-        "render-rm", help="Render paper-format Reward Machines to SVG"
+        "render-rm", help="Render paper-format Reward Machines to SVG and optional HTML"
     )
     render_parser.add_argument(
         "--rm-file",
@@ -184,6 +184,11 @@ if __name__ == "__main__":
         type=Path,
         default=None,
         help="Output .svg file, or a directory for several machines (default: outputs/svgs)",
+    )
+    render_parser.add_argument(
+        "--html",
+        action="store_true",
+        help="Also write an interactive <same stem>.html beside each SVG",
     )
     render_parser.set_defaults(func=cmd_render_rm)
 

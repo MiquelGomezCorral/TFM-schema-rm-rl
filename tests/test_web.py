@@ -8,9 +8,8 @@ from unittest.mock import patch
 from xml.etree import ElementTree
 
 from scripts import generate_rm
-from scripts.render_rm import render_structure_svg
 from src.compiler.reward_machine import RewardMachineStructure, Transition
-from src.config import Configuration
+from src.config import Configuration, GraphStyle
 from src.engines import GenericEngine, ImmediateEngineError
 from src.models import EnvironmentDescription
 from src.utils import (
@@ -18,6 +17,8 @@ from src.utils import (
     PipelineStep,
     ProgressEvent,
     StepState,
+    render_elements_html,
+    render_structure_svg,
     reward_machine_to_elements,
 )
 from src.web.application import create_app
@@ -214,12 +215,9 @@ class WebTests(unittest.TestCase):
             for element in graph.elements
             if "source" not in element["data"]
         }
-        self.assertLess(points["u0"][1], points["u1"][1])
-        self.assertEqual(points["u1"][1], points["u2"][1])
+        self.assertLess(points["u0"][1], points["u2"][1])
         self.assertLess(points["u2"][1], points["u3"][1])
-        self.assertLess(points["u1"][0], points["u0"][0])
-        self.assertLess(points["u0"][0], points["u2"][0])
-        self.assertEqual(points["u0"][0], points["u3"][0])
+        self.assertTrue(all(points["u1"][0] < points[state][0] for state in ("u0", "u2", "u3")))
 
         svg = ElementTree.fromstring(render_structure_svg(machine))
         rendered = {
@@ -236,6 +234,97 @@ class WebTests(unittest.TestCase):
                     rendered[state][1] - rendered["u0"][1],
                 ),
             )
+
+    def test_layout_puts_the_final_last_the_well_aside_and_states_off_foreign_edges(self):
+        # Every earlier state points at every later one, and all but the final also at the well.
+        machine = RewardMachineStructure(
+            states=tuple(range(7)),
+            initial_state=0,
+            final_state=5,
+            rejecting_states=(6,),
+            transitions=tuple(
+                Transition(source, target, (f"p{source}{target}",), 0.1)
+                for source in range(6)
+                for target in range(source + 1, 7)
+            ),
+        )
+
+        def positions(machine):
+            return {
+                int(element["data"]["id"].removeprefix("state-")): (
+                    element["position"]["x"],
+                    element["position"]["y"],
+                )
+                for element in reward_machine_to_elements(machine)
+                if "source" not in element["data"]
+            }
+
+        def assert_states_off_edges(machine, points):
+            limit = GraphStyle().node_diameter / 2 + 6
+            for transition in machine.transitions:
+                (ax, ay), (bx, by) = points[transition.source], points[transition.destination]
+                length = (bx - ax) ** 2 + (by - ay) ** 2
+                for state in set(machine.states) - {transition.source, transition.destination}:
+                    x, y = points[state]
+                    along = max(
+                        0.0, min(1.0, ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / length)
+                    )
+                    gap = (
+                        (x - ax - along * (bx - ax)) ** 2 + (y - ay - along * (by - ay)) ** 2
+                    ) ** 0.5
+                    self.assertGreater(
+                        gap, limit, f"u{state} on u{transition.source} -> u{transition.destination}"
+                    )
+
+        points = positions(machine)
+        self.assertEqual(points[5][1], max(y for state, (_, y) in points.items() if state != 6))
+        self.assertTrue(all(points[6][0] < points[state][0] for state in range(6)))
+        self.assertTrue(all(points[a][1] < points[b][1] for a in range(5) for b in range(a + 1, 6)))
+        assert_states_off_edges(machine, points)
+
+        # A back edge is drawn straight too, so it must not run through the state between.
+        cycle = RewardMachineStructure(
+            states=(0, 1, 2, 3),
+            initial_state=0,
+            final_state=3,
+            rejecting_states=(),
+            transitions=(
+                Transition(0, 1, ("a",), 0),
+                Transition(1, 2, ("b",), 0),
+                Transition(2, 0, ("c",), 0),
+                Transition(2, 3, ("d",), 0),
+            ),
+        )
+        assert_states_off_edges(cycle, positions(cycle))
+        self.assertNotIn(" Q ", render_structure_svg(cycle))
+
+    def test_html_export_embeds_every_state_the_stylesheet_and_the_shared_script(self):
+        machine = RewardMachineStructure(
+            states=(0, 1, 2),
+            initial_state=0,
+            final_state=2,
+            rejecting_states=(),
+            transitions=(
+                Transition(0, 1, ("a", "!b"), 0),
+                Transition(1, 2, ("</script>",), 1.0),
+            ),
+        )
+        elements = reward_machine_to_elements(machine)
+        elements[-1]["classes"] += " rm-hover"
+        page = render_elements_html(elements)
+
+        payload = re.search(
+            r'<script id="rm-graph-data" type="application/json">(.*?)</script>', page
+        )
+        data = json.loads(payload.group(1))
+        state_ids = {element["data"]["id"] for element in data["elements"] if "position" in element}
+        self.assertEqual(state_ids, {"state-0", "state-1", "state-2"})
+        self.assertEqual(data["style"], CYTOSCAPE_STYLESHEET)
+        self.assertNotIn("rm-hover", json.dumps(data["elements"]))
+
+        assets = Path(__file__).parents[1] / "app" / "assets"
+        self.assertIn((assets / "rm_graph.js").read_text(encoding="utf-8"), page)
+        self.assertIn((assets / "rm_graph.css").read_text(encoding="utf-8"), page)
 
     def test_poll_locks_inputs_and_critics_while_running_and_keeps_results(self):
         controller = RunController(generate_rm)
@@ -270,7 +359,7 @@ class WebTests(unittest.TestCase):
         }
         result_key = next(key for key in app.callback_map if "result-summary.children" in key)
         render = app.callback_map[result_key]["callback"].__wrapped__
-        summary, tabs, bodies, elements, export_name, export_disabled = render(0)
+        summary, tabs, bodies, elements, export_name, *export_disabled = render(0)
         self.assertIn("out.rm", summary)
         self.assertIn("Warning: Rule-only task", summary)
         self.assertIn("Bundle: out-bundle", summary)
@@ -282,7 +371,7 @@ class WebTests(unittest.TestCase):
         self.assertIn('"start"', str(bodies))
         self.assertTrue(elements)
         self.assertEqual(export_name, "out")
-        self.assertFalse(export_disabled)
+        self.assertEqual(export_disabled, [False, False])
 
     def test_optional_navigation_inputs_and_dark_tab_styles(self):
         app = create_app(RunController(generate_rm))

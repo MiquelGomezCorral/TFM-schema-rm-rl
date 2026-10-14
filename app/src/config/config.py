@@ -119,16 +119,24 @@ class GraphStyle:
     ``arc_room`` are the blank space kept around the drawing; lower them for a
     tighter picture and raise them if labels feel crowded.
 
-    States flow top to bottom in layers: ``node_gap`` spaces states within one
-    layer and ``layer_gap`` spaces the layers.
+    States are circles of ``node_diameter`` that flow top to bottom in layers:
+    ``node_gap`` is the least horizontal distance between two states in a layer
+    and ``layer_gap`` spaces the layers. An edge label sits on a chip ``label_height``
+    tall and ``label_padding`` plus ``label_char_width`` per character wide.
     """
 
-    node_width: int = 92
-    node_height: int = 56
-    node_gap: int = 140  # horizontal spacing between states in a layer
-    layer_gap: int = 118  # vertical spacing between layers
+    node_diameter: int = 64
+    node_gap: int = 130  # least horizontal distance between states in a layer
+    layer_gap: int = 120  # vertical spacing between layers
     margin: int = 60  # blank space around the drawing
     arc_room: int = 48  # extra right-side room for self-loops
+    label_height: int = 18
+    label_char_width: float = 6.2
+    label_padding: int = 12
+
+    def label_width(self, text: str) -> float:
+        """Return the width of the label chip for ``text``."""
+        return len(text) * self.label_char_width + self.label_padding
 
 
 @dataclass
@@ -199,6 +207,7 @@ class Configuration:
     embedding_timeout: float = 30.0
     svg: bool = False
     svg_dir: Path | None = None
+    html: bool = False  # render-rm: also write an interactive .html beside each SVG
     steps_report: Path | None = None
     trace_dir: Path | None = None
     seed: int = 42

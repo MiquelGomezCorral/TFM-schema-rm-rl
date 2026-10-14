@@ -861,7 +861,7 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                                 className=PANEL_TITLE_CLASS,
                             ),
                         ],
-                        className="panel-heading flex min-w-0 items-center gap-2 justify-self-start",
+                        className="panel-heading flex min-w-0 shrink-0 items-center gap-2",
                     ),
                     html.Div(
                         [
@@ -872,18 +872,50 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                                 className=f"graph-focus-toggle {GRAPH_TOOLBAR_BUTTON_CLASS}",
                                 **{"aria-label": "Focus graph", "aria-pressed": False},
                             ),
-                            html.Button(
-                                [_section_icon("download", boxed=False), "Export SVG"],
-                                id="graph-export-button",
-                                n_clicks=0,
-                                disabled=True,
-                                className=f"graph-export-button {GRAPH_TOOLBAR_BUTTON_CLASS}",
-                                **{"aria-label": "Export the graph as an SVG file"},
+                            html.Details(
+                                [
+                                    html.Summary(
+                                        [_section_icon("download", boxed=False), "Export"],
+                                        className=(
+                                            f"graph-export-summary {GRAPH_TOOLBAR_BUTTON_CLASS} list-none"
+                                        ),
+                                    ),
+                                    html.Div(
+                                        [
+                                            html.Button(
+                                                "Export SVG",
+                                                id="graph-export-button",
+                                                n_clicks=0,
+                                                disabled=True,
+                                                className=f"graph-export-button {GRAPH_TOOLBAR_BUTTON_CLASS}",
+                                                **{"aria-label": "Export the graph as an SVG file"},
+                                            ),
+                                            html.Button(
+                                                "Export HTML",
+                                                id="graph-export-html-button",
+                                                n_clicks=0,
+                                                disabled=True,
+                                                className=f"graph-export-html-button {GRAPH_TOOLBAR_BUTTON_CLASS}",
+                                                **{
+                                                    "aria-label": (
+                                                        "Export the graph as an interactive HTML file"
+                                                    )
+                                                },
+                                            ),
+                                        ],
+                                        className=(
+                                            "graph-export-panel absolute right-0 top-full z-20 mt-1 grid gap-1 "
+                                            "rounded-[0.6rem] border border-border-strong bg-[#101a2b] p-2 "
+                                            "text-text shadow-[0_12px_30px_rgb(0_0_0_/_35%)]"
+                                        ),
+                                    ),
+                                ],
+                                id="graph-export-menu",
+                                className="graph-export relative",
                             ),
                         ],
                         className=(
-                            "graph-toolbar-actions flex items-center gap-2 "
-                            "justify-self-center max-[800px]:hidden"
+                            "graph-toolbar-actions flex items-center gap-2 max-[800px]:hidden"
                         ),
                     ),
                     html.Details(
@@ -899,7 +931,7 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                                             _legend_row(
                                                 (
                                                     "legend-swatch inline-block h-4 w-4 flex-none "
-                                                    "rounded-[0.25rem] border-2 border-[#5878a8] "
+                                                    "rounded-full border-2 border-[#5878a8] "
                                                     "bg-[#18263d]"
                                                 ),
                                                 "Default state",
@@ -907,7 +939,7 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                                             _legend_row(
                                                 (
                                                     "legend-swatch-initial legend-swatch inline-block h-4 w-4 "
-                                                    "flex-none rounded-[0.25rem] border-[3px] border-accent "
+                                                    "flex-none rounded-full border-[3px] border-accent "
                                                     "bg-[#18263d]"
                                                 ),
                                                 "Initial state",
@@ -915,7 +947,7 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                                             _legend_row(
                                                 (
                                                     "legend-swatch-accepting legend-swatch inline-block h-4 w-4 "
-                                                    "flex-none rounded-[0.25rem] border-2 border-success "
+                                                    "flex-none rounded-full border-2 border-success "
                                                     "bg-[#14532d]"
                                                 ),
                                                 "Accepting state",
@@ -923,7 +955,7 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                                             _legend_row(
                                                 (
                                                     "legend-swatch-rejecting legend-swatch inline-block h-4 w-4 "
-                                                    "flex-none rounded-[0.25rem] border-2 border-[#fb7185] "
+                                                    "flex-none rounded-full border-2 border-[#fb7185] "
                                                     "bg-[#572033]"
                                                 ),
                                                 "Rejecting state",
@@ -957,12 +989,12 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                                 ),
                             ),
                         ],
-                        className="graph-legend relative justify-self-end",
+                        className="graph-legend relative ml-auto shrink-0",
                     ),
                 ],
                 className=(
-                    "graph-toolbar relative grid flex-none grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] "
-                    "items-center gap-4 pb-1"
+                    "graph-toolbar relative flex flex-none flex-wrap items-center justify-between "
+                    "gap-4 pb-1"
                 ),
             ),
             html.Div(
@@ -983,29 +1015,6 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                         wheelSensitivity=0.15,
                         style={"width": "100%", "height": "100%"},
                         className="graph-canvas min-h-[27rem] h-full w-full flex-1",
-                    ),
-                    html.Div(
-                        [
-                            html.Div(id="graph-transition-content", className="grid gap-2"),
-                            html.Button(
-                                "Close",
-                                id="graph-transition-close",
-                                n_clicks=0,
-                                className=(
-                                    "graph-transition-close mt-2 min-h-[2rem] rounded-[0.4rem] border "
-                                    "border-border-strong px-2.5 text-[0.7rem] font-bold text-muted cursor-pointer "
-                                    "hover:border-accent hover:text-accent focus-visible:outline-2"
-                                ),
-                                **{"aria-label": "Close transition details"},
-                            ),
-                        ],
-                        id="graph-transition-inspector",
-                        className=(
-                            "graph-transition-inspector pointer-events-none invisible absolute left-3 top-3 "
-                            "z-10 max-h-[calc(100%_-_1.5rem)] w-[min(28rem,calc(100%_-_1.5rem))] "
-                            "overflow-auto rounded-[0.65rem] border border-border-strong bg-[#101a2b] "
-                            "p-3 text-text shadow-[0_12px_30px_rgb(0_0_0_/_35%)]"
-                        ),
                     ),
                 ],
                 className="graph-stage relative min-h-0 flex-1",
@@ -1084,7 +1093,7 @@ def create_layout(stylesheet: list[dict] | None = None) -> html.Main:
                 data={"selected": 0, "last_active": None, "run_id": 0},
             ),
             dcc.Store(id="imported-reward-machine", data=None),
-            dcc.Store(id="graph-transition-pin", data=None),
+            dcc.Store(id="graph-attached", data=None),
             dcc.Store(id="graph-focus-state", data=False),
             dcc.Store(id="graph-export-name", data=None),
             dcc.Store(id="graph-export-payload", data=None),

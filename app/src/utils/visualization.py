@@ -1,24 +1,27 @@
-"""Shared Reward Machine graph data, layered placement, and display styles."""
+"""Shared Reward Machine graph data and display styles."""
 
-from collections import defaultdict, deque
+from collections import defaultdict
 from math import cos, radians
 
 from src.compiler.reward_machine import RewardMachineStructure, Transition
 from src.config import GraphStyle
 
+from .layout import reward_machine_positions
+
 _GRAPH = GraphStyle()
-EDGE_LABEL_HEIGHT = 18
+_RADIUS = _GRAPH.node_diameter / 2
 EDGE_LABEL_SPACING = 1.25
 SELF_LOOP_REACH = 56
 SELF_LOOP_LABEL_OFFSET = 23
 SELF_LOOP_LABEL_DROP = 10
+HOVER_CLASS = "rm-hover"  # set by rm_graph.js while an edge, or its source state, is hovered
 
 CYTOSCAPE_STYLESHEET = [
     {
         "selector": "node",
         "style": {
             "label": "data(label)",
-            "shape": "roundrectangle",
+            "shape": "ellipse",
             "text-valign": "center",
             "text-halign": "center",
             "background-color": "#18263d",
@@ -27,8 +30,8 @@ CYTOSCAPE_STYLESHEET = [
             "color": "#f7f9fc",
             "font-size": "14px",
             "font-weight": 600,
-            "height": f"{_GRAPH.node_height}px",
-            "width": f"{_GRAPH.node_width}px",
+            "height": f"{_GRAPH.node_diameter}px",
+            "width": f"{_GRAPH.node_diameter}px",
         },
     },
     {"selector": ".initial", "style": {"border-color": "#38bdf8", "border-width": 4}},
@@ -94,10 +97,19 @@ CYTOSCAPE_STYLESHEET = [
             "loop-direction": "90deg",
             "loop-sweep": "45deg",
             # Match the SVG cubic's rightmost point using Cytoscape's two quadratic curves.
-            "control-point-step-size": (_GRAPH.node_width / 2 + 0.75 * SELF_LOOP_REACH)
+            "control-point-step-size": (_RADIUS + 0.75 * SELF_LOOP_REACH)
             / (1.4 * cos(radians(22.5))),
             "text-margin-x": SELF_LOOP_LABEL_OFFSET - 0.75 * SELF_LOOP_REACH,
-            "text-margin-y": _GRAPH.node_height / 2 + SELF_LOOP_LABEL_DROP,
+            "text-margin-y": _RADIUS + SELF_LOOP_LABEL_DROP,
+        },
+    },
+    {
+        "selector": f"edge.{HOVER_CLASS}",
+        "style": {
+            "width": 4,
+            "overlay-color": "#38bdf8",
+            "overlay-opacity": 0.18,
+            "overlay-padding": "4px",
         },
     },
     {
@@ -123,13 +135,14 @@ def reward_machine_to_elements(
     elements = _state_elements(reward_machine)
     elements.extend(_edge_elements(reward_machine))
 
+    edges = elements[len(reward_machine.states) :]
+    for edge, offset in zip(edges, edge_label_offsets(edges), strict=True):
+        edge["data"]["label_offset"] = offset
+
     positions = reward_machine_positions(elements)
     for element in elements[: len(reward_machine.states)]:
         x, y = positions[element["data"]["id"]]
         element["position"] = {"x": x, "y": y}
-    edges = elements[len(reward_machine.states) :]
-    for edge, offset in zip(edges, edge_label_offsets(edges), strict=True):
-        edge["data"]["label_offset"] = offset
     return elements
 
 
@@ -184,6 +197,7 @@ def _edge_elements(
                     {
                         "condition": list(transition.condition),
                         "reward": transition.reward,
+                        "reward_label": format_reward_label(transition.reward),
                     }
                     for transition in transitions
                 ],
@@ -195,55 +209,6 @@ def _edge_elements(
     ]
 
 
-def reward_machine_positions(elements: list[dict]) -> dict[str, tuple[float, float]]:
-    """Place graph states in the same top-down layers for the app and SVG renderer."""
-    nodes = [element for element in elements if "source" not in element["data"]]
-    if not nodes:
-        raise ValueError("A Reward Machine graph needs at least one state")
-    initial = next(
-        (node["data"]["id"] for node in nodes if "initial" in node.get("classes", "")),
-        None,
-    )
-    if initial is None:
-        raise ValueError("A Reward Machine graph needs an initial state")
-
-    depths = _state_depths(initial, elements)
-    fallback = max(depths.values()) + 1
-    layers: dict[int, list[str]] = defaultdict(list)
-    for node in nodes:
-        state = node["data"]["id"]
-        layers[depths.get(state, fallback)].append(state)
-
-    widest = max(len(group) for group in layers.values())
-    positions: dict[str, tuple[float, float]] = {}
-    for depth, group in layers.items():
-        left = (widest - len(group)) * _GRAPH.node_gap / 2
-        for index, state in enumerate(group):
-            positions[state] = (
-                left + index * _GRAPH.node_gap,
-                depth * _GRAPH.layer_gap,
-            )
-    return positions
-
-
-def _state_depths(initial: str, elements: list[dict]) -> dict[str, int]:
-    """Return each reachable state's breadth-first distance from the initial one."""
-    adjacency: dict[str, list[str]] = defaultdict(list)
-    for element in elements:
-        if "source" in element["data"]:
-            adjacency[element["data"]["source"]].append(element["data"]["target"])
-
-    depths = {initial: 0}
-    queue = deque([initial])
-    while queue:
-        current = queue.popleft()
-        for destination in adjacency[current]:
-            if destination not in depths:
-                depths[destination] = depths[current] + 1
-                queue.append(destination)
-    return depths
-
-
 def edge_label_offsets(edges: list[dict]) -> list[float]:
     """Separate labels of sibling transitions vertically in both renderers."""
     groups: dict[str, list[int]] = defaultdict(list)
@@ -253,7 +218,7 @@ def edge_label_offsets(edges: list[dict]) -> list[float]:
             groups[data["source"]].append(index)
 
     offsets = [0.0] * len(edges)
-    step = EDGE_LABEL_HEIGHT * EDGE_LABEL_SPACING
+    step = _GRAPH.label_height * EDGE_LABEL_SPACING
     for indices in groups.values():
         middle = (len(indices) - 1) / 2
         for position, index in enumerate(indices):

@@ -9,21 +9,24 @@ Sizing comes from :class:`src.config.GraphStyle`, adjustable in ``config.py``.
 
 from __future__ import annotations
 
+from math import cos, hypot, radians, sin
+
 from src.compiler.reward_machine import RewardMachineStructure
 from src.config import GraphStyle
 
+from .layout import element_positions
 from .visualization import (
     CYTOSCAPE_STYLESHEET,
-    EDGE_LABEL_HEIGHT,
     SELF_LOOP_LABEL_DROP,
     SELF_LOOP_LABEL_OFFSET,
     SELF_LOOP_REACH,
     edge_label_offsets,
-    reward_machine_positions,
     reward_machine_to_elements,
 )
 
 GRAPH = GraphStyle()
+RADIUS = GRAPH.node_diameter / 2
+LOOP_HALF_SWEEP = radians(22.5)  # a self-loop leaves and returns this far above and below the right
 
 STYLES = {entry["selector"]: entry["style"] for entry in CYTOSCAPE_STYLESHEET}
 BACKGROUND = STYLES["edge"]["text-background-color"]
@@ -32,7 +35,6 @@ EDGE_CLASSES = ("edge-positive", "edge-negative", "edge-zero")
 EDGE_COLOURS = {name: STYLES[f".{name}"]["line-color"] for name in EDGE_CLASSES}
 EDGE_WIDTH = STYLES["edge"]["width"]
 
-CHIP_HEIGHT = EDGE_LABEL_HEIGHT
 BACK_EDGE_REACH = 26
 EDGE_PADDING = 6
 
@@ -47,7 +49,8 @@ def render_elements_svg(elements: list[dict], positions: dict | None = None) -> 
 
     When ``positions`` maps state ids to model coordinates, those placements are
     preserved and only translated, so pan and zoom do not affect the export.
-    Without positions the states are placed on a top-down layered grid.
+    Without positions the states keep the ``position`` their elements carry, and
+    are laid out only if one of them has none.
     """
     nodes = [element for element in elements if "source" not in element["data"]]
     edges = [element for element in elements if "source" in element["data"]]
@@ -55,7 +58,7 @@ def render_elements_svg(elements: list[dict], positions: dict | None = None) -> 
         raise ValueError("A Reward Machine graph needs at least one state")
 
     if positions is None:
-        positions = reward_machine_positions(elements)
+        positions = element_positions(elements)
 
     positions, width, height = _fit(positions)
     return _document(nodes, edges, positions, width, height)
@@ -98,27 +101,24 @@ def _fit(positions: dict) -> tuple[dict, float, float]:
     min_y = min(y for _, y in positions.values())
     shifted = {
         node: (
-            x - min_x + left + GRAPH.node_width / 2,
-            y - min_y + GRAPH.margin + GRAPH.node_height / 2,
+            x - min_x + left + RADIUS,
+            y - min_y + GRAPH.margin + RADIUS,
         )
         for node, (x, y) in positions.items()
     }
-    width = (
-        max(x for x, _ in shifted.values()) + GRAPH.node_width / 2 + GRAPH.margin + GRAPH.arc_room
-    )
-    height = max(y for _, y in shifted.values()) + GRAPH.node_height / 2 + GRAPH.margin
+    width = max(x for x, _ in shifted.values()) + RADIUS + GRAPH.margin + GRAPH.arc_room
+    height = max(y for _, y in shifted.values()) + RADIUS + GRAPH.margin
     return shifted, width, height
 
 
 def _clip(centre: tuple[float, float], target: tuple[float, float]) -> tuple[float, float]:
-    """Return where a centre-to-target ray leaves the node rectangle."""
+    """Return where a centre-to-target ray leaves the node circle."""
     dx = target[0] - centre[0]
     dy = target[1] - centre[1]
-    if dx == 0 and dy == 0:
+    distance = hypot(dx, dy)
+    if distance == 0:
         return centre
-    horizontal = abs(dx) / (GRAPH.node_width / 2)
-    vertical = abs(dy) / (GRAPH.node_height / 2)
-    scale = 1 / max(horizontal, vertical)
+    scale = RADIUS / distance
     return centre[0] + dx * scale, centre[1] + dy * scale
 
 
@@ -132,8 +132,16 @@ def _document(
 ) -> str:
     """Assemble the SVG document from positioned nodes and routed edges."""
     offsets = edge_label_offsets(edges)
+    pairs = {(edge["data"]["source"], edge["data"]["target"]) for edge in edges}
     routed = [
-        _edge_parts(edge, positions, width, offsets[index]) for index, edge in enumerate(edges)
+        _edge_parts(
+            edge,
+            positions,
+            width,
+            offsets[index],
+            (edge["data"]["target"], edge["data"]["source"]) in pairs,
+        )
+        for index, edge in enumerate(edges)
     ]
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:.0f}" height="{height:.0f}" '
@@ -161,12 +169,11 @@ def _markers() -> str:
 
 
 def _node_svg(node: dict, positions: dict) -> str:
-    """Draw one state as a labelled rounded rectangle."""
+    """Draw one state as a labelled circle."""
     x, y = positions[node["data"]["id"]]
     style = _node_style(node.get("classes", ""))
     return (
-        f'<g><rect x="{x - GRAPH.node_width / 2:.0f}" y="{y - GRAPH.node_height / 2:.0f}" '
-        f'width="{GRAPH.node_width}" height="{GRAPH.node_height}" rx="9" '
+        f'<g><circle cx="{x:.0f}" cy="{y:.0f}" r="{RADIUS:.0f}" '
         f'fill="{style["background-color"]}" stroke="{style["border-color"]}" '
         f'stroke-width="{style["border-width"]}"/>'
         f'<text x="{x:.0f}" y="{y:.0f}" fill="{style["color"]}" font-size="{style["font-size"]}" '
@@ -176,12 +183,14 @@ def _node_svg(node: dict, positions: dict) -> str:
 
 
 def _edge_parts(
-    edge: dict, positions: dict, canvas_width: float, y_offset: float
+    edge: dict, positions: dict, canvas_width: float, y_offset: float, has_reverse: bool
 ) -> tuple[str, str]:
     """Route one grouped transition into a path group and a label group.
 
     Paths and labels are returned separately so labels can be drawn above the
-    nodes when a user-arranged layout overlaps them.
+    nodes when a user-arranged layout overlaps them. An upward edge is curved only
+    when the transition the other way exists, to keep the pair apart; every other
+    edge is straight, as the app draws it.
     """
     data = edge["data"]
     classes = edge.get("classes", "")
@@ -190,7 +199,7 @@ def _edge_parts(
 
     if source == target:
         path, label_x, label_y = _self_loop(positions[source])
-    elif positions[target][1] < positions[source][1]:
+    elif has_reverse and positions[target][1] < positions[source][1]:
         path, label_x, label_y = _back_edge(positions[source], positions[target])
         label_y += y_offset
     else:
@@ -218,13 +227,13 @@ def _edge_parts(
 def _self_loop(position: tuple[float, float]) -> tuple[str, float, float]:
     """Route a self-transition as a loop on the right, with its label below.
 
-    The path ends on the node boundary so the arrowhead falls outside the rect.
+    The path ends on the node boundary so the arrowhead falls outside the circle.
     The label sits under the loop, centred on it, clear of a right neighbour.
     """
     x, y = position
-    start = (x + GRAPH.node_width / 2, y - GRAPH.node_height / 2 + 8)
-    end = (x + GRAPH.node_width / 2, y + GRAPH.node_height / 2 - 8)
-    control_x = x + GRAPH.node_width / 2 + SELF_LOOP_REACH
+    start = (x + RADIUS * cos(LOOP_HALF_SWEEP), y - RADIUS * sin(LOOP_HALF_SWEEP))
+    end = (start[0], y + RADIUS * sin(LOOP_HALF_SWEEP))
+    control_x = x + RADIUS + SELF_LOOP_REACH
     path = (
         f"M {start[0]:.0f} {start[1]:.0f} "
         f"C {control_x:.0f} {start[1] - 24:.0f} {control_x:.0f} {end[1] + 24:.0f} "
@@ -232,8 +241,8 @@ def _self_loop(position: tuple[float, float]) -> tuple[str, float, float]:
     )
     return (
         path,
-        x + GRAPH.node_width / 2 + SELF_LOOP_LABEL_OFFSET,
-        y + GRAPH.node_height / 2 + SELF_LOOP_LABEL_DROP,
+        x + RADIUS + SELF_LOOP_LABEL_OFFSET,
+        y + RADIUS + SELF_LOOP_LABEL_DROP,
     )
 
 
@@ -242,10 +251,10 @@ def _back_edge(
     target: tuple[float, float],
 ) -> tuple[str, float, float]:
     """Route a backward transition around the left of the node column."""
-    start = (source[0] - GRAPH.node_width / 2, source[1])
-    end = (target[0] - GRAPH.node_width / 2, target[1])
+    start = (source[0] - RADIUS, source[1])
+    end = (target[0] - RADIUS, target[1])
     control = (
-        min(source[0], target[0]) - GRAPH.node_width / 2 - 52,
+        min(source[0], target[0]) - RADIUS - 52,
         (start[1] + end[1]) / 2,
     )
     path = (
@@ -271,24 +280,19 @@ def _quadratic_point(
 
 def _label_svg(x: float, y: float, text: str, style: dict) -> str:
     """Draw an edge reward label on a rounded background chip."""
-    width = _label_width(text)
+    width = GRAPH.label_width(text)
     return (
-        f'<rect x="{x - width / 2:.0f}" y="{y - CHIP_HEIGHT / 2:.0f}" width="{width:.0f}" '
-        f'height="{CHIP_HEIGHT}" rx="4" fill="{BACKGROUND}" '
+        f'<rect x="{x - width / 2:.0f}" y="{y - GRAPH.label_height / 2:.0f}" width="{width:.0f}" '
+        f'height="{GRAPH.label_height}" rx="4" fill="{BACKGROUND}" '
         f'stroke="{style["text-border-color"]}" stroke-width="1"/>'
         f'<text x="{x:.0f}" y="{y:.0f}" fill="{style["color"]}" font-size="11" '
         f'text-anchor="middle" dominant-baseline="central">{_escape(text)}</text>'
     )
 
 
-def _label_width(text: str) -> float:
-    """Approximate the chip width from the label length."""
-    return len(text) * 6.2 + 12
-
-
 def _clamped_x(x: float, text: str, canvas_width: float) -> float:
     """Keep a label chip inside the canvas however small the margin is."""
-    half = _label_width(text) / 2
+    half = GRAPH.label_width(text) / 2
     return max(half + 2, min(x, canvas_width - half - 2))
 
 
