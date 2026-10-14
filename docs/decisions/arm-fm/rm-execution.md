@@ -33,18 +33,23 @@ without changing how labels, transitions, and rewards are interpreted.
 - The learner reward follows the run's `reward_source`: `rm` (default) the RM reward only,
   `both` environment + RM reward, `env` no RM at all. `info["env_reward"]` always holds the raw
   environment reward and `info["rm_reward"]` the RM reward, including the time-limit penalty.
-- App graphs, exported SVGs, and the standalone graph script share the same fallback
-  display. Show explicit fallback edges with an `else` label. For every declared state
+- App graphs, exported SVGs, the standalone graph script, and the interactive HTML export share
+  the same fallback display. Show explicit fallback edges with an `else` label. For every declared state
   without an outgoing `else`, draw a zero-reward self-loop labeled `else`, including
   accepting and rejecting states. An explicit `else` to another state suppresses that
   default loop; ordinary guarded self-loops do not.
 - These graph defaults are display-only. Preserve explicit guards and rewards when
   grouping edges with the same source and destination. Do not enumerate valuations
   or analyze guard exhaustiveness to decide whether to show a default loop.
-- App graphs and standalone SVGs use one deterministic top-down layout and shared
-  sibling-label spacing. The app starts from those positions rather than a force
-  layout. Self-loops appear on the right with horizontal labels below them; users
-  may still pan, zoom, drag states, inspect transitions, and export their placement.
+- App graphs, standalone SVGs, and the HTML export use one deterministic top-down layout and
+  shared sibling-label spacing, with states drawn as circles. A state's rank is its longest path
+  from the initial state, so forward edges point down; final states sit in the bottom rank;
+  rejecting states sit in a lane beside the main flow, so edges into them may point up. The layout
+  keeps states off edges they are not part of. The app starts from those positions rather than a force
+  layout. Self-loops appear on the right with horizontal labels below them; users may still pan,
+  zoom, drag states, inspect transitions, and export their placement (SVG or HTML).
+- Hover, click, and the transition panel have one owner shared by the app and the HTML export,
+  so a change to the interaction reaches both.
 
 - The authors' released runtime chains every triggered event inside one step. Paper-reproduction
   runs keep our one-update rule. The authors apply `else` only when no event is true and none of
@@ -90,10 +95,15 @@ without expanding the machine or adding a guard-coverage calculation.
   `app/scripts/render_rm.py`; `app/src/utils/svg.py` renders the shared elements.
   `tests/test_reward_machine_format.py` checks fallback destinations, rewards,
   visible SVG labels, and unchanged input transitions.
-- `app/src/utils/visualization.py` owns layered positions and sibling-label offsets;
-  it also shares loop dimensions with the SVG renderer. `app/src/web/components.py`
-  selects Cytoscape's preset layout. `tests/test_web.py` checks initial app placement
-  against the standalone SVG and keeps pan and zoom enabled.
+- `app/src/utils/layout.py` and `settle.py` own the positions (`reward_machine_positions`);
+  `visualization.py` owns the elements, the stylesheet, and sibling-label offsets, and sizes
+  come from `GraphStyle`. `app/src/web/components.py` selects Cytoscape's preset layout.
+  `app/assets/rm_graph.js` and `rm_graph.css` own hover, click, and the transition panel for the
+  app and `app/src/utils/html_graph.py` (`render_elements_html`, `render-rm --html`), which
+  inlines them with the vendored Cytoscape.js 3.28.1 (`app/vendor/cytoscape/`, the version
+  `dash_cytoscape` bundles). `tests/test_web.py` checks initial app placement against the
+  standalone SVG, the layout rules (final lowest, well aside, forward edges down, no state on a
+  foreign edge), the HTML document, and keeps pan and zoom enabled.
 - The meaning of event versus persistent propositions remains Review-only against
   each environment definition; runtime evaluation cannot establish that grounding.
 
@@ -108,3 +118,6 @@ without expanding the machine or adding a guard-coverage calculation.
 - 2026-10-12: Added declared rejecting states, episode end on RM final or rejecting states and on
   the time limit (-0.5), and `reward_source` (default `rm`), following Toro Icarte et al. (JAIR
   2022), where reaching an RM terminal state ends the episode (user decisions).
+- 2026-10-14: Added the interactive HTML export with one shared interaction script, and the
+  circle-state layout: longest-path ranks, final last, rejecting states in a side lane, no state
+  on a foreign edge (user requests).

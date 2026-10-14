@@ -1,0 +1,267 @@
+{
+ "eyebrow": "Compiler redesign · start-state merge · 2026-10-13",
+ "title": "Dropping the duplicate start state",
+ "subtitle": "Every RM with a rule clause starts in a state that only exists before the first step. It behaves exactly like the state an idle step leads to, so we drop it.",
+ "sections": [
+  {
+   "id": "what",
+   "title": "What changes",
+   "blocks": [
+    {
+     "type": "list",
+     "items": [
+      "**Which RMs:** 19 of the 25 reward-step test RMs, every task with at least one rule clause (Absence, Precedence, Response, ChainResponse, RespondedExistence, NotCoExistence). Goal-only tasks are unchanged.",
+      "**The rule:** if the start is never re-entered and, on every input, goes to the same state with the same reward as its idle successor, the idle successor becomes the start and the old start is removed. Otherwise nothing changes.",
+      "**What stays the same:** every reward, every episode total, the well, the final. Only the state count and the state numbers change.",
+      "**What goes away:** the \"idle first step pays 0\" special case, and one near-duplicate state description and embedding per RM."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "examples",
+   "title": "Before, expected, got",
+   "intro": "Each graph is the web UI's own component (`render-rm --html`): drag a state, click an edge for its cases, Ctrl + scroll to zoom. Green edges pay, red cost, grey pay 0. Open \"RM text\" under a graph for the exact transitions.",
+   "blocks": [
+    {
+     "type": "gallery",
+     "width": 490,
+     "groups": [
+      {
+       "title": "Never lose the key (hard, rule only)",
+       "note": "3 → 2 states: the start and its idle twin become one safe state; losing the key still goes to the well (−1).",
+       "items": [
+        {
+         "src": "graphs/rule_only_absence_hard.before.html",
+         "height": 420,
+         "caption": "Before: what the compiler wrote before the change",
+         "details": {
+          "title": "RM text",
+          "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: \nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !key_lost) -> u1\n(u0, key_lost) -> u2\n(u1, key_lost) -> u2\nREWARD_FUNCTION:\n(u0, key_lost, u2) -> -1\n(u1, key_lost, u2) -> -1"
+         }
+        },
+        {
+         "src": "graphs/rule_only_absence_hard.expected.html",
+         "height": 420,
+         "caption": "Expected: the same RM with the duplicate start removed",
+         "details": {
+          "title": "RM text",
+          "code": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES: \nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, key_lost) -> u1\nREWARD_FUNCTION:\n(u0, key_lost, u1) -> -1"
+         }
+        },
+        {
+         "src": "graphs/rule_only_absence_hard.got.html",
+         "height": 420,
+         "caption": "Got: what the compiler writes after the change",
+         "details": {
+          "title": "RM text",
+          "code": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES: \nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, key_lost) -> u1\nREWARD_FUNCTION:\n(u0, key_lost, u1) -> -1"
+         }
+        }
+       ]
+      },
+      {
+       "title": "Open the door only after the key (hard)",
+       "note": "5 → 4 states: start, has key, well, final. Door first is still −1; key then door still 0.1 + 1.1.",
+       "items": [
+        {
+         "src": "graphs/key_before_door_hard.before.html",
+         "height": 420,
+         "caption": "Before: what the compiler wrote before the change",
+         "details": {
+          "title": "RM text",
+          "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u4\nREJECTING_STATES: u3\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&!has_key) -> u1\n(u0, !door_open&has_key) -> u2\n(u0, door_open&!has_key) -> u3\n(u0, door_open&has_key) -> u4\n(u1, !door_open&has_key) -> u2\n(u1, door_open&!has_key) -> u3\n(u1, door_open&has_key) -> u4\n(u2, door_open) -> u4\nREWARD_FUNCTION:\n(u0, !door_open&has_key, u2) -> 0.1\n(u0, door_open&!has_key, u3) -> -1\n(u0, door_open&has_key, u4) -> 1.2\n(u1, !door_open&has_key, u2) -> 0.1\n(u1, door_open&!has_key, u3) -> -1\n(u1, door_open&has_key, u4) -> 1.2\n(u2, door_open, u4) -> 1.1"
+         }
+        },
+        {
+         "src": "graphs/key_before_door_hard.expected.html",
+         "height": 420,
+         "caption": "Expected: the same RM with the duplicate start removed",
+         "details": {
+          "title": "RM text",
+          "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&has_key) -> u1\n(u0, door_open&!has_key) -> u2\n(u0, door_open&has_key) -> u3\n(u1, door_open) -> u3\nREWARD_FUNCTION:\n(u0, !door_open&has_key, u1) -> 0.1\n(u0, door_open&!has_key, u2) -> -1\n(u0, door_open&has_key, u3) -> 1.2\n(u1, door_open, u3) -> 1.1"
+         }
+        },
+        {
+         "src": "graphs/key_before_door_hard.got.html",
+         "height": 420,
+         "caption": "Got: what the compiler writes after the change",
+         "details": {
+          "title": "RM text",
+          "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&has_key) -> u1\n(u0, door_open&!has_key) -> u2\n(u0, door_open&has_key) -> u3\n(u1, door_open) -> u3\nREWARD_FUNCTION:\n(u0, !door_open&has_key, u1) -> 0.1\n(u0, door_open&!has_key, u2) -> -1\n(u0, door_open&has_key, u3) -> 1.2\n(u1, door_open, u3) -> 1.1"
+         }
+        }
+       ]
+      },
+      {
+       "title": "Reach the goal, if possible never lose the key (soft rule)",
+       "note": "4 → 3 states: clean, key lost, final. Clean finish still 1.45; lost key still −0.4 then 1.1.",
+       "items": [
+        {
+         "src": "graphs/goal_never_lose_key_soft.before.html",
+         "height": 420,
+         "caption": "Before: what the compiler wrote before the change",
+         "details": {
+          "title": "RM text",
+          "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&!key_lost) -> u1\n(u0, !at_goal&key_lost) -> u2\n(u0, at_goal&!key_lost) -> u3\n(u0, at_goal&key_lost) -> u3\n(u1, !at_goal&key_lost) -> u2\n(u1, at_goal&!key_lost) -> u3\n(u1, at_goal&key_lost) -> u3\n(u2, at_goal) -> u3\nREWARD_FUNCTION:\n(u0, !at_goal&key_lost, u2) -> -0.4\n(u0, at_goal&!key_lost, u3) -> 1.45\n(u0, at_goal&key_lost, u3) -> 0.7\n(u1, !at_goal&key_lost, u2) -> -0.4\n(u1, at_goal&!key_lost, u3) -> 1.45\n(u1, at_goal&key_lost, u3) -> 0.7\n(u2, at_goal, u3) -> 1.1"
+         }
+        },
+        {
+         "src": "graphs/goal_never_lose_key_soft.expected.html",
+         "height": 420,
+         "caption": "Expected: the same RM with the duplicate start removed",
+         "details": {
+          "title": "RM text",
+          "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&key_lost) -> u1\n(u0, at_goal&!key_lost) -> u2\n(u0, at_goal&key_lost) -> u2\n(u1, at_goal) -> u2\nREWARD_FUNCTION:\n(u0, !at_goal&key_lost, u1) -> -0.4\n(u0, at_goal&!key_lost, u2) -> 1.45\n(u0, at_goal&key_lost, u2) -> 0.7\n(u1, at_goal, u2) -> 1.1"
+         }
+        },
+        {
+         "src": "graphs/goal_never_lose_key_soft.got.html",
+         "height": 420,
+         "caption": "Got: what the compiler writes after the change",
+         "details": {
+          "title": "RM text",
+          "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&key_lost) -> u1\n(u0, at_goal&!key_lost) -> u2\n(u0, at_goal&key_lost) -> u2\n(u1, at_goal) -> u2\nREWARD_FUNCTION:\n(u0, !at_goal&key_lost, u1) -> -0.4\n(u0, at_goal&!key_lost, u2) -> 1.45\n(u0, at_goal&key_lost, u2) -> 0.7\n(u1, at_goal, u2) -> 1.1"
+         }
+        }
+       ]
+      },
+      {
+       "title": "Reach the goal; after the key, open the door (hard Response)",
+       "note": "5 → 4 states. At the goal with the door still owed, the episode still waits for the door.",
+       "items": [
+        {
+         "src": "graphs/goal_response_hard.before.html",
+         "height": 420,
+         "caption": "Before: what the compiler wrote before the change",
+         "details": {
+          "title": "RM text",
+          "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u3\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&!door_open&!has_key) -> u1\n(u0, !at_goal&!door_open&has_key) -> u2\n(u0, !at_goal&door_open) -> u1\n(u0, at_goal&!door_open&!has_key) -> u3\n(u0, at_goal&!door_open&has_key) -> u4\n(u0, at_goal&door_open) -> u3\n(u1, !at_goal&!door_open&has_key) -> u2\n(u1, at_goal&!door_open&!has_key) -> u3\n(u1, at_goal&!door_open&has_key) -> u4\n(u1, at_goal&door_open) -> u3\n(u2, !at_goal&door_open) -> u1\n(u2, at_goal&!door_open) -> u4\n(u2, at_goal&door_open) -> u3\n(u4, door_open) -> u3\nREWARD_FUNCTION:\n(u0, at_goal&!door_open&!has_key, u3) -> 1.2\n(u0, at_goal&!door_open&has_key, u4) -> 0.1\n(u0, at_goal&door_open, u3) -> 1.2\n(u1, at_goal&!door_open&!has_key, u3) -> 1.2\n(u1, at_goal&!door_open&has_key, u4) -> 0.1\n(u1, at_goal&door_open, u3) -> 1.2\n(u2, at_goal&!door_open, u4) -> 0.1\n(u2, at_goal&door_open, u3) -> 1.2\n(u4, door_open, u3) -> 1.1"
+         }
+        },
+        {
+         "src": "graphs/goal_response_hard.expected.html",
+         "height": 420,
+         "caption": "Expected: the same RM with the duplicate start removed",
+         "details": {
+          "title": "RM text",
+          "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&!door_open&has_key) -> u1\n(u0, at_goal&!door_open&!has_key) -> u2\n(u0, at_goal&!door_open&has_key) -> u3\n(u0, at_goal&door_open) -> u2\n(u1, !at_goal&door_open) -> u0\n(u1, at_goal&!door_open) -> u3\n(u1, at_goal&door_open) -> u2\n(u3, door_open) -> u2\nREWARD_FUNCTION:\n(u0, at_goal&!door_open&!has_key, u2) -> 1.2\n(u0, at_goal&!door_open&has_key, u3) -> 0.1\n(u0, at_goal&door_open, u2) -> 1.2\n(u1, at_goal&!door_open, u3) -> 0.1\n(u1, at_goal&door_open, u2) -> 1.2\n(u3, door_open, u2) -> 1.1"
+         }
+        },
+        {
+         "src": "graphs/goal_response_hard.got.html",
+         "height": 420,
+         "caption": "Got: what the compiler writes after the change",
+         "details": {
+          "title": "RM text",
+          "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&!door_open&has_key) -> u1\n(u0, at_goal&!door_open&!has_key) -> u2\n(u0, at_goal&!door_open&has_key) -> u3\n(u0, at_goal&door_open) -> u2\n(u1, !at_goal&door_open) -> u0\n(u1, at_goal&!door_open) -> u3\n(u1, at_goal&door_open) -> u2\n(u3, door_open) -> u2\nREWARD_FUNCTION:\n(u0, at_goal&!door_open&!has_key, u2) -> 1.2\n(u0, at_goal&!door_open&has_key, u3) -> 0.1\n(u0, at_goal&door_open, u2) -> 1.2\n(u1, at_goal&!door_open, u3) -> 0.1\n(u1, at_goal&door_open, u2) -> 1.2\n(u3, door_open, u2) -> 1.1"
+         }
+        }
+       ]
+      },
+      {
+       "title": "Reach the goal; door right after the key (hard ChainResponse)",
+       "note": "6 → 5 states, same rewards.",
+       "items": [
+        {
+         "src": "graphs/goal_chainresponse_hard.before.html",
+         "height": 420,
+         "caption": "Before: what the compiler wrote before the change",
+         "details": {
+          "title": "RM text",
+          "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5\nINITIAL_STATE: u0\nFINAL_STATES: u3\nREJECTING_STATES: u5\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&!has_key) -> u1\n(u0, !at_goal&has_key) -> u2\n(u0, at_goal&!has_key) -> u3\n(u0, at_goal&has_key) -> u4\n(u1, !at_goal&has_key) -> u2\n(u1, at_goal&!has_key) -> u3\n(u1, at_goal&has_key) -> u4\n(u2, !at_goal&!door_open) -> u5\n(u2, !at_goal&door_open&!has_key) -> u1\n(u2, at_goal&!door_open) -> u5\n(u2, at_goal&door_open&!has_key) -> u3\n(u2, at_goal&door_open&has_key) -> u4\n(u4, !door_open) -> u5\n(u4, door_open&!has_key) -> u3\nREWARD_FUNCTION:\n(u0, at_goal&!has_key, u3) -> 1.2\n(u0, at_goal&has_key, u4) -> 0.1\n(u1, at_goal&!has_key, u3) -> 1.2\n(u1, at_goal&has_key, u4) -> 0.1\n(u2, !at_goal&!door_open, u5) -> -1\n(u2, at_goal&!door_open, u5) -> -1\n(u2, at_goal&door_open&!has_key, u3) -> 1.2\n(u2, at_goal&door_open&has_key, u4) -> 0.1\n(u4, !door_open, u5) -> -1\n(u4, door_open&!has_key, u3) -> 1.1"
+         }
+        },
+        {
+         "src": "graphs/goal_chainresponse_hard.expected.html",
+         "height": 420,
+         "caption": "Expected: the same RM with the duplicate start removed",
+         "details": {
+          "title": "RM text",
+          "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u2\nREJECTING_STATES: u4\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&has_key) -> u1\n(u0, at_goal&!has_key) -> u2\n(u0, at_goal&has_key) -> u3\n(u1, !at_goal&!door_open) -> u4\n(u1, !at_goal&door_open&!has_key) -> u0\n(u1, at_goal&!door_open) -> u4\n(u1, at_goal&door_open&!has_key) -> u2\n(u1, at_goal&door_open&has_key) -> u3\n(u3, !door_open) -> u4\n(u3, door_open&!has_key) -> u2\nREWARD_FUNCTION:\n(u0, at_goal&!has_key, u2) -> 1.2\n(u0, at_goal&has_key, u3) -> 0.1\n(u1, !at_goal&!door_open, u4) -> -1\n(u1, at_goal&!door_open, u4) -> -1\n(u1, at_goal&door_open&!has_key, u2) -> 1.2\n(u1, at_goal&door_open&has_key, u3) -> 0.1\n(u3, !door_open, u4) -> -1\n(u3, door_open&!has_key, u2) -> 1.1"
+         }
+        },
+        {
+         "src": "graphs/goal_chainresponse_hard.got.html",
+         "height": 420,
+         "caption": "Got: what the compiler writes after the change",
+         "details": {
+          "title": "RM text",
+          "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u2\nREJECTING_STATES: u4\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&has_key) -> u1\n(u0, at_goal&!has_key) -> u2\n(u0, at_goal&has_key) -> u3\n(u1, !at_goal&!door_open) -> u4\n(u1, !at_goal&door_open&!has_key) -> u0\n(u1, at_goal&!door_open) -> u4\n(u1, at_goal&door_open&!has_key) -> u2\n(u1, at_goal&door_open&has_key) -> u3\n(u3, !door_open) -> u4\n(u3, door_open&!has_key) -> u2\nREWARD_FUNCTION:\n(u0, at_goal&!has_key, u2) -> 1.2\n(u0, at_goal&has_key, u3) -> 0.1\n(u1, !at_goal&!door_open, u4) -> -1\n(u1, at_goal&!door_open, u4) -> -1\n(u1, at_goal&door_open&!has_key, u2) -> 1.2\n(u1, at_goal&door_open&has_key, u3) -> 0.1\n(u3, !door_open, u4) -> -1\n(u3, door_open&!has_key, u2) -> 1.1"
+         }
+        }
+       ]
+      },
+      {
+       "title": "Get the key and open the door (two goals): no change",
+       "note": "Only goals, so the start already loops on an idle step; nothing to merge, 4 states before and after.",
+       "items": [
+        {
+         "src": "graphs/key_and_door.before.html",
+         "height": 420,
+         "caption": "Before: what the compiler wrote before the change",
+         "details": {
+          "title": "RM text",
+          "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&has_key) -> u1\n(u0, door_open&!has_key) -> u2\n(u0, door_open&has_key) -> u3\n(u1, door_open) -> u3\n(u2, has_key) -> u3\nREWARD_FUNCTION:\n(u0, !door_open&has_key, u1) -> 0.1\n(u0, door_open&!has_key, u2) -> 0.1\n(u0, door_open&has_key, u3) -> 1.2\n(u1, door_open, u3) -> 1.1\n(u2, has_key, u3) -> 1.1"
+         }
+        },
+        {
+         "src": "graphs/key_and_door.expected.html",
+         "height": 420,
+         "caption": "Expected: the same RM with the duplicate start removed",
+         "details": {
+          "title": "RM text",
+          "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&has_key) -> u1\n(u0, door_open&!has_key) -> u2\n(u0, door_open&has_key) -> u3\n(u1, door_open) -> u3\n(u2, has_key) -> u3\nREWARD_FUNCTION:\n(u0, !door_open&has_key, u1) -> 0.1\n(u0, door_open&!has_key, u2) -> 0.1\n(u0, door_open&has_key, u3) -> 1.2\n(u1, door_open, u3) -> 1.1\n(u2, has_key, u3) -> 1.1"
+         }
+        },
+        {
+         "src": "graphs/key_and_door.got.html",
+         "height": 420,
+         "caption": "Got: what the compiler writes after the change",
+         "details": {
+          "title": "RM text",
+          "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&has_key) -> u1\n(u0, door_open&!has_key) -> u2\n(u0, door_open&has_key) -> u3\n(u1, door_open) -> u3\n(u2, has_key) -> u3\nREWARD_FUNCTION:\n(u0, !door_open&has_key, u1) -> 0.1\n(u0, door_open&!has_key, u2) -> 0.1\n(u0, door_open&has_key, u3) -> 1.2\n(u1, door_open, u3) -> 1.1\n(u2, has_key, u3) -> 1.1"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "check",
+   "title": "How we check it",
+   "blocks": [
+    {
+     "type": "list",
+     "items": [
+      "**Expected RMs** are built from today's compiler output by removing the start when the rule above allows it (`check/start_merge_check.py expect`).",
+      "**The check** walks the expected RM and the new compiler RM side by side on every input from the start, pairing states one to one: same rewards, same final and well, same state count. One extra state, a changed reward, or a lost final fails it (tested on purpose).",
+      "**Also rerun:** the 253 reward-step checks (episode totals) and the unit tests."
+     ]
+    },
+    {
+     "type": "callout",
+     "tone": "ok",
+     "title": "25/25 RMs match the expected merge",
+     "text": "19 RMs lost exactly their duplicate start; the 6 goal-only RMs are unchanged. The 253 reward-step checks (every walk total) and 108 unit tests still pass."
+    },
+    {
+     "type": "details",
+     "items": [
+      {
+       "title": "Full check output",
+       "blocks": [
+        {
+         "type": "code",
+         "text": "PASS all_false_first_step: expected 4 states, got 4; same rewards and endings on every input\nPASS existence_two: expected 3 states, got 3; same rewards and endings on every input\nPASS existence_two_steps: expected 3 states, got 3; same rewards and endings on every input\nPASS goal_chainresponse_hard: expected 5 states, got 5; same rewards and endings on every input\nPASS goal_chainresponse_hard_walks: expected 5 states, got 5; same rewards and endings on every input\nPASS goal_chainresponse_soft: expected 4 states, got 4; same rewards and endings on every input\nPASS goal_never_lose_key_hard: expected 3 states, got 3; same rewards and endings on every input\nPASS goal_never_lose_key_soft: expected 3 states, got 3; same rewards and endings on every input\nPASS goal_notcoexistence_soft: expected 5 states, got 5; same rewards and endings on every input\nPASS goal_responded_existence_soft: expected 4 states, got 4; same rewards and endings on every input\nPASS goal_response_hard: expected 4 states, got 4; same rewards and endings on every input\nPASS goal_response_hard_walks: expected 4 states, got 4; same rewards and endings on every input\nPASS goal_response_soft: expected 3 states, got 3; same rewards and endings on every input\nPASS goal_response_soft_walks: expected 3 states, got 3; same rewards and endings on every input\nPASS key_and_door: expected 4 states, got 4; same rewards and endings on every input\nPASS key_before_door_hard: expected 4 states, got 4; same rewards and endings on every input\nPASS key_before_door_soft: expected 3 states, got 3; same rewards and endings on every input\nPASS not_coexistence_with_goal: expected 5 states, got 5; same rewards and endings on every input\nPASS precedence_alone: expected 3 states, got 3; same rewards and endings on every input\nPASS precedence_simultaneous: expected 4 states, got 4; same rewards and endings on every input\nPASS responded_existence_with_goal: expected 5 states, got 5; same rewards and endings on every input\nPASS rule_only_absence_hard: expected 2 states, got 2; same rewards and endings on every input\nPASS rule_only_absence_soft: expected 2 states, got 2; same rewards and endings on every input\nPASS soft_only_existence: expected 2 states, got 2; same rewards and endings on every input\nPASS soft_only_existence_two: expected 3 states, got 3; same rewards and endings on every input\n25/25 RMs match the expected merge"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

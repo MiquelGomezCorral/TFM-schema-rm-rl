@@ -31,3 +31,14 @@ Read this file before changing code in this repository.
 - V1 compiles reviewed natural-language instructions to Reward Machines, with optional MiniGrid
   labeling and local state embeddings.
 - The ARM-FM path additionally generates, runs, trains, and evaluates task bundles.
+
+## Paper Evidence
+
+- This project becomes a paper. `docs/paper/` keeps results worth citing: pages with visual
+  proof, measured results, figures, and the inputs and scripts that rerun them.
+  `docs/paper/README.md` lists every entry and explains how entries are added.
+- When work produces such a result (a before/after page, a decisive check, a number the paper
+  could quote), name it to the user as a paper candidate and ask before copying it there.
+  Pages under `.git/agent-memory/artifacts/` are working copies, not the record.
+- An entry is one folder that opens from disk on its own, plus a README note: what it shows, the
+  evidence, the files, how to rerun it, and the code or commit it refers to.

@@ -1,0 +1,1632 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Artifact</title>
+<!-- Page content lives only in this JSON block. Fill it with scripts/fill.py or edit it here. -->
+<script type="application/json" id="data">
+{
+  "eyebrow": "Compiler redesign · start-state merge · 2026-10-13",
+  "title": "Dropping the duplicate start state",
+  "subtitle": "Every RM with a rule clause starts in a state that only exists before the first step. It behaves exactly like the state an idle step leads to, so we drop it.",
+  "sections": [
+    {
+      "id": "what",
+      "title": "What changes",
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            "**Which RMs:** 19 of the 25 reward-step test RMs, every task with at least one rule clause (Absence, Precedence, Response, ChainResponse, RespondedExistence, NotCoExistence). Goal-only tasks are unchanged.",
+            "**The rule:** if the start is never re-entered and, on every input, goes to the same state with the same reward as its idle successor, the idle successor becomes the start and the old start is removed. Otherwise nothing changes.",
+            "**What stays the same:** every reward, every episode total, the well, the final. Only the state count and the state numbers change.",
+            "**What goes away:** the \"idle first step pays 0\" special case, and one near-duplicate state description and embedding per RM."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "examples",
+      "title": "Before, expected, got",
+      "intro": "Each graph is the web UI's own component (`render-rm --html`): drag a state, click an edge for its cases, Ctrl + scroll to zoom. Green edges pay, red cost, grey pay 0. Open \"RM text\" under a graph for the exact transitions.",
+      "blocks": [
+        {
+          "type": "gallery",
+          "width": 490,
+          "groups": [
+            {
+              "title": "Never lose the key (hard, rule only)",
+              "note": "3 → 2 states: the start and its idle twin become one safe state; losing the key still goes to the well (−1).",
+              "items": [
+                {
+                  "src": "graphs/rule_only_absence_hard.before.html",
+                  "height": 420,
+                  "caption": "Before: what the compiler wrote before the change",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: \nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !key_lost) -> u1\n(u0, key_lost) -> u2\n(u1, key_lost) -> u2\nREWARD_FUNCTION:\n(u0, key_lost, u2) -> -1\n(u1, key_lost, u2) -> -1"
+                  }
+                },
+                {
+                  "src": "graphs/rule_only_absence_hard.expected.html",
+                  "height": 420,
+                  "caption": "Expected: the same RM with the duplicate start removed",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES: \nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, key_lost) -> u1\nREWARD_FUNCTION:\n(u0, key_lost, u1) -> -1"
+                  }
+                },
+                {
+                  "src": "graphs/rule_only_absence_hard.got.html",
+                  "height": 420,
+                  "caption": "Got: what the compiler writes after the change",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES: \nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, key_lost) -> u1\nREWARD_FUNCTION:\n(u0, key_lost, u1) -> -1"
+                  }
+                }
+              ]
+            },
+            {
+              "title": "Open the door only after the key (hard)",
+              "note": "5 → 4 states: start, has key, well, final. Door first is still −1; key then door still 0.1 + 1.1.",
+              "items": [
+                {
+                  "src": "graphs/key_before_door_hard.before.html",
+                  "height": 420,
+                  "caption": "Before: what the compiler wrote before the change",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u4\nREJECTING_STATES: u3\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&!has_key) -> u1\n(u0, !door_open&has_key) -> u2\n(u0, door_open&!has_key) -> u3\n(u0, door_open&has_key) -> u4\n(u1, !door_open&has_key) -> u2\n(u1, door_open&!has_key) -> u3\n(u1, door_open&has_key) -> u4\n(u2, door_open) -> u4\nREWARD_FUNCTION:\n(u0, !door_open&has_key, u2) -> 0.1\n(u0, door_open&!has_key, u3) -> -1\n(u0, door_open&has_key, u4) -> 1.2\n(u1, !door_open&has_key, u2) -> 0.1\n(u1, door_open&!has_key, u3) -> -1\n(u1, door_open&has_key, u4) -> 1.2\n(u2, door_open, u4) -> 1.1"
+                  }
+                },
+                {
+                  "src": "graphs/key_before_door_hard.expected.html",
+                  "height": 420,
+                  "caption": "Expected: the same RM with the duplicate start removed",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&has_key) -> u1\n(u0, door_open&!has_key) -> u2\n(u0, door_open&has_key) -> u3\n(u1, door_open) -> u3\nREWARD_FUNCTION:\n(u0, !door_open&has_key, u1) -> 0.1\n(u0, door_open&!has_key, u2) -> -1\n(u0, door_open&has_key, u3) -> 1.2\n(u1, door_open, u3) -> 1.1"
+                  }
+                },
+                {
+                  "src": "graphs/key_before_door_hard.got.html",
+                  "height": 420,
+                  "caption": "Got: what the compiler writes after the change",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&has_key) -> u1\n(u0, door_open&!has_key) -> u2\n(u0, door_open&has_key) -> u3\n(u1, door_open) -> u3\nREWARD_FUNCTION:\n(u0, !door_open&has_key, u1) -> 0.1\n(u0, door_open&!has_key, u2) -> -1\n(u0, door_open&has_key, u3) -> 1.2\n(u1, door_open, u3) -> 1.1"
+                  }
+                }
+              ]
+            },
+            {
+              "title": "Reach the goal, if possible never lose the key (soft rule)",
+              "note": "4 → 3 states: clean, key lost, final. Clean finish still 1.45; lost key still −0.4 then 1.1.",
+              "items": [
+                {
+                  "src": "graphs/goal_never_lose_key_soft.before.html",
+                  "height": 420,
+                  "caption": "Before: what the compiler wrote before the change",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&!key_lost) -> u1\n(u0, !at_goal&key_lost) -> u2\n(u0, at_goal&!key_lost) -> u3\n(u0, at_goal&key_lost) -> u3\n(u1, !at_goal&key_lost) -> u2\n(u1, at_goal&!key_lost) -> u3\n(u1, at_goal&key_lost) -> u3\n(u2, at_goal) -> u3\nREWARD_FUNCTION:\n(u0, !at_goal&key_lost, u2) -> -0.4\n(u0, at_goal&!key_lost, u3) -> 1.45\n(u0, at_goal&key_lost, u3) -> 0.7\n(u1, !at_goal&key_lost, u2) -> -0.4\n(u1, at_goal&!key_lost, u3) -> 1.45\n(u1, at_goal&key_lost, u3) -> 0.7\n(u2, at_goal, u3) -> 1.1"
+                  }
+                },
+                {
+                  "src": "graphs/goal_never_lose_key_soft.expected.html",
+                  "height": 420,
+                  "caption": "Expected: the same RM with the duplicate start removed",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&key_lost) -> u1\n(u0, at_goal&!key_lost) -> u2\n(u0, at_goal&key_lost) -> u2\n(u1, at_goal) -> u2\nREWARD_FUNCTION:\n(u0, !at_goal&key_lost, u1) -> -0.4\n(u0, at_goal&!key_lost, u2) -> 1.45\n(u0, at_goal&key_lost, u2) -> 0.7\n(u1, at_goal, u2) -> 1.1"
+                  }
+                },
+                {
+                  "src": "graphs/goal_never_lose_key_soft.got.html",
+                  "height": 420,
+                  "caption": "Got: what the compiler writes after the change",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&key_lost) -> u1\n(u0, at_goal&!key_lost) -> u2\n(u0, at_goal&key_lost) -> u2\n(u1, at_goal) -> u2\nREWARD_FUNCTION:\n(u0, !at_goal&key_lost, u1) -> -0.4\n(u0, at_goal&!key_lost, u2) -> 1.45\n(u0, at_goal&key_lost, u2) -> 0.7\n(u1, at_goal, u2) -> 1.1"
+                  }
+                }
+              ]
+            },
+            {
+              "title": "Reach the goal; after the key, open the door (hard Response)",
+              "note": "5 → 4 states. At the goal with the door still owed, the episode still waits for the door.",
+              "items": [
+                {
+                  "src": "graphs/goal_response_hard.before.html",
+                  "height": 420,
+                  "caption": "Before: what the compiler wrote before the change",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u3\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&!door_open&!has_key) -> u1\n(u0, !at_goal&!door_open&has_key) -> u2\n(u0, !at_goal&door_open) -> u1\n(u0, at_goal&!door_open&!has_key) -> u3\n(u0, at_goal&!door_open&has_key) -> u4\n(u0, at_goal&door_open) -> u3\n(u1, !at_goal&!door_open&has_key) -> u2\n(u1, at_goal&!door_open&!has_key) -> u3\n(u1, at_goal&!door_open&has_key) -> u4\n(u1, at_goal&door_open) -> u3\n(u2, !at_goal&door_open) -> u1\n(u2, at_goal&!door_open) -> u4\n(u2, at_goal&door_open) -> u3\n(u4, door_open) -> u3\nREWARD_FUNCTION:\n(u0, at_goal&!door_open&!has_key, u3) -> 1.2\n(u0, at_goal&!door_open&has_key, u4) -> 0.1\n(u0, at_goal&door_open, u3) -> 1.2\n(u1, at_goal&!door_open&!has_key, u3) -> 1.2\n(u1, at_goal&!door_open&has_key, u4) -> 0.1\n(u1, at_goal&door_open, u3) -> 1.2\n(u2, at_goal&!door_open, u4) -> 0.1\n(u2, at_goal&door_open, u3) -> 1.2\n(u4, door_open, u3) -> 1.1"
+                  }
+                },
+                {
+                  "src": "graphs/goal_response_hard.expected.html",
+                  "height": 420,
+                  "caption": "Expected: the same RM with the duplicate start removed",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&!door_open&has_key) -> u1\n(u0, at_goal&!door_open&!has_key) -> u2\n(u0, at_goal&!door_open&has_key) -> u3\n(u0, at_goal&door_open) -> u2\n(u1, !at_goal&door_open) -> u0\n(u1, at_goal&!door_open) -> u3\n(u1, at_goal&door_open) -> u2\n(u3, door_open) -> u2\nREWARD_FUNCTION:\n(u0, at_goal&!door_open&!has_key, u2) -> 1.2\n(u0, at_goal&!door_open&has_key, u3) -> 0.1\n(u0, at_goal&door_open, u2) -> 1.2\n(u1, at_goal&!door_open, u3) -> 0.1\n(u1, at_goal&door_open, u2) -> 1.2\n(u3, door_open, u2) -> 1.1"
+                  }
+                },
+                {
+                  "src": "graphs/goal_response_hard.got.html",
+                  "height": 420,
+                  "caption": "Got: what the compiler writes after the change",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&!door_open&has_key) -> u1\n(u0, at_goal&!door_open&!has_key) -> u2\n(u0, at_goal&!door_open&has_key) -> u3\n(u0, at_goal&door_open) -> u2\n(u1, !at_goal&door_open) -> u0\n(u1, at_goal&!door_open) -> u3\n(u1, at_goal&door_open) -> u2\n(u3, door_open) -> u2\nREWARD_FUNCTION:\n(u0, at_goal&!door_open&!has_key, u2) -> 1.2\n(u0, at_goal&!door_open&has_key, u3) -> 0.1\n(u0, at_goal&door_open, u2) -> 1.2\n(u1, at_goal&!door_open, u3) -> 0.1\n(u1, at_goal&door_open, u2) -> 1.2\n(u3, door_open, u2) -> 1.1"
+                  }
+                }
+              ]
+            },
+            {
+              "title": "Reach the goal; door right after the key (hard ChainResponse)",
+              "note": "6 → 5 states, same rewards.",
+              "items": [
+                {
+                  "src": "graphs/goal_chainresponse_hard.before.html",
+                  "height": 420,
+                  "caption": "Before: what the compiler wrote before the change",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5\nINITIAL_STATE: u0\nFINAL_STATES: u3\nREJECTING_STATES: u5\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&!has_key) -> u1\n(u0, !at_goal&has_key) -> u2\n(u0, at_goal&!has_key) -> u3\n(u0, at_goal&has_key) -> u4\n(u1, !at_goal&has_key) -> u2\n(u1, at_goal&!has_key) -> u3\n(u1, at_goal&has_key) -> u4\n(u2, !at_goal&!door_open) -> u5\n(u2, !at_goal&door_open&!has_key) -> u1\n(u2, at_goal&!door_open) -> u5\n(u2, at_goal&door_open&!has_key) -> u3\n(u2, at_goal&door_open&has_key) -> u4\n(u4, !door_open) -> u5\n(u4, door_open&!has_key) -> u3\nREWARD_FUNCTION:\n(u0, at_goal&!has_key, u3) -> 1.2\n(u0, at_goal&has_key, u4) -> 0.1\n(u1, at_goal&!has_key, u3) -> 1.2\n(u1, at_goal&has_key, u4) -> 0.1\n(u2, !at_goal&!door_open, u5) -> -1\n(u2, at_goal&!door_open, u5) -> -1\n(u2, at_goal&door_open&!has_key, u3) -> 1.2\n(u2, at_goal&door_open&has_key, u4) -> 0.1\n(u4, !door_open, u5) -> -1\n(u4, door_open&!has_key, u3) -> 1.1"
+                  }
+                },
+                {
+                  "src": "graphs/goal_chainresponse_hard.expected.html",
+                  "height": 420,
+                  "caption": "Expected: the same RM with the duplicate start removed",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u2\nREJECTING_STATES: u4\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&has_key) -> u1\n(u0, at_goal&!has_key) -> u2\n(u0, at_goal&has_key) -> u3\n(u1, !at_goal&!door_open) -> u4\n(u1, !at_goal&door_open&!has_key) -> u0\n(u1, at_goal&!door_open) -> u4\n(u1, at_goal&door_open&!has_key) -> u2\n(u1, at_goal&door_open&has_key) -> u3\n(u3, !door_open) -> u4\n(u3, door_open&!has_key) -> u2\nREWARD_FUNCTION:\n(u0, at_goal&!has_key, u2) -> 1.2\n(u0, at_goal&has_key, u3) -> 0.1\n(u1, !at_goal&!door_open, u4) -> -1\n(u1, at_goal&!door_open, u4) -> -1\n(u1, at_goal&door_open&!has_key, u2) -> 1.2\n(u1, at_goal&door_open&has_key, u3) -> 0.1\n(u3, !door_open, u4) -> -1\n(u3, door_open&!has_key, u2) -> 1.1"
+                  }
+                },
+                {
+                  "src": "graphs/goal_chainresponse_hard.got.html",
+                  "height": 420,
+                  "caption": "Got: what the compiler writes after the change",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u2\nREJECTING_STATES: u4\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&has_key) -> u1\n(u0, at_goal&!has_key) -> u2\n(u0, at_goal&has_key) -> u3\n(u1, !at_goal&!door_open) -> u4\n(u1, !at_goal&door_open&!has_key) -> u0\n(u1, at_goal&!door_open) -> u4\n(u1, at_goal&door_open&!has_key) -> u2\n(u1, at_goal&door_open&has_key) -> u3\n(u3, !door_open) -> u4\n(u3, door_open&!has_key) -> u2\nREWARD_FUNCTION:\n(u0, at_goal&!has_key, u2) -> 1.2\n(u0, at_goal&has_key, u3) -> 0.1\n(u1, !at_goal&!door_open, u4) -> -1\n(u1, at_goal&!door_open, u4) -> -1\n(u1, at_goal&door_open&!has_key, u2) -> 1.2\n(u1, at_goal&door_open&has_key, u3) -> 0.1\n(u3, !door_open, u4) -> -1\n(u3, door_open&!has_key, u2) -> 1.1"
+                  }
+                }
+              ]
+            },
+            {
+              "title": "Get the key and open the door (two goals): no change",
+              "note": "Only goals, so the start already loops on an idle step; nothing to merge, 4 states before and after.",
+              "items": [
+                {
+                  "src": "graphs/key_and_door.before.html",
+                  "height": 420,
+                  "caption": "Before: what the compiler wrote before the change",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&has_key) -> u1\n(u0, door_open&!has_key) -> u2\n(u0, door_open&has_key) -> u3\n(u1, door_open) -> u3\n(u2, has_key) -> u3\nREWARD_FUNCTION:\n(u0, !door_open&has_key, u1) -> 0.1\n(u0, door_open&!has_key, u2) -> 0.1\n(u0, door_open&has_key, u3) -> 1.2\n(u1, door_open, u3) -> 1.1\n(u2, has_key, u3) -> 1.1"
+                  }
+                },
+                {
+                  "src": "graphs/key_and_door.expected.html",
+                  "height": 420,
+                  "caption": "Expected: the same RM with the duplicate start removed",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&has_key) -> u1\n(u0, door_open&!has_key) -> u2\n(u0, door_open&has_key) -> u3\n(u1, door_open) -> u3\n(u2, has_key) -> u3\nREWARD_FUNCTION:\n(u0, !door_open&has_key, u1) -> 0.1\n(u0, door_open&!has_key, u2) -> 0.1\n(u0, door_open&has_key, u3) -> 1.2\n(u1, door_open, u3) -> 1.1\n(u2, has_key, u3) -> 1.1"
+                  }
+                },
+                {
+                  "src": "graphs/key_and_door.got.html",
+                  "height": 420,
+                  "caption": "Got: what the compiler writes after the change",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&has_key) -> u1\n(u0, door_open&!has_key) -> u2\n(u0, door_open&has_key) -> u3\n(u1, door_open) -> u3\n(u2, has_key) -> u3\nREWARD_FUNCTION:\n(u0, !door_open&has_key, u1) -> 0.1\n(u0, door_open&!has_key, u2) -> 0.1\n(u0, door_open&has_key, u3) -> 1.2\n(u1, door_open, u3) -> 1.1\n(u2, has_key, u3) -> 1.1"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "check",
+      "title": "How we check it",
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            "**Expected RMs** are built from today's compiler output by removing the start when the rule above allows it (`check/start_merge_check.py expect`).",
+            "**The check** walks the expected RM and the new compiler RM side by side on every input from the start, pairing states one to one: same rewards, same final and well, same state count. One extra state, a changed reward, or a lost final fails it (tested on purpose).",
+            "**Also rerun:** the 253 reward-step checks (episode totals) and the unit tests."
+          ]
+        },
+        {
+          "type": "callout",
+          "tone": "ok",
+          "title": "25/25 RMs match the expected merge",
+          "text": "19 RMs lost exactly their duplicate start; the 6 goal-only RMs are unchanged. The 253 reward-step checks (every walk total) and 108 unit tests still pass."
+        },
+        {
+          "type": "details",
+          "items": [
+            {
+              "title": "Full check output",
+              "blocks": [
+                {
+                  "type": "code",
+                  "text": "PASS all_false_first_step: expected 4 states, got 4; same rewards and endings on every input\nPASS existence_two: expected 3 states, got 3; same rewards and endings on every input\nPASS existence_two_steps: expected 3 states, got 3; same rewards and endings on every input\nPASS goal_chainresponse_hard: expected 5 states, got 5; same rewards and endings on every input\nPASS goal_chainresponse_hard_walks: expected 5 states, got 5; same rewards and endings on every input\nPASS goal_chainresponse_soft: expected 4 states, got 4; same rewards and endings on every input\nPASS goal_never_lose_key_hard: expected 3 states, got 3; same rewards and endings on every input\nPASS goal_never_lose_key_soft: expected 3 states, got 3; same rewards and endings on every input\nPASS goal_notcoexistence_soft: expected 5 states, got 5; same rewards and endings on every input\nPASS goal_responded_existence_soft: expected 4 states, got 4; same rewards and endings on every input\nPASS goal_response_hard: expected 4 states, got 4; same rewards and endings on every input\nPASS goal_response_hard_walks: expected 4 states, got 4; same rewards and endings on every input\nPASS goal_response_soft: expected 3 states, got 3; same rewards and endings on every input\nPASS goal_response_soft_walks: expected 3 states, got 3; same rewards and endings on every input\nPASS key_and_door: expected 4 states, got 4; same rewards and endings on every input\nPASS key_before_door_hard: expected 4 states, got 4; same rewards and endings on every input\nPASS key_before_door_soft: expected 3 states, got 3; same rewards and endings on every input\nPASS not_coexistence_with_goal: expected 5 states, got 5; same rewards and endings on every input\nPASS precedence_alone: expected 3 states, got 3; same rewards and endings on every input\nPASS precedence_simultaneous: expected 4 states, got 4; same rewards and endings on every input\nPASS responded_existence_with_goal: expected 5 states, got 5; same rewards and endings on every input\nPASS rule_only_absence_hard: expected 2 states, got 2; same rewards and endings on every input\nPASS rule_only_absence_soft: expected 2 states, got 2; same rewards and endings on every input\nPASS soft_only_existence: expected 2 states, got 2; same rewards and endings on every input\nPASS soft_only_existence_two: expected 3 states, got 3; same rewards and endings on every input\n25/25 RMs match the expected merge"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "version": 1
+}
+</script>
+<!-- Icon catalog from ../icons.json; fill.py copies it in. -->
+<script type="application/json" id="icons">
+{
+  "file-text": {
+    "label": "Document",
+    "category": "Code",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\"/>\u003cpath d=\"M14 2v5a1 1 0 0 0 1 1h5\"/>\u003cpath d=\"M10 9H8\"/>\u003cpath d=\"M16 13H8\"/>\u003cpath d=\"M16 17H8\"/>\u003c/svg>"
+  },
+  "users": {
+    "label": "People",
+    "category": "People and access",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"/>\u003cpath d=\"M16 3.128a4 4 0 0 1 0 7.744\"/>\u003cpath d=\"M22 21v-2a4 4 0 0 0-3-3.87\"/>\u003ccircle cx=\"9\" cy=\"7\" r=\"4\"/>\u003c/svg>"
+  },
+  "panels-top-left": {
+    "label": "User interface",
+    "category": "Systems",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003crect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/>\u003cpath d=\"M3 9h18\"/>\u003cpath d=\"M9 21V9\"/>\u003c/svg>"
+  },
+  "server": {
+    "label": "System",
+    "category": "Systems",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003crect width=\"20\" height=\"8\" x=\"2\" y=\"2\" rx=\"2\" ry=\"2\"/>\u003crect width=\"20\" height=\"8\" x=\"2\" y=\"14\" rx=\"2\" ry=\"2\"/>\u003cline x1=\"6\" x2=\"6.01\" y1=\"6\" y2=\"6\"/>\u003cline x1=\"6\" x2=\"6.01\" y1=\"18\" y2=\"18\"/>\u003c/svg>"
+  },
+  "database": {
+    "label": "Data",
+    "category": "Data and results",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cellipse cx=\"12\" cy=\"5\" rx=\"9\" ry=\"3\"/>\u003cpath d=\"M3 5V19A9 3 0 0 0 21 19V5\"/>\u003cpath d=\"M3 12A9 3 0 0 0 21 12\"/>\u003c/svg>"
+  },
+  "workflow": {
+    "label": "Workflow",
+    "category": "Plans and work",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003crect width=\"8\" height=\"8\" x=\"3\" y=\"3\" rx=\"2\"/>\u003cpath d=\"M7 11v4a2 2 0 0 0 2 2h4\"/>\u003crect width=\"8\" height=\"8\" x=\"13\" y=\"13\" rx=\"2\"/>\u003c/svg>"
+  },
+  "git-branch": {
+    "label": "Branching flow",
+    "category": "Code",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M15 6a9 9 0 0 0-9 9V3\"/>\u003ccircle cx=\"18\" cy=\"6\" r=\"3\"/>\u003ccircle cx=\"6\" cy=\"18\" r=\"3\"/>\u003c/svg>"
+  },
+  "network": {
+    "label": "Network",
+    "category": "Systems",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003crect x=\"16\" y=\"16\" width=\"6\" height=\"6\" rx=\"1\"/>\u003crect x=\"2\" y=\"16\" width=\"6\" height=\"6\" rx=\"1\"/>\u003crect x=\"9\" y=\"2\" width=\"6\" height=\"6\" rx=\"1\"/>\u003cpath d=\"M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3\"/>\u003cpath d=\"M12 12V8\"/>\u003c/svg>"
+  },
+  "circle-check": {
+    "label": "Success status",
+    "category": "Status",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003ccircle cx=\"12\" cy=\"12\" r=\"10\"/>\u003cpath d=\"m16 9-5.5 5.5L8 12\"/>\u003c/svg>"
+  },
+  "triangle-alert": {
+    "label": "Risk status",
+    "category": "Status",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\"/>\u003cpath d=\"M12 9v4\"/>\u003cpath d=\"M12 17h.01\"/>\u003c/svg>"
+  },
+  "shield-check": {
+    "label": "Security",
+    "category": "People and access",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\"/>\u003cpath d=\"m9 12 2 2 4-4\"/>\u003c/svg>"
+  },
+  "clipboard-list": {
+    "label": "Plan",
+    "category": "Plans and work",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003crect width=\"8\" height=\"4\" x=\"8\" y=\"2\" rx=\"1\" ry=\"1\"/>\u003cpath d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\"/>\u003cpath d=\"M12 11h4\"/>\u003cpath d=\"M12 16h4\"/>\u003cpath d=\"M8 11h.01\"/>\u003cpath d=\"M8 16h.01\"/>\u003c/svg>"
+  },
+  "circle-x": {
+    "label": "Failed status",
+    "category": "Status",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003ccircle cx=\"12\" cy=\"12\" r=\"10\"/>\u003cpath d=\"m15 9-6 6\"/>\u003cpath d=\"m9 9 6 6\"/>\u003c/svg>"
+  },
+  "loader-circle": {
+    "label": "Running status",
+    "category": "Status",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M21 12a9 9 0 1 1-6.219-8.56\"/>\u003c/svg>"
+  },
+  "circle-dashed": {
+    "label": "Not started status",
+    "category": "Status",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M10.1 2.182a10 10 0 0 1 3.8 0\"/>\u003cpath d=\"M13.9 21.818a10 10 0 0 1-3.8 0\"/>\u003cpath d=\"M17.609 3.721a10 10 0 0 1 2.69 2.7\"/>\u003cpath d=\"M2.182 13.9a10 10 0 0 1 0-3.8\"/>\u003cpath d=\"M20.279 17.609a10 10 0 0 1-2.7 2.69\"/>\u003cpath d=\"M21.818 10.1a10 10 0 0 1 0 3.8\"/>\u003cpath d=\"M3.721 6.391a10 10 0 0 1 2.7-2.69\"/>\u003cpath d=\"M6.391 20.279a10 10 0 0 1-2.69-2.7\"/>\u003c/svg>"
+  },
+  "flask-conical": {
+    "label": "Experiment",
+    "category": "Data and results",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2\"/>\u003cpath d=\"M8.5 2h7\"/>\u003cpath d=\"M7 16h10\"/>\u003c/svg>"
+  },
+  "chart-line": {
+    "label": "Plots and trends",
+    "category": "Data and results",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M3 3v16a2 2 0 0 0 2 2h16\"/>\u003cpath d=\"m19 9-5 5-4-4-3 3\"/>\u003c/svg>"
+  },
+  "images": {
+    "label": "Images and GIFs",
+    "category": "Data and results",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M18 22H4a2 2 0 0 1-2-2V6\"/>\u003cpath d=\"m22 13-1.296-1.296a2.41 2.41 0 0 0-3.408 0L11 18\"/>\u003ccircle cx=\"12\" cy=\"8\" r=\"2\"/>\u003crect width=\"16\" height=\"16\" x=\"6\" y=\"2\" rx=\"2\"/>\u003c/svg>"
+  },
+  "info": {
+    "label": "Notes and context",
+    "category": "Status",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003ccircle cx=\"12\" cy=\"12\" r=\"10\"/>\u003cpath d=\"M12 16v-4\"/>\u003cpath d=\"M12 8h.01\"/>\u003c/svg>"
+  },
+  "play": {
+    "label": "Playback or a video",
+    "category": "Messages and media",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpolygon points=\"6 3 20 12 6 21 6 3\"/>\u003c/svg>"
+  },
+  "eye": {
+    "label": "Visible, shown, read",
+    "category": "People and access",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0\"/>\u003ccircle cx=\"12\" cy=\"12\" r=\"3\"/>\u003c/svg>"
+  },
+  "eye-off": {
+    "label": "Hidden, not shown",
+    "category": "People and access",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49\"/>\u003cpath d=\"M14.084 14.158a3 3 0 0 1-4.242-4.242\"/>\u003cpath d=\"M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143\"/>\u003cpath d=\"m2 2 20 20\"/>\u003c/svg>"
+  },
+  "tag": {
+    "label": "Name, label",
+    "category": "People and access",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z\"/>\u003ccircle cx=\"7.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\"/>\u003c/svg>"
+  },
+  "circle-alert": {
+    "label": "Partial, needs attention",
+    "category": "Status",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003ccircle cx=\"12\" cy=\"12\" r=\"10\"/>\u003cline x1=\"12\" x2=\"12\" y1=\"8\" y2=\"12\"/>\u003cline x1=\"12\" x2=\"12.01\" y1=\"16\" y2=\"16\"/>\u003c/svg>"
+  },
+  "package": {
+    "label": "Bundle, package, release",
+    "category": "Code",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z\"/>\u003cpath d=\"M12 22V12\"/>\u003cpath d=\"m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7\"/>\u003cpath d=\"m7.5 4.27 9 5.15\"/>\u003c/svg>"
+  },
+  "package-x": {
+    "label": "Missing or lost bundle",
+    "category": "Code",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14\"/>\u003cpath d=\"m7.5 4.27 9 5.15\"/>\u003cpolyline points=\"3.29 7 12 12 20.71 7\"/>\u003cline x1=\"12\" x2=\"12\" y1=\"22\" y2=\"12\"/>\u003cpath d=\"m17 13 5 5m-5 0 5-5\"/>\u003c/svg>"
+  },
+  "brain": {
+    "label": "Model reasoning, memory",
+    "category": "People and access",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z\"/>\u003cpath d=\"M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z\"/>\u003cpath d=\"M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4\"/>\u003cpath d=\"M17.599 6.5a3 3 0 0 0 .399-1.375\"/>\u003cpath d=\"M6.003 5.125A3 3 0 0 0 6.401 6.5\"/>\u003cpath d=\"M3.477 10.896a4 4 0 0 1 .585-.396\"/>\u003cpath d=\"M19.938 10.5a4 4 0 0 1 .585.396\"/>\u003cpath d=\"M6 18a4 4 0 0 1-1.967-.516\"/>\u003cpath d=\"M19.967 17.484A4 4 0 0 1 18 18\"/>\u003c/svg>"
+  },
+  "history": {
+    "label": "Earlier version, before",
+    "category": "Changes",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\"/>\u003cpath d=\"M3 3v5h5\"/>\u003cpath d=\"M12 7v5l4 2\"/>\u003c/svg>"
+  },
+  "search": {
+    "label": "Search, find",
+    "category": "Data and results",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003ccircle cx=\"11\" cy=\"11\" r=\"8\"/>\u003cpath d=\"m21 21-4.3-4.3\"/>\u003c/svg>"
+  },
+  "list": {
+    "label": "List",
+    "category": "Plans and work",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M3 12h.01\"/>\u003cpath d=\"M3 18h.01\"/>\u003cpath d=\"M3 6h.01\"/>\u003cpath d=\"M8 12h13\"/>\u003cpath d=\"M8 18h13\"/>\u003cpath d=\"M8 6h13\"/>\u003c/svg>"
+  },
+  "message-square-text": {
+    "label": "Message, prompt, note",
+    "category": "Messages and media",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z\"/>\u003cpath d=\"M13 8H7\"/>\u003cpath d=\"M17 12H7\"/>\u003c/svg>"
+  },
+  "file-code": {
+    "label": "Source file, code",
+    "category": "Code",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M10 12.5 8 15l2 2.5\"/>\u003cpath d=\"m14 12.5 2 2.5-2 2.5\"/>\u003cpath d=\"M14 2v4a2 2 0 0 0 2 2h4\"/>\u003cpath d=\"M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z\"/>\u003c/svg>"
+  },
+  "ban": {
+    "label": "Out of scope, not allowed",
+    "category": "Decisions and goals",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003ccircle cx=\"12\" cy=\"12\" r=\"10\"/>\u003cpath d=\"m4.9 4.9 14.2 14.2\"/>\u003c/svg>"
+  },
+  "circle-help": {
+    "label": "Question, FAQ",
+    "category": "Status",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003ccircle cx=\"12\" cy=\"12\" r=\"10\"/>\u003cpath d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\"/>\u003cpath d=\"M12 17h.01\"/>\u003c/svg>"
+  },
+  "scale": {
+    "label": "Decision, trade-off",
+    "category": "Decisions and goals",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z\"/>\u003cpath d=\"m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z\"/>\u003cpath d=\"M7 21h10\"/>\u003cpath d=\"M12 3v18\"/>\u003cpath d=\"M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2\"/>\u003c/svg>"
+  },
+  "thumbs-up": {
+    "label": "Adopted, approved",
+    "category": "Decisions and goals",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M7 10v12\"/>\u003cpath d=\"M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z\"/>\u003c/svg>"
+  },
+  "thumbs-down": {
+    "label": "Rejected, not adopted",
+    "category": "Decisions and goals",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M17 14V2\"/>\u003cpath d=\"M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z\"/>\u003c/svg>"
+  },
+  "list-checks": {
+    "label": "Requirements, checklist",
+    "category": "Plans and work",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"m3 17 2 2 4-4\"/>\u003cpath d=\"m3 7 2 2 4-4\"/>\u003cpath d=\"M13 6h8\"/>\u003cpath d=\"M13 12h8\"/>\u003cpath d=\"M13 18h8\"/>\u003c/svg>"
+  },
+  "clipboard-check": {
+    "label": "Readiness check, verified",
+    "category": "Plans and work",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003crect width=\"8\" height=\"4\" x=\"8\" y=\"2\" rx=\"1\" ry=\"1\"/>\u003cpath d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\"/>\u003cpath d=\"m9 14 2 2 4-4\"/>\u003c/svg>"
+  },
+  "list-ordered": {
+    "label": "Ordered steps",
+    "category": "Plans and work",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M10 12h11\"/>\u003cpath d=\"M10 18h11\"/>\u003cpath d=\"M10 6h11\"/>\u003cpath d=\"M4 10h2\"/>\u003cpath d=\"M4 6h1v4\"/>\u003cpath d=\"M6 18H4c0-1 2-2 2-3s-1-1.5-2-1\"/>\u003c/svg>"
+  },
+  "target": {
+    "label": "Goal, target",
+    "category": "Decisions and goals",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003ccircle cx=\"12\" cy=\"12\" r=\"10\"/>\u003ccircle cx=\"12\" cy=\"12\" r=\"6\"/>\u003ccircle cx=\"12\" cy=\"12\" r=\"2\"/>\u003c/svg>"
+  },
+  "book-open": {
+    "label": "Context, guide, reading",
+    "category": "Plans and work",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M12 7v14\"/>\u003cpath d=\"M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z\"/>\u003c/svg>"
+  },
+  "files": {
+    "label": "Files touched",
+    "category": "Code",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M20 7h-3a2 2 0 0 1-2-2V2\"/>\u003cpath d=\"M9 18a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h7l4 4v10a2 2 0 0 1-2 2Z\"/>\u003cpath d=\"M3 7.6v12.8A1.6 1.6 0 0 0 4.6 22h9.8\"/>\u003c/svg>"
+  },
+  "folder": {
+    "label": "Folder, directory",
+    "category": "Code",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z\"/>\u003c/svg>"
+  },
+  "terminal": {
+    "label": "Command, output, logs",
+    "category": "Code",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpolyline points=\"4 17 10 11 4 5\"/>\u003cline x1=\"12\" x2=\"20\" y1=\"19\" y2=\"19\"/>\u003c/svg>"
+  },
+  "sigma": {
+    "label": "Formula, math",
+    "category": "Data and results",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M18 7V5a1 1 0 0 0-1-1H6.5a.5.5 0 0 0-.4.8l4.5 6a2 2 0 0 1 0 2.4l-4.5 6a.5.5 0 0 0 .4.8H17a1 1 0 0 0 1-1v-2\"/>\u003c/svg>"
+  },
+  "settings": {
+    "label": "Settings, configuration",
+    "category": "Code",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z\"/>\u003ccircle cx=\"12\" cy=\"12\" r=\"3\"/>\u003c/svg>"
+  },
+  "sliders-horizontal": {
+    "label": "Parameters, tuning",
+    "category": "Code",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cline x1=\"21\" x2=\"14\" y1=\"4\" y2=\"4\"/>\u003cline x1=\"10\" x2=\"3\" y1=\"4\" y2=\"4\"/>\u003cline x1=\"21\" x2=\"12\" y1=\"12\" y2=\"12\"/>\u003cline x1=\"8\" x2=\"3\" y1=\"12\" y2=\"12\"/>\u003cline x1=\"21\" x2=\"16\" y1=\"20\" y2=\"20\"/>\u003cline x1=\"12\" x2=\"3\" y1=\"20\" y2=\"20\"/>\u003cline x1=\"14\" x2=\"14\" y1=\"2\" y2=\"6\"/>\u003cline x1=\"8\" x2=\"8\" y1=\"10\" y2=\"14\"/>\u003cline x1=\"16\" x2=\"16\" y1=\"18\" y2=\"22\"/>\u003c/svg>"
+  },
+  "wrench": {
+    "label": "Fix, repair",
+    "category": "Code",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z\"/>\u003c/svg>"
+  },
+  "bug": {
+    "label": "Bug, crash",
+    "category": "Code",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"m8 2 1.88 1.88\"/>\u003cpath d=\"M14.12 3.88 16 2\"/>\u003cpath d=\"M9 7.13v-1a3.003 3.003 0 1 1 6 0v1\"/>\u003cpath d=\"M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6\"/>\u003cpath d=\"M12 20v-9\"/>\u003cpath d=\"M6.53 9C4.6 8.8 3 7.1 3 5\"/>\u003cpath d=\"M6 13H2\"/>\u003cpath d=\"M3 21c0-2.1 1.7-3.9 3.8-4\"/>\u003cpath d=\"M20.97 5c0 2.1-1.6 3.8-3.5 4\"/>\u003cpath d=\"M22 13h-4\"/>\u003cpath d=\"M17.2 17c2.1.1 3.8 1.9 3.8 4\"/>\u003c/svg>"
+  },
+  "git-pull-request": {
+    "label": "Pull request",
+    "category": "Code",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003ccircle cx=\"18\" cy=\"18\" r=\"3\"/>\u003ccircle cx=\"6\" cy=\"6\" r=\"3\"/>\u003cpath d=\"M13 6h3a2 2 0 0 1 2 2v7\"/>\u003cline x1=\"6\" x2=\"6\" y1=\"9\" y2=\"21\"/>\u003c/svg>"
+  },
+  "git-commit-horizontal": {
+    "label": "Commit",
+    "category": "Code",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003ccircle cx=\"12\" cy=\"12\" r=\"3\"/>\u003cline x1=\"3\" x2=\"9\" y1=\"12\" y2=\"12\"/>\u003cline x1=\"15\" x2=\"21\" y1=\"12\" y2=\"12\"/>\u003c/svg>"
+  },
+  "git-merge": {
+    "label": "Merge",
+    "category": "Code",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003ccircle cx=\"18\" cy=\"18\" r=\"3\"/>\u003ccircle cx=\"6\" cy=\"6\" r=\"3\"/>\u003cpath d=\"M6 21V9a9 9 0 0 0 9 9\"/>\u003c/svg>"
+  },
+  "git-compare": {
+    "label": "Compare versions, diff",
+    "category": "Changes",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003ccircle cx=\"18\" cy=\"18\" r=\"3\"/>\u003ccircle cx=\"6\" cy=\"6\" r=\"3\"/>\u003cpath d=\"M13 6h3a2 2 0 0 1 2 2v7\"/>\u003cpath d=\"M11 18H8a2 2 0 0 1-2-2V9\"/>\u003c/svg>"
+  },
+  "rotate-ccw": {
+    "label": "Retry, undo",
+    "category": "Changes",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\"/>\u003cpath d=\"M3 3v5h5\"/>\u003c/svg>"
+  },
+  "refresh-cw": {
+    "label": "Refresh, rebuild, update",
+    "category": "Changes",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\"/>\u003cpath d=\"M21 3v5h-5\"/>\u003cpath d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\"/>\u003cpath d=\"M8 16H3v5\"/>\u003c/svg>"
+  },
+  "clock": {
+    "label": "Time, duration",
+    "category": "Systems",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003ccircle cx=\"12\" cy=\"12\" r=\"10\"/>\u003cpolyline points=\"12 6 12 12 16 14\"/>\u003c/svg>"
+  },
+  "calendar": {
+    "label": "Date, schedule",
+    "category": "Systems",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M8 2v4\"/>\u003cpath d=\"M16 2v4\"/>\u003crect width=\"18\" height=\"18\" x=\"3\" y=\"4\" rx=\"2\"/>\u003cpath d=\"M3 10h18\"/>\u003c/svg>"
+  },
+  "key-round": {
+    "label": "Credentials, authorization",
+    "category": "People and access",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z\"/>\u003ccircle cx=\"16.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\"/>\u003c/svg>"
+  },
+  "lock": {
+    "label": "Locked, private, permission",
+    "category": "People and access",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003crect width=\"18\" height=\"11\" x=\"3\" y=\"11\" rx=\"2\" ry=\"2\"/>\u003cpath d=\"M7 11V7a5 5 0 0 1 10 0v4\"/>\u003c/svg>"
+  },
+  "link": {
+    "label": "Link, URL",
+    "category": "Systems",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71\"/>\u003cpath d=\"M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71\"/>\u003c/svg>"
+  },
+  "plug": {
+    "label": "Connect, integration",
+    "category": "Systems",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M12 22v-5\"/>\u003cpath d=\"M9 8V2\"/>\u003cpath d=\"M15 8V2\"/>\u003cpath d=\"M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z\"/>\u003c/svg>"
+  },
+  "unplug": {
+    "label": "Disconnect",
+    "category": "Systems",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"m19 5 3-3\"/>\u003cpath d=\"m2 22 3-3\"/>\u003cpath d=\"M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z\"/>\u003cpath d=\"M7.5 13.5 10 11\"/>\u003cpath d=\"M10.5 16.5 13 14\"/>\u003cpath d=\"m12 6 6 6 2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0Z\"/>\u003c/svg>"
+  },
+  "bell": {
+    "label": "Notification, reminder",
+    "category": "Messages and media",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9\"/>\u003cpath d=\"M10.3 21a1.94 1.94 0 0 0 3.4 0\"/>\u003c/svg>"
+  },
+  "bell-off": {
+    "label": "Muted",
+    "category": "Messages and media",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M8.7 3A6 6 0 0 1 18 8a21.3 21.3 0 0 0 .6 5\"/>\u003cpath d=\"M17 17H3s3-2 3-9a4.67 4.67 0 0 1 .3-1.7\"/>\u003cpath d=\"M10.3 21a1.94 1.94 0 0 0 3.4 0\"/>\u003cpath d=\"m2 2 20 20\"/>\u003c/svg>"
+  },
+  "bot": {
+    "label": "Agent",
+    "category": "People and access",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M12 8V4H8\"/>\u003crect width=\"16\" height=\"12\" x=\"4\" y=\"8\" rx=\"2\"/>\u003cpath d=\"M2 14h2\"/>\u003cpath d=\"M20 14h2\"/>\u003cpath d=\"M15 13v2\"/>\u003cpath d=\"M9 13v2\"/>\u003c/svg>"
+  },
+  "cpu": {
+    "label": "Compute, hardware",
+    "category": "Systems",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003crect width=\"16\" height=\"16\" x=\"4\" y=\"4\" rx=\"2\"/>\u003crect width=\"6\" height=\"6\" x=\"9\" y=\"9\" rx=\"1\"/>\u003cpath d=\"M15 2v2\"/>\u003cpath d=\"M15 20v2\"/>\u003cpath d=\"M2 15h2\"/>\u003cpath d=\"M2 9h2\"/>\u003cpath d=\"M20 15h2\"/>\u003cpath d=\"M20 9h2\"/>\u003cpath d=\"M9 2v2\"/>\u003cpath d=\"M9 20v2\"/>\u003c/svg>"
+  },
+  "gamepad-2": {
+    "label": "Environment, game",
+    "category": "Environments",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cline x1=\"6\" x2=\"10\" y1=\"11\" y2=\"11\"/>\u003cline x1=\"8\" x2=\"8\" y1=\"9\" y2=\"13\"/>\u003cline x1=\"15\" x2=\"15.01\" y1=\"12\" y2=\"12\"/>\u003cline x1=\"18\" x2=\"18.01\" y1=\"10\" y2=\"10\"/>\u003cpath d=\"M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z\"/>\u003c/svg>"
+  },
+  "map": {
+    "label": "Map, layout",
+    "category": "Environments",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z\"/>\u003cpath d=\"M15 5.764v15\"/>\u003cpath d=\"M9 3.236v15\"/>\u003c/svg>"
+  },
+  "grid-3x3": {
+    "label": "Grid, layout",
+    "category": "Environments",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003crect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/>\u003cpath d=\"M3 9h18\"/>\u003cpath d=\"M3 15h18\"/>\u003cpath d=\"M9 3v18\"/>\u003cpath d=\"M15 3v18\"/>\u003c/svg>"
+  },
+  "dice-5": {
+    "label": "Seed, randomness",
+    "category": "Data and results",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003crect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" ry=\"2\"/>\u003cpath d=\"M16 8h.01\"/>\u003cpath d=\"M8 8h.01\"/>\u003cpath d=\"M8 16h.01\"/>\u003cpath d=\"M16 16h.01\"/>\u003cpath d=\"M12 12h.01\"/>\u003c/svg>"
+  },
+  "shuffle": {
+    "label": "Procedural, random order",
+    "category": "Data and results",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22\"/>\u003cpath d=\"m18 2 4 4-4 4\"/>\u003cpath d=\"M2 6h1.9c1.5 0 2.9.9 3.6 2.2\"/>\u003cpath d=\"M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8\"/>\u003cpath d=\"m18 14 4 4-4 4\"/>\u003c/svg>"
+  },
+  "rocket": {
+    "label": "Delivery, launch, deploy",
+    "category": "Plans and work",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z\"/>\u003cpath d=\"m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z\"/>\u003cpath d=\"M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0\"/>\u003cpath d=\"M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5\"/>\u003c/svg>"
+  },
+  "flag": {
+    "label": "Gate, milestone",
+    "category": "Decisions and goals",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z\"/>\u003cline x1=\"4\" x2=\"4\" y1=\"22\" y2=\"15\"/>\u003c/svg>"
+  },
+  "lightbulb": {
+    "label": "Idea, tip, lesson",
+    "category": "Decisions and goals",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5\"/>\u003cpath d=\"M9 18h6\"/>\u003cpath d=\"M10 22h4\"/>\u003c/svg>"
+  },
+  "zap": {
+    "label": "Fast, trigger",
+    "category": "Systems",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z\"/>\u003c/svg>"
+  },
+  "gauge": {
+    "label": "Performance, budget",
+    "category": "Data and results",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"m12 14 4-4\"/>\u003cpath d=\"M3.34 19a10 10 0 1 1 17.32 0\"/>\u003c/svg>"
+  },
+  "trending-up": {
+    "label": "Improves",
+    "category": "Changes",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpolyline points=\"22 7 13.5 15.5 8.5 10.5 2 17\"/>\u003cpolyline points=\"16 7 22 7 22 13\"/>\u003c/svg>"
+  },
+  "trending-down": {
+    "label": "Gets worse",
+    "category": "Changes",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpolyline points=\"22 17 13.5 8.5 8.5 13.5 2 7\"/>\u003cpolyline points=\"16 17 22 17 22 11\"/>\u003c/svg>"
+  },
+  "filter": {
+    "label": "Filter, rank",
+    "category": "Data and results",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpolygon points=\"22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3\"/>\u003c/svg>"
+  },
+  "save": {
+    "label": "Saved, persisted",
+    "category": "Data and results",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z\"/>\u003cpath d=\"M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7\"/>\u003cpath d=\"M7 3v4a1 1 0 0 0 1 1h7\"/>\u003c/svg>"
+  },
+  "notebook-pen": {
+    "label": "Notes, memory updates",
+    "category": "Plans and work",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4\"/>\u003cpath d=\"M2 6h4\"/>\u003cpath d=\"M2 10h4\"/>\u003cpath d=\"M2 14h4\"/>\u003cpath d=\"M2 18h4\"/>\u003cpath d=\"M21.378 5.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z\"/>\u003c/svg>"
+  },
+  "mail": {
+    "label": "Email",
+    "category": "Messages and media",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003crect width=\"20\" height=\"16\" x=\"2\" y=\"4\" rx=\"2\"/>\u003cpath d=\"m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7\"/>\u003c/svg>"
+  },
+  "cloud": {
+    "label": "Cloud, remote service",
+    "category": "Systems",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z\"/>\u003c/svg>"
+  },
+  "globe": {
+    "label": "Web, external",
+    "category": "Systems",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003ccircle cx=\"12\" cy=\"12\" r=\"10\"/>\u003cpath d=\"M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20\"/>\u003cpath d=\"M2 12h20\"/>\u003c/svg>"
+  },
+  "user": {
+    "label": "Person, user",
+    "category": "People and access",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2\"/>\u003ccircle cx=\"12\" cy=\"7\" r=\"4\"/>\u003c/svg>"
+  },
+  "monitor": {
+    "label": "Screen, interface",
+    "category": "Systems",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003crect width=\"20\" height=\"14\" x=\"2\" y=\"3\" rx=\"2\"/>\u003cline x1=\"8\" x2=\"16\" y1=\"21\" y2=\"21\"/>\u003cline x1=\"12\" x2=\"12\" y1=\"17\" y2=\"21\"/>\u003c/svg>"
+  },
+  "layers": {
+    "label": "Layers, stack",
+    "category": "Systems",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z\"/>\u003cpath d=\"m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65\"/>\u003cpath d=\"m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65\"/>\u003c/svg>"
+  },
+  "activity": {
+    "label": "Current behavior, live signal",
+    "category": "Systems",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2\"/>\u003c/svg>"
+  },
+  "compass": {
+    "label": "Planning, direction",
+    "category": "Decisions and goals",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z\"/>\u003ccircle cx=\"12\" cy=\"12\" r=\"10\"/>\u003c/svg>"
+  },
+  "trash-2": {
+    "label": "Delete, remove",
+    "category": "Changes",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M3 6h18\"/>\u003cpath d=\"M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6\"/>\u003cpath d=\"M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2\"/>\u003cline x1=\"10\" x2=\"10\" y1=\"11\" y2=\"17\"/>\u003cline x1=\"14\" x2=\"14\" y1=\"11\" y2=\"17\"/>\u003c/svg>"
+  },
+  "circle-plus": {
+    "label": "Added",
+    "category": "Changes",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003ccircle cx=\"12\" cy=\"12\" r=\"10\"/>\u003cpath d=\"M8 12h8\"/>\u003cpath d=\"M12 8v8\"/>\u003c/svg>"
+  },
+  "circle-minus": {
+    "label": "Removed",
+    "category": "Changes",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003ccircle cx=\"12\" cy=\"12\" r=\"10\"/>\u003cpath d=\"M8 12h8\"/>\u003c/svg>"
+  },
+  "shield-alert": {
+    "label": "Security risk",
+    "category": "People and access",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\"/>\u003cpath d=\"M12 8v4\"/>\u003cpath d=\"M12 16h.01\"/>\u003c/svg>"
+  },
+  "puzzle": {
+    "label": "Plug-and-play, module",
+    "category": "Code",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z\"/>\u003c/svg>"
+  },
+  "mic": {
+    "label": "Audio",
+    "category": "Messages and media",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z\"/>\u003cpath d=\"M19 10v2a7 7 0 0 1-14 0v-2\"/>\u003cline x1=\"12\" x2=\"12\" y1=\"19\" y2=\"22\"/>\u003c/svg>"
+  },
+  "table": {
+    "label": "Table, rows",
+    "category": "Data and results",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M12 3v18\"/>\u003crect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/>\u003cpath d=\"M3 9h18\"/>\u003cpath d=\"M3 15h18\"/>\u003c/svg>"
+  },
+  "chart-column": {
+    "label": "Bar chart, counts",
+    "category": "Data and results",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M3 3v16a2 2 0 0 0 2 2h16\"/>\u003cpath d=\"M18 17V9\"/>\u003cpath d=\"M13 17V5\"/>\u003cpath d=\"M8 17v-3\"/>\u003c/svg>"
+  },
+  "repeat": {
+    "label": "Repeats, several runs",
+    "category": "Data and results",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"m17 2 4 4-4 4\"/>\u003cpath d=\"M3 11v-1a4 4 0 0 1 4-4h14\"/>\u003cpath d=\"m7 22-4-4 4-4\"/>\u003cpath d=\"M21 13v1a4 4 0 0 1-4 4H3\"/>\u003c/svg>"
+  },
+  "memory-stick": {
+    "label": "RAM, memory hardware",
+    "category": "Systems",
+    "svg": "\u003csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\u003cpath d=\"M6 19v-3\"/>\u003cpath d=\"M10 19v-3\"/>\u003cpath d=\"M14 19v-3\"/>\u003cpath d=\"M18 19v-3\"/>\u003cpath d=\"M8 11V9\"/>\u003cpath d=\"M16 11V9\"/>\u003cpath d=\"M12 11V9\"/>\u003cpath d=\"M2 15h20\"/>\u003cpath d=\"M2 7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v1.1a2 2 0 0 0 0 3.837V17a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-5.1a2 2 0 0 0 0-3.837Z\"/>\u003c/svg>"
+  }
+}
+</script>
+<style>
+:root{color-scheme:light;--bg:#f7f7f5;--card:#fff;--ink:#1d1d1f;--muted:#6b6b70;--line:#e3e3e0;--acc:#2f5bd3;
+--ok:#1f7a4d;--okbg:#e6f4ec;--bad:#b3261e;--badbg:#fbe9e7;--warn:#8a5a00;--warnbg:#fff4dc;
+--info:#2f5bd3;--infobg:#e8eefc;--muted-tone:#5b5b66;--mutedbg:#ececf0;--code:#1f5f99}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#141416;--card:#1d1d21;
+--ink:#ececf0;--muted:#a0a0aa;--line:#2e2e34;--acc:#8fb0ff;--ok:#5fd394;--okbg:#16301f;
+--bad:#ff8a80;--badbg:#3a1a18;--warn:#ffcc66;--warnbg:#3a2e12;--info:#8fb0ff;--infobg:#1c2640;
+--muted-tone:#b9b9c4;--mutedbg:#2a2a30;--code:#9fcced}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#141416;--card:#1d1d21;--ink:#ececf0;--muted:#a0a0aa;--line:#2e2e34;
+--acc:#8fb0ff;--ok:#5fd394;--okbg:#16301f;--bad:#ff8a80;--badbg:#3a1a18;--warn:#ffcc66;
+--warnbg:#3a2e12;--info:#8fb0ff;--infobg:#1c2640;--muted-tone:#b9b9c4;--mutedbg:#2a2a30;--code:#9fcced}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1060px;margin:0 auto;padding:24px 16px 80px}
+a{color:var(--acc)}
+.eyebrow{color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:.06em}
+h1{font-size:26px;margin:2px 0 4px}
+h2{font-size:19px;margin:36px 0 10px;padding-top:10px;border-top:1px solid var(--line)}
+h3{font-size:16px;margin:20px 0 8px}
+.sub,.intro{color:var(--muted);margin:0 0 14px}
+/* A section folds on its heading: the h2 is the summary, and a chevron before it shows the state. */
+details.sec{background:none;border:0;border-radius:0;margin:0}
+details.sec>summary{display:block;padding:0}
+details.sec>summary::before{display:none}
+details.sec>summary>h2::before{content:"▾" / "";display:inline-block;width:1.1em;color:var(--muted);font-size:15px}
+details.sec:not([open])>summary>h2::before{content:"▸" / ""}
+nav{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 4px}
+nav a{text-decoration:none;font-size:14px;border:1px solid var(--line);padding:3px 10px;border-radius:999px;background:var(--card)}
+p{margin:8px 0}
+code{font:inherit;color:var(--code);overflow-wrap:anywhere}
+u{text-decoration:underline dotted;text-underline-offset:.14em}
+pre code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace;color:inherit}
+pre{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;overflow:auto}
+pre,textarea,.scroll{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--muted) 45%,transparent) transparent}
+pre::-webkit-scrollbar,textarea::-webkit-scrollbar,.scroll::-webkit-scrollbar{width:8px;height:8px}
+pre::-webkit-scrollbar-thumb,textarea::-webkit-scrollbar-thumb,.scroll::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--muted) 45%,transparent);border-radius:999px}
+pre::-webkit-scrollbar-track,textarea::-webkit-scrollbar-track,.scroll::-webkit-scrollbar-track{background:transparent}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:10px 0}
+.stats{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+.stat b{display:block;font-size:24px}.stat span{color:var(--muted);font-size:13px}
+.card h3{font-size:15px;margin:0 0 6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.icon{display:inline-flex;color:var(--acc);flex:none}.icon svg{width:18px;height:18px}
+.pill .icon{color:inherit;margin-right:4px;vertical-align:-3px}.pill .icon svg{width:14px;height:14px}
+.inset{background:var(--mutedbg);border-left:2px solid var(--line);border-radius:0 6px 6px 0;margin:8px 0;padding:6px 10px}
+.inset>:first-child{margin-top:0}.inset>:last-child{margin-bottom:0}
+.callout{border-left:4px solid var(--tone,var(--info));background:var(--tonebg,var(--infobg));border-radius:8px;padding:10px 14px;margin:10px 0}
+.callout b{display:block}
+.pill{display:inline-block;font-size:12px;font-weight:600;padding:1px 8px;border-radius:999px;white-space:nowrap;color:var(--tone);background:var(--tonebg)}
+/* A chip with hover text shows it has some; wireChipTips draws the text in .chip-tip. */
+.pill[data-tip]{cursor:help;text-decoration:underline dotted;text-underline-offset:3px}
+.chip-tip{position:fixed;z-index:20;pointer-events:none;max-width:min(320px,calc(100vw - 16px));padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font-size:13px;line-height:1.4;box-shadow:0 6px 18px rgba(0,0,0,.25);white-space:pre-line;overflow-wrap:anywhere}
+.ok{--tone:var(--ok);--tonebg:var(--okbg)}.bad{--tone:var(--bad);--tonebg:var(--badbg)}
+.warn{--tone:var(--warn);--tonebg:var(--warnbg)}.info{--tone:var(--info);--tonebg:var(--infobg)}
+.muted{--tone:var(--muted-tone);--tonebg:var(--mutedbg)}
+.stat.ok b,.stat.bad b,.stat.warn b,.stat.info b{color:var(--tone)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+.scroll{overflow-x:auto;margin:10px 0}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:600}
+table.pick tbody tr{cursor:pointer}
+table.pick input{accent-color:var(--acc)}
+table.pick td:first-child,table.pick th:first-child{width:28px}
+table.pick tr:has(input:not(:checked)) td:not(:first-child){opacity:.45;text-decoration:line-through}
+details{background:var(--card);border:1px solid var(--line);border-radius:10px;margin:8px 0}
+summary{cursor:pointer;padding:10px 14px;list-style:none;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--muted)}details[open]>summary::before{content:"▾"}
+summary .id{font-weight:700}summary .t{flex:1;min-width:180px}summary .icon{align-self:center}
+summary .preview{flex-basis:100%;color:var(--muted);font-size:14px;padding-left:20px}
+.body{padding:0 14px 12px}
+/* Finding fields: each label sits above its text. When every field and quote is one short line (dl.table), wider
+   screens put the labels in a column as wide as the longest one, up to 150px; longer labels wrap. */
+dl{margin:0;display:grid}
+dt{color:var(--muted);font-size:13px;font-weight:600;line-height:1.3}dt:not(:first-child){margin-top:10px}
+dd{margin:0;overflow-wrap:anywhere}dd>:first-child{margin-top:0}dd>:last-child{margin-bottom:0}dd.quote{color:var(--muted);font-style:italic}
+@media (min-width:601px){dl.table{grid-template-columns:fit-content(150px) 1fr;gap:8px 16px;align-items:baseline}
+dl.table dt{margin-top:0;font-weight:400;line-height:inherit}}
+.steps{--rule:color-mix(in srgb,var(--muted) 40%,transparent);list-style:none;margin:10px 0;padding:0}
+.step{position:relative;overflow-wrap:anywhere}
+.step>b{display:block;font-size:16px}
+.step .icon{margin-right:6px;vertical-align:-4px}
+.step .txt{display:block;margin-top:2px;color:var(--muted);font-size:14px}
+.step .num{position:absolute;left:0;top:0;display:grid;place-items:center;width:26px;height:26px;border:1px solid var(--line);border-radius:50%;background:var(--card);color:var(--muted);font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1}
+.steps:not(.rail,.parts){display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);column-gap:20px}
+.steps:not(.rail,.parts)>.step{padding-top:36px}
+.steps:not(.rail,.parts)>.step:not(:last-child)::after{content:"";position:absolute;top:13px;left:34px;right:-12px;border-top:1px solid var(--rule)}
+.steps.rail{display:flex;flex-direction:column;gap:18px}
+.steps.rail>.step{min-height:26px;padding-left:40px}
+.steps.rail>.step:not(:last-child)::after{content:"";position:absolute;left:12.5px;top:30px;bottom:-14px;border-left:1px solid var(--rule)}
+.steps.parts{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:4px 10px}
+.parts>.step{padding:10px 6px}
+.parts>.step+.step{border-top:1px solid var(--line)}
+.parts.cols>.step{display:grid;grid-template-columns:minmax(10em,28%) minmax(0,1fr);column-gap:14px;align-items:baseline}
+.parts.cols .txt{margin-top:0}
+.cmp{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin:10px 0}
+.cmp .card.rec{border:2px solid var(--acc)}
+.cmp ul{margin:4px 0;padding-left:18px}.cmp .pro::marker{content:"+ "}.cmp .con::marker{content:"− "}
+.decision{padding:12px 0;border-bottom:1px solid var(--line)}.decision:last-of-type{border-bottom:0}
+.decision .dh{font-weight:600;font-size:16px}.decision .ctx{color:var(--muted);font-size:14px}
+.decision .desc p:first-child{margin-top:4px}
+.why{border-left:3px solid var(--line);padding:2px 12px;margin:8px 0;font-size:14px}
+.why p{margin:0}.why .lbl{color:var(--acc)}.why .tech{color:var(--muted);margin-top:6px}.why .tech p{margin:4px 0}
+.opts{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0;font-size:14px}
+.opts label{display:flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:4px 10px;cursor:pointer;background:var(--card)}
+.opts label.rec{border-color:color-mix(in srgb,var(--acc) 60%,var(--line));background:var(--infobg)}
+textarea{width:100%;min-height:38px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);padding:6px 8px;font:inherit;font-size:14px}
+button{font:inherit;font-size:14px;border:1px solid var(--acc);color:var(--acc);background:var(--card);border-radius:8px;padding:6px 14px;cursor:pointer}
+button.ok,button.bad{border-color:var(--tone);color:var(--tone)}
+.copy-bar{margin:14px 0}
+.copy-text{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:8px}
+.copy-text.ok,.copy-text.bad{border-color:var(--tone)}
+figure{margin:10px 0}
+figure img,figure iframe,figure video{display:block;max-width:100%;border-radius:8px;border:1px solid var(--line);background:var(--card)}
+/* Light, like a document that sets no scheme: otherwise Chrome paints an opaque box behind a transparent plot on a dark page. */
+figure iframe{width:100%;color-scheme:light}
+figcaption{color:var(--muted);font-size:13px;margin-top:4px}
+figcaption a{margin-left:8px;font-size:12px}
+.legend{color:var(--muted);font-size:13px;margin:6px 0}
+div.legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.matrix tbody th{color:var(--ink);min-width:150px;max-width:260px}
+.matrix small{display:block;color:var(--muted);font-weight:400}
+.matrix .group th{background:var(--mutedbg)}
+.chips{display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.gallery{display:grid;grid-template-columns:repeat(auto-fill,min(var(--w),100%));gap:12px;margin:10px 0}
+/* Each figure spans the rows it shares with its neighbours (media, caption, and fold-out if any), so the figures
+   in a row grow to the tallest one and their captions and fold-outs line up. */
+.gallery figure{display:grid;grid-row:span 2;grid-template-rows:subgrid;grid-template-columns:minmax(0,1fr);row-gap:0;margin:0}
+.gallery:has(figure>details) figure{grid-row:span 3}
+.gallery img,.gallery video{width:100%;height:auto}
+.gallery.pixelated img{image-rendering:pixelated}
+/* A figure's fold-out keeps its own height when a neighbour's opens; long code lines scroll inside it. */
+figure>details{margin:6px 0 0;align-self:start}
+figure>details summary .t{min-width:0}
+figure>details pre{margin:0;max-height:420px}
+.gallery-group{margin:22px 0 8px}
+.gallery-group h4{display:flex;align-items:center;gap:12px;margin:0 0 4px;font-size:15px}
+.gallery-group h4::after{content:"";flex:1;height:1px;background:color-mix(in srgb,var(--muted) 40%,transparent)}
+.gallery-group .gallery{margin-top:8px}
+.split{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:20px;align-items:start}
+@media (max-width:760px){.split{grid-template-columns:1fr}}
+body.slides main{max-width:none;padding:0}
+body.slides .slide{display:none;min-height:100vh;padding:48px max(16px,8vw) 72px}
+body.slides .slide.on{display:block}
+body.slides .slide h2{font-size:30px;border:0;margin-top:0}
+body.slides header.slide.on{display:flex;flex-direction:column;justify-content:center}
+body.slides h1{font-size:44px}
+.toolbar{position:fixed;bottom:12px;right:16px;display:flex;gap:8px;align-items:center;color:var(--muted);font-size:13px}
+.toolbar button{min-width:36px}
+.eyebrow .pill{text-transform:none}
+.pill.change{margin-left:8px;text-transform:capitalize}
+.changes .pill{text-transform:capitalize}
+details.changes{border:0;border-left:4px solid var(--tone)}.changes summary{padding:0;font-weight:700}.changes ul{margin:6px 0;padding-left:20px}.changes li{margin:2px 0}
+.toggle-changes{display:block;margin-top:8px;cursor:pointer}
+[data-change]:not(section,tr,li,details,.decision){outline:2px solid color-mix(in srgb,var(--acc) 55%,transparent);outline-offset:2px;border-radius:8px}
+/* A changed step gets a tint, not an outline or underline, so the connector stays clean; the extra ring sits outside the item. */
+.step[data-change]{--mark:color-mix(in srgb,var(--acc) 10%,transparent);background:var(--mark);box-shadow:0 0 0 6px var(--mark);border-radius:8px;text-decoration:none}
+.parts>.step[data-change]{box-shadow:none;border-top-color:transparent}
+.step[data-change] .txt{color:var(--muted-tone)}
+body.only-changes .step:has(+ [data-item]:not([data-change]))::after{display:none}
+/* Stacked items sit too close for an outline: list items get an underline, rows a left bar. */
+li[data-change]{text-decoration:underline 2px color-mix(in srgb,var(--acc) 60%,transparent);text-underline-offset:4px}
+li[data-change]:has(> :is(ul,ol)){text-decoration:none;box-shadow:inset 3px 0 var(--acc);padding-left:8px}
+:is(details,.decision)[data-change]{box-shadow:inset 3px 0 var(--acc);padding-left:12px}
+.block[data-change]{padding:8px 12px;margin:10px 0}
+tr[data-change]>:is(td,th){background:color-mix(in srgb,var(--acc) 10%,transparent)}
+tr[data-change]>:first-child{box-shadow:inset 3px 0 var(--acc)}
+body.only-changes section:not([data-change]):not(:has([data-change])),
+body.only-changes section:not([data-change="added"]) .block:not([data-change]):not(:has([data-change])),
+body.only-changes [data-item]:not([data-change]),
+body.only-changes .matrix tbody:has([data-item]):not(:has([data-change])),
+body.only-changes .gallery-group:has([data-item]):not(:has([data-change])){display:none}
+</style>
+</head>
+<body>
+<main id="root"></main>
+<script>
+"use strict";
+const data = JSON.parse(document.getElementById("data").textContent);
+const ICONS = JSON.parse(document.getElementById("icons").textContent);
+const TONES = ["ok", "bad", "warn", "info", "muted"];
+const DEFAULT_STATUSES = {
+  ok: { label: "As expected", tone: "ok" },
+  bad: { label: "Not as expected", tone: "bad" },
+  decide: { label: "Needs decision", tone: "warn" },
+  info: { label: "Info", tone: "info" },
+};
+const statuses = data.statuses || DEFAULT_STATUSES;
+const storageKey = "artifact:" + location.pathname + ":" + (data.title || "");
+const pickedRowsKey = storageKey + ":rows";
+const themeKey = "artifact:theme";
+
+function escapeHtml(text) {
+  return String(text ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[c]);
+}
+
+// Inline Markdown subset: `code`, **bold**, *em*, <u>underline</u>, [text](url), blank-line paragraphs.
+// Code spans become placeholders first, so `*` or `[` inside them stays literal while links and
+// underlines may still wrap them. URLs may hold one level of parentheses.
+function inline(text) {
+  const codes = [];
+  return escapeHtml(String(text ?? "").replace(/\u0000/g, ""))
+    .replace(/`([^`]+)`/g, (_, code) => `\u0000${codes.push(code) - 1}\u0000`)
+    .replace(/&lt;u&gt;(.+?)&lt;\/u&gt;/g, "<u>$1</u>")
+    .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/(?:[^()\s]|\([^()\s]*\))+|(?:[^():\s]|\([^():\s]*\))+)\)/g, '<a href="$2">$1</a>')
+    .replace(/\u0000(\d+)\u0000/g, (_, n) => `<code>${codes[n]}</code>`);
+}
+
+// A Markdown list line: "- " or "* " for bullets, "1. " or "1) " for numbers, indented to nest.
+const LIST_LINE = /^(\s*)([-*]|\d+[.)])\s+(.*)$/;
+
+// Turns a run of list lines into the item tree listHtml draws. A deeper indent nests under the item
+// above it; an indented line without a marker continues the item above it.
+function parseList(lines) {
+  const top = { indent: -1, items: [] };
+  const levels = [top];
+  for (const line of lines) {
+    const match = LIST_LINE.exec(line);
+    if (!match) {
+      const item = levels.at(-1).items.at(-1);
+      if (item) item.text += " " + line.trim();
+      continue;
+    }
+    const [, space, marker, text] = match;
+    const ordered = /\d/.test(marker), start = parseInt(marker, 10);
+    while (levels.length > 1 && space.length < levels.at(-1).indent) levels.pop();
+    let level = levels.at(-1);
+    if (level === top && top.indent < 0) Object.assign(top, { indent: space.length, ordered, start });
+    else if (space.length > level.indent && level.items.length) {
+      const parent = level.items.at(-1);
+      if (!parent.items) Object.assign(parent, { items: [], ordered, start });
+      level = { indent: space.length, items: parent.items };
+      levels.push(level);
+    }
+    level.items.push({ text });
+  }
+  return top;
+}
+
+// Blank lines split paragraphs; inside one, single line breaks stay and runs of list lines become
+// lists. `tail` is markup that ends the last paragraph.
+function paragraphs(text, tail = "") {
+  const parts = String(text ?? "").replace(/\r\n?/g, "\n").split(/\n\s*\n/);
+  return parts.map((part, i) => {
+    const end = i === parts.length - 1 ? tail : "";
+    const runs = [];
+    for (const line of part.split("\n")) {
+      // An indented line right after a list line belongs to that list.
+      const list = LIST_LINE.test(line) || Boolean(runs.at(-1)?.list && /^\s+\S/.test(line));
+      if (!runs.length || runs.at(-1).list !== list) runs.push({ list, lines: [] });
+      runs.at(-1).lines.push(line);
+    }
+    return runs.map((run, n) => {
+      const last = n === runs.length - 1 ? end : "";
+      if (!run.list) return `<p>${inline(run.lines.join("\n")).replace(/\n/g, "<br>")}${last}</p>`;
+      const list = parseList(run.lines);
+      return listHtml(list.items, list.ordered, list.start) + (last ? `<p>${last}</p>` : "");
+    }).join("");
+  }).join("");
+}
+
+// Unknown names draw nothing, so a typo never breaks the page.
+function icon(name) {
+  const svg = ICONS[name]?.svg;
+  return svg ? `<span class="icon" aria-hidden="true">${svg}</span>` : "";
+}
+
+// List items are strings, or { text, items, ordered } for a nested list.
+// A numbered list may start at `start`, as written in Markdown text ("3. third").
+function listHtml(items, ordered, start) {
+  const tag = ordered ? "ol" : "ul";
+  const item = (i) => typeof i === "string" ? inline(i) : inline(i.text) + (i.items?.length ? listHtml(i.items, i.ordered, i.start) : "");
+  const from = ordered && start > 1 ? ` start="${start}"` : "";
+  return `<${tag}${from}>${(items || []).map((i) => `<li>${item(i)}</li>`).join("")}</${tag}>`;
+}
+
+function tone(name) {
+  return TONES.includes(name) ? name : "muted";
+}
+
+// A chip is { text, tone, title, icon }: `title` is hover text, shown by wireChipTips, and `icon` a key
+// of the icon catalog, drawn before the text. A bare string stands for a muted chip.
+function chip(c) {
+  const { text, tone: name, title, icon: iconName } = c !== null && typeof c === "object" ? c : { text: c };
+  const tip = title ? ` tabindex="0" data-tip="${escapeHtml(title)}" aria-description="${escapeHtml(title)}"` : "";
+  return `<span class="pill ${tone(name)}"${tip}>${icon(iconName)}${inline(text)}</span>`;
+}
+
+// A table cell is a string, or a chip object for a status chip.
+function cellText(cell) {
+  return cell !== null && typeof cell === "object" ? cell.text : cell;
+}
+
+function cellHtml(cell) {
+  return cell !== null && typeof cell === "object" ? chip(cell) : inline(cell);
+}
+
+function pill(statusKey) {
+  const status = statuses[statusKey] || { label: statusKey, tone: "muted" };
+  return `<span class="pill ${tone(status.tone)}">${escapeHtml(status.label)}</span>`;
+}
+
+function loadState(key) {
+  try { return JSON.parse(localStorage.getItem(key)) || {}; } catch { return {}; }
+}
+
+function saveState(key, state) {
+  try { localStorage.setItem(key, JSON.stringify(state)); } catch { /* storage blocked */ }
+}
+
+function allBlocks(type) {
+  return (data.sections || []).flatMap((s) => s.blocks || []).filter((b) => b.type === type);
+}
+
+// Longest step text, in characters, that can sit in a row.
+const STEP_TEXT_MAX = 80;
+// Longest finding field or quote, in characters, that still fits one line beside its label.
+const FIELD_LINE_MAX = 90;
+
+const renderers = {
+  text: (b) => paragraphs(b.text),
+  callout: (b) => `<div class="callout ${tone(b.tone || "info")}">${b.title ? `<b>${inline(b.title)}</b>` : ""}${paragraphs(b.text)}</div>`,
+  list: (b) => listHtml(b.items, b.ordered),
+  stats: (b) => {
+    const items = [...(b.items || [])];
+    if (b.auto) {
+      const findings = allBlocks("findings").flatMap((f) => f.items || []);
+      items.unshift({ value: findings.length, label: "Total" });
+      for (const [key, status] of Object.entries(statuses)) {
+        const count = findings.filter((f) => f.status === key).length;
+        if (count) items.push({ value: count, label: status.label, tone: status.tone });
+      }
+    }
+    return `<div class="grid stats">${items.map((i) => `<div class="card stat ${tone(i.tone)}"><b>${escapeHtml(i.value)}</b><span>${inline(i.label)}</span></div>`).join("")}</div>`;
+  },
+  cards: (b) => `<div class="grid">${(b.items || []).map((i) => `<div class="card"><h3>${icon(i.icon)}${inline(i.title)}${i.status ? pill(i.status) : ""}</h3>${paragraphs(i.text)}${i.inset ? `<div class="inset">${paragraphs(i.inset)}</div>` : ""}</div>`).join("")}</div>`,
+  table: (b) => {
+    const head = (b.columns || []).map((c) => `<th>${inline(c)}</th>`).join("");
+    const cells = (r) => r.map((c) => `<td>${cellHtml(c)}</td>`).join("");
+    if (!b.select) return `<div class="scroll"><table><thead><tr>${head}</tr></thead><tbody>${(b.rows || []).map((r) => `<tr>${cells(r)}</tr>`).join("")}</tbody></table></div>`;
+    // Rows start ticked; the user unticks what to skip. Picks are keyed by heading and every cell.
+    const picked = loadState(pickedRowsKey);
+    const rows = (b.rows || []).map((r) => {
+      const key = (b.heading || "") + "|" + r.map(cellText).join(" | ");
+      return `<tr data-key="${escapeHtml(key)}"><td><input type="checkbox"${picked[key] ?? true ? " checked" : ""}></td>${cells(r)}</tr>`;
+    }).join("");
+    return `<div class="scroll"><table class="pick" data-group="${escapeHtml(b.heading || "")}"><thead><tr><th></th>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  },
+  // Rows sit in groups; every cell stacks its chips one per line, whatever the width.
+  matrix: (b) => {
+    const columns = (b.columns || []).map((c) => typeof c === "string" ? { name: c } : c);
+    const note = (text) => text ? `<small>${inline(text)}</small>` : "";
+    // A cell is a list of chips; a single chip or a string stands for a one-chip list, and blanks draw nothing.
+    const cell = (chips) => `<td><div class="chips">${[].concat(chips ?? []).filter((c) => c != null && c !== "" && c !== false).map(chip).join("")}</div></td>`;
+    const row = (r) => `<tr><th scope="row">${inline(r.label)}${note(r.note)}</th>${columns.map((_, n) => cell(r.cells?.[n])).join("")}</tr>`;
+    const group = (g) => `<tbody>${g.title ? `<tr class="group"><th colspan="${columns.length + 1}">${inline(g.title)}</th></tr>` : ""}${(g.rows || []).map(row).join("")}</tbody>`;
+    const head = columns.map((c) => `<th>${inline(c.name)}${note(c.note)}</th>`).join("");
+    // The legend is a line of text, or a list of chips and text pieces that explain them.
+    const legend = b.legend
+      ? `<div class="legend">${[].concat(b.legend).map((i) => typeof i === "string" ? `<span>${inline(i)}</span>` : chip(i)).join("")}</div>`
+      : "";
+    return `${legend}<div class="scroll"><table class="matrix"><thead><tr><th></th>${head}</tr></thead>${(b.groups || []).map(group).join("")}</table></div>`;
+  },
+  // Ordered steps (the default) are an <ol> with each number written here, so "Show only changes" keeps it right;
+  // `ordered: false` is a <ul> of parts. A block with any long text is always a rail. Shorter ones leave the
+  // choice of row or rail to wireSteps, by width.
+  steps: (b) => {
+    const items = b.items || [];
+    if (!items.length) return "";
+    const ordered = b.ordered !== false;
+    const list = items.map((i, n) => {
+      const number = ordered ? `<span class="num" aria-hidden="true">${n + 1}</span>` : "";
+      return `<li class="step">${number}<b>${icon(i.icon)}${inline(i.title)}</b><span class="txt">${inline(i.text)}</span></li>`;
+    }).join("");
+    if (!ordered) return `<ul class="steps parts">${list}</ul>`;
+    const long = items.some((i) => String(i.text ?? "").length > STEP_TEXT_MAX);
+    return `<ol class="steps${long ? " rail" : ""}">${list}</ol>`;
+  },
+  details: (b) => (b.items || []).map((i) => `<details${i.open ? " open" : ""}><summary>${icon(i.icon)}<span class="t">${inline(i.title)}</span>${i.preview ? `<span class="preview">${inline(i.preview)}</span>` : ""}</summary><div class="body">${i.text ? paragraphs(i.text) : ""}${(i.blocks || []).map(renderBlock).join("")}</div></details>`).join(""),
+  inset: (b) => `<div class="inset">${(b.blocks || []).map(renderBlock).join("")}</div>`,
+  findings: (b) => (b.items || []).map((i) => {
+    // A quote is one more labelled line, named by its source. All one-liners make a label column.
+    const quotes = (i.quotes || []).map((q) => ({ label: q.source || "Quote", text: q.text, quote: true }));
+    const lines = [...(i.fields || []), ...quotes];
+    const short = lines.every((l) => { const text = String(l.text ?? ""); return text.length <= FIELD_LINE_MAX && !/[\r\n]/.test(text); });
+    const rows = lines.map((l) => `<dt>${inline(l.label)}</dt>${l.quote ? `<dd class="quote">${paragraphs(`“${l.text ?? ""}`, "”")}</dd>` : `<dd>${paragraphs(l.text)}</dd>`}`).join("");
+    return `<details${i.open ? " open" : ""}><summary>${i.id ? `<span class="id">${escapeHtml(i.id)}</span>` : ""}<span class="t">${inline(i.title)}</span>${pill(i.status)}</summary><div class="body"><dl${short ? ' class="table"' : ""}>${rows}</dl></div></details>`;
+  }).join(""),
+  compare: (b) => {
+    const cards = (b.options || []).map((o) => `<div class="card${o.name === b.recommended ? " rec" : ""}"><h3>${inline(o.name)}${o.name === b.recommended ? '<span class="pill info">Recommended</span>' : ""}</h3>${paragraphs(o.summary)}<ul>${(o.pros || []).map((p) => `<li class="pro">${inline(p)}</li>`).join("")}${(o.cons || []).map((c) => `<li class="con">${inline(c)}</li>`).join("")}</ul></div>`).join("");
+    const criteria = b.criteria?.length ? renderers.table({ columns: ["", ...(b.options || []).map((o) => o.name)], rows: b.criteria.map((c) => [c.name, ...c.values]) }) : "";
+    return `<div class="cmp">${cards}</div>${criteria}`;
+  },
+  decisions: (b) => {
+    const state = loadState(storageKey);
+    return (b.items || []).map((d) => {
+      const picked = state[d.id]?.choice ?? d.recommended;
+      // The recommended option stays softly outlined whichever option is picked; it carries no word.
+      const options = (d.options || []).map((o) => `<label${o === d.recommended ? ' class="rec" title="Recommended"' : ""}><input type="radio" name="dec-${escapeHtml(d.id)}" value="${escapeHtml(o)}"${o === picked ? " checked" : ""}>${inline(o)}</label>`).join("");
+      // An item with a title leads with it, then one paragraph: the description ending in the question
+      // in bold. An older item leads with the question and may add `context`.
+      const asked = d.title && d.question ? ` <b>${inline(d.question)}</b>` : "";
+      const heading = inline(d.title || d.question);
+      const description = d.description || asked ? `<div class="desc">${paragraphs(d.description, asked)}</div>` : "";
+      const context = d.context ? `<div class="ctx">${inline(d.context)}</div>` : "";
+      // The recommended option is already ticked, so the box gives the reason, then the mechanics in muted text.
+      const reasons = (d.why ? `<p><b class="lbl">Why recommended:</b> ${inline(d.why)}</p>` : "") + (d.technical ? `<div class="tech">${paragraphs(d.technical)}</div>` : "");
+      const box = reasons ? `<div class="why">${reasons}</div>` : "";
+      return `<div class="decision" data-id="${escapeHtml(d.id)}"><div class="dh">${escapeHtml(d.id)}. ${heading}</div>${description}${context}${box}<div class="opts">${options}</div><textarea placeholder="Note (optional)">${escapeHtml(state[d.id]?.note || "")}</textarea></div>`;
+    }).join("");
+  },
+  code: (b) => `<pre><code>${escapeHtml(b.text)}</code></pre>`,
+  figure: (b) => {
+    const src = escapeHtml(b.src);
+    const label = escapeHtml(b.alt || b.caption || "");
+    let media = `<img src="${src}" alt="${label}">`;
+    if (/\.(mp4|webm)$/i.test(b.src || "")) media = `<video src="${src}" aria-label="${label}" controls preload="metadata"></video>`;
+    // HTML diagrams and mockups run in a sandbox without access to this page or its storage.
+    if (/\.html?$/i.test(b.src || "")) media = `<iframe src="${src}" title="${label}" style="height:${Number(b.height) || 420}px" loading="lazy" sandbox="allow-scripts"></iframe>`;
+    const links = `<a href="${src}" target="_blank" rel="noopener">Open full size</a>${b.source ? `<a href="${escapeHtml(b.source)}" target="_blank" rel="noopener">Editable source</a>` : ""}`;
+    // An optional fold-out under the caption: one closed `details` row holding `text`, then `code` as monospace lines.
+    const d = b.details;
+    const fold = d ? renderers.details({ items: [{ title: d.title || "Details", text: d.text, blocks: d.code ? [{ type: "code", text: d.code }] : [] }] }) : "";
+    return `<figure>${media}<figcaption>${inline(b.caption || "")}${links}</figcaption>${fold}</figure>`;
+  },
+  // `groups` split the items by method or experiment: a title with a divider line, an optional note,
+  // then the group's own wrapping row.
+  gallery: (b) => {
+    const row = (items) => `<div class="gallery${b.pixelated ? " pixelated" : ""}" style="--w:${Number(b.width) || 320}px">${(items || []).map((i) => renderers.figure(i)).join("")}</div>`;
+    const group = (g) => `<div class="gallery-group">${g.title ? `<h4>${inline(g.title)}</h4>` : ""}${g.note ? `<p class="legend">${inline(g.note)}</p>` : ""}${row(g.items)}</div>`;
+    return b.groups ? b.groups.map(group).join("") : row(b.items);
+  },
+  // Escape hatch for hand-drawn SVG or markup no block covers; content is trusted agent output.
+  html: (b) => b.html || "",
+};
+
+function renderBlock(block) {
+  const render = renderers[block.type];
+  const heading = block.heading ? `<h3>${inline(block.heading)}</h3>` : "";
+  return heading + (render ? render(block) : `<div class="callout bad"><b>Unknown block type: ${escapeHtml(block.type)}</b></div>`);
+}
+
+// fill.py embeds the version the user last saw as data.previous. The page compares the two and
+// marks what is added or changed. Sections match by id, else title; blocks by position in their
+// section; items by id, else title or name, else their own text or src. Matrix rows are items
+// keyed by group title and label. `fields` are the block fields that hold items, which diffBlock sets
+// aside when it compares the block itself; itemsOf reads the first one, except for matrix rows and
+// grouped gallery items, which it lifts out of `groups`.
+const ITEM_DOM = {
+  list: { fields: ["items"], items: ":scope > :is(ul, ol) > li" },
+  cards: { fields: ["items"], items: ":scope > .grid > .card", badge: "h3" },
+  steps: { fields: ["items"], items: ":scope .step", badge: "b" },
+  details: { fields: ["items"], items: ":scope > details", badge: "summary > .t" },
+  findings: { fields: ["items"], items: ":scope > details", badge: "summary > .t" },
+  decisions: { fields: ["items"], items: ":scope > .decision", badge: ".dh" },
+  compare: { fields: ["options"], items: ":scope > .cmp > .card", badge: "h3" },
+  table: { fields: ["rows"], items: ":scope tbody tr", badge: "td:not(:has(input))" },
+  matrix: { fields: ["groups"], items: ":scope tbody tr:not(.group)", badge: "th" },
+  gallery: { fields: ["items", "groups"], items: ":scope .gallery > figure", badge: "figcaption" },
+};
+const KIND_TONE = { added: "ok", changed: "warn", removed: "bad" };
+
+function same(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function itemKey(item) {
+  if (typeof item === "string") return item;
+  if (Array.isArray(item)) return item.map(cellText).join(" | ");
+  return String(item.id ?? item.title ?? item.name ?? item.text ?? item.src ?? JSON.stringify(item));
+}
+
+function itemLabel(item) {
+  const label = typeof item === "object" && !Array.isArray(item)
+    ? [item.id, item.title ?? item.name ?? item.question].filter(Boolean).join(" ") || item.text || item.caption || item.src || "item"
+    : itemKey(item);
+  return label.length > 80 ? label.slice(0, 77) + "..." : label;
+}
+
+// The items a block is diffed by. Matrix rows and grouped gallery items are lifted out of their
+// groups; a gallery item keeps its `src` key and notes its group, so a moved item reads as changed.
+function itemsOf(block) {
+  if (block.type === "matrix") return (block.groups || []).flatMap((group) => (group.rows || []).map((row) => ({ ...row, id: [group.title, row.label].filter(Boolean).join(" › ") })));
+  if (block.type === "gallery" && block.groups) return block.groups.flatMap((group) => (group.items || []).map((item) => ({ ...item, group: group.title, note: group.note })));
+  return block[ITEM_DOM[block.type]?.fields[0]] || [];
+}
+
+// Marks each current item "added", "changed", or null; removed items come back whole. `reordered`
+// is true when the items present in both versions changed their relative order.
+function diffItems(before, after) {
+  const old = new Map((before || []).map((item) => [itemKey(item), item]));
+  const kept = new Set();
+  const marks = (after || []).map((item) => {
+    const key = itemKey(item);
+    kept.add(key);
+    if (!old.has(key)) return "added";
+    return same(old.get(key), item) ? null : "changed";
+  });
+  const removed = [...old].filter(([key]) => !kept.has(key)).map(([, item]) => item);
+  const reordered = !same([...old.keys()].filter((key) => kept.has(key)), [...kept].filter((key) => old.has(key)));
+  return { marks, removed, reordered };
+}
+
+// Added and changed items carry their own marks. The block is marked "changed" when its other
+// fields changed or its items were reordered (`own`), or when items were only removed, so a
+// removal still leaves a mark.
+function diffBlock(before, after) {
+  if (!before) return { mark: "added", own: false, marks: [], removed: [] };
+  if (same(before, after)) return null;
+  const fields = ITEM_DOM[after.type]?.fields;
+  if (!fields || before.type !== after.type) return { mark: "changed", own: true, marks: [], removed: [] };
+  const { marks, removed, reordered } = diffItems(itemsOf(before), itemsOf(after));
+  const withoutItems = (block) => ({ ...block, ...Object.fromEntries(fields.map((field) => [field, 0])) });
+  const own = reordered || !same(withoutItems(before), withoutItems(after));
+  return { mark: own || !marks.some(Boolean) ? "changed" : null, own, marks, removed };
+}
+
+function diffSection(before, after, note) {
+  const blocks = (after.blocks || []).map((block, i) => {
+    const diff = diffBlock(before.blocks?.[i], block);
+    if (!diff) return null;
+    const heading = block.heading || `${block.type} block ${i + 1}`;
+    if (diff.mark === "added") note("added", after.title, heading);
+    else if (diff.own) note("changed", after.title, heading);
+    const items = itemsOf(block);
+    diff.marks.forEach((mark, n) => mark && note(mark, after.title, itemLabel(items[n])));
+    diff.removed.forEach((item) => note("removed", after.title, itemLabel(item)));
+    return diff;
+  });
+  const dropped = (before.blocks || []).slice(blocks.length);
+  dropped.forEach((block, n) => note("removed", after.title, block.heading || `${block.type} block ${blocks.length + n + 1}`));
+  // Dropped, not zeroed: same() compares JSON text, so an added key would also shift the key order.
+  const ownFields = ({ blocks, collapsed, ...rest }) => rest;
+  const fieldsChanged = !same(ownFields(before), ownFields(after));
+  if (fieldsChanged) note("changed", after.title, "heading or intro");
+  return { mark: fieldsChanged || dropped.length ? "changed" : null, blocks };
+}
+
+function diffArtifact(before, after) {
+  const entries = [];
+  const note = (kind, where, label) => entries.push({ kind, text: label ? `${where} › ${label}` : where });
+  const headerFields = ["title", "subtitle", "eyebrow"];
+  if (!same(headerFields.map((k) => before[k]), headerFields.map((k) => after[k]))) note("changed", "Header");
+  const old = new Map((before.sections || []).map((s) => [s.id || s.title, s]));
+  const sections = new Map();
+  for (const section of after.sections || []) {
+    const key = section.id || section.title;
+    const prior = old.get(key);
+    old.delete(key);
+    if (prior) sections.set(section, diffSection(prior, section, note));
+    else {
+      sections.set(section, { mark: "added", blocks: [] });
+      note("added", section.title);
+    }
+  }
+  for (const gone of old.values()) note("removed", gone.title);
+  return { sections, entries };
+}
+
+const changes = data.previous ? diffArtifact(data.previous, data) : null;
+
+function badge(mark) {
+  return `<span class="pill change ${KIND_TONE[mark]}">${mark}</span>`;
+}
+
+// Every block sits in a wrapper so "Show only changes" can hide the ones that did not change.
+// Items get identity marks whenever items were added, changed, or removed, so the unchanged
+// ones can hide even when the only item change is a removal.
+function renderChangedBlock(block, diff) {
+  const itemsChanged = diff?.marks.some(Boolean) || diff?.removed.length;
+  const attrs = `data-type="${escapeHtml(block.type)}"${diff?.mark ? ` data-change="${diff.mark}"` : ""}${itemsChanged ? ` data-marks="${diff.marks.map((m) => m || "").join(",")}"` : ""}`;
+  return `<div class="block" ${attrs}>${diff?.mark ? badge(diff.mark) : ""}${renderBlock(block)}</div>`;
+}
+
+// Items are marked after rendering, so the renderers stay unaware of versions.
+function markChangedItems() {
+  for (const wrapper of document.querySelectorAll(".block[data-marks]")) {
+    const spec = ITEM_DOM[wrapper.dataset.type];
+    const marks = wrapper.dataset.marks.split(",");
+    wrapper.querySelectorAll(spec.items).forEach((element, n) => {
+      element.dataset.item = "";
+      if (!marks[n]) return;
+      element.dataset.change = marks[n];
+      const fold = element.matches("details") ? element : element.querySelector(":scope > details");
+      if (fold) fold.open = true;
+      (spec.badge ? element.querySelector(spec.badge) : element)?.insertAdjacentHTML("beforeend", badge(marks[n]));
+    });
+  }
+}
+
+function renderChanges() {
+  if (!changes) return "";
+  const since = "v" + (data.version - 1);
+  if (!changes.entries.length) return `<div class="callout muted"><b>No changes since ${since}</b></div>`;
+  const counts = Object.keys(KIND_TONE)
+    .map((kind) => [kind, changes.entries.filter((e) => e.kind === kind).length])
+    .filter(([, count]) => count)
+    .map(([kind, count]) => `${count} ${kind}`).join(" · ");
+  const rows = changes.entries.map((e) => `<li><span class="pill ${KIND_TONE[e.kind]}">${e.kind}</span> ${inline(e.text)}</li>`).join("");
+  const toggle = data.layout === "slides" ? "" : '<label class="toggle-changes"><input type="checkbox" data-only-changes> Show only changes</label>';
+  return `<details class="callout info changes" open><summary>Changed since ${since}: ${counts}</summary><ul>${rows}</ul>${toggle}</details>`;
+}
+
+function renderSection(section, index) {
+  const id = section.id || "s" + (index + 1);
+  const diff = changes?.sections.get(section);
+  const blocks = (section.blocks || []).map((block, i) => ({ type: block.type, side: block.side, html: renderChangedBlock(block, diff?.blocks[i]) }));
+  // "split" puts figures and blocks marked `side` on the right and every other block on the left.
+  const right = (b) => b.type === "figure" || b.side;
+  const body = section.layout === "split"
+    ? `<div class="split"><div>${blocks.filter((b) => !right(b)).map((b) => b.html).join("")}</div><div>${blocks.filter(right).map((b) => b.html).join("")}</div></div>`
+    : blocks.map((b) => b.html).join("");
+  const heading = `<h2>${inline(section.title)}${diff?.mark ? badge(diff.mark) : ""}</h2>`;
+  const content = (section.intro ? `<p class="intro">${inline(section.intro)}</p>` : "") + body;
+  // Outside a deck every section folds on its heading. `collapsed` starts it folded, unless something
+  // in it changed since the version the reader saw.
+  const changed = diff?.mark || diff?.blocks.some(Boolean);
+  const inner = data.layout === "slides" ? heading + content
+    : `<details class="sec"${section.collapsed && !changed ? "" : " open"}><summary>${heading}</summary>${content}</details>`;
+  return `<section id="${escapeHtml(id)}" class="slide"${diff?.mark ? ` data-change="${diff.mark}"` : ""}>${inner}</section>`;
+}
+
+function renderHeader() {
+  const version = data.version > 1 ? `<span class="pill muted">v${data.version}</span>` : "";
+  const eyebrow = data.eyebrow || version ? `<div class="eyebrow">${inline(data.eyebrow || "")} ${version}</div>` : "";
+  const nav = data.layout === "slides" || (data.sections || []).length < 3 ? "" :
+    `<nav>${data.sections.map((s, i) => `<a href="#${escapeHtml(s.id || "s" + (i + 1))}">${inline(s.title)}</a>`).join("")}</nav>`;
+  return `<header class="slide">${eyebrow}<h1>${inline(data.title)}</h1>${data.subtitle ? `<p class="sub">${inline(data.subtitle)}</p>` : ""}${nav}${renderChanges()}</header>`;
+}
+
+// Saves every decision and ticked row, and returns them as the text the user pastes back.
+function collectDecisions() {
+  const decisions = {};
+  const lines = [];
+  for (const row of document.querySelectorAll(".decision")) {
+    const choice = row.querySelector("input:checked")?.value || "";
+    const note = row.querySelector("textarea").value.trim();
+    decisions[row.dataset.id] = { choice, note };
+    lines.push(`${row.dataset.id}: ${choice || "(no choice)"}${note ? ` - ${note}` : ""}`);
+  }
+  saveState(storageKey, decisions);
+  const pickedRows = {};
+  for (const table of document.querySelectorAll("table.pick")) {
+    const group = table.dataset.group || table.closest("section").querySelector("h2").textContent;
+    lines.push("", group + ":");
+    for (const row of table.tBodies[0].rows) {
+      const ticked = row.querySelector("input").checked;
+      pickedRows[row.dataset.key] = ticked;
+      const label = [...row.cells].slice(1).map((c) => c.textContent).join(" | ");
+      lines.push(`[${ticked ? "x" : " "}] ${label}`);
+    }
+  }
+  saveState(pickedRowsKey, pickedRows);
+  return lines.join("\n");
+}
+
+// navigator.clipboard exists only on HTTPS and localhost; a page opened by LAN IP needs execCommand.
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* fall back below */ }
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.style.cssText = "position:fixed;opacity:0";
+  const focused = document.activeElement;
+  document.body.append(area);
+  area.select();
+  try { return document.execCommand("copy"); } catch { return false; } finally {
+    area.remove();
+    focused?.focus({ preventScroll: true });
+  }
+}
+
+function showCopyResult(bar, text, copied) {
+  const toneClass = copied ? "ok" : "bad";
+  const status = bar.querySelector(".copy-status");
+  const output = bar.querySelector(".copy-text");
+  bar.querySelector("button").className = toneClass;
+  status.className = "copy-status pill " + toneClass;
+  status.textContent = copied ? "Copied" : "Not copied: select the text below and copy it";
+  status.hidden = false;
+  output.className = "copy-text " + toneClass;
+  output.textContent = text;
+  output.hidden = false;
+}
+
+function wireDecisions() {
+  const isPick = (target) => target.closest(".decision, table.pick");
+  document.addEventListener("change", (e) => { if (isPick(e.target)) collectDecisions(); });
+  document.addEventListener("input", (e) => { if (isPick(e.target)) collectDecisions(); });
+  document.addEventListener("click", async (e) => {
+    const row = e.target.closest("table.pick tbody tr");
+    // Dragging to select text in a row must not flip its tick.
+    if (row && !e.target.closest("input, a, [data-tip]") && !getSelection().toString()) {
+      row.querySelector("input").click();
+      return;
+    }
+    if (!e.target.matches("[data-copy-decisions]")) return;
+    const text = `Decisions for "${data.title}":\n` + collectDecisions();
+    showCopyResult(e.target.closest(".copy-bar"), text, await copyText(text));
+  });
+}
+
+// Chip hover text, in one shared tooltip instead of the native one, which shows late, never on touch,
+// and not at all in some embedded browsers. It shows on mouse hover, keyboard focus, or a tap, and
+// hides on leave, blur, Escape, or a tap elsewhere. Fixed on the body, so a scrolling table never
+// clips it; it sits below the chip, or above when there is no room, and stays inside the viewport.
+function wireChipTips() {
+  const tip = document.createElement("div");
+  tip.className = "chip-tip";
+  tip.setAttribute("role", "tooltip");
+  tip.hidden = true;
+  document.body.append(tip);
+  let owner = null;
+  const place = () => {
+    tip.style.left = tip.style.top = "0px"; // measure at full width, not squeezed by the last position
+    const r = owner.getBoundingClientRect(), gap = 6, edge = 8;
+    if (!owner.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2))) return hide();
+    const { clientWidth: width, clientHeight: height } = document.documentElement; // the viewport without scrollbars
+    const fitsBelow = r.bottom + gap + tip.offsetHeight <= height - edge;
+    tip.style.top = `${fitsBelow ? r.bottom + gap : Math.max(edge, r.top - gap - tip.offsetHeight)}px`;
+    tip.style.left = `${Math.max(edge, Math.min(r.left, width - edge - tip.offsetWidth))}px`;
+  };
+  const show = (chip) => {
+    owner = chip;
+    tip.textContent = chip.dataset.tip;
+    tip.hidden = false;
+    place();
+  };
+  const hide = () => { owner = null; tip.hidden = true; };
+  const chipOf = (e) => e.target.closest?.("[data-tip]");
+  document.addEventListener("pointerover", (e) => { if (e.pointerType === "mouse" && chipOf(e)) show(chipOf(e)); });
+  document.addEventListener("pointerout", (e) => { if (e.pointerType === "mouse" && owner && chipOf(e) === owner && !owner.contains(e.relatedTarget)) hide(); });
+  document.addEventListener("focusin", (e) => { if (chipOf(e)) show(chipOf(e)); });
+  document.addEventListener("focusout", (e) => { if (owner && chipOf(e) === owner) hide(); });
+  document.addEventListener("click", (e) => { if (chipOf(e)) show(chipOf(e)); else hide(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") hide(); });
+  for (const type of ["scroll", "resize"]) addEventListener(type, () => { if (owner) place(); }, true);
+}
+
+// Steps blocks follow their own width, not the window's, so a side column and a phone behave alike. A short
+// ordered block is a row while each step gets 10em, else a rail; a parts block puts its titles in a column from
+// 40em. Hidden slides and folded sections measure 0 and fire again when shown.
+function wireSteps() {
+  const observer = new ResizeObserver((entries) => {
+    for (const { target, borderBoxSize } of entries) {
+      const width = borderBoxSize[0].inlineSize;
+      const em = parseFloat(getComputedStyle(target).fontSize);
+      if (target.matches(".parts")) target.classList.toggle("cols", width >= 40 * em);
+      else target.classList.toggle("rail", width < target.children.length * 10 * em);
+    }
+  });
+  // A block with long text is already a rail and stays one, so it is not observed.
+  document.querySelectorAll(".steps:not(.rail)").forEach((block) => observer.observe(block));
+}
+
+// The saved choice applies to every artifact; without one the page follows the system theme.
+function wireTheme(bar) {
+  const root = document.documentElement;
+  const systemDark = matchMedia("(prefers-color-scheme: dark)");
+  try {
+    const saved = localStorage.getItem(themeKey);
+    if (saved) root.dataset.theme = saved;
+  } catch { /* storage blocked */ }
+  const isDark = () => (root.dataset.theme || (systemDark.matches ? "dark" : "light")) === "dark";
+  const button = document.createElement("button");
+  button.type = "button";
+  const showTarget = () => {
+    button.textContent = isDark() ? "\u2600\uFE0E" : "\u263E";
+    button.title = `Switch to ${isDark() ? "light" : "dark"} mode`;
+    button.setAttribute("aria-label", button.title);
+  };
+  button.addEventListener("click", () => {
+    root.dataset.theme = isDark() ? "light" : "dark";
+    try { localStorage.setItem(themeKey, root.dataset.theme); } catch { /* storage blocked */ }
+    showTarget();
+  });
+  systemDark.addEventListener("change", showTarget);
+  showTarget();
+  bar.append(button);
+}
+
+function wireSlides(bar) {
+  document.body.classList.add("slides");
+  const slides = [...document.querySelectorAll(".slide")];
+  bar.insertAdjacentHTML("afterbegin", '<button type="button" data-step="-1">‹</button><span></span><button type="button" data-step="1">›</button>');
+  let current = Math.min(Number(location.hash.slice(1)) || 0, slides.length - 1);
+  const show = (index) => {
+    current = Math.max(0, Math.min(index, slides.length - 1));
+    slides.forEach((s, i) => s.classList.toggle("on", i === current));
+    bar.querySelector("span").textContent = `${current + 1} / ${slides.length}`;
+    history.replaceState(null, "", "#" + current);
+  };
+  bar.addEventListener("click", (e) => { if (e.target.dataset.step) show(current + Number(e.target.dataset.step)); });
+  document.addEventListener("keydown", (e) => {
+    if (e.target.matches("textarea, input")) return;
+    if (["ArrowRight", "PageDown", " "].includes(e.key)) { e.preventDefault(); show(current + 1); }
+    if (["ArrowLeft", "PageUp"].includes(e.key)) { e.preventDefault(); show(current - 1); }
+  });
+  show(current);
+}
+
+document.title = data.title || "Artifact";
+document.getElementById("root").innerHTML = renderHeader() + (data.sections || []).map(renderSection).join("");
+markChangedItems();
+document.addEventListener("change", (e) => {
+  if (!e.target.matches("[data-only-changes]")) return;
+  document.body.classList.toggle("only-changes", e.target.checked);
+  if (e.target.checked) document.querySelectorAll("section:is([data-change], :has([data-change])) > details.sec").forEach((d) => { d.open = true; });
+});
+// Any section holding picks, even inside collapsible rows, ends with the copy bar.
+for (const section of document.querySelectorAll("section")) {
+  if (!section.querySelector(".decision, table.pick")) continue;
+  (section.querySelector(":scope > details.sec") || section).insertAdjacentHTML("beforeend", '<div class="copy-bar"><button type="button" data-copy-decisions>Copy my decisions</button> <span class="copy-status" hidden></span><pre class="copy-text" hidden></pre></div>');
+}
+// A link to a section, from the top nav or anywhere on the page, unfolds it before the jump.
+const unfold = (hash) => {
+  let id = hash.slice(1);
+  try { id = decodeURIComponent(id); } catch { /* a stray "%" stays as typed */ }
+  const fold = id && document.getElementById(id)?.closest("section")?.querySelector(":scope > details.sec");
+  if (fold) fold.open = true;
+};
+document.addEventListener("click", (e) => { const link = e.target.closest('a[href^="#"]'); if (link) unfold(link.getAttribute("href")); });
+addEventListener("hashchange", () => unfold(location.hash));
+unfold(location.hash);
+const toolbar = document.createElement("div");
+toolbar.className = "toolbar";
+document.body.append(toolbar);
+wireTheme(toolbar);
+wireDecisions();
+wireChipTips();
+wireSteps();
+if (data.layout === "slides") wireSlides(toolbar);
+// A page rewritten during a long run reloads itself, at most daily. A reload would undo what the
+// reader opened or folded, so a tick is skipped while a row they opened is open or one they folded is shut, "Show only changes" is on,
+// a textarea has focus, or a video is playing; the next tick tries again.
+const refreshSeconds = Number(data.refresh);
+if (refreshSeconds >= 10) {
+  const openAtLoad = new Set(document.querySelectorAll("details[open]"));
+  const readerIsBusy = () => document.body.classList.contains("only-changes")
+    || document.activeElement?.matches("textarea")
+    || [...document.querySelectorAll("video")].some((v) => !v.paused)
+    || [...document.querySelectorAll("details")].some((d) => d.open !== openAtLoad.has(d));
+  setInterval(() => { if (!readerIsBusy()) location.reload(); }, Math.min(refreshSeconds, 86400) * 1000);
+}
+</script>
+</body>
+</html>
