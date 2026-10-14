@@ -11,7 +11,7 @@ diagnostics to reproduce a failed run without changing compilation semantics.
   web controller consume the same event boundary; the web layer does not parse log text.
 - Expected compiler failures make `generate_rm` return False and are delivered through an
   explicit hook.
-  When three attempts are exhausted, the error includes the last failing stage and
+  When the attempt limit is exhausted, the error includes the last failing stage and
   its feedback; the web Run status retains this reason rather than only a failed result.
   Expected provider failures also retain their diagnostic message. The generic failure
   message is a fallback only when no specific reason was delivered.
@@ -50,6 +50,10 @@ diagnostics to reproduce a failed run without changing compilation semantics.
   failure retains its stage-specific diagnostic and does not restart proposal generation.
 - Failure reporting must not parse logs, replace an available diagnostic with a
   generic failure message, add refinement attempts, or override a critic's rejection.
+- Warnings are a typed observer next to progress text: an uncounted rerun (a provider or
+  content failure that keeps the attempt number) and every compile warning reach the CLI as a
+  warning line and the web Run status as a `warn (N)` stack that lists them; the log keeps the
+  lines too.
 - Logs include validated proposal data, critic verdicts, LTLf clauses, complete DFA data,
   serialized Reward Machines, validated node descriptions and labeling source, and embedding
   metadata, but never explicitly include credentials, environment
@@ -85,3 +89,8 @@ keeps their association visible when a trace is reopened.
   provider responses for generator, task-critic, RM-critic, and provider failures.
   These checks verify diagnostic propagation and output gating, not live provider
   reliability or improved critic acceptance rates.
+
+## History
+
+- 2026-10-14: Attempt limit configurable; warnings became a typed hook surfaced on the CLI and in
+  the web Run status (iteration 2).

@@ -71,9 +71,17 @@ tasks, while keeping the generator and critic responsibilities stable.
   Prompt feedback begins with `NO CHANGES NEEDED` or `CHANGES REQUIRED`. These are
   prompt instructions, not an additional execution-evidence gate or automated override
   of a critic's verdict.
-- In compiler mode, each task has at most three generator attempts. The critic may be disabled;
-  disabling it prints a warning and accepts the compiler's first result. Enabled critics use the
-  configured provider and critic model.
+- In compiler mode, each task has at most `--attempts` generator attempts (default 3, at most
+  10, also a web UI field). Only a critic rejection uses one: a provider failure (connection
+  error, exhausted 400 repeats, timeout) or a content failure (invalid proposal, incompatible
+  clauses, malformed tagger output) reruns the same attempt and reports a warning, bounded by a
+  fixed fuse of uncounted reruns. The critic may be disabled; disabling it prints a warning and
+  accepts the compiler's first result. Enabled critics use the configured provider and critic
+  model.
+- The creator assumes the task is feasible in its environment; there is no refusal field.
+  Whether a task can be done at all is the environment author's and the user's responsibility.
+- The generator and the critic run at one shared reasoning level (`--reasoning`: `none`, `low`,
+  `medium`, `high`, `max`; default `none`), sent on every provider request of the run.
 - Compiler model selection is role-specific: one generator model writes clauses and state
   descriptions; a different critic model reviews the clauses and the compiled RM.
   Create the generator engine and, when the critic is enabled, the critic engine once
@@ -249,3 +257,6 @@ through their inputs and prompts, while both challenge the same generator.
 - 2026-10-13: One template catalog (meanings, IBM formulas, cue words, worked examples) shared by
   the creator and the critic; provider HTTP 400s repeated 1 s apart inside each request (user decisions
   at the result gate).
+- 2026-10-14: Attempts count critic rejections only, with `--attempts` up to 10 and visible warnings
+  for uncounted reruns; one shared `--reasoning` level for both models; the task is assumed
+  feasible, no refusal field (user decisions, iteration 2).
