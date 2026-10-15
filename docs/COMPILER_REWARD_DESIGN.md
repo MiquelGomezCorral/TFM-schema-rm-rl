@@ -174,6 +174,28 @@ Two things keep every loop at 0: how the rewards are built, and one check on the
 - **[run] Tested.** The T2.1 live test (27 clause sets, all eight templates, hard and soft)
   checked every RM for a positive loop with its own networkx code: none found, 253/253 checks.
 
+### Why shorter RM paths get no extra reward
+
+An idea raised on 2026-10-14: pay a bonus on routes that cross the RM in fewer transitions (the
+direct edge from start to final would earn more than the three-step route). Decided against,
+for three reasons.
+
+- **[paper] The progress reward is potential-based and the bonus is not.** Progress pays
+  `0.1 x` the drop in the longest remaining path, so every route from the start to the final pays
+  the same total (the direct edge pays it at once, the long route in instalments). That is the
+  shaping of Ng, Harada and Russell (1999, `docs/RMs/Reward-Shaping-Ng-1999.pdf`): a difference of
+  one potential per state never changes which policy is optimal. The bonus makes routes pay
+  different totals, so it would change the optimal policy, which is the thing the literature
+  avoids; Icarte et al. (JAIR 2022, section 4.4) and Camacho et al. (IJCAI 2019) shape reward
+  machines the same potential-based way.
+- **[run] RM path length is not environment steps.** A short RM route means several facts became
+  true on one environment step (key and door at once), which the environment decides far more
+  than the agent; in DoorKey it is not a choice at all. The discount already prefers fewer
+  environment steps.
+- **[decision] Strictness is a template question, not a reward one.** Where "only after" must
+  forbid "at the same step", the right tool is a strict precedence template
+  (`(!b U (a & !b)) | G(!b)`), noted for a later iteration, not a reward that pays "at once" more.
+
 ### Graph passes and the library behind them
 
 The reward layer runs its graph passes with [networkx](https://networkx.org/) 3.6 (declared in
