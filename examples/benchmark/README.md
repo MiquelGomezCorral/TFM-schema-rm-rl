@@ -15,7 +15,10 @@ clauses each one should produce.
   sentences into a prompt, and when the guide gains a phrase, reword any task that uses it.
 - **Expected clauses follow the guide's rules.** A required event ordered by "until" or
   "before" gets `Existence` plus `Precedence`; an order rule on an event the task doesn't
-  require gets `Precedence` alone. A `Response` consequent gets no `Existence` of its own.
+  require gets `Precedence` alone. "Do a before b" names two events and English does not say
+  which one is commanded: the `also_ok` sets accept `Existence` on either event or on both,
+  with the `Precedence` (added 2026-10-15 after the first long run, where the compiler read
+  the imperative as the required event 3 times out of 3). A `Response` consequent gets no `Existence` of its own.
   A task with no hard goal is rule-only: the compiler warns that its RM has no final state.
 
 ## Fields
