@@ -202,6 +202,7 @@ class Configuration:
     reasoning: str = "none"
     attempts: int = 3
     labeling: bool = False
+    state_descriptions: bool = True
     embeddings: bool = False
     # None means the local llama-server on LLAMA_SERVER_PORT; see llama_server_command.
     embedding_endpoint: str | None = None
@@ -432,6 +433,10 @@ class Configuration:
             raise ValueError(
                 f"attempts must be between {self.ATTEMPT_LIMITS.start} and "
                 f"{self.ATTEMPT_LIMITS.stop - 1}: {self.attempts!r}"
+            )
+        if not self.state_descriptions and (self.labeling or self.embeddings):
+            raise ValueError(
+                "Labeling and embeddings need state descriptions; enable --state-descriptions"
             )
 
     def _resolve_models(self) -> None:

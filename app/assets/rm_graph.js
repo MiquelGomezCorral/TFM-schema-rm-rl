@@ -38,10 +38,27 @@
     return "u" + String(id).replace(/^state-/, "");
   }
 
-  function literalChip(literal) {
-    const text = String(literal);
-    const negated = text.startsWith("!") ? " rm-graph-literal-negated" : "";
-    return element("span", "rm-graph-literal" + negated, text);
+  // One guard string (an "&"-joined conjunction) becomes one chip per literal,
+  // separated by a muted "&", so a negated literal never hides inside a long chip.
+  function conditionChips(entry) {
+    const chips = [];
+    const parts = String(entry)
+      .split("&")
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0);
+    parts.forEach((part, index) => {
+      if (index > 0) {
+        chips.push(element("span", "rm-graph-literal-and", "&"));
+      }
+      const modifier =
+        part === "else" || part === "true"
+          ? ""
+          : part.startsWith("!")
+            ? " rm-graph-literal-negated"
+            : " rm-graph-literal-positive";
+      chips.push(element("span", "rm-graph-literal" + modifier, part));
+    });
+    return chips;
   }
 
   function caseCard(formalCase, index) {
@@ -55,7 +72,7 @@
       element("span", "rm-graph-reward-" + sign, "· r=" + formalCase.reward_label)
     );
     const literals = element("div", "rm-graph-literals");
-    literals.append(...(condition.length ? condition : ["true"]).map(literalChip));
+    literals.append(...(condition.length ? condition : ["true"]).flatMap(conditionChips));
 
     const card = element("div", "rm-graph-case");
     card.append(head, literals);

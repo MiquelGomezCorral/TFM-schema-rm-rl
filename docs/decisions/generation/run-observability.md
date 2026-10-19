@@ -17,8 +17,10 @@ diagnostics to reproduce a failed run without changing compilation semantics.
   message is a fallback only when no specific reason was delivered.
 - Each task exposes eight sequential stages: structured proposal generation, deterministic
   DECLARE/LTLf materialization, FL-AT/MONA DFA compilation, Reward Machine construction (FL-AT
-  product and the reward layer), the optional critic, state-description generation, optional
-  labeling generation, and optional local node embeddings. Compile warnings (rule-only task,
+  product and the reward layer), the optional critic, optional state-description generation
+  (default on; `--state-descriptions`), optional labeling generation, and optional local node
+  embeddings. Labeling and embeddings need the descriptions, so turning them off while either is
+  on is a configuration error. Compile warnings (rule-only task,
   soft clauses without reward effect) are logged and shown with the result.
 - State descriptions appear in the app's Completed output, paired with their node
   identifiers, and are retained in the existing step trace and optional Markdown report.
@@ -32,6 +34,10 @@ diagnostics to reproduce a failed run without changing compilation semantics.
   console, and web Log view share the same timed records and multiline artifact output.
 - Logs are retained locally until manually deleted. There is no automatic rotation or
   run-history UI in V1.
+- A web run can be stopped: the Stop control (confirmed by a dialog) sets a cancellation flag that the
+  pipeline checks at every stage start, attempt start and retry loop; the in-flight provider request
+  finishes first. A stopped run writes no output, logs the stop, and shows a neutral `Stopped` status,
+  distinct from `Failed`. The CLI keeps Ctrl+C.
 - Graph focus is a desktop-only reading mode; the focus control is hidden below the
   desktop breakpoint instead of introducing a separate mobile graph layout.
 
@@ -40,7 +46,7 @@ diagnostics to reproduce a failed run without changing compilation semantics.
 - Stage events carry task index, attempt, stage, state, and terminal duration; retrying
   a task does not alter another task's progress.
 - Disabled critics and optional artifact stages are explicitly skipped. A task is accepted only when every enabled
-  critic accepts the same attempt and state descriptions are complete; output files
+  critic accepts the same attempt and, when enabled, state descriptions are complete; output files
   remain gated on all task acceptance and enabled postprocessing completion. All final
   destinations are checked before writing; overwrite policy applies to bundles too.
 - Tagging retries preserve the compiled candidate and its proposal attempt number.
@@ -91,6 +97,10 @@ keeps their association visible when a trace is reopened.
   reliability or improved critic acceptance rates.
 
 ## History
+
+- 2026-10-19: Web runs gained a Stop control with a cancellation flag and a neutral `Stopped` state.
+- 2026-10-18: State descriptions became an optional stage, default on, with one CLI flag and one
+  web toggle; labeling and embeddings require it.
 
 - 2026-10-14: Attempt limit configurable; warnings became a typed hook surfaced on the CLI and in
   the web Run status (iteration 2).

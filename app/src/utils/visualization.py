@@ -16,6 +16,25 @@ SELF_LOOP_LABEL_OFFSET = 23
 SELF_LOOP_LABEL_DROP = 10
 HOVER_CLASS = "rm-hover"  # set by rm_graph.js while an edge, or its source state, is hovered
 
+# Cytoscape takes literal colours, so the dark palette lives here once, keyed by its UI role.
+_DARK = {
+    "page": "#0a0c10",
+    "raised": "#171b21",
+    "hover": "#1e232b",
+    "border": "#23272f",
+    "border_strong": "#3d434d",
+    "text": "#e9edf2",
+    "muted": "#8b95a3",
+    "accent": "#7c9cff",
+    "success": "#4ec9a0",
+    "success_tint": "#17352c",
+    "success_ink": "#8fe3c4",
+    "warning": "#e2b04a",
+    "danger": "#f0707a",
+    "danger_tint": "#3a2024",
+    "danger_ink": "#f6a6ac",
+}
+
 CYTOSCAPE_STYLESHEET = [
     {
         "selector": "node",
@@ -24,43 +43,46 @@ CYTOSCAPE_STYLESHEET = [
             "shape": "ellipse",
             "text-valign": "center",
             "text-halign": "center",
-            "background-color": "#18263d",
-            "border-color": "#5878a8",
+            "background-color": _DARK["raised"],
+            "border-color": _DARK["border_strong"],
             "border-width": 2,
-            "color": "#f7f9fc",
+            "color": _DARK["text"],
             "font-size": "14px",
             "font-weight": 600,
             "height": f"{_GRAPH.node_diameter}px",
             "width": f"{_GRAPH.node_diameter}px",
         },
     },
-    {"selector": ".initial", "style": {"border-color": "#38bdf8", "border-width": 4}},
+    {
+        "selector": ".initial",
+        "style": {"border-color": _DARK["accent"], "border-width": 4},
+    },
     {
         "selector": ".final",
-        "style": {"background-color": "#14532d", "border-color": "#86efac"},
+        "style": {"background-color": _DARK["success_tint"], "border-color": _DARK["success"]},
     },
     {
         "selector": ".rejecting",
-        "style": {"background-color": "#572033", "border-color": "#fb7185"},
+        "style": {"background-color": _DARK["danger_tint"], "border-color": _DARK["danger"]},
     },
     {
         "selector": "edge",
         "style": {
             "label": "data(label)",
             "curve-style": "bezier",
-            "line-color": "#7189ad",
-            "target-arrow-color": "#7189ad",
+            "line-color": _DARK["border_strong"],
+            "target-arrow-color": _DARK["border_strong"],
             "target-arrow-shape": "triangle",
             "arrow-scale": 1.1,
             "width": 2,
-            "color": "#dce7f7",
+            "color": _DARK["muted"],
             "font-size": "11px",
             "text-rotation": "none",
             "text-margin-y": "data(label_offset)",
-            "text-background-color": "#0d1728",
+            "text-background-color": _DARK["page"],
             "text-background-opacity": 1,
             "text-background-shape": "roundrectangle",
-            "text-border-color": "#385071",
+            "text-border-color": _DARK["border"],
             "text-border-width": 1,
             "text-border-opacity": 1,
         },
@@ -68,27 +90,27 @@ CYTOSCAPE_STYLESHEET = [
     {
         "selector": ".edge-positive",
         "style": {
-            "line-color": "#86efac",
-            "target-arrow-color": "#86efac",
-            "color": "#dcfce7",
-            "text-border-color": "#166534",
+            "line-color": _DARK["success"],
+            "target-arrow-color": _DARK["success"],
+            "color": _DARK["success_ink"],
+            "text-border-color": _DARK["success_tint"],
         },
     },
     {
         "selector": ".edge-zero",
         "style": {
-            "line-color": "#b8c7dc",
-            "target-arrow-color": "#b8c7dc",
-            "color": "#dce7f7",
+            "line-color": _DARK["muted"],
+            "target-arrow-color": _DARK["muted"],
+            "color": _DARK["text"],
         },
     },
     {
         "selector": ".edge-negative",
         "style": {
-            "line-color": "#fb7185",
-            "target-arrow-color": "#fb7185",
-            "color": "#fecdd3",
-            "text-border-color": "#9f1239",
+            "line-color": _DARK["danger"],
+            "target-arrow-color": _DARK["danger"],
+            "color": _DARK["danger_ink"],
+            "text-border-color": _DARK["danger_tint"],
         },
     },
     {
@@ -107,7 +129,7 @@ CYTOSCAPE_STYLESHEET = [
         "selector": f"edge.{HOVER_CLASS}",
         "style": {
             "width": 4,
-            "overlay-color": "#38bdf8",
+            "overlay-color": _DARK["accent"],
             "overlay-opacity": 0.18,
             "overlay-padding": "4px",
         },
@@ -115,11 +137,54 @@ CYTOSCAPE_STYLESHEET = [
     {
         "selector": "node:selected, edge:selected",
         "style": {
-            "overlay-color": "#fbbf24",
+            "overlay-color": _DARK["warning"],
             "overlay-opacity": 0.14,
             "overlay-padding": "6px",
         },
     },
+]
+
+
+# The light theme reuses the dark stylesheet and swaps only the colors listed here, by selector.
+_LIGHT_OVERRIDES = {
+    "node": {"background-color": "#f1f5f9", "border-color": "#64748b", "color": "#0f172a"},
+    ".initial": {"border-color": "#0284c7"},
+    ".final": {"background-color": "#dcfce7", "border-color": "#16a34a"},
+    ".rejecting": {"background-color": "#ffe4e6", "border-color": "#e11d48"},
+    "edge": {
+        "line-color": "#64748b",
+        "target-arrow-color": "#64748b",
+        "color": "#1e293b",
+        "text-background-color": "#ffffff",
+        "text-border-color": "#cbd5e1",
+    },
+    ".edge-positive": {
+        "line-color": "#16a34a",
+        "target-arrow-color": "#16a34a",
+        "color": "#14532d",
+        "text-border-color": "#86efac",
+    },
+    ".edge-zero": {
+        "line-color": "#94a3b8",
+        "target-arrow-color": "#94a3b8",
+        "color": "#1e293b",
+    },
+    ".edge-negative": {
+        "line-color": "#e11d48",
+        "target-arrow-color": "#e11d48",
+        "color": "#881337",
+        "text-border-color": "#fda4af",
+    },
+    f"edge.{HOVER_CLASS}": {"overlay-color": "#0284c7"},
+    "node:selected, edge:selected": {"overlay-color": "#d97706"},
+}
+
+CYTOSCAPE_STYLESHEET_LIGHT = [
+    {
+        "selector": rule["selector"],
+        "style": {**rule["style"], **_LIGHT_OVERRIDES.get(rule["selector"], {})},
+    }
+    for rule in CYTOSCAPE_STYLESHEET
 ]
 
 

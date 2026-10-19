@@ -1,9 +1,12 @@
 """Render Cytoscape Reward Machine elements to one self-contained interactive HTML page.
 
-The page inlines the vendored Cytoscape.js, the app's graph stylesheet and the same
-``rm_graph.js`` / ``rm_graph.css`` the web UI loads, so hovering, the transition panel,
-pan, zoom and dragging behave like the app. Without positions the states use the same
+The page inlines the vendored Cytoscape.js, the app's graph stylesheets (dark and light) and
+the same ``rm_graph.js`` / ``rm_graph.css`` the web UI loads, so hovering, the transition
+panel, pan, zoom and dragging behave like the app. Without positions the states use the same
 top-down layout as the SVG export.
+
+The theme is resolved once when the page opens: a ``?theme=light|dark`` query on the file
+wins, then the theme baked at render time, and ``auto`` follows ``prefers-color-scheme``.
 """
 
 import json
@@ -12,16 +15,22 @@ from pathlib import Path
 from src.compiler.reward_machine import RewardMachineStructure
 
 from .layout import element_positions
-from .visualization import CYTOSCAPE_STYLESHEET, HOVER_CLASS, reward_machine_to_elements
+from .visualization import (
+    CYTOSCAPE_STYLESHEET,
+    CYTOSCAPE_STYLESHEET_LIGHT,
+    HOVER_CLASS,
+    reward_machine_to_elements,
+)
 
 _APP_ROOT = Path(__file__).resolve().parents[2]
 _CYTOSCAPE_JS = _APP_ROOT / "vendor" / "cytoscape" / "cytoscape.min.js"
 _GRAPH_JS = _APP_ROOT / "assets" / "rm_graph.js"
 _GRAPH_CSS = _APP_ROOT / "assets" / "rm_graph.css"
+_THEMES = ("auto", "light", "dark")
 
-# The graph stage uses the same dark background as the web UI's graph panel.
+# The stage color is a variable of rm_graph.css, so it follows the page theme.
 _PAGE_STYLE = """
-html, body { height: 100%; margin: 0; background: #0c1626; }
+html, body { height: 100%; margin: 0; background: var(--rm-stage-bg); }
 .rm-graph-stage { position: relative; width: 100%; height: 100%; overflow: hidden; }
 #rm-graph { width: 100%; height: 100%; }
 """
@@ -29,10 +38,16 @@ html, body { height: 100%; margin: 0; background: #0c1626; }
 # Same Cytoscape options as the web UI's graph component.
 _BOOT_SCRIPT = """
 const data = JSON.parse(document.getElementById("rm-graph-data").textContent);
+const queryTheme = new URLSearchParams(location.search).get("theme");
+let theme = ["light", "dark"].includes(queryTheme) ? queryTheme : data.theme;
+if (theme === "auto") {
+  theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+document.documentElement.dataset.rmTheme = theme;
 const cy = cytoscape({
   container: document.getElementById("rm-graph"),
   elements: data.elements,
-  style: data.style,
+  style: data.styles[theme],
   layout: { name: "preset", fit: true, padding: 60 },
   wheelSensitivity: 0.15,
   boxSelectionEnabled: false,
@@ -48,14 +63,21 @@ def render_structure_html(structure: RewardMachineStructure) -> str:
     return render_elements_html(reward_machine_to_elements(structure))
 
 
-def render_elements_html(elements: list[dict], positions: dict | None = None) -> str:
+def render_elements_html(
+    elements: list[dict], positions: dict | None = None, theme: str = "auto"
+) -> str:
     """Render Cytoscape elements as a standalone interactive HTML page.
+
+    ``theme`` is ``"light"``, ``"dark"`` or ``"auto"`` (follow the viewer's color scheme);
+    a ``?theme=`` query on the opened file overrides it. Raises ``ValueError`` otherwise.
 
     When ``positions`` maps state ids to model coordinates, the page opens with those
     placements, so an export keeps whatever the user arranged. Without positions the
     states keep the ``position`` their elements carry, and are laid out (as for the SVG)
     only if one of them has none.
     """
+    if theme not in _THEMES:
+        raise ValueError(f"theme must be one of {_THEMES}, got {theme!r}")
     if positions is None:
         positions = element_positions(elements)
 
@@ -71,7 +93,8 @@ def render_elements_html(elements: list[dict], positions: dict | None = None) ->
         page_elements.append(page_element)
 
     # Labels and guards come from model output, so "<" must not close the script block.
-    payload = json.dumps({"elements": page_elements, "style": CYTOSCAPE_STYLESHEET})
+    styles = {"dark": CYTOSCAPE_STYLESHEET, "light": CYTOSCAPE_STYLESHEET_LIGHT}
+    payload = json.dumps({"elements": page_elements, "theme": theme, "styles": styles})
     payload = payload.replace("<", "\\u003c")
 
     return f"""<!DOCTYPE html>

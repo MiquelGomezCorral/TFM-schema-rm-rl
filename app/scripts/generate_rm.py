@@ -37,6 +37,7 @@ from src.utils import (
     GenerationHooks,
     PipelineStep,
     Progress,
+    RunCancelled,
     StepState,
     append_history,
     attach_step_trace,
@@ -76,6 +77,9 @@ def generate_rm(
         _run_pipeline(CONFIG, hooks, progress, write_outputs=write_outputs)
         return True
 
+    except RunCancelled:
+        progress.fail("Stopped by the user")
+        return False
     except (
         ProposalValidationError,
         RetryableEngineError,
@@ -161,6 +165,7 @@ class _Pipeline:
         """
         reruns = self.CONFIG.UNCOUNTED_RETRIES
         for _ in range(reruns + 1):
+            self.progress.check_cancelled()
             try:
                 return self._attempt(task, history)
             except _RerunError as failure:
@@ -259,6 +264,9 @@ class _Pipeline:
 
     def _describe_states(self, task: str, compiled: CompilationResult) -> CompilationResult:
         """Tag every machine state, retrying malformed or transient responses locally."""
+        if not self.CONFIG.state_descriptions:
+            self.progress.stage_skip(PipelineStep.STATE_DESCRIPTIONS)
+            return compiled
         self.progress.start(PipelineStep.STATE_DESCRIPTIONS)
 
         facts = _tagger_facts(compiled)

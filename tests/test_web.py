@@ -1,8 +1,10 @@
+import base64
 import json
 import re
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from time import sleep
 from types import SimpleNamespace
 from unittest.mock import patch
 from xml.etree import ElementTree
@@ -11,7 +13,7 @@ from dash import no_update
 
 from scripts import generate_rm
 from src.compiler.reward_machine import RewardMachineStructure, Transition
-from src.config import Configuration, GraphStyle
+from src.config import REASONING_LEVELS, Configuration, GraphStyle
 from src.engines import GenericEngine, ImmediateEngineError
 from src.models import EnvironmentDescription
 from src.utils import (
@@ -23,8 +25,14 @@ from src.utils import (
     render_structure_svg,
     reward_machine_to_elements,
 )
-from src.web.application import create_app
-from src.web.components import create_layout, render_steps
+from src.web.application import (
+    _load_environment,
+    _run_status,
+    _select_reasoning,
+    _step_attempts,
+    create_app,
+)
+from src.web.components import STATUS_CLASSES, create_layout, render_steps
 from src.web.runner import (
     STEP_ORDER,
     RunController,
@@ -32,7 +40,12 @@ from src.web.runner import (
     RunState,
     StepSnapshot,
     TaskSnapshot,
+    _initial_task,
 )
+
+
+def _step_state(task: TaskSnapshot, step: PipelineStep) -> StepState | None:
+    return next((item.state for item in task.steps if item.step is step), None)
 
 
 class WebTests(unittest.TestCase):
@@ -129,6 +142,9 @@ class WebTests(unittest.TestCase):
                 snapshot = controller.snapshot()
                 self.assertEqual(snapshot.status, RunState.FAILED)
                 self.assertIn(expected, snapshot.error)
+                word, _status_class, reason = _run_status(snapshot)
+                self.assertEqual(word, "Failed")
+                self.assertIn(expected, reason)
                 self.assertEqual(len(requests), calls)
                 self.assertIn(expected, snapshot.log_path.read_text(encoding="utf-8"))
                 self.assertEqual(list((Path(directory) / "outputs" / "RMs").glob("*.rm")), [])
@@ -147,7 +163,15 @@ class WebTests(unittest.TestCase):
         custom_classes = set(re.findall(r"(?<![\w-])\.([a-zA-Z_][\w-]*)", custom_stylesheet))
         self.assertEqual(
             {name for name in custom_classes if not name.startswith("dash-")},
-            {"critic-options", "graph-canvas", "outputs-options", "run-tab"},
+            {
+                "critic-options",
+                "graph-canvas",
+                "outputs-options",
+                "run-log",
+                "run-tab",
+                "status-reason",
+                "step-output",
+            },
         )
 
         pending = [create_layout()]
@@ -165,17 +189,50 @@ class WebTests(unittest.TestCase):
         self.assertTrue(component_classes)
         self.assertTrue(all(len(class_name.split()) > 1 for class_name in component_classes))
 
+    def test_environment_upload_names_the_output_after_its_title(self):
+        cases = (
+            (
+                "# MultiTaxi with Two Passengers\n\n## Environment",
+                "environment.md",
+                "multitaxi-with-two-passengers.rm",
+            ),
+            ("No heading here.", "ENVIRONMENT.md", "environment.rm"),
+            ("# Door Key\n", "doorkey.md", "doorkey.rm"),
+        )
+        for text, filename, expected in cases:
+            payload = "data:text/markdown;base64," + base64.b64encode(text.encode()).decode()
+            with self.subTest(filename=filename, text=text.splitlines()[0]):
+                with patch("src.web.application._existing_output_names", return_value=set()):
+                    markdown, status, output_name = _load_environment(payload, filename)
+                self.assertEqual(markdown, text)
+                self.assertEqual(status, f"Loaded {filename}; edit the text before generating.")
+                self.assertEqual(output_name, expected)
+
+    def test_state_descriptions_skip_follows_the_request_flag(self):
+        enabled = _initial_task(0, "finish", RunRequest("# Demo", ["finish"], "out.rm"))
+        disabled = _initial_task(
+            0,
+            "finish",
+            RunRequest("# Demo", ["finish"], "out.rm", state_descriptions=False),
+        )
+        self.assertIs(_step_state(enabled, PipelineStep.STATE_DESCRIPTIONS), StepState.PENDING)
+        self.assertIs(_step_state(disabled, PipelineStep.STATE_DESCRIPTIONS), StepState.SKIPPED)
+        self.assertIs(_step_state(disabled, PipelineStep.LABELING), StepState.SKIPPED)
+
     def test_layout_uses_critic_options_and_no_approval_controls(self):
         layout = str(create_layout())
         self.assertIn("critic-options", layout)
+        self.assertIn("descriptions-toggle", layout)
         self.assertIn("labeling-toggle", layout)
         self.assertIn("embeddings-toggle", layout)
         self.assertNotIn("approve-button", layout)
         self.assertNotIn("decline-button", layout)
         self.assertEqual(
             {state.value for state in RunState},
-            {"idle", "running", "completed", "failed"},
+            {"idle", "running", "completed", "failed", "stopped"},
         )
+        self.assertIn("stop-run", layout)
+        self.assertIn("Stop generation", layout)
 
     def test_graph_starts_with_the_standalone_renderer_layout(self):
         layout = create_layout(CYTOSCAPE_STYLESHEET)
@@ -321,12 +378,20 @@ class WebTests(unittest.TestCase):
         data = json.loads(payload.group(1))
         state_ids = {element["data"]["id"] for element in data["elements"] if "position" in element}
         self.assertEqual(state_ids, {"state-0", "state-1", "state-2"})
-        self.assertEqual(data["style"], CYTOSCAPE_STYLESHEET)
+        self.assertEqual(data["theme"], "auto")
+        self.assertEqual(data["styles"]["dark"], CYTOSCAPE_STYLESHEET)
+        self.assertEqual(len(data["styles"]["light"]), len(CYTOSCAPE_STYLESHEET))
         self.assertNotIn("rm-hover", json.dumps(data["elements"]))
 
         assets = Path(__file__).parents[1] / "app" / "assets"
         self.assertIn((assets / "rm_graph.js").read_text(encoding="utf-8"), page)
         self.assertIn((assets / "rm_graph.css").read_text(encoding="utf-8"), page)
+        self.assertIn("rm-graph-literal-positive", page)
+
+        light = render_elements_html(elements, theme="light")
+        self.assertIn('"theme": "light"', light)
+        with self.assertRaises(ValueError):
+            render_elements_html(elements, theme="sepia")
 
     def test_poll_locks_inputs_and_critics_while_running_and_keeps_results(self):
         controller = RunController(generate_rm)
@@ -334,13 +399,13 @@ class WebTests(unittest.TestCase):
         key = next(key for key in app.callback_map if "critic-options.options" in key)
         poll = app.callback_map[key]["callback"].__wrapped__
         idle = poll(0, None, [{"index": 0}])
-        self.assertFalse(idle[10][0]["disabled"])
+        self.assertFalse(idle[14][0]["disabled"])
         controller._status = RunState.RUNNING
         active = poll(0, None, [{"index": 0}])
-        self.assertTrue(active[3])
-        self.assertTrue(all(item["disabled"] for item in active[10]))
-        self.assertTrue(all(item["disabled"] for item in active[11]))  # reasoning radios
-        self.assertTrue(active[12])  # attempts input
+        self.assertTrue(active[4])
+        self.assertTrue(all(item["disabled"] for item in active[14]))
+        self.assertTrue(all(active[15]))  # reasoning segments
+        self.assertTrue(active[16])  # attempts input
         self.assertTrue(all(item["disabled"] for item in active[-1]))
         controller._status = RunState.COMPLETED
         controller._results = (
@@ -364,11 +429,11 @@ class WebTests(unittest.TestCase):
         result_key = next(key for key in app.callback_map if "result-summary.children" in key)
         render = app.callback_map[result_key]["callback"].__wrapped__
         summary, tabs, bodies, elements, export_name, *export_disabled = render(0)
-        self.assertIn("out.rm", summary)
-        self.assertIn("Warning: Rule-only task", summary)
-        self.assertIn("Bundle: out-bundle", summary)
-        self.assertIn("Embedding: nomic-embed-text dim=2", summary)
-        self.assertIn("Embeddings: out-embeddings", summary)
+        self.assertIn("out.rm", str(summary))
+        self.assertIn("Rule-only task", str(summary))
+        self.assertIn("out-bundle", str(summary))
+        self.assertIn("nomic-embed-text dim=2", str(summary))
+        self.assertIn("out-embeddings", str(summary))
         self.assertEqual([tab.value for tab in tabs], ["reward_machine", "state_descriptions"])
         self.assertIn("State descriptions", str(tabs))
         self.assertIn('"u0"', str(bodies))
@@ -402,8 +467,8 @@ class WebTests(unittest.TestCase):
                 pending.append(children)
         self.assertIsNotNone(tabs)
         for tab in tabs.children:
-            self.assertEqual(tab.style["backgroundColor"], "#101a2b")
-            self.assertEqual(tab.selected_style["backgroundColor"], "#17243a")
+            self.assertEqual(tab.style["backgroundColor"], "transparent")
+            self.assertEqual(tab.selected_style["backgroundColor"], "transparent")
 
     def test_rerun_of_the_same_attempt_restarts_the_stages(self):
         controller = RunController(generate_rm)
@@ -428,7 +493,7 @@ class WebTests(unittest.TestCase):
         poll = app.callback_map[key]["callback"].__wrapped__
         controller._warnings = ["Task 1: second run"]
         update = poll(0, ["Task 1: first run"])
-        self.assertEqual(update[1], "warn (1)")
+        self.assertEqual(update[1], "1 warning")
         self.assertEqual(update[3], ["Task 1: second run"])
         self.assertIs(poll(0, ["Task 1: second run"])[0], no_update)
 
@@ -451,6 +516,100 @@ class WebTests(unittest.TestCase):
         self.assertEqual(snapshot.tasks[0].retry_note, "bad proposal")
         self.assertEqual(snapshot.tasks[0].state, StepState.RUNNING)
         self.assertIn("Task 1 of 1", str(render_steps(snapshot.tasks)))
+
+    def test_reasoning_segments_keep_one_selected_level(self):
+        ids = [{"type": "reasoning-option", "index": level} for level in REASONING_LEVELS]
+
+        def select(trigger: object, current: str):
+            with patch("src.web.application.ctx", SimpleNamespace(triggered_id=trigger)):
+                return _select_reasoning([0, 0, 0, 1, 0], current, ids)
+
+        level, classes, checked = select({"type": "reasoning-option", "index": "high"}, "none")
+        selected = REASONING_LEVELS.index("high")
+        self.assertEqual(level, "high")
+        self.assertIn("bg-hover text-text", classes[selected])
+        self.assertTrue(
+            all(
+                "bg-hover text-text" not in name
+                for index, name in enumerate(classes)
+                if index != selected
+            )
+        )
+        self.assertEqual(checked, [False, False, False, True, False])
+        self.assertIs(select({"type": "reasoning-option", "index": "high"}, "high")[0], no_update)
+        self.assertIs(select("generate-button", "low")[0], no_update)
+        self.assertEqual(select("generate-button", "low")[2], [False, True, False, False, False])
+
+    def test_stepper_clamps_the_attempt_limit_and_locks_both_buttons(self):
+        limits = Configuration.ATTEMPT_LIMITS
+        last = limits.stop - 1
+
+        def step(trigger: str, value: object, locked: bool = False):
+            with patch("src.web.application.ctx", SimpleNamespace(triggered_id=trigger)):
+                return _step_attempts(1, 1, value, locked)
+
+        self.assertEqual(step("attempts-decrement", limits.start), (limits.start, True, False))
+        self.assertEqual(step("attempts-decrement", 5), (4, False, False))
+        self.assertEqual(step("attempts-increment", last), (last, False, True))
+        self.assertEqual(step("attempts-increment", 5), (6, False, False))
+        self.assertEqual(step("attempts", 5), (no_update, False, False))
+        self.assertEqual(step("attempts", True), (no_update, True, True))
+        self.assertEqual(step("attempts-decrement", None), (no_update, True, True))
+        self.assertEqual(step("attempts-decrement", 5, locked=True), (no_update, True, True))
+        self.assertEqual(step("attempts-increment", last, locked=True), (no_update, True, True))
+
+    def test_stop_ends_the_run_neutral(self):
+        def looping_generate(_CONFIG, hooks):
+            while not hooks.is_cancelled():
+                sleep(0.01)
+            return False
+
+        controller = RunController(looping_generate)
+        self.assertFalse(controller.stop())
+        controller.start(RunRequest("# Demo", ["finish"], "stopped.rm"))
+        self.assertTrue(controller.stop())
+        controller._worker.join(timeout=5)
+        self.assertFalse(controller._worker.is_alive())
+        snapshot = controller.snapshot()
+        self.assertEqual(snapshot.status, RunState.STOPPED)
+        self.assertEqual(snapshot.error, "Stopped by the user")
+        self.assertTrue(snapshot.stopping)
+        self.assertEqual(_run_status(snapshot), ("Stopped", STATUS_CLASSES["stopped"], ""))
+
+    def test_a_stopping_run_keeps_the_running_pill(self):
+        controller = RunController(generate_rm)
+        controller._status = RunState.RUNNING
+        controller._stopping = True
+        self.assertEqual(
+            _run_status(controller.snapshot()),
+            ("Stopping…", STATUS_CLASSES["running"], ""),
+        )
+
+    def test_poll_swaps_the_generate_and_stop_slot(self):
+        controller = RunController(generate_rm)
+        app = create_app(controller)
+        key = next(key for key in app.callback_map if "critic-options.options" in key)
+        poll = app.callback_map[key]["callback"].__wrapped__
+        idle_generate, idle_stop, idle_stop_disabled = poll(0, None, [{"index": 0}])[11:14]
+        self.assertNotIn("!hidden", idle_generate.split())
+        self.assertIn("!hidden", idle_stop.split())
+        self.assertFalse(idle_stop_disabled)
+        controller._status = RunState.RUNNING
+        running_generate, running_stop, running_stop_disabled = poll(0, None, [{"index": 0}])[11:14]
+        self.assertIn("!hidden", running_generate.split())
+        self.assertNotIn("!hidden", running_stop.split())
+        self.assertFalse(running_stop_disabled)
+        controller._stopping = True
+        self.assertTrue(poll(0, None, [{"index": 0}])[13])
+
+    def test_stop_control_reports_whether_a_run_was_active(self):
+        controller = RunController(generate_rm)
+        app = create_app(controller)
+        key = next(key for key in app.callback_map if key.startswith("run-feedback.children@"))
+        stop = app.callback_map[key]["callback"].__wrapped__
+        self.assertEqual(stop(1), "No run is active.")
+        controller._status = RunState.RUNNING
+        self.assertEqual(stop(1), "Stopping after the current request…")
 
 
 if __name__ == "__main__":

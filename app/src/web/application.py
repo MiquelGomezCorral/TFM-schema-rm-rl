@@ -13,7 +13,7 @@ from dash.exceptions import PreventUpdate
 
 from src.compiler import CompilationResult, parse_reward_machine
 from src.compiler.reward_machine import RewardMachineStructure
-from src.config import Configuration
+from src.config import REASONING_LEVELS, Configuration
 from src.utils import (
     CYTOSCAPE_STYLESHEET,
     STEP_OUTPUT_ORDER,
@@ -30,19 +30,23 @@ from .components import (
     EMBEDDINGS_OPTIONS,
     FOCUS_OUTPUT_REGION_CLASS,
     FOCUS_WORKSPACE_CLASS,
+    GENERATE_BUTTON_CLASS,
     INPUT_REGION_CLASS,
     LABELING_OPTIONS,
     OUTPUT_REGION_CLASS,
-    REASONING_OPTIONS,
     RUN_SIDEBAR_CLASS,
+    STATE_DESCRIPTIONS_OPTIONS,
     STATUS_CLASSES,
     STEPS_REPORT_OPTIONS,
+    STOP_BUTTON_CLASS,
+    TOOLBAR_ICON_SIZE_CLASS,
     WORKSPACE_CLASS,
-    _section_icon,
+    _icon,
     create_layout,
     render_steps,
     result_bodies,
     result_tabs,
+    segment_class,
     task_row,
 )
 from .runner import RunController, RunRequest, RunSnapshot, RunState
@@ -50,14 +54,28 @@ from .runner import RunController, RunRequest, RunSnapshot, RunState
 IMPORTED_RM_VALUE = "imported"
 
 # Summary, tab strip, bodies, graph elements, export name, then both export buttons' disabled.
-_PanelUpdate = tuple[str, object, list, list, str | None, bool, bool]
+# The summary is a list of rows once an output is selected, and one plain message when it is not.
+_PanelUpdate = tuple[str | list, object, list, list, str | None, bool, bool]
 
 _OUTPUT_SUFFIX = ".rm"
 _DEFAULT_OUTPUT_STEM = "reward-machine"
+_DEFAULT_ENVIRONMENT_NAME = "environment.md"
+_ENVIRONMENT_STEM = "environment"
 _UNSAFE_OUTPUT_NAME = re.compile(r"[^A-Za-z0-9._-]+")
+_ENVIRONMENT_TITLE = re.compile(r"^#\s+(\S.*)$", re.MULTILINE)
 
-_UPLOAD_STATUS_CLASS = "field-hint text-[0.76rem] leading-[1.4] text-muted"
-_UPLOAD_ERROR_CLASS = "field-hint text-[0.76rem] leading-[1.4] text-[#fda4af]"
+# Weights the three Tailwind font stacks use; the stacks fall back to system fonts offline.
+FONTS_STYLESHEET = (
+    "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600"
+    "&family=JetBrains+Mono:wght@400;500&family=Sora:wght@600&display=swap"
+)
+
+_UPLOAD_STATUS_CLASS = "field-hint text-xs text-muted"
+_UPLOAD_ERROR_CLASS = "field-hint text-xs text-danger-ink"
+
+SUMMARY_ROW_CLASS = "summary-row flex gap-2.5 border-b border-border py-1.5"
+SUMMARY_LABEL_CLASS = "summary-label w-[76px] shrink-0 font-mono text-xs text-muted"
+SUMMARY_VALUE_CLASS = "summary-value min-w-0 font-mono text-xs text-text wrap-anywhere"
 
 _EXPORT_CLIENT_SCRIPT = """
 function (svg_clicks, html_clicks) {
@@ -112,11 +130,17 @@ def create_app(controller: RunController) -> Dash:
     """Create one local Dash app driven by ``controller``."""
     cyto.load_extra_layouts()
     assets_folder = Path(__file__).resolve().parents[2] / "assets"
-    app = Dash(__name__, assets_folder=str(assets_folder), title="Reward Machine compiler")
+    app = Dash(
+        __name__,
+        assets_folder=str(assets_folder),
+        title="Reward Machine compiler",
+        external_stylesheets=[FONTS_STYLESHEET],
+    )
     app.layout = create_layout(CYTOSCAPE_STYLESHEET)
 
     _register_input_callbacks(app)
     _register_start_callback(app, controller)
+    _register_stop_callback(app, controller)
     _register_poll_callback(app, controller)
     _register_warning_callback(app, controller)
     _register_result_callback(app, controller)
@@ -153,6 +177,25 @@ def _register_input_callbacks(app: Dash) -> None:
         State({"type": "task-input", "index": ALL}, "value"),
         prevent_initial_call=True,
     )(_update_task_rows)
+    app.callback(
+        Output("attempts", "value"),
+        Output("attempts-decrement", "disabled"),
+        Output("attempts-increment", "disabled"),
+        Input("attempts-decrement", "n_clicks"),
+        Input("attempts-increment", "n_clicks"),
+        Input("attempts", "value"),
+        Input("attempts", "disabled"),
+        prevent_initial_call=True,
+    )(_step_attempts)
+    app.callback(
+        Output("reasoning-level", "data"),
+        Output({"type": "reasoning-option", "index": ALL}, "className"),
+        Output({"type": "reasoning-option", "index": ALL}, "aria-checked"),
+        Input({"type": "reasoning-option", "index": ALL}, "n_clicks"),
+        State("reasoning-level", "data"),
+        State({"type": "reasoning-option", "index": ALL}, "id"),
+        prevent_initial_call=True,
+    )(_select_reasoning)
 
 
 def _register_start_callback(app: Dash, controller: RunController) -> None:
@@ -164,10 +207,11 @@ def _register_start_callback(app: Dash, controller: RunController) -> None:
         State("environment-upload", "contents"),
         State({"type": "task-input", "index": ALL}, "value"),
         State("output-filename", "value"),
-        State("reasoning-level", "value"),
+        State("reasoning-level", "data"),
         State("attempts", "value"),
         State("critic-options", "value"),
         State("steps-report-toggle", "value"),
+        State("descriptions-toggle", "value"),
         State("labeling-toggle", "value"),
         State("embeddings-toggle", "value"),
         prevent_initial_call=True,
@@ -183,7 +227,7 @@ def _register_start_callback(app: Dash, controller: RunController) -> None:
     ) -> str:
         """Start a run from the form.
 
-        ``options`` are the reasoning level, the attempt limit, then the four checklist values
+        ``options`` are the reasoning level, the attempt limit, then the five checklist values
         in layout order.
         """
         reasoning, attempts, *toggles = options
@@ -197,6 +241,8 @@ def _register_start_callback(app: Dash, controller: RunController) -> None:
             return (
                 f"Enter a whole number from {limits.start} to {limits.stop - 1} critic rejections."
             )
+        if reasoning not in REASONING_LEVELS:
+            return "Choose a reasoning level."
         submitted_name = (output_filename or "").strip()
         output_name = _available_output_filename(submitted_name, len(tasks))
         request = RunRequest(
@@ -220,10 +266,24 @@ def _register_start_callback(app: Dash, controller: RunController) -> None:
         )
 
 
+def _register_stop_callback(app: Dash, controller: RunController) -> None:
+    @app.callback(
+        Output("run-feedback", "children", allow_duplicate=True),
+        Input("stop-run", "submit_n_clicks"),
+        prevent_initial_call=True,
+    )
+    def stop_run(_submit_n_clicks: int | None) -> str:
+        """Stop the running generation after its current provider request."""
+        if controller.stop():
+            return "Stopping after the current request…"
+        return "No run is active."
+
+
 def _register_poll_callback(app: Dash, controller: RunController) -> None:
     @app.callback(
         Output("run-status", "children"),
         Output("run-status", "className"),
+        Output("run-status-reason", "children"),
         Output("run-log", "children"),
         Output("environment-upload", "disabled"),
         Output("environment-markdown", "disabled"),
@@ -232,8 +292,11 @@ def _register_poll_callback(app: Dash, controller: RunController) -> None:
         Output({"type": "remove-task", "index": ALL}, "disabled"),
         Output("output-filename", "disabled"),
         Output("generate-button", "disabled"),
+        Output("generate-button", "className"),
+        Output("stop-run-button", "className"),
+        Output("stop-run-button", "disabled"),
         Output("critic-options", "options"),
-        Output("reasoning-level", "options"),
+        Output({"type": "reasoning-option", "index": ALL}, "disabled"),
         Output("attempts", "disabled"),
         Output("output-selector", "options"),
         Output("output-selector", "value"),
@@ -241,6 +304,7 @@ def _register_poll_callback(app: Dash, controller: RunController) -> None:
         Output("run-steps", "children"),
         Output("task-selection", "data"),
         Output("steps-report-toggle", "options"),
+        Output("descriptions-toggle", "options"),
         Output("labeling-toggle", "options"),
         Output("embeddings-toggle", "options"),
         Input("poll-interval", "n_intervals"),
@@ -252,6 +316,7 @@ def _register_poll_callback(app: Dash, controller: RunController) -> None:
         State("task-selection", "data"),
         Input("imported-reward-machine", "data"),
         State("run-status", "children"),
+        State("run-status-reason", "children"),
     )
     def poll_run(
         _n_intervals: int,
@@ -262,15 +327,19 @@ def _register_poll_callback(app: Dash, controller: RunController) -> None:
         _dot_clicks: list[int | None] | None = None,
         selection_data: dict[str, int | None] | None = None,
         imported_data: dict[str, str] | None = None,
-        previous_status: str | None = None,
+        *previous_states: str | None,
     ) -> tuple[object, ...]:
+        previous_status = previous_states[0] if previous_states else None
+        previous_reason = previous_states[1] if len(previous_states) > 1 else None
         snapshot = controller.snapshot()
-        status_text, status_class = _run_status(snapshot)
-        if status_text == previous_status:
+        word, class_name, reason = _run_status(snapshot)
+        if (word, reason) == (previous_status, previous_reason):
             # Only a real status change may wake dependents, or every poll would re-render them.
-            status_text = status_class = no_update
+            status: tuple[object, object, object] = (no_update, no_update, no_update)
+        else:
+            status = (word, class_name, reason)
         panels = _poll_panels(snapshot, selected_index, remove_ids, selection_data, imported_data)
-        return status_text, status_class, *panels
+        return *status, *panels
 
 
 def _register_warning_callback(app: Dash, controller: RunController) -> None:
@@ -293,7 +362,8 @@ def _register_warning_callback(app: Dash, controller: RunController) -> None:
         if warnings == (shown or []):
             return no_update, no_update, no_update, no_update
         visible = "run-warnings block" if warnings else "run-warnings hidden"
-        return visible, f"warn ({len(warnings)})", [html.Li(item) for item in warnings], warnings
+        label = f"{len(warnings)} warning" if len(warnings) == 1 else f"{len(warnings)} warnings"
+        return visible, label, [html.Li(item) for item in warnings], warnings
 
 
 def _register_result_callback(app: Dash, controller: RunController) -> None:
@@ -374,11 +444,11 @@ def _load_environment(contents: str | None, filename: str | None) -> tuple[objec
         markdown = _decode_uploaded_markdown(contents)
     except (ValueError, UnicodeDecodeError) as error:
         return no_update, f"Could not load UTF-8 Markdown: {error}", no_update
-    environment_name = filename or "environment.md"
+    environment_name = filename or _DEFAULT_ENVIRONMENT_NAME
     return (
         markdown,
         f"Loaded {environment_name}; edit the text before generating.",
-        _available_output_filename(environment_name),
+        _available_output_filename(_environment_output_stem(filename, markdown)),
     )
 
 
@@ -428,16 +498,66 @@ def _update_task_rows(
     return [task_row(index, value) for index, value in enumerate(rows)]
 
 
+def _step_attempts(
+    _decrement_clicks: int | None,
+    _increment_clicks: int | None,
+    value: object,
+    locked: bool | None,
+) -> tuple[object, bool, bool]:
+    """Move the rejection limit one step and keep both buttons inside its bounds.
+
+    A click on a button moves the value; a typed or pasted value is kept untouched, so only
+    the two ``disabled`` flags are recomputed and the pair never freezes.
+    """
+    limits = Configuration.ATTEMPT_LIMITS
+    if locked:
+        return no_update, True, True
+    current = value if isinstance(value, int) and not isinstance(value, bool) else None
+    stepped = no_update
+    if current is not None and limits.start <= current <= limits.stop - 1:
+        if ctx.triggered_id == "attempts-decrement":
+            stepped = max(current - 1, limits.start)
+        elif ctx.triggered_id == "attempts-increment":
+            stepped = min(current + 1, limits.stop - 1)
+    unknown = current is None
+    return (
+        stepped,
+        unknown or current <= limits.start,
+        unknown or current >= limits.stop - 1,
+    )
+
+
+def _select_reasoning(
+    _clicks: list[int | None], current: str | None, ids: list[dict[str, str]]
+) -> tuple[object, list[str], list[bool]]:
+    """Return the level one segment click selects and the whole track's visible state.
+
+    One handler serves the group, so the clicked level comes from the trigger id; a trigger
+    that is not a known segment keeps the stored level. The store only changes on a new level,
+    while class names and aria-checked are returned for every segment in ``ids`` order.
+    """
+    triggered = _triggered_id()
+    clicked = triggered.get("index") if isinstance(triggered, Mapping) else None
+    level = clicked if clicked in REASONING_LEVELS else current
+    return (
+        level if level != current else no_update,
+        [segment_class(item["index"] == level) for item in ids],
+        [item["index"] == level for item in ids],
+    )
+
+
 def _run_flags(
     critic_options: list[str] | None,
     steps_report_options: list[str] | None,
+    descriptions_options: list[str] | None,
     labeling_options: list[str] | None,
     embeddings_options: list[str] | None,
 ) -> dict[str, bool]:
-    """Turn the four checklist values into the run request's boolean flags."""
+    """Turn the five checklist values into the run request's boolean flags."""
     return {
         "critic": _is_checked(critic_options, "critic"),
         "labeling": _is_checked(labeling_options, "labeling"),
+        "state_descriptions": _is_checked(descriptions_options, "state_descriptions"),
         "embeddings": _is_checked(embeddings_options, "embeddings"),
         "steps_report": _is_checked(steps_report_options, "steps_report"),
     }
@@ -452,12 +572,26 @@ def _is_checked(options: list[str] | None, name: str) -> bool:
 # ======================================================================================
 
 
-def _run_status(snapshot: RunSnapshot) -> tuple[str, str]:
-    """Return the status label and its CSS classes."""
-    text = snapshot.status.value.capitalize()
-    if snapshot.error:
-        text = f"{text}: {snapshot.error}"
-    return text, STATUS_CLASSES[snapshot.status.value]
+def _run_status(snapshot: RunSnapshot) -> tuple[str, str, str]:
+    """Return the status word, its CSS classes and the failure reason.
+
+    The pill stays one word wide; a failure puts its reason in the status popover instead.
+    A stop is a neutral outcome, so it keeps no reason: the log holds the error text.
+    """
+    if snapshot.status is RunState.STOPPED:
+        return "Stopped", STATUS_CLASSES["stopped"], ""
+    stopping = snapshot.stopping and snapshot.status is RunState.RUNNING
+    word = "Stopping…" if stopping else snapshot.status.value.capitalize()
+    return word, STATUS_CLASSES[snapshot.status.value], snapshot.error or ""
+
+
+def _slot_class(base: str, hidden: bool) -> str:
+    """Return a button's class list, hidden while the other state of the slot owns it.
+
+    ``!hidden`` beats the button's own ``inline-flex``, which the plain ``hidden`` utility
+    does not: both are unlayered display utilities and ``inline-flex`` comes later.
+    """
+    return f"{base} !hidden" if hidden else base
 
 
 def _poll_panels(
@@ -488,8 +622,11 @@ def _poll_panels(
         [active or item.get("index") == 0 for item in remove_ids],
         active,
         active,
+        _slot_class(GENERATE_BUTTON_CLASS, active),
+        _slot_class(STOP_BUTTON_CLASS, not active),
+        active and snapshot.stopping,
         _locked(CRITIC_OPTIONS, active),
-        _locked(REASONING_OPTIONS, active),
+        [active] * len(REASONING_LEVELS),
         active,
         options,
         selected if selected != selected_index else no_update,
@@ -497,6 +634,7 @@ def _poll_panels(
         render_steps(snapshot.tasks, task_selected),
         next_selection,
         _locked(STEPS_REPORT_OPTIONS, active),
+        _locked(STATE_DESCRIPTIONS_OPTIONS, active),
         _locked(LABELING_OPTIONS, active),
         _locked(EMBEDDINGS_OPTIONS, active),
     )
@@ -523,11 +661,13 @@ def _selected_output(
     generated = _is_generated_index(selected_index, len(snapshot.output_paths))
     if imported is None:
         return selected_index if generated else (0 if snapshot.output_paths else None)
-    if trigger == "imported-reward-machine":
-        return IMPORTED_RM_VALUE
-    if generated or _is_imported_value(selected_index):
-        return selected_index
-    return IMPORTED_RM_VALUE
+    # The options list owns which value names a task of a multi-task trace; selecting the entry it
+    # lists first keeps the selector showing a label instead of an empty box.
+    if trigger == "imported-reward-machine" or not (
+        generated or _is_imported_value(selected_index)
+    ):
+        return str(_imported_options(imported)[0]["value"])
+    return selected_index
 
 
 def _task_selection(
@@ -595,7 +735,9 @@ def _render_imported(
         return _empty_panel(f"Could not render imported Reward Machine: {error}", step)
     name = str(task["reward_machine"]) or str(imported["filename"])
     label = str(task["task"])
-    summary = f"Imported: {imported['filename']}" + (f" | {label}" if label else "")
+    summary = [_summary_row("Imported", imported["filename"])]
+    if label:
+        summary.append(_summary_row("Task", label))
     return _panel(
         summary,
         steps,
@@ -654,20 +796,30 @@ def _graph_elements(machine: RewardMachineStructure) -> list:
     return deepcopy(_laid_out_elements(machine))
 
 
-def _result_summary(result: CompilationResult, output_path: Path) -> str:
-    """Describe one completed output: its compile warnings, bundle and embedding artifacts."""
-    summary = f"{output_path} | {result.proposal.task}"
-    for warning in result.warnings:
-        summary += f" | Warning: {warning}"
+def _result_summary(result: CompilationResult, output_path: Path) -> list:
+    """Describe one completed output: its path, task, compile warnings and artifacts."""
+    rows = [_summary_row("Output", output_path), _summary_row("Task", result.proposal.task)]
+    rows.extend(_summary_row("Warning", warning) for warning in result.warnings)
     if result.bundle_path:
-        summary += f" | Bundle: {result.bundle_path}"
+        rows.append(_summary_row("Bundle", result.bundle_path))
     if result.embedding_settings:
         model = result.embedding_settings.get("model")
         dimension = result.embedding_settings.get("dimension")
-        summary += f" | Embedding: {model} dim={dimension}"
+        rows.append(_summary_row("Embedding", f"{model} dim={dimension}"))
     if result.embedding_path:
-        summary += f" | Embeddings: {result.embedding_path}"
-    return summary
+        rows.append(_summary_row("Embeddings", result.embedding_path))
+    return rows
+
+
+def _summary_row(label: str, value: object) -> html.Div:
+    """Build one summary row; the fixed label width keeps every value aligned."""
+    return html.Div(
+        [
+            html.Dt(label, className=SUMMARY_LABEL_CLASS),
+            html.Dd(str(value), className=SUMMARY_VALUE_CLASS),
+        ],
+        className=SUMMARY_ROW_CLASS,
+    )
 
 
 def _is_generated_index(value: object, generated_count: int) -> bool:
@@ -694,7 +846,7 @@ def _toggle_graph_focus(
             "hidden",
             "hidden",
             FOCUS_OUTPUT_REGION_CLASS,
-            [_section_icon("minimize", boxed=False), "Exit focus"],
+            [_icon("minimize", TOOLBAR_ICON_SIZE_CLASS), "Exit focus"],
             True,
         )
     return (
@@ -703,7 +855,7 @@ def _toggle_graph_focus(
         INPUT_REGION_CLASS,
         RUN_SIDEBAR_CLASS,
         OUTPUT_REGION_CLASS,
-        [_section_icon("focus", boxed=False), "Focus graph"],
+        [_icon("focus", TOOLBAR_ICON_SIZE_CLASS), "Focus graph"],
         False,
     )
 
@@ -742,7 +894,7 @@ def _selected_step(value: object) -> PipelineStep:
 
 
 def _panel(
-    summary: str,
+    summary: str | list,
     steps: Mapping[PipelineStep, object],
     selected: PipelineStep,
     elements: list,
@@ -760,7 +912,7 @@ def _panel(
     )
 
 
-def _empty_panel(summary: str, selected: PipelineStep) -> _PanelUpdate:
+def _empty_panel(summary: str | list, selected: PipelineStep) -> _PanelUpdate:
     """Return a panel update that shows only a message."""
     return _panel(summary, {}, selected, [], None)
 
@@ -886,6 +1038,23 @@ def _export_filename(name: object, extension: str) -> str:
         if stem:
             return f"{stem}.{extension}"
     return f"reward-machine.{extension}"
+
+
+def _environment_output_stem(filename: str | None, markdown: str) -> str:
+    """Name the output after the environment title for a generic ``environment.md`` upload.
+
+    Every example environment file shares the name ``environment.md``, so an
+    output numbered after that name says nothing about the task. A generic
+    upload is slugged from its first level-1 heading instead, falling back to
+    the generic name when it has none. Any other file name is kept unchanged.
+    """
+    if filename is not None and PurePosixPath(filename).stem.lower() != _ENVIRONMENT_STEM:
+        return filename
+    match = _ENVIRONMENT_TITLE.search(markdown)
+    if match is None:
+        return _DEFAULT_ENVIRONMENT_NAME
+    slug = re.sub(r"[^a-z0-9]+", "-", match.group(1).lower()).strip("-")
+    return slug or _DEFAULT_ENVIRONMENT_NAME
 
 
 def _output_stem(name: str | None) -> str:

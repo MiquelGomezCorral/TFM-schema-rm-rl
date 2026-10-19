@@ -26,7 +26,7 @@ automata composition, and the external MONA executable for LTLf-to-DFA compilati
 - `configs/`: YAML run configs for `train-rl`, one file per run.
 - `app/src/web/`: reusable Dash layout, callbacks, run state, and RM visualization.
 - `app/src/utils/layout.py` + `settle.py`: the circle layout of Reward Machine graphs.
-- `app/assets/`: local responsive web styling, plus the shared graph script (`rm_graph.js/.css`).
+- `app/assets/`: local responsive web styling, plus the shared graph script (`rm_graph.js/.css`). Exported graph pages take `render_elements_html(theme=auto|light|dark)`; a `?theme=` query on the file wins.
 - `examples/`: documented environment descriptions.
 - `dependencies/nl2ltl/`: pinned submodule of the maintained IBM `nl2ltl` fork.
 - `dependencies/Flat/`: pinned submodule of the maintained FL-AT fork.

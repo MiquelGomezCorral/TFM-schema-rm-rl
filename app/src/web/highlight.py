@@ -18,9 +18,9 @@ from src.utils import PipelineStep
 
 _JSON_TOKENS = (
     ("key", r'"(?:[^"\\]|\\.)*"(?=\s*:)', "text-accent"),
-    ("string", r'"(?:[^"\\]|\\.)*"', "text-success"),
+    ("string", r'"(?:[^"\\]|\\.)*"', "text-success-ink"),
     ("number", r"-?\d+(?:\.\d+)?", "text-text"),
-    ("keyword", r"\b(?:true|false|null)\b", "text-[#fda4af]"),
+    ("keyword", r"\b(?:true|false|null)\b", "text-danger-ink"),
 )
 _DFA_TOKENS = (
     ("label", r"^[a-z_]+(?=:)", "text-accent"),
@@ -30,16 +30,16 @@ _RM_TOKENS = (
     ("header", r"^[A-Za-z_]+(?=:)", "text-accent font-bold"),
     ("state", r"\bu\d+\b", "text-accent"),
     ("arrow", r"->", "text-muted"),
-    ("reward", r"-?\d+(?:\.\d+)?$", "text-success"),
+    ("reward", r"-?\d+(?:\.\d+)?$", "text-success-ink"),
 )
 _PYTHON_TOKENS = (
     (
         "keyword",
         r"\b(?:def|return|not|and|or|None|True|False|any|all)\b",
-        "text-[#fda4af]",
+        "text-danger-ink",
     ),
     ("function", r"\b[A-Za-z_]\w*(?=\()", "text-accent"),
-    ("string", r'"[^"]*"', "text-success"),
+    ("string", r'"[^"]*"', "text-success-ink"),
 )
 _FORMATS = {
     PipelineStep.GENERATE: _JSON_TOKENS,

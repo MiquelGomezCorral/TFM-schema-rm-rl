@@ -10,7 +10,7 @@ from src.config import Configuration
 from src.models import EnvironmentDescription
 from src.prompts import read_prompt, render_prompt
 
-from .errors import RetryableEngineError, classify_provider_error
+from .errors import RetryableEngineError, RunCancelled, classify_provider_error
 from .structured import (
     CriticResult,
     ProposalSelection,
@@ -31,6 +31,9 @@ TextRequester = Callable[[str, str, str], str]
 
 class GenericEngine:
     """Shared proposal and critic workflow for structured-output providers."""
+
+    # Set by the pipeline so the provider retry loop stops when the client stops the run.
+    should_stop: Callable[[], bool] | None = None
 
     def __init__(
         self,
@@ -174,10 +177,16 @@ class GenericEngine:
                 repeats += 1
                 if repeats > Configuration.PROVIDER_RETRIES:
                     raise RetryableEngineError(str(error)) from error
+                self._check_stopped()
                 self._renew_session()
                 sleep(Configuration.PROVIDER_RETRY_WAIT_S)
             except Exception as error:
                 raise classify_provider_error(error) from error
+
+    def _check_stopped(self) -> None:
+        """Abort the retry loop instead of retrying again once the run was stopped."""
+        if self.should_stop is not None and self.should_stop():
+            raise RunCancelled("Stopped by the user")
 
     def _renew_session(self) -> None:
         """Start a new provider session; a provider whose errors stick to one overrides this."""

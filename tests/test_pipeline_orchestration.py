@@ -578,6 +578,47 @@ class OrchestrationTests(unittest.TestCase):
         self.assertIn('"u0": "description u0"', review["state_descriptions_json"])
         self.assertIn('"done"', review["propositions_json"])
 
+    def test_state_descriptions_disabled_skips_stage_and_provider(self):
+        self.critic.verdicts = [CriticResult(True, "ok")]
+        events = []
+        with (
+            patch(
+                "scripts.generate_rm.setup_environment_and_engines",
+                return_value=(ENV, self.engine, self.critic),
+            ),
+            patch(
+                "src.utils.generation_pipeline.derive_output_paths", return_value=(Path("out.rm"),)
+            ),
+            patch("src.utils.generation_pipeline.save_results", self.saved),
+            patch("scripts.generate_rm.compile_dfas", return_value=()),
+            patch("scripts.generate_rm.build_compilation_result", return_value=result()),
+        ):
+            self.assertTrue(
+                generate_rm(
+                    Configuration(
+                        environment="demo.md",
+                        tasks=["finish"],
+                        output="out.rm",
+                        state_descriptions=False,
+                    ),
+                    hooks=GenerationHooks(event=events.append),
+                )
+            )
+        descriptions = [event for event in events if event.step is PipelineStep.STATE_DESCRIPTIONS]
+        self.assertTrue(descriptions)
+        self.assertTrue(all(event.state is StepState.SKIPPED for event in descriptions))
+        self.assertEqual(self.engine.tag_nodes, [])
+
+    def test_state_descriptions_are_required_by_labeling_and_embeddings(self):
+        with self.assertRaisesRegex(ValueError, "state descriptions"):
+            Configuration(
+                environment="demo.md",
+                tasks=["t"],
+                output="o.rm",
+                state_descriptions=False,
+                embeddings=True,
+            )
+
     def test_labeling_disabled_skips_stage_and_provider(self):
         self.critic.verdicts = [CriticResult(True, "ok")]
         events = []

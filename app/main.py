@@ -147,6 +147,13 @@ if __name__ == "__main__":
         help="Generate MiniGrid labeling functions after RM acceptance (default: disabled)",
     )
     generate_parser.add_argument(
+        "--state-descriptions",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Describe each Reward Machine state after acceptance; labeling and embeddings "
+        "need it (default: enabled)",
+    )
+    generate_parser.add_argument(
         "--domain",
         help="Labeling domain used by --labeling (default: minigrid; only MiniGrid/BabyAI supported)",
     )

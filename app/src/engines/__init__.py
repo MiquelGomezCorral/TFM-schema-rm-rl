@@ -5,6 +5,7 @@ from .errors import (
     ImmediateEngineError,
     ProposalValidationError,
     RetryableEngineError,
+    RunCancelled,
 )
 from .generic_engine import GenericEngine
 from .provider_engines import AntigravityEngine, OpenAIEngine, OpenCodeEngine

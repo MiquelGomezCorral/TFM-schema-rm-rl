@@ -27,6 +27,14 @@ class ImmediateEngineError(RuntimeError):
     """A provider or configuration error that must not be retried."""
 
 
+class RunCancelled(Exception):  # noqa: N818  the pipeline names this signal, not an error
+    """Report a run the client stopped; it ends both provider retry loops.
+
+    It lives here because the engine's retry loop raises it, and ``src.engines``
+    cannot import ``src.utils`` without a circular import.
+    """
+
+
 def classify_provider_error(error: Exception) -> Exception:
     """Map public OpenAI SDK failures to the application retry policy."""
     if isinstance(error, (ProposalValidationError, CriticValidationError)):

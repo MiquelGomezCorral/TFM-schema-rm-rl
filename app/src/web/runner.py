@@ -5,7 +5,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
-from threading import Lock, Thread
+from threading import Event, Lock, Thread
 
 from src.compiler import CompilationResult
 from src.config import Configuration
@@ -28,6 +28,7 @@ class RunState(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    STOPPED = "stopped"
 
 
 STEP_ORDER = tuple(PipelineStep)
@@ -81,6 +82,7 @@ class RunSnapshot:
     log_path: Path | None = None
     run_id: int = 0
     warnings: tuple[str, ...] = ()
+    stopping: bool = False
 
 
 @dataclass(frozen=True)
@@ -95,6 +97,7 @@ class RunRequest:
     reasoning: str = Configuration.reasoning
     attempts: int = Configuration.attempts
     labeling: bool = False
+    state_descriptions: bool = True
     embeddings: bool = False
     steps_report: bool = False
 
@@ -117,6 +120,8 @@ class RunController:
         self._log_path: Path | None = None
         self._run_id = 0
         self._worker: Thread | None = None
+        self._cancel = Event()
+        self._stopping = False
 
     def snapshot(self) -> RunSnapshot:
         """Return a lock-consistent, immutable snapshot of the current run."""
@@ -136,6 +141,7 @@ class RunController:
                 log_path=self._log_path,
                 run_id=self._run_id,
                 warnings=tuple(self._warnings),
+                stopping=self._stopping,
             )
 
     def start(self, request: RunRequest) -> None:
@@ -148,6 +154,8 @@ class RunController:
                 raise RuntimeError("A Reward Machine run is already active")
             self._run_id += 1
             self._status = RunState.RUNNING
+            self._cancel.clear()
+            self._stopping = False
             self._logs = []
             self._warnings = []
             self._results = ()
@@ -167,6 +175,15 @@ class RunController:
             )
             self._worker.start()
 
+    def stop(self) -> bool:
+        """Ask the running generation to stop after its current provider request."""
+        with self._lock:
+            if self._status is not RunState.RUNNING:
+                return False
+            self._stopping = True
+            self._cancel.set()
+            return True
+
     def _run_request(self, request: RunRequest) -> None:
         try:
             with tempfile.TemporaryDirectory(prefix="schema-rm-web-") as temporary_directory:
@@ -182,6 +199,7 @@ class RunController:
                     reasoning=request.reasoning,
                     attempts=request.attempts,
                     labeling=request.labeling,
+                    state_descriptions=request.state_descriptions,
                     embeddings=request.embeddings,
                 )
                 # Keep the run's own artifacts next to its outputs.
@@ -197,10 +215,14 @@ class RunController:
                     completion=self._retain_results,
                     failure=self._record_failure,
                     warning=self._record_warning,
+                    cancelled=self._cancel.is_set,
                 )
                 succeeded = self._generate_rm(CONFIG, hooks)
             with self._lock:
-                if succeeded:
+                if self._cancel.is_set():
+                    self._status = RunState.STOPPED
+                    self._error = "Stopped by the user"
+                elif succeeded:
                     self._status = RunState.COMPLETED
                 else:
                     self._status = RunState.FAILED
@@ -295,6 +317,7 @@ def _initial_task(index: int, task: str, request: RunRequest) -> TaskSnapshot:
     skipped = {
         PipelineStep.CRITIC: not request.critic,
         PipelineStep.LABELING: not request.labeling,
+        PipelineStep.STATE_DESCRIPTIONS: not request.state_descriptions,
         PipelineStep.EMBEDDINGS: not request.embeddings,
     }
     return TaskSnapshot(

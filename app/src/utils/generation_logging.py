@@ -11,6 +11,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from src.compiler import CompilationResult
+from src.engines import RunCancelled
 
 
 class PipelineStep(StrEnum):
@@ -81,6 +82,7 @@ class GenerationHooks:
     run_started: Callable[[Path], None] | None = None
     failure: Callable[[str], None] | None = None
     warning: Callable[[str], None] | None = None
+    cancelled: Callable[[], bool] | None = None
 
     def notify_progress(self, message: str) -> None:
         if self.progress is not None:
@@ -105,6 +107,10 @@ class GenerationHooks:
     def notify_warning(self, message: str) -> None:
         if self.warning is not None:
             self.warning(message)
+
+    def is_cancelled(self) -> bool:
+        """Return True when the client asked to stop this run."""
+        return self.cancelled is not None and self.cancelled()
 
     def notify_completion(
         self,
@@ -181,6 +187,7 @@ class Progress:
 
     def begin_attempt(self, task_index: int, attempt: int, limit: int) -> None:
         """Name the task attempt, out of ``limit``, that the following stages belong to."""
+        self.check_cancelled()
         self.current_task = task_index
         self.current_attempt = attempt
         self.attempt_limit = limit
@@ -193,6 +200,7 @@ class Progress:
 
     def start(self, step: PipelineStep) -> None:
         """Start a stage of the current attempt using its standard label."""
+        self.check_cancelled()
         self.current_step = step
         self.stage_started = time.monotonic()
         self.hooks.notify_event(
@@ -235,6 +243,11 @@ class Progress:
     def fail(self, detail: str | None = None) -> None:
         """Mark the current stage as failed."""
         self.complete(StepState.FAILED, detail)
+
+    def check_cancelled(self) -> None:
+        """Raise ``RunCancelled`` once the client stopped the run."""
+        if self.hooks.is_cancelled():
+            raise RunCancelled("Stopped by the user")
 
     def close(self) -> None:
         """Flush and detach this run's handlers."""

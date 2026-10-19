@@ -235,8 +235,10 @@ run, prints a warning, and then accepts the compiler's first result for each tas
 has at most three attempts, and no output is written unless every task is accepted. The stages
 are structured proposal generation, DECLARE/LTLf materialization, FL-AT/MONA DFA compilation,
 Reward Machine construction (FL-AT's product plus the reward layer), the critic, state
-descriptions, and optional labeling and embeddings. Compile warnings (a rule-only task with no
-final state, soft clauses without reward effect) appear in the log and the web result.
+descriptions, and optional labeling and embeddings. State descriptions are written by default;
+`--no-state-descriptions` skips that stage, and `--labeling` and `--embeddings` require it.
+Compile warnings (a rule-only task with no final state, soft clauses without reward effect)
+appear in the log and the web result.
 
 Each accepted task's clauses are compiled through MONA and composed into one
 task-specific Reward Machine. Separate tasks are never composed. `--output`
@@ -358,9 +360,12 @@ complete timed multiline records. With multiple tasks, previous/next buttons and
 five task dots navigate the sequential run; the selection follows the active task only
 when you were viewing the previous active task.
 
+**Stop generation** asks once, then cancels after the current provider request returns; the
+current task is discarded, finished tasks stay in the log only, and nothing is written.
+
 This is a local single-run interface: only one run may be active at a time, jobs are not
-persisted, and the UI does not provide cancellation, overwrite controls, authentication,
-or multi-user isolation.
+persisted, and the UI does not provide overwrite controls, authentication, or multi-user
+isolation.
 
 ## Limitations and licensing
 

@@ -15,123 +15,237 @@ from .runner import StepState, TaskSnapshot
 #                                     STATUS STYLES
 # ======================================================================================
 
+# The poll callback replaces the pill's text, so its state mark rides in ::before and every
+# word carries the mask of its own step icon instead of an inline svg.
 STATUS_BASE = (
-    "status min-h-[2.15rem] flex-1 rounded-[0.55rem] "
-    "border border-[rgb(40_59_89_/_70%)] px-[0.7rem] py-[0.48rem] "
-    "text-[0.78rem] leading-[1.35]"
+    "status inline-flex min-h-[22px] shrink-0 items-center gap-1.5 rounded-sm border "
+    "px-2 text-sm font-medium before:inline-block before:size-3.5 before:shrink-0 "
+    "before:bg-current before:content-['']"
+)
+STATUS_MASK_PENDING = (
+    "before:[mask:url('/assets/icons/step-pending.svg')_center/contain_no-repeat] "
+    "before:[-webkit-mask:url('/assets/icons/step-pending.svg')_center/contain_no-repeat]"
+)
+STATUS_MASK_RUNNING = (
+    "before:[mask:url('/assets/icons/step-running.svg')_center/contain_no-repeat] "
+    "before:[-webkit-mask:url('/assets/icons/step-running.svg')_center/contain_no-repeat]"
+)
+STATUS_MASK_DONE = (
+    "before:[mask:url('/assets/icons/step-done.svg')_center/contain_no-repeat] "
+    "before:[-webkit-mask:url('/assets/icons/step-done.svg')_center/contain_no-repeat]"
+)
+STATUS_MASK_FAILED = (
+    "before:[mask:url('/assets/icons/step-failed.svg')_center/contain_no-repeat] "
+    "before:[-webkit-mask:url('/assets/icons/step-failed.svg')_center/contain_no-repeat]"
+)
+STATUS_MASK_SKIPPED = (
+    "before:[mask:url('/assets/icons/step-skipped.svg')_center/contain_no-repeat] "
+    "before:[-webkit-mask:url('/assets/icons/step-skipped.svg')_center/contain_no-repeat]"
 )
 STATUS_CLASSES = {
-    "idle": f"{STATUS_BASE} status-info text-muted",
-    "running": f"{STATUS_BASE} status-info text-accent",
-    "completed": f"{STATUS_BASE} status-success text-success",
-    "failed": f"{STATUS_BASE} status-error text-[#fda4af]",
+    "idle": f"{STATUS_BASE} border-border-strong text-muted {STATUS_MASK_PENDING}",
+    "running": f"{STATUS_BASE} border-border-strong bg-accent-tint text-info-ink {STATUS_MASK_RUNNING}",
+    "completed": f"{STATUS_BASE} border-success bg-success-tint text-success-ink {STATUS_MASK_DONE}",
+    "failed": f"{STATUS_BASE} border-danger bg-danger-tint text-danger-ink {STATUS_MASK_FAILED}",
+    # A stop is a neutral outcome, not a failure, so it never borrows the danger colour.
+    "stopped": f"{STATUS_BASE} border-border bg-raised text-muted {STATUS_MASK_SKIPPED}",
 }
+# The pill keeps one word, so the failure reason lives in this hover/focus popover.
+# The wide layout keeps it left-anchored; the single-column sidebar puts the pill on the right,
+# so there it anchors right and a wider inset keeps both edges inside the viewport.
+STATUS_REASON_CLASS = (
+    "status-reason hidden group-hover:block group-focus-within:block absolute left-0 top-full "
+    "z-20 mt-1 w-[min(32rem,calc(100vw-2rem))] max-h-64 overflow-auto rounded-sm "
+    "border border-border-strong bg-surface p-3 text-xs leading-[1.5] text-text "
+    "whitespace-pre-wrap wrap-anywhere shadow-none [scrollbar-gutter:stable] "
+    "[scrollbar-width:thin] empty:hidden "
+    "max-[900px]:left-auto max-[900px]:right-0 max-[900px]:w-[min(32rem,calc(100vw-3.5rem))]"
+)
 
 INPUT_REGION_CLASS = (
-    "input-region grid items-start gap-3.5 [grid-area:input] grid-cols-2 max-[1200px]:grid-cols-1"
+    "input-region grid items-stretch gap-3 [grid-area:input] grid-cols-2 max-[1200px]:grid-cols-1"
 )
 RUN_SIDEBAR_CLASS = (
-    "run-sidebar control-card sticky top-4 self-stretch [grid-area:sidebar] "
-    "flex min-w-0 flex-col gap-3 rounded-[0.85rem] border border-border "
-    "bg-surface p-[0.95rem] max-[900px]:static"
+    "run-sidebar control-card self-stretch [grid-area:sidebar] "
+    "flex min-w-0 flex-col gap-3 rounded-sm border border-border "
+    "bg-surface p-3.5"
 )
+# The output row is the page leftover, but the panels must never cross their card borders when
+# that leftover is short: 38rem is the Compiled Reward Machine panel's own minimum (fixed
+# controls, the summary rows, and the 12rem code floor).
 OUTPUT_REGION_CLASS = (
-    "output-region grid min-h-[34rem] gap-3.5 [grid-area:output] "
-    "grid-cols-2 max-[1200px]:grid-cols-1 max-[800px]:min-h-0"
+    "output-region grid items-stretch gap-3 [grid-area:output] grid-cols-2 max-[1200px]:grid-cols-1"
 )
+# Two rows: the input cards take what their content needs, the output row fills the rest, so
+# the four cards end at the bottom of the viewport instead of leaving a blank band. Below the
+# desktop breakpoint both rows keep their natural height and the page scrolls.
 WORKSPACE_CLASS = (
-    "workspace grid items-start gap-3.5 "
+    "workspace grid flex-1 items-stretch gap-3 "
+    "[grid-template-rows:auto_1fr] "
     "[grid-template-areas:'sidebar_input'_'sidebar_output'] "
     "[grid-template-columns:19rem_minmax(0,1fr)] "
+    "max-[1200px]:[grid-template-rows:auto_auto] "
     "max-[900px]:grid-cols-1 "
     "max-[900px]:[grid-template-areas:'input'_'sidebar'_'output']"
 )
 FOCUS_WORKSPACE_CLASS = (
-    "workspace grid items-start gap-3.5 "
-    "[grid-template-areas:'output'] [grid-template-columns:minmax(0,1fr)]"
+    "workspace grid flex-1 items-stretch gap-3 "
+    "[grid-template-rows:1fr] "
+    "[grid-template-areas:'output'] [grid-template-columns:minmax(0,1fr)] "
+    "max-[1200px]:[grid-template-rows:auto]"
 )
 FOCUS_OUTPUT_REGION_CLASS = (
-    "output-region grid min-h-[34rem] gap-3.5 [grid-area:output] "
+    "output-region grid min-h-0 items-stretch gap-3 [grid-area:output] "
+    "min-[1200px]:min-h-[38rem] "
     "[grid-template-columns:19rem_minmax(0,1fr)] max-[800px]:min-h-0"
 )
-SECTION_ICON_CLASS = (
-    "section-number grid h-[1.65rem] w-[1.65rem] flex-none place-items-center "
-    "rounded-[0.45rem] border border-border-strong bg-[rgb(56_189_248_/_8%)] text-accent"
-)
-SECTION_ICON_SIZE_CLASS = "size-[0.95rem]"
 TOOLBAR_ICON_SIZE_CLASS = "size-[0.9rem]"
+# One shape for the Generate slot: the two states of the same control differ only in colour.
+PRIMARY_ACTION_CLASS = (
+    "button button-primary inline-flex min-h-9 cursor-pointer items-center justify-center "
+    "gap-2 rounded-sm border px-[0.85rem] text-base font-normal transition duration-150 "
+    "ease-out focus-visible:outline-2 focus-visible:outline-offset-2 "
+    "disabled:cursor-not-allowed disabled:opacity-60"
+)
+GENERATE_BUTTON_CLASS = (
+    f"generate-button {PRIMARY_ACTION_CLASS} border-accent bg-accent text-page "
+    "enabled:hover:border-accent enabled:hover:brightness-110 "
+    "focus-visible:outline-accent"
+)
+# A standalone stop is always visible, labelled and outlined in red; its confirmation is the modal.
+STOP_BUTTON_CLASS = (
+    f"stop-run-button {PRIMARY_ACTION_CLASS} border-danger bg-transparent text-danger "
+    "enabled:hover:border-danger enabled:hover:bg-danger-tint "
+    "focus-visible:outline-danger"
+)
 GRAPH_TOOLBAR_BUTTON_CLASS = (
-    "inline-flex min-h-[2.15rem] shrink-0 cursor-pointer items-center justify-center gap-1.5 "
-    "rounded-[0.45rem] border border-border-strong bg-surface-hover px-2.5 text-[0.72rem] "
-    "font-bold text-muted transition duration-150 ease-out hover:border-accent hover:text-accent "
+    "inline-flex min-h-[26px] shrink-0 cursor-pointer items-center justify-center gap-1.5 "
+    "rounded-sm border border-border bg-page px-2 text-xs font-medium whitespace-nowrap "
+    "text-muted transition duration-150 ease-out hover:border-border-strong hover:text-text "
     "focus-visible:outline-3 focus-visible:outline-offset-2 "
-    "focus-visible:outline-[rgba(56,189,248,0.35)]"
+    "focus-visible:outline-accent/35 disabled:cursor-not-allowed disabled:opacity-60 "
+    "disabled:hover:border-border disabled:hover:text-muted"
 )
 
 
 FIELD_CLASS = "field flex min-w-0 flex-col gap-[0.35rem]"
-FIELD_LABEL_CLASS = "field-label text-[0.7rem] font-[750] uppercase tracking-[0.06em] text-muted"
-FIELD_HINT_CLASS = "field-hint text-[0.76rem] leading-[1.4] text-muted"
-SECTION_TITLE_CLASS = "section-title text-[0.98rem] font-semibold tracking-[-0.015em]"
-PANEL_TITLE_CLASS = "panel-title text-[0.98rem] font-semibold tracking-[-0.015em]"
-SECTION_DESCRIPTION_CLASS = (
-    "section-description mt-[0.18rem] text-[0.76rem] leading-[1.4] text-muted"
+FIELD_LABEL_CLASS = "field-label text-sm font-medium text-muted"
+FIELD_LABEL_MUTED_CLASS = "field-label text-sm font-normal text-muted tracking-[0.32px]"
+FIELD_HINT_CLASS = "field-hint text-xs text-muted"
+FIELD_TEXTAREA_CLASS = (
+    "block w-full resize-y !rounded-sm border !border-border !bg-page !px-2.5 !py-2 "
+    "text-base !text-text outline-0 transition duration-150 ease-out "
+    "placeholder:!text-muted focus-visible:!border-accent focus-visible:!outline-2 "
+    "focus-visible:outline-offset-2 focus-visible:!outline-accent/35 "
+    "enabled:hover:!border-border-strong disabled:!cursor-not-allowed "
+    "disabled:!border-border disabled:!bg-surface disabled:!text-muted disabled:!opacity-60"
 )
+SECTION_TITLE_CLASS = "section-title text-md font-semibold"
+PANEL_TITLE_CLASS = "panel-title text-lg font-semibold tracking-[-0.015em]"
+SECTION_DESCRIPTION_CLASS = "section-description mt-[0.18rem] text-sm text-muted"
 UPLOAD_CONTROL_CLASS = (
-    "upload-control grid min-h-[3.3rem] cursor-pointer place-items-center "
-    "border border-dashed border-border-strong p-3 text-center text-[0.8rem] "
-    "text-accent transition duration-150 ease-out hover:border-accent "
-    "hover:bg-surface-hover focus-visible:outline-3 focus-visible:outline-offset-2 "
-    "focus-visible:outline-[rgba(56,189,248,0.35)]"
+    "upload-control grid min-h-8 cursor-pointer place-items-center rounded-sm "
+    "border border-border bg-page p-2 text-center text-muted "
+    "transition duration-150 ease-out hover:border-border-strong "
+    "has-[:disabled]:cursor-not-allowed has-[:disabled]:border-border "
+    "has-[:disabled]:bg-surface has-[:disabled]:opacity-60 "
+    "has-[:disabled]:hover:border-border "
+    "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 "
+    "has-[:focus-visible]:outline-accent/35"
 )
-OUTPUTS_OPTIONS_CLASS = "outputs-options grid gap-[0.45rem] !text-text"
-LEGEND_ROW_CLASS = "legend-row flex items-center gap-2 text-[0.72rem] text-muted"
+UPLOAD_TEXT_CLASS = "text-base"
+COMPACT_UPLOAD_TEXT_CLASS = "text-sm"
+CHECKLIST_CLASS = "grid gap-[0.45rem] !text-text [&>label]:min-h-6 [&>label]:text-base"
+OUTPUTS_OPTIONS_CLASS = f"outputs-options {CHECKLIST_CLASS}"
+LEGEND_ROW_CLASS = "legend-row flex items-center gap-2 text-xs text-muted"
 TASK_NAV_BUTTON_CLASS = (
-    "task-nav-button grid size-8 place-items-center rounded-full border border-border-strong "
-    "text-muted hover:border-accent hover:text-accent focus-visible:outline-2"
+    "task-nav-button grid size-6 place-items-center rounded-sm border border-border-strong "
+    "text-muted transition duration-150 ease-out hover:border-accent hover:text-accent "
+    "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent "
+    "disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-border-strong "
+    "disabled:hover:text-muted"
 )
+SEGMENTED_TRACK_CLASS = (
+    "segmented grid grid-cols-5 gap-0 rounded-sm border border-border-strong bg-transparent p-0"
+)
+SEGMENT_BASE = (
+    "segment min-h-8 cursor-pointer rounded-none border-0 px-0 text-sm font-normal capitalize "
+    "transition duration-150 ease-out focus-visible:outline-2 focus-visible:outline-offset-2 "
+    "focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60 "
+    "[&:not(:first-child)]:border-l [&:not(:first-child)]:border-border"
+)
+SEGMENT_SELECTED = " bg-hover text-text shadow-[inset_0_-2px_0_var(--color-accent)]"
+SEGMENT_IDLE = " bg-transparent text-muted hover:bg-hover hover:text-text"
 
 TEXT_INPUT_CLASS = (
-    "text-input min-h-[2.55rem] w-full border border-border-strong "
-    "!border-border-strong !bg-surface-raised px-[0.72rem] py-[0.65rem] "
-    "!text-text outline-0 transition duration-150 ease-out "
-    "placeholder:!text-[#8295b2] focus-visible:outline-3 "
-    "focus-visible:outline-offset-2 "
-    "focus-visible:outline-[rgba(56,189,248,0.35)]"
+    "text-input w-full !h-auto !rounded-none !border-0 !border-b !border-border-strong "
+    "!bg-raised px-2 py-1.5 text-base text-text outline-0 transition duration-150 ease-out "
+    "hover:!bg-hover hover:[&>input]:!bg-hover "
+    "has-[:disabled]:cursor-not-allowed has-[:disabled]:!border-border "
+    "has-[:disabled]:!bg-surface has-[:disabled]:!opacity-60 "
+    "has-[:focus-visible]:!outline-2 has-[:focus-visible]:!outline-accent "
+    "has-[:focus-visible]:!outline-offset-0 "
+    "[&>input]:!p-0 [&>input]:w-full [&>input]:text-base [&>input]:text-text "
+    "[&>input]:outline-0 [&>input]:placeholder:text-muted "
+    "[&>input]:disabled:!text-muted"
 )
 FIELDSET_CLASS = (
-    "m-0 min-w-0 rounded-[0.55rem] border border-border-strong "
-    "bg-surface-raised px-3 pb-3 pt-[0.65rem] text-text"
+    "m-0 min-w-0 rounded-none border-0 border-t border-border bg-transparent "
+    "px-0 pb-0 pt-3 text-text"
+)
+FIELD_BODY_CLASS = "clear-both flex flex-col gap-2"
+FIELD_LEGEND_CLASS = "float-left mb-2 w-full px-0 text-sm font-normal text-muted"
+STEPPER_CLASS = (
+    "stepper flex min-h-9 w-full items-stretch overflow-hidden rounded-sm "
+    "border border-border-strong bg-raised transition duration-150 ease-out "
+    "hover:border-accent has-[:disabled]:cursor-not-allowed "
+    "has-[:disabled]:border-border has-[:disabled]:opacity-60 "
+    "has-[:disabled]:hover:border-border focus-within:outline-3 "
+    "focus-within:outline-offset-2 focus-within:outline-accent/35"
+)
+STEPPER_BUTTON_CLASS = (
+    "stepper-button grid w-9 shrink-0 cursor-pointer place-items-center border-0 "
+    "bg-transparent text-text transition duration-150 ease-out enabled:hover:bg-hover "
+    "enabled:hover:text-accent focus-visible:outline-2 focus-visible:-outline-offset-2 "
+    "focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
+)
+STEPPER_INPUT_CLASS = (
+    "stepper-input min-w-0 flex-1 !h-auto !border-0 !bg-transparent text-center !text-text "
+    "[&>input]:font-sans [&>input]:text-base [&>input]:outline-0 [&>input]:text-center "
+    "[&>input]:tabular-nums [&>input]:[appearance:textfield] "
+    "[&>input::-webkit-inner-spin-button]:!appearance-none "
+    "[&>input::-webkit-outer-spin-button]:!appearance-none "
+    "[&>.dash-input-stepper]:!hidden"
 )
 WARNING_BADGE_CLASS = (
-    "run-warning-badge cursor-pointer rounded-full border border-[#fb7185] px-2 py-1 "
-    "text-[0.68rem] font-bold text-[#fda4af]"
+    "run-warning-badge inline-flex cursor-pointer list-none items-center gap-1.5 "
+    "rounded-full border border-transparent bg-warning-tint px-2.5 py-1 text-sm font-medium "
+    "text-warning-ink transition duration-150 ease-out hover:border-warning "
+    "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-warning-ink "
+    "[&::-webkit-details-marker]:hidden"
 )
 WARNING_LIST_CLASS = (
-    "run-warning-list m-0 mt-2 grid list-none gap-1 overflow-auto p-0 text-[0.74rem] "
+    "run-warning-list m-0 mt-2 grid list-none gap-1 overflow-auto p-0 text-sm "
     "leading-[1.4] text-muted"
 )
 
 CRITIC_OPTIONS = [{"label": " Critic", "value": "critic"}]
-REASONING_OPTIONS = [{"label": f" {level}", "value": level} for level in REASONING_LEVELS]
 STEPS_REPORT_OPTIONS = [{"label": " Step report (.md)", "value": "steps_report"}]
 LABELING_OPTIONS = [{"label": " MiniGrid labeling", "value": "labeling"}]
+STATE_DESCRIPTIONS_OPTIONS = [{"label": " State descriptions", "value": "state_descriptions"}]
 EMBEDDINGS_OPTIONS = [{"label": " Local state embeddings", "value": "embeddings"}]
 
-RESULT_TAB_CLASS = "result-tab border-b border-border px-2 py-2 text-[0.76rem] font-bold text-muted"
-RESULT_TAB_SELECTED_CLASS = "result-tab-selected border-accent text-accent"
-RUN_TAB_CLASS = "run-tab border-b border-border px-2 py-2 text-[0.76rem] font-bold text-muted"
-RUN_TAB_SELECTED_CLASS = "run-tab-selected border-accent text-accent"
-RESULT_TAB_STYLE = {"backgroundColor": "#101a2b", "color": "#a7b7ce", "padding": "8px"}
-RESULT_TAB_SELECTED_STYLE = {
-    "backgroundColor": "#17243a",
-    "color": "#38bdf8",
-    "padding": "8px",
-}
+RUN_TAB_CLASS = (
+    "run-tab !flex-none !border-x-0 !border-t-0 !px-2.5 !py-1.5 text-sm font-medium text-muted"
+)
+RUN_TAB_SELECTED_CLASS = "run-tab-selected !border-b-2 !border-accent !text-text font-semibold"
+RUN_TAB_STYLE = {"backgroundColor": "transparent"}
+RUN_TAB_SELECTED_STYLE = {"backgroundColor": "transparent"}
 STEP_OUTPUT_CLASS = (
-    "step-output m-0 max-h-[26rem] overflow-auto whitespace-pre-wrap rounded-[0.55rem] "
-    "border border-border bg-[#0c1626] p-3 font-mono text-[0.76rem] leading-[1.5] text-muted "
-    "[scrollbar-color:var(--color-border-strong)_transparent]"
+    "step-output m-0 h-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap "
+    "rounded-sm border border-border bg-page p-3 font-mono text-xs leading-[1.7] text-muted "
+    "[scrollbar-color:var(--color-border-strong)_transparent] [scrollbar-gutter:stable] "
+    "[scrollbar-width:thin]"
 )
 
 STEP_TAB_LABELS = {
@@ -147,14 +261,17 @@ STEP_TAB_LABELS = {
 
 
 def _step_tab(step: PipelineStep) -> dcc.Tab:
-    """Build one label-only tab; the bodies live in their own container."""
+    """Build one label-only tab; the bodies live in their own container.
+
+    Result and run tabs share one underline treatment, so they share its constants.
+    """
     return dcc.Tab(
         label=STEP_TAB_LABELS[step],
         value=step.value,
-        className=RESULT_TAB_CLASS,
-        selected_className=RESULT_TAB_SELECTED_CLASS,
-        style=RESULT_TAB_STYLE,
-        selected_style=RESULT_TAB_SELECTED_STYLE,
+        className=RUN_TAB_CLASS,
+        selected_className=RUN_TAB_SELECTED_CLASS,
+        style=RUN_TAB_STYLE,
+        selected_style=RUN_TAB_SELECTED_STYLE,
     )
 
 
@@ -230,30 +347,43 @@ def _section_heading(
                 ]
             ),
         ],
-        className="section-heading flex items-start gap-[0.7rem]",
+        className="section-heading flex items-start gap-2.5",
     )
 
 
-def _field(label: str, *controls: object) -> html.Label:
-    """Wrap controls under a small uppercase label."""
+def _field(
+    label: str,
+    *controls: object,
+    label_class: str = FIELD_LABEL_CLASS,
+    class_name: str = FIELD_CLASS,
+) -> html.Label:
+    """Wrap controls under a small label."""
     return html.Label(
-        [html.Span(label, className=FIELD_LABEL_CLASS), *controls],
-        className=FIELD_CLASS,
+        [html.Span(label, className=label_class), *controls],
+        className=class_name,
     )
 
 
-def _upload(component_id: str, prompt: str, accept: str) -> dcc.Upload:
-    """Build one drop-or-choose upload control."""
+def _upload(
+    component_id: str,
+    prompt: str,
+    accept: str,
+    text_class: str = UPLOAD_TEXT_CLASS,
+) -> dcc.Upload:
+    """Build one drop-or-choose upload control at the call site's type size."""
     return dcc.Upload(
         id=component_id,
         children=html.Div(
-            [_icon("upload", "upload-icon size-[1.05rem]"), html.Span(prompt)],
+            [
+                _icon("upload", "upload-icon size-4 text-accent"),
+                html.Span(prompt, className="font-medium text-text"),
+            ],
             className="upload-content flex items-center justify-center gap-2",
         ),
         accept=accept,
         multiple=False,
         disabled=False,
-        className=UPLOAD_CONTROL_CLASS,
+        className=f"{UPLOAD_CONTROL_CLASS} {text_class}",
     )
 
 
@@ -265,16 +395,9 @@ def _legend_row(swatch_class: str, text: str) -> html.Li:
     )
 
 
-def _section_icon(name: str, *, boxed: bool = True) -> html.Span:
-    """Render a section icon.
-
-    Boxed icons keep the shared panel treatment used next to section headings.
-    Pass ``boxed=False`` for the bare icon when the container already draws its
-    own border or background, such as the graph toolbar buttons.
-    """
-    if not boxed:
-        return _icon(name, TOOLBAR_ICON_SIZE_CLASS)
-    return html.Span(_icon(name, SECTION_ICON_SIZE_CLASS), className=SECTION_ICON_CLASS)
+def _section_icon(name: str) -> html.Span:
+    """Render the bare section icon shared by every panel heading."""
+    return _icon(name, "size-5 text-muted")
 
 
 STEP_LABELS = {
@@ -287,19 +410,19 @@ STEP_LABELS = {
     "labeling": "Generate MiniGrid labeling functions",
     "embeddings": "Embed each Reward Machine state description",
 }
-STEP_STATUS_CLASSES = {
-    StepState.PENDING: "border-border-strong text-muted",
-    StepState.RUNNING: "border-accent text-accent",
-    StepState.COMPLETED: "border-success text-success",
-    StepState.SKIPPED: "border-border text-muted",
-    StepState.FAILED: "border-[#fb7185] text-[#fda4af]",
+STEP_MARK_CLASSES = {
+    StepState.PENDING: "text-muted",
+    StepState.RUNNING: "text-accent",
+    StepState.COMPLETED: "text-success-ink",
+    StepState.SKIPPED: "text-muted",
+    StepState.FAILED: "text-danger-ink",
 }
-STEP_STATUS_SYMBOLS = {
-    StepState.PENDING: "○",
-    StepState.RUNNING: "●",
-    StepState.COMPLETED: "✓",
-    StepState.SKIPPED: "—",
-    StepState.FAILED: "!",
+STEP_MARK_ICONS = {
+    StepState.PENDING: "step-pending",
+    StepState.RUNNING: "step-running",
+    StepState.COMPLETED: "step-done",
+    StepState.SKIPPED: "step-skipped",
+    StepState.FAILED: "step-failed",
 }
 
 
@@ -320,27 +443,30 @@ def _step_row(step) -> html.Div:
     return html.Div(
         [
             html.Span(
-                STEP_STATUS_SYMBOLS[status],
-                className=f"step-symbol grid size-6 place-items-center rounded-full border {STEP_STATUS_CLASSES[status]}",
+                _icon(STEP_MARK_ICONS[status], f"size-4 {STEP_MARK_CLASSES[status]}"),
+                className="step-mark grid size-4 flex-none place-items-center",
                 **{"aria-hidden": "true"},
             ),
             html.Span(
                 STEP_LABELS[step.step.value],
-                className="step-label min-w-0 flex-1 text-[0.8rem] font-semibold text-text",
+                className="step-label min-w-0 flex-1 text-sm font-medium text-text",
             ),
             html.Span(
                 f"{status.value.capitalize()}{duration}",
-                className=f"step-state text-[0.72rem] {STEP_STATUS_CLASSES[status].split()[-1]}",
+                className="step-state font-mono text-xs text-muted",
             ),
         ],
-        className="run-step flex min-h-10 items-center gap-2 rounded-[0.45rem] border border-border bg-surface-raised px-2 py-1.5",
+        className=(
+            "run-step flex min-h-[30px] items-center gap-2 rounded-sm border border-border "
+            "bg-page px-1.5 py-[3px]"
+        ),
     )
 
 
 def render_steps(tasks: tuple[TaskSnapshot, ...], selected_index: int = 0) -> html.Div:
     """Render the selected task's structured progress and compact navigator."""
     if not tasks:
-        return html.Div("No run yet.", className="steps-empty min-h-40 text-[0.8rem] text-muted")
+        return html.Div("No run yet.", className="steps-empty min-h-40 text-sm text-muted")
     selected_index = max(0, min(selected_index, len(tasks) - 1))
     task = tasks[selected_index]
     status = _task_status(task).format(total=len(tasks))
@@ -355,22 +481,29 @@ def render_steps(tasks: tuple[TaskSnapshot, ...], selected_index: int = 0) -> ht
             dot_class = {
                 StepState.COMPLETED: "bg-success",
                 StepState.RUNNING: "bg-accent",
-                StepState.FAILED: "bg-[#fb7185]",
-            }.get(state, "bg-[#64748b]")
+                StepState.FAILED: "bg-danger",
+            }.get(state, "bg-border-strong")
             selected_class = (
-                " ring-2 ring-accent ring-offset-2 ring-offset-surface"
+                " border-accent bg-accent-tint"
                 if index == selected_index
-                else ""
+                else " border-transparent"
             )
+            dot_size = "size-2" if index == selected_index else "size-1.5"
             navigation.append(
                 html.Button(
                     html.Span(
-                        className=f"task-dot size-2.5 rounded-full {dot_class}{selected_class}",
+                        className=f"task-dot {dot_size} rounded-full {dot_class}",
                         **{"aria-hidden": "true"},
                     ),
                     id={"type": "task-dot", "index": index},
                     n_clicks=0,
-                    className="task-dot-button grid size-8 place-items-center rounded-full border border-transparent hover:border-border-strong focus-visible:border-accent focus-visible:outline-2",
+                    className=(
+                        "task-dot-button grid size-6 place-items-center rounded-sm border"
+                        f"{selected_class} transition duration-150 ease-out "
+                        "hover:border-border-strong focus-visible:border-accent "
+                        "focus-visible:outline-2 focus-visible:outline-offset-2 "
+                        "focus-visible:outline-accent"
+                    ),
                     **{"aria-label": f"View task {index + 1} of {len(tasks)}"},
                 )
             )
@@ -404,26 +537,18 @@ def render_steps(tasks: tuple[TaskSnapshot, ...], selected_index: int = 0) -> ht
                                     task.task,
                                     title=task.task,
                                     className=(
-                                        "run-task-title min-w-0 overflow-hidden text-ellipsis "
-                                        "whitespace-nowrap text-[0.86rem] font-bold text-text"
-                                    ),
-                                ),
-                                html.Span(
-                                    task.state.value.capitalize(),
-                                    className=(
-                                        "run-task-state shrink-0 rounded-full border px-2 py-1 text-[0.68rem] "
-                                        f"font-bold {STEP_STATUS_CLASSES[task.state]}"
+                                        "run-task-title min-w-0 text-sm font-semibold "
+                                        "leading-[1.35] text-text"
                                     ),
                                 ),
                             ],
-                            className="run-task-title-row flex min-w-0 items-center justify-between gap-2",
+                            className=(
+                                "run-task-title-row flex min-w-0 items-start justify-between gap-2"
+                            ),
                         ),
                         html.P(
                             status,
-                            className=(
-                                "run-task-status mt-1 w-full overflow-hidden text-ellipsis whitespace-nowrap "
-                                "text-[0.74rem] text-muted"
-                            ),
+                            className="run-task-status mt-1 font-mono text-xs text-muted",
                         ),
                     ],
                     className="run-task-heading min-w-0 w-full",
@@ -433,14 +558,20 @@ def render_steps(tasks: tuple[TaskSnapshot, ...], selected_index: int = 0) -> ht
         ),
         html.Div(
             [_step_row(step) for step in task.steps],
-            className="run-steps-list grid gap-1.5",
+            className="run-steps-list grid gap-2",
         ),
     ]
     if task.retry_note:
         children.append(
             html.P(
-                f"Latest retry: {task.retry_note}",
-                className="run-retry-note rounded-[0.45rem] border border-[#fb7185] bg-[rgb(251_113_133_/_8%)] px-2.5 py-2 text-[0.74rem] leading-[1.4] text-[#fda4af]",
+                [
+                    _icon("warning", "size-3.5 flex-none"),
+                    html.Span(f"Latest retry: {task.retry_note}"),
+                ],
+                className=(
+                    "run-retry-note flex items-start gap-1.5 rounded-sm border border-warning "
+                    "bg-warning-tint px-2 py-1.5 text-xs leading-[1.4] text-warning-ink"
+                ),
             )
         )
     if navigation:
@@ -483,21 +614,18 @@ def environment_input() -> html.Section:
                     value="",
                     placeholder="# Environment\n\n## Propositions\n- `event`: Description",
                     className=(
-                        "markdown-input block min-h-[11rem] w-full resize-y border "
-                        "border-border-strong !border-border-strong !bg-surface-raised "
-                        "px-3 py-[0.7rem] !text-text outline-0 transition duration-150 "
-                        "ease-out placeholder:!text-[#8295b2] focus-visible:outline-3 "
-                        "focus-visible:outline-offset-2 "
-                        "focus-visible:outline-[rgba(56,189,248,0.35)]"
+                        "markdown-input flex-1 min-h-[11rem] !resize-none "
+                        f"max-[1200px]:!resize-y {FIELD_TEXTAREA_CLASS}"
                     ),
                     spellCheck=True,
                     disabled=False,
                 ),
+                class_name=f"{FIELD_CLASS} flex-1 min-h-0",
             ),
         ],
         className=(
-            "environment-card control-card flex min-w-0 flex-col gap-3 rounded-[0.85rem] "
-            "border border-border bg-surface p-[0.95rem]"
+            "environment-card control-card flex min-w-0 flex-col gap-3 rounded-sm "
+            "border border-border bg-surface p-4"
         ),
     )
 
@@ -513,28 +641,27 @@ def task_row(
                 [
                     html.Span(
                         f"Task {index + 1}",
-                        className=(
-                            "task-title min-w-0 overflow-hidden text-ellipsis whitespace-nowrap "
-                            "text-[0.82rem] font-extrabold text-text"
-                        ),
+                        className="task-title min-w-0 text-sm font-normal text-muted",
                     ),
                     html.Button(
-                        _icon("trash", "remove-task-icon size-[1.05rem]"),
+                        _icon("trash", "remove-task-icon size-3.5"),
                         id={"type": "remove-task", "index": index},
                         n_clicks=0,
                         disabled=index == 0,
+                        title="The first task can't be removed" if index == 0 else None,
                         className=(
-                            "remove-task button button-quiet ml-auto min-h-[2.75rem] "
-                            "w-[2.75rem] min-w-[2.75rem] cursor-pointer rounded-[0.55rem] "
-                            "border border-border-strong bg-transparent p-0 text-muted "
-                            "transition duration-150 ease-out enabled:hover:-translate-y-px "
-                            "enabled:hover:border-[#fb7185] enabled:hover:text-[#fda4af] "
-                            "enabled:active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-40"
+                            "remove-task button button-quiet ml-auto grid size-7 shrink-0 "
+                            "cursor-pointer place-items-center rounded-sm border "
+                            "border-border-strong bg-transparent p-0 text-muted transition "
+                            "duration-150 ease-out enabled:hover:border-danger "
+                            "enabled:hover:text-danger focus-visible:outline-2 "
+                            "focus-visible:outline-offset-2 focus-visible:outline-danger "
+                            "disabled:cursor-not-allowed disabled:opacity-60"
                         ),
                         **{"aria-label": f"Remove task {index + 1}"},
                     ),
                 ],
-                className="task-header flex min-w-0 flex-nowrap items-center gap-2",
+                className="task-header flex min-h-5 min-w-0 flex-nowrap items-center gap-2",
             ),
             html.Label(
                 [
@@ -546,14 +673,7 @@ def task_row(
                         id={"type": "task-input", "index": index},
                         value=task,
                         placeholder="e.g. Collect the key, open the door, then reach the goal",
-                        className=(
-                            "task-input block min-h-[4.2rem] w-full resize-y border "
-                            "border-border-strong !border-border-strong !bg-surface-raised "
-                            "px-3 py-[0.7rem] !text-text outline-0 transition duration-150 "
-                            "ease-out placeholder:!text-[#8295b2] focus-visible:outline-3 "
-                            "focus-visible:outline-offset-2 "
-                            "focus-visible:outline-[rgba(56,189,248,0.35)]"
-                        ),
+                        className=f"task-input min-h-[4rem] {FIELD_TEXTAREA_CLASS}",
                         rows=2,
                         disabled=False,
                     ),
@@ -562,7 +682,10 @@ def task_row(
             ),
         ],
         id={"type": "task-row", "index": index},
-        className="task-row flex min-w-0 flex-col gap-[0.45rem]",
+        className=(
+            "task-row flex min-w-0 flex-col gap-1.5 rounded-none border-l-2 "
+            "border-border-strong pl-2.5"
+        ),
     )
 
 
@@ -578,26 +701,26 @@ def task_input() -> html.Section:
             html.Div(
                 [task_row(0)],
                 id="task-rows",
-                className="task-rows flex min-w-0 flex-col gap-[0.65rem]",
+                className="task-rows flex min-w-0 flex-1 flex-col gap-3",
             ),
             html.Button(
                 [_icon("plus", "add-task-icon size-4"), html.Span("Add task")],
                 id="add-task",
                 n_clicks=0,
                 className=(
-                    "add-task button button-secondary inline-flex min-h-[2.55rem] cursor-pointer "
-                    "items-center justify-center gap-2 "
-                    "rounded-[0.55rem] border border-border-strong bg-surface-hover "
-                    "px-[0.85rem] py-[0.62rem] text-[0.84rem] font-[750] text-text "
-                    "transition duration-150 ease-out enabled:hover:-translate-y-px "
-                    "enabled:hover:border-accent enabled:active:translate-y-0 "
-                    "disabled:cursor-not-allowed disabled:opacity-40"
+                    "add-task button button-secondary inline-flex min-h-9 w-full cursor-pointer "
+                    "items-center justify-start gap-2 rounded-sm border border-border-strong "
+                    "bg-transparent px-[0.85rem] py-[0.62rem] text-base font-normal text-text "
+                    "transition duration-150 ease-out enabled:hover:bg-hover "
+                    "focus-visible:outline-2 focus-visible:outline-offset-2 "
+                    "focus-visible:outline-accent/35 disabled:cursor-not-allowed "
+                    "disabled:opacity-60"
                 ),
             ),
         ],
         className=(
-            "tasks-card control-card flex min-w-0 flex-col gap-3 rounded-[0.85rem] "
-            "border border-border bg-surface p-[0.95rem]"
+            "tasks-card control-card flex min-w-0 flex-col gap-3 rounded-sm "
+            "border border-border bg-surface p-4"
         ),
     )
 
@@ -607,12 +730,41 @@ def task_input() -> html.Section:
 # ======================================================================================
 
 
+def segment_class(selected: bool) -> str:
+    """Return the tracked-cell style of a selected or an idle reasoning level."""
+    return SEGMENT_BASE + (SEGMENT_SELECTED if selected else SEGMENT_IDLE)
+
+
+def reasoning_option(level: str, selected: bool) -> html.Button:
+    """Build one mutually exclusive segment of the reasoning control."""
+    return html.Button(
+        level,
+        id={"type": "reasoning-option", "index": level},
+        n_clicks=0,
+        role="radio",
+        className=segment_class(selected),
+        **{"aria-checked": selected},
+    )
+
+
 def output_controls() -> html.Aside:
     """Build output filename, critic controls, and run status."""
     return html.Aside(
         [
-            _section_heading(
-                "wand-sparkles", "Generate", "The critic validates each task automatically."
+            html.Div(
+                [
+                    _section_icon("wand-sparkles"),
+                    html.Div(
+                        [
+                            html.H2("Generate", className="section-title text-lg font-semibold"),
+                            html.P(
+                                "The critic validates each task automatically.",
+                                className="section-description mt-1 text-sm text-muted",
+                            ),
+                        ]
+                    ),
+                ],
+                className="section-heading flex items-start gap-3",
             ),
             _field(
                 "Base output filename",
@@ -624,6 +776,7 @@ def output_controls() -> html.Aside:
                     className=TEXT_INPUT_CLASS,
                     disabled=False,
                 ),
+                label_class=FIELD_LABEL_MUTED_CLASS,
             ),
             html.Button(
                 [
@@ -632,43 +785,80 @@ def output_controls() -> html.Aside:
                 ],
                 id="generate-button",
                 n_clicks=0,
-                className=(
-                    "generate-button button button-primary inline-flex min-h-[2.55rem] cursor-pointer "
-                    "items-center justify-center gap-2 "
-                    "rounded-[0.55rem] border border-accent bg-accent px-[0.85rem] "
-                    "py-[0.62rem] text-[0.84rem] font-[750] text-[#04131e] transition "
-                    "duration-150 ease-out enabled:hover:-translate-y-px "
-                    "enabled:hover:border-accent enabled:active:translate-y-0 "
-                    "disabled:cursor-not-allowed disabled:opacity-40"
+                className=GENERATE_BUTTON_CLASS,
+            ),
+            dcc.ConfirmDialogProvider(
+                id="stop-run",
+                message=(
+                    "Stop the running generation? The current task is discarded; "
+                    "finished tasks are kept in the log only."
+                ),
+                children=html.Button(
+                    [_icon("square", "stop-run-icon size-4"), html.Span("Stop generation")],
+                    id="stop-run-button",
+                    n_clicks=0,
+                    className=f"{STOP_BUTTON_CLASS} !hidden",
                 ),
             ),
             html.Fieldset(
                 [
                     html.Legend(
                         "Automatic critic",
-                        className=(
-                            "critic-legend px-[0.35rem] text-[0.7rem] font-[750] "
-                            "uppercase tracking-[0.06em] text-muted"
-                        ),
+                        className=f"critic-legend {FIELD_LEGEND_CLASS}",
                     ),
-                    dcc.Checklist(
-                        id="critic-options",
-                        options=CRITIC_OPTIONS,
-                        value=["critic"],
-                        className="critic-options grid gap-[0.45rem] !text-text",
-                    ),
-                    _field(
-                        "Critic rejections allowed",
-                        dcc.Input(
-                            id="attempts",
-                            type="number",
-                            min=Configuration.ATTEMPT_LIMITS.start,
-                            max=Configuration.ATTEMPT_LIMITS.stop - 1,
-                            step=1,
-                            value=Configuration.attempts,
-                            className=TEXT_INPUT_CLASS,
-                            disabled=False,
-                        ),
+                    html.Div(
+                        [
+                            dcc.Checklist(
+                                id="critic-options",
+                                options=CRITIC_OPTIONS,
+                                value=["critic"],
+                                className=f"critic-options {CHECKLIST_CLASS}",
+                            ),
+                            _field(
+                                "Critic rejections allowed",
+                                html.Div(
+                                    [
+                                        html.Button(
+                                            _icon("minus", "size-4"),
+                                            id="attempts-decrement",
+                                            n_clicks=0,
+                                            className=(
+                                                f"{STEPPER_BUTTON_CLASS} border-r border-border-strong"
+                                            ),
+                                            title="Allow one fewer rejection",
+                                            **{"aria-label": "Allow one fewer rejection"},
+                                        ),
+                                        dcc.Input(
+                                            id="attempts",
+                                            type="number",
+                                            min=Configuration.ATTEMPT_LIMITS.start,
+                                            max=Configuration.ATTEMPT_LIMITS.stop - 1,
+                                            step=1,
+                                            value=Configuration.attempts,
+                                            inputMode="numeric",
+                                            debounce=False,
+                                            className=STEPPER_INPUT_CLASS,
+                                            disabled=False,
+                                        ),
+                                        html.Button(
+                                            _icon("plus", "size-4"),
+                                            id="attempts-increment",
+                                            n_clicks=0,
+                                            className=(
+                                                f"{STEPPER_BUTTON_CLASS} border-l border-border-strong"
+                                            ),
+                                            title="Allow one more rejection",
+                                            **{"aria-label": "Allow one more rejection"},
+                                        ),
+                                    ],
+                                    className=STEPPER_CLASS,
+                                    role="group",
+                                    **{"aria-label": "Critic rejections allowed"},
+                                ),
+                                label_class=FIELD_LABEL_MUTED_CLASS,
+                            ),
+                        ],
+                        className=FIELD_BODY_CLASS,
                     ),
                 ],
                 className=f"critic-controls {FIELDSET_CLASS}",
@@ -677,17 +867,35 @@ def output_controls() -> html.Aside:
                 [
                     html.Legend(
                         "Reasoning",
-                        className=(
-                            "reasoning-legend px-[0.35rem] text-[0.7rem] font-[750] "
-                            "uppercase tracking-[0.06em] text-muted"
-                        ),
+                        className=f"reasoning-legend {FIELD_LEGEND_CLASS}",
                     ),
-                    dcc.RadioItems(
-                        id="reasoning-level",
-                        options=REASONING_OPTIONS,
-                        value=Configuration.reasoning,
-                        inline=True,
-                        className="outputs-options flex flex-wrap gap-2 !text-text",
+                    html.Div(
+                        [
+                            dcc.Store(id="reasoning-level", data=Configuration.reasoning),
+                            html.Div(
+                                [
+                                    reasoning_option(
+                                        level, selected=level == Configuration.reasoning
+                                    )
+                                    for level in REASONING_LEVELS
+                                ],
+                                id="reasoning-options",
+                                role="radiogroup",
+                                className=SEGMENTED_TRACK_CLASS,
+                                **{"aria-label": "Reasoning level"},
+                            ),
+                            html.Span(
+                                [
+                                    "Shared by the generator and the critic; ",
+                                    html.Span("none", className="font-medium text-text"),
+                                    " is fastest, ",
+                                    html.Span("max", className="font-medium text-text"),
+                                    " thinks longest",
+                                ],
+                                className=f"{FIELD_HINT_CLASS} mt-2",
+                            ),
+                        ],
+                        className=FIELD_BODY_CLASS,
                     ),
                 ],
                 className=f"reasoning-controls {FIELDSET_CLASS}",
@@ -696,28 +904,36 @@ def output_controls() -> html.Aside:
                 [
                     html.Legend(
                         "Outputs",
-                        className=(
-                            "outputs-legend px-[0.35rem] text-[0.7rem] font-[750] "
-                            "uppercase tracking-[0.06em] text-muted"
-                        ),
+                        className=f"outputs-legend {FIELD_LEGEND_CLASS}",
                     ),
-                    dcc.Checklist(
-                        id="steps-report-toggle",
-                        options=STEPS_REPORT_OPTIONS,
-                        value=["steps_report"],
-                        className=OUTPUTS_OPTIONS_CLASS,
-                    ),
-                    dcc.Checklist(
-                        id="labeling-toggle",
-                        options=LABELING_OPTIONS,
-                        value=[],
-                        className=OUTPUTS_OPTIONS_CLASS,
-                    ),
-                    dcc.Checklist(
-                        id="embeddings-toggle",
-                        options=EMBEDDINGS_OPTIONS,
-                        value=[],
-                        className=OUTPUTS_OPTIONS_CLASS,
+                    html.Div(
+                        [
+                            dcc.Checklist(
+                                id="steps-report-toggle",
+                                options=STEPS_REPORT_OPTIONS,
+                                value=["steps_report"],
+                                className=OUTPUTS_OPTIONS_CLASS,
+                            ),
+                            dcc.Checklist(
+                                id="descriptions-toggle",
+                                options=STATE_DESCRIPTIONS_OPTIONS,
+                                value=["state_descriptions"],
+                                className=OUTPUTS_OPTIONS_CLASS,
+                            ),
+                            dcc.Checklist(
+                                id="labeling-toggle",
+                                options=LABELING_OPTIONS,
+                                value=[],
+                                className=OUTPUTS_OPTIONS_CLASS,
+                            ),
+                            dcc.Checklist(
+                                id="embeddings-toggle",
+                                options=EMBEDDINGS_OPTIONS,
+                                value=[],
+                                className=OUTPUTS_OPTIONS_CLASS,
+                            ),
+                        ],
+                        className=FIELD_BODY_CLASS,
                     ),
                 ],
                 className=f"outputs-controls {FIELDSET_CLASS}",
@@ -730,25 +946,33 @@ def output_controls() -> html.Aside:
                 [
                     html.H2(
                         "Run status",
-                        className="status-title text-[0.98rem] font-semibold tracking-[-0.015em]",
+                        className="status-title text-md font-semibold",
                     ),
                     html.Div(
-                        "Idle",
-                        id="run-status",
-                        className=STATUS_CLASSES["idle"],
-                        role="status",
-                        **{"aria-live": "polite"},
+                        [
+                            html.Div(
+                                "Idle",
+                                id="run-status",
+                                className=f"{STATUS_CLASSES['idle']} max-w-full truncate",
+                                role="status",
+                                tabIndex="0",
+                                **{"aria-live": "polite"},
+                            ),
+                            html.Div(id="run-status-reason", className=STATUS_REASON_CLASS),
+                        ],
+                        className="status-wrap group relative min-w-0",
                     ),
                 ],
-                className=(
-                    "status-heading flex items-center gap-[0.9rem] "
-                    "max-[560px]:flex-col max-[560px]:items-stretch"
-                ),
+                className="status-heading flex flex-wrap items-center justify-between gap-3",
             ),
             html.Details(
                 [
                     html.Summary(
-                        "warn (0)", id="run-warnings-count", className=WARNING_BADGE_CLASS
+                        [
+                            _icon("warning", "size-3.5"),
+                            html.Span("0 warnings", id="run-warnings-count"),
+                        ],
+                        className=WARNING_BADGE_CLASS,
                     ),
                     html.Ul(id="run-warnings-list", className=WARNING_LIST_CLASS),
                 ],
@@ -758,15 +982,15 @@ def output_controls() -> html.Aside:
             dcc.Tabs(
                 id="run-tabs",
                 value="steps",
-                className="run-tabs flex-1",
+                className="run-tabs flex-1 border-b border-border",
                 children=[
                     dcc.Tab(
                         label="Steps",
                         value="steps",
                         className=RUN_TAB_CLASS,
                         selected_className=RUN_TAB_SELECTED_CLASS,
-                        style=RESULT_TAB_STYLE,
-                        selected_style=RESULT_TAB_SELECTED_STYLE,
+                        style=RUN_TAB_STYLE,
+                        selected_style=RUN_TAB_SELECTED_STYLE,
                         children=html.Div(
                             [
                                 "No run yet.",
@@ -787,7 +1011,7 @@ def output_controls() -> html.Aside:
                                 ),
                             ],
                             id="run-steps",
-                            className="steps-empty text-[0.8rem] text-muted",
+                            className="steps-empty text-sm text-muted",
                         ),
                     ),
                     dcc.Tab(
@@ -795,16 +1019,17 @@ def output_controls() -> html.Aside:
                         value="log",
                         className=RUN_TAB_CLASS,
                         selected_className=RUN_TAB_SELECTED_CLASS,
-                        style=RESULT_TAB_STYLE,
-                        selected_style=RESULT_TAB_SELECTED_STYLE,
+                        style=RUN_TAB_STYLE,
+                        selected_style=RUN_TAB_SELECTED_STYLE,
                         children=html.Pre(
                             "No run yet.",
                             id="run-log",
                             className=(
                                 "run-log m-0 h-full max-h-[34rem] overflow-auto whitespace-pre-wrap "
-                                "rounded-[0.55rem] border border-border bg-[#0c1626] p-3 font-mono "
-                                "text-[0.76rem] leading-[1.5] text-muted "
-                                "[scrollbar-color:var(--color-border-strong)_transparent]"
+                                "rounded-sm border border-border bg-page p-3 font-mono "
+                                "text-sm leading-[1.5] text-muted "
+                                "[scrollbar-color:var(--color-border-strong)_transparent] "
+                                "[scrollbar-gutter:stable] [scrollbar-width:thin]"
                             ),
                         ),
                     ),
@@ -837,6 +1062,7 @@ def result_panel() -> html.Section:
                     "reward-machine-upload",
                     "Choose an .rm or trace .json file",
                     ".rm,.json,text/plain",
+                    COMPACT_UPLOAD_TEXT_CLASS,
                 ),
             ),
             html.Div(
@@ -855,29 +1081,33 @@ def result_panel() -> html.Section:
                     searchable=False,
                     disabled=True,
                     className=(
-                        "output-selector min-h-[2.75rem] w-full rounded-[0.55rem] "
-                        "border !border-border-strong !bg-surface-raised p-0 text-left "
-                        "!text-text transition duration-150 ease-out "
-                        "focus:!border-accent focus:outline-3 "
-                        "focus:outline-offset-2 focus:outline-[rgb(56_189_248_/_35%)] "
-                        "focus-visible:!border-accent focus-visible:outline-3 "
+                        "output-selector min-h-8 w-full rounded-sm "
+                        "border !border-border !bg-page p-0 text-left "
+                        "!font-mono !text-sm !text-text transition duration-150 ease-out "
+                        "hover:!border-border-strong "
+                        "[&_.dash-dropdown-trigger]:!min-h-8 "
+                        "[&_.dash-dropdown-trigger]:!gap-2 "
+                        "[&_.dash-dropdown-trigger]:!px-2.5 "
+                        "focus:!border-accent focus:!outline-3 "
+                        "focus:outline-offset-2 focus:!outline-accent/35 "
+                        "focus-visible:!border-accent focus-visible:!outline-3 "
                         "focus-visible:outline-offset-2 "
-                        "focus-visible:outline-[rgb(56_189_248_/_35%)] "
+                        "focus-visible:!outline-accent/35 "
                         "disabled:cursor-not-allowed disabled:!border-border "
-                        "disabled:!bg-[#0d1625] disabled:!text-muted disabled:opacity-50"
+                        "disabled:!bg-page disabled:!text-muted disabled:opacity-50"
                     ),
                 ),
             ),
-            html.Div(
+            html.Dl(
                 id="result-summary",
-                className="result-summary text-[0.76rem] leading-[1.4] text-muted",
+                className="result-summary text-sm leading-[1.4] text-muted",
             ),
             _field(
                 "Pipeline outputs",
                 dcc.Tabs(
                     id="result-tabs",
                     value=PipelineStep.REWARD_MACHINE.value,
-                    className="result-tabs flex-1",
+                    className="result-tabs flex-none border-b border-border",
                     content_style={"display": "none"},
                     children=[_step_tab(PipelineStep.REWARD_MACHINE)],
                 ),
@@ -887,13 +1117,16 @@ def result_panel() -> html.Section:
                         {PipelineStep.REWARD_MACHINE: "No output selected."},
                         PipelineStep.REWARD_MACHINE,
                     ),
-                    className="step-bodies grid min-w-0",
+                    className=(
+                        "step-bodies grid min-w-0 flex-1 min-h-[12rem] [contain:size] [grid-template-rows:minmax(0,1fr)]"
+                    ),
                 ),
+                class_name=f"{FIELD_CLASS} flex-1 min-h-0",
             ),
         ],
         className=(
-            "output-panel flex min-h-0 min-w-0 flex-col gap-3 rounded-[0.85rem] "
-            "border border-border bg-surface p-[0.95rem] max-[800px]:min-h-[30rem]"
+            "output-panel flex min-h-0 min-w-0 flex-col gap-3 rounded-sm "
+            "border border-border bg-surface p-4 max-[800px]:min-h-[30rem]"
         ),
     )
 
@@ -917,7 +1150,7 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                     html.Div(
                         [
                             html.Button(
-                                [_section_icon("focus", boxed=False), "Focus graph"],
+                                [_icon("focus", TOOLBAR_ICON_SIZE_CLASS), "Focus graph"],
                                 id="graph-focus-toggle",
                                 n_clicks=0,
                                 className=f"graph-focus-toggle {GRAPH_TOOLBAR_BUTTON_CLASS}",
@@ -926,7 +1159,7 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                             html.Details(
                                 [
                                     html.Summary(
-                                        [_section_icon("download", boxed=False), "Export"],
+                                        [_icon("download", TOOLBAR_ICON_SIZE_CLASS), "Export"],
                                         className=(
                                             f"graph-export-summary {GRAPH_TOOLBAR_BUTTON_CLASS} list-none"
                                         ),
@@ -956,8 +1189,8 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                                         ],
                                         className=(
                                             "graph-export-panel absolute right-0 top-full z-20 mt-1 grid gap-1 "
-                                            "rounded-[0.6rem] border border-border-strong bg-[#101a2b] p-2 "
-                                            "text-text shadow-[0_12px_30px_rgb(0_0_0_/_35%)]"
+                                            "rounded-sm border border-border-strong bg-surface p-2.5 "
+                                            "text-text shadow-none"
                                         ),
                                     ),
                                 ],
@@ -977,66 +1210,67 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                             ),
                             html.Div(
                                 [
+                                    html.H3(
+                                        "Graph legend",
+                                        className="legend-title text-xs font-semibold",
+                                    ),
                                     html.Ul(
                                         [
                                             _legend_row(
                                                 (
-                                                    "legend-swatch inline-block h-4 w-4 flex-none "
-                                                    "rounded-full border-2 border-[#5878a8] "
-                                                    "bg-[#18263d]"
+                                                    "legend-swatch inline-block size-[13px] flex-none "
+                                                    "rounded-full border-2 border-border-strong "
+                                                    "bg-raised"
                                                 ),
                                                 "Default state",
                                             ),
                                             _legend_row(
                                                 (
-                                                    "legend-swatch-initial legend-swatch inline-block h-4 w-4 "
-                                                    "flex-none rounded-full border-[3px] border-accent "
-                                                    "bg-[#18263d]"
+                                                    "legend-swatch-initial legend-swatch inline-block "
+                                                    "size-[13px] flex-none rounded-full "
+                                                    "border-[3px] border-accent bg-raised"
                                                 ),
                                                 "Initial state",
                                             ),
                                             _legend_row(
                                                 (
-                                                    "legend-swatch-accepting legend-swatch inline-block h-4 w-4 "
-                                                    "flex-none rounded-full border-2 border-success "
-                                                    "bg-[#14532d]"
+                                                    "legend-swatch-accepting legend-swatch inline-block "
+                                                    "size-[13px] flex-none rounded-full "
+                                                    "border-2 border-success bg-success-tint"
                                                 ),
                                                 "Accepting state",
                                             ),
                                             _legend_row(
                                                 (
-                                                    "legend-swatch-rejecting legend-swatch inline-block h-4 w-4 "
-                                                    "flex-none rounded-full border-2 border-[#fb7185] "
-                                                    "bg-[#572033]"
+                                                    "legend-swatch-rejecting legend-swatch inline-block "
+                                                    "size-[13px] flex-none rounded-full "
+                                                    "border-2 border-danger bg-danger-tint"
                                                 ),
                                                 "Rejecting state",
                                             ),
                                             _legend_row(
                                                 (
-                                                    "legend-swatch-transition legend-swatch inline-block h-0 "
-                                                    "w-4 flex-none rounded-none border-0 border-t-2 "
-                                                    "border-[#7189ad] bg-transparent"
+                                                    "legend-swatch-transition legend-swatch inline-block "
+                                                    "h-0 w-[13px] flex-none rounded-none border-0 "
+                                                    "border-t-2 border-border-strong bg-transparent"
                                                 ),
                                                 "Explicit transition",
                                             ),
                                         ],
-                                        className=(
-                                            "legend-list m-[0.55rem_0_0] grid list-none "
-                                            "gap-[0.35rem] p-0"
-                                        ),
+                                        className=("legend-list mt-1.5 grid list-none gap-1.5 p-0"),
                                     ),
                                     html.P(
                                         "Only explicit transitions are shown. Omitted transitions are zero-reward self-loops.",
                                         className=(
-                                            "graph-explanation mt-[0.55rem] max-w-[25rem] whitespace-normal break-words "
-                                            "text-[0.76rem] leading-[1.4] text-muted max-[560px]:m-0 max-[560px]:text-left"
+                                            "graph-explanation mt-1.5 max-w-[25rem] whitespace-normal break-words "
+                                            "text-xs leading-[1.4] text-muted max-[560px]:m-0 max-[560px]:text-left"
                                         ),
                                     ),
                                 ],
                                 className=(
                                     "graph-legend-panel absolute right-0 top-full z-20 mt-1 max-h-[calc(100dvh_-_7rem)] "
-                                    "w-[18rem] max-w-[calc(100vw_-_2rem)] overflow-auto whitespace-normal rounded-[0.6rem] "
-                                    "border border-border-strong bg-[#101a2b] p-2 text-text shadow-[0_12px_30px_rgb(0_0_0_/_35%)]"
+                                    "w-[18rem] max-w-[calc(100vw_-_2rem)] overflow-auto whitespace-normal rounded-sm "
+                                    "border border-border-strong bg-surface p-2.5 text-text shadow-none"
                                 ),
                             ),
                         ],
@@ -1065,15 +1299,17 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                         userZoomingEnabled=True,
                         wheelSensitivity=0.15,
                         style={"width": "100%", "height": "100%"},
-                        className="graph-canvas min-h-[27rem] h-full w-full flex-1",
+                        className="graph-canvas min-h-[18rem] h-full w-full flex-1",
                     ),
                 ],
-                className="graph-stage relative min-h-0 flex-1",
+                className=(
+                    "graph-stage relative min-h-0 flex-1 rounded-sm border border-border bg-page"
+                ),
             ),
         ],
         className=(
             "graph-panel relative flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden "
-            "rounded-[0.85rem] border border-border bg-[#0c1626] p-[0.95rem] "
+            "rounded-sm border border-border bg-surface p-4 "
             "max-[800px]:min-h-[30rem]"
         ),
     )
@@ -1095,15 +1331,15 @@ def create_layout(stylesheet: list[dict] | None = None) -> html.Main:
                             html.P(
                                 "Reward Machine compiler",
                                 className=(
-                                    "eyebrow text-[0.7rem] font-extrabold uppercase "
-                                    "tracking-[0.14em] text-accent"
+                                    "eyebrow font-sans text-sm font-medium text-muted "
+                                    "tracking-[0.02em]"
                                 ),
                             ),
                             html.H1(
                                 "Review and visualize",
                                 className=(
-                                    "app-title mt-[0.1rem] text-[clamp(1.55rem,2.4vw,2.2rem)] "
-                                    "font-bold tracking-[-0.035em] max-[560px]:text-[1.65rem]"
+                                    "app-title mt-2.5 font-display text-display font-semibold "
+                                    "leading-[1.02] tracking-[-0.035em]"
                                 ),
                             ),
                         ]
@@ -1111,14 +1347,14 @@ def create_layout(stylesheet: list[dict] | None = None) -> html.Main:
                     html.P(
                         "A local path from environment Markdown to critic-validated Reward Machines.",
                         className=(
-                            "usage-guide max-w-[43rem] text-right text-[0.88rem] "
-                            "leading-[1.45] text-muted max-[800px]:text-left"
+                            "usage-guide max-w-[30rem] pt-1.5 text-right text-base leading-[1.6] "
+                            "text-muted max-[800px]:text-left"
                         ),
                     ),
                 ],
                 className=(
-                    "app-header flex flex-none items-end justify-between gap-x-8 gap-y-4 "
-                    "max-[800px]:flex-col max-[800px]:items-start max-[800px]:gap-[0.55rem]"
+                    "app-header flex flex-none items-start justify-between gap-x-8 gap-y-4 "
+                    "pt-2 pb-4 max-[800px]:flex-col max-[800px]:gap-[0.55rem]"
                 ),
             ),
             html.Div(
