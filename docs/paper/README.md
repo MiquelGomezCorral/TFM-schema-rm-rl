@@ -15,7 +15,7 @@ note below.
 
 ## Entries
 
-### Start-state merge (`start-merge/`), 2026-10-13
+### MONA start-state merge (`mona-start-state-merge/`), 2026-10-13
 
 **What it shows.** MONA gives each rule clause's automaton a start state that exists only before
 the first step. The reward layer drops that state when nothing comes back to it and it moves
@@ -44,8 +44,8 @@ its idle successor.
 **Rerun** from the repository root, inside `RM_RL_env`:
 
 ```bash
-PYTHONPATH=app python -W ignore docs/paper/start-merge/check/start_merge_check.py compare \
-  docs/paper/start-merge/check/before docs/paper/start-merge/check/after <output dir>
+PYTHONPATH=app python -W ignore docs/paper/mona-start-state-merge/check/start_merge_check.py compare \
+  docs/paper/mona-start-state-merge/check/before docs/paper/mona-start-state-merge/check/after <output dir>
 ```
 
 It prints one line per RM and ends with `25/25 RMs match the expected merge`; it also writes
@@ -56,3 +56,30 @@ the three drawings per RM into `<output dir>`.
 `docs/COMPILER_REWARD_DESIGN.md`. The graphs were drawn with the interactive graph and layout
 code of 2026-10-14, which was not yet committed when this copy was made; the check does not
 depend on the drawing.
+
+### Environment files (`environment-files/`), 2026-10-23
+
+**What it shows.** How each environment is described with two files. `environment.md` holds the
+environment at the top level only (what each proposition means and when the environment emits it).
+`environment-code.md` holds all implementation (labeling API, source and runtime, truth conditions
+in code, evidence) and adds to the facts file without copying it. The clause generator and the
+critic read the facts file alone; the steps that write code (the ARM-FM baseline generator and the
+labeling stage) load both as one text. A per-line test decides where a line goes: if it only helps
+implement or verify, it belongs in the code file.
+
+**Evidence.** A written convention, not a measured result. The worked example is the MiniGrid
+DoorKey pair of final files. The note lists the eight sections of the facts file and the sections
+of the code file with a one-line purpose each.
+
+**Files.**
+- `README.md`: the appendix note.
+- `minigrid-doorkey.environment.md`, `minigrid-doorkey.environment-code.md`: the DoorKey pair
+  (copied from `examples/arm-fm/minigrid-doorkey/`).
+
+**Rerun.** The README holds a short script that joins the DoorKey pair the way the code steps do and
+prints the proposition ids and the labeling API text.
+
+**Code.** `EnvironmentDescription.from_file(path, code=True)` in `app/src/models/environment.py`
+(the join), called by `generate_larm` in `app/scripts/generate_larm.py` and by the labeling stage of
+`app/scripts/generate_rm.py`; the rule is in `docs/ENVIRONMENT_AUTHORING.md` and
+`docs/decisions/arm-fm/catalogue-and-evidence.md`. Not committed when this entry was written.
