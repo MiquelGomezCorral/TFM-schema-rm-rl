@@ -77,13 +77,13 @@ class RewardLayerResult:
 
 
 def build_reward_machine(
-    dfas: Sequence[dict], soft: Sequence[bool], recurrent_soft_penalty: bool = True
+    dfas: Sequence[dict], soft: Sequence[bool], *, recurrent_soft_penalty: bool = True
 ) -> RewardLayerResult:
     """Compile the clause DFAs into one Reward Machine with hard pruning and rewards.
 
     ``soft[i]`` marks clause ``i`` soft; the others are hard. With ``recurrent_soft_penalty`` a
-    soft rule's violated state is re-armed (see ``_rearm_violated``), so each new break pays
-    again instead of once per episode. Without a hard goal clause the machine has no final
+    soft rule's violated state takes the start state's edges, so each new break pays again
+    instead of once per episode. Without a hard goal clause the machine has no final
     state (a rule-only task). Raises ``ValueError`` on a non-total DFA, conflicting clauses, or
     a positive reward cycle.
     """
@@ -185,15 +185,15 @@ def _destination(
     raise ValueError(f"State {source} has no transition on {valuation}")
 
 
-def _rearm_violated(dfa: dict, labels: dict[str, ClauseState]) -> dict:
+def _rearm_violated(dfa: dict, by_state: dict[str, ClauseState]) -> dict:
     """Copy ``dfa`` so each violated state leaves the way the start state does.
 
     A violated state drops its own edges and takes the start's: a step that would not break
     the rule goes where it would from the start, and a step that would break it again stays,
-    already paid. The labels are those of the original DFA and no state is added.
+    already paid. No state is added.
     """
     start = dfa["initial_state"]
-    violated = {state for state, label in labels.items() if label is ClauseState.VIOLATED}
+    violated = {state for state, label in by_state.items() if label is ClauseState.VIOLATED}
     start_edges = [
         (guard, destination)
         for (source, guard), destination in dfa["transitions"].items()

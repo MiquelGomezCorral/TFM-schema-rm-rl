@@ -513,7 +513,7 @@ class OrchestrationTests(unittest.TestCase):
             ),
             patch(
                 "scripts.generate_rm.build_compilation_result",
-                side_effect=lambda *args: order.append("RM") or result(),
+                side_effect=lambda *args, **kwargs: order.append("RM") or result(),
             ),
         ):
             self.assertTrue(generate_rm(CONFIG))

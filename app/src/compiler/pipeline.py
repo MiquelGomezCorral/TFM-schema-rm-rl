@@ -81,11 +81,12 @@ def build_compilation_result(
     environment: EnvironmentDescription,
     proposal: Proposal,
     dfas: Sequence[dict],
+    *,
     recurrent_soft_penalty: bool = True,
 ) -> CompilationResult:
     """Build and serialize a task-specific Reward Machine from compiled DFAs."""
     soft = [clause.priority is PriorityLevel.SOFT for clause in proposal.clauses]
-    layer = build_reward_machine(dfas, soft, recurrent_soft_penalty)
+    layer = build_reward_machine(dfas, soft, recurrent_soft_penalty=recurrent_soft_penalty)
     return CompilationResult(
         environment=environment,
         proposal=proposal,

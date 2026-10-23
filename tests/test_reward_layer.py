@@ -55,7 +55,9 @@ BOUNCE = {
 
 def rewards_of(clauses, soft, propositions, steps, recurrent_soft_penalty=True):
     """Run one episode of true-proposition sets through the compiled, serialized machine."""
-    machine = build_reward_machine(clauses, soft, recurrent_soft_penalty).reward_machine
+    machine = build_reward_machine(
+        clauses, soft, recurrent_soft_penalty=recurrent_soft_penalty
+    ).reward_machine
     text = serialize_reward_machine(machine)
     runtime = RewardMachineRuntime(parse_paper_reward_machine(text, propositions=propositions))
     return [runtime.step({name: name in step for name in propositions}).reward for step in steps]

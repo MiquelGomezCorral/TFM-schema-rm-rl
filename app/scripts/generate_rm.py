@@ -262,7 +262,10 @@ class _Pipeline:
         self.progress.start(PipelineStep.REWARD_MACHINE)
 
         compiled = build_compilation_result(
-            self.environment, proposal, dfas, self.CONFIG.recurrent_soft_penalty
+            self.environment,
+            proposal,
+            dfas,
+            recurrent_soft_penalty=self.CONFIG.recurrent_soft_penalty,
         )
 
         self.progress.artifact("Serialized Reward Machine", compiled.text)
