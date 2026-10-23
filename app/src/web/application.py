@@ -1,9 +1,11 @@
 """Dash application factory and focused callback registration."""
 
 import base64
+import json
 import re
 from collections.abc import Mapping
 from copy import deepcopy
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
 
@@ -14,10 +16,12 @@ from dash.exceptions import PreventUpdate
 from src.compiler import CompilationResult, parse_reward_machine
 from src.compiler.reward_machine import RewardMachineStructure
 from src.config import REASONING_LEVELS, Configuration
+from src.models import CODE_FILE_NAME
 from src.utils import (
     CYTOSCAPE_STYLESHEET,
     STEP_OUTPUT_ORDER,
     PipelineStep,
+    StepState,
     derive_output_names,
     load_step_trace,
     render_elements_html,
@@ -43,6 +47,7 @@ from .components import (
     WORKSPACE_CLASS,
     _icon,
     create_layout,
+    render_issues,
     render_steps,
     result_bodies,
     result_tabs,
@@ -63,6 +68,10 @@ _DEFAULT_ENVIRONMENT_NAME = "environment.md"
 _ENVIRONMENT_STEM = "environment"
 _UNSAFE_OUTPUT_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 _ENVIRONMENT_TITLE = re.compile(r"^#\s+(\S.*)$", re.MULTILINE)
+# A tasks manifest (examples/arm-fm/*/tasks.json) names the environment, points at its
+# Markdown relative to the repository root, and lists the tasks to compile.
+_MANIFEST_FIELDS = ("env", "env_description", "tasks")
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # Weights the three Tailwind font stacks use; the stacks fall back to system fonts offline.
 FONTS_STYLESHEET = (
@@ -142,7 +151,7 @@ def create_app(controller: RunController) -> Dash:
     _register_start_callback(app, controller)
     _register_stop_callback(app, controller)
     _register_poll_callback(app, controller)
-    _register_warning_callback(app, controller)
+    _register_issue_callback(app, controller)
     _register_result_callback(app, controller)
     _register_graph_callbacks(app)
     return app
@@ -158,10 +167,18 @@ def _register_input_callbacks(app: Dash) -> None:
         Output("environment-markdown", "value"),
         Output("upload-status", "children"),
         Output("output-filename", "value"),
+        Output("task-rows", "children", allow_duplicate=True),
         Input("environment-upload", "contents"),
         State("environment-upload", "filename"),
         prevent_initial_call=True,
     )(_load_environment)
+    app.callback(
+        Output("environment-code-markdown", "value"),
+        Output("code-upload-status", "children"),
+        Input("environment-code-upload", "contents"),
+        State("environment-code-upload", "filename"),
+        prevent_initial_call=True,
+    )(_load_environment_code)
     app.callback(
         Output("imported-reward-machine", "data"),
         Output("reward-machine-upload-status", "children"),
@@ -207,6 +224,7 @@ def _register_start_callback(app: Dash, controller: RunController) -> None:
         State("environment-upload", "contents"),
         State({"type": "task-input", "index": ALL}, "value"),
         State("output-filename", "value"),
+        State("environment-code-markdown", "value"),
         State("reasoning-level", "data"),
         State("attempts", "value"),
         State("critic-options", "value"),
@@ -227,10 +245,10 @@ def _register_start_callback(app: Dash, controller: RunController) -> None:
     ) -> str:
         """Start a run from the form.
 
-        ``options`` are the reasoning level, the attempt limit, then the five checklist values
-        in layout order.
+        ``options`` are the code file text, the reasoning level, the attempt limit, then the five
+        checklist values in layout order.
         """
-        reasoning, attempts, *toggles = options
+        code, reasoning, attempts, *toggles = options
         if not (markdown or "").strip():
             return "Enter or upload environment Markdown first."
         tasks = tuple((value or "").strip() for value in task_values or [])
@@ -250,6 +268,7 @@ def _register_start_callback(app: Dash, controller: RunController) -> None:
             tasks=tasks,
             output_filename=output_name,
             environment_filename=_resolve_environment_filename(markdown, upload_contents, filename),
+            environment_code=code or "",
             reasoning=reasoning,
             attempts=int(attempts),
             **_run_flags(*toggles),
@@ -287,6 +306,8 @@ def _register_poll_callback(app: Dash, controller: RunController) -> None:
         Output("run-log", "children"),
         Output("environment-upload", "disabled"),
         Output("environment-markdown", "disabled"),
+        Output("environment-code-upload", "disabled"),
+        Output("environment-code-markdown", "disabled"),
         Output({"type": "task-input", "index": ALL}, "disabled"),
         Output("add-task", "disabled"),
         Output({"type": "remove-task", "index": ALL}, "disabled"),
@@ -308,7 +329,7 @@ def _register_poll_callback(app: Dash, controller: RunController) -> None:
         Output("labeling-toggle", "options"),
         Output("embeddings-toggle", "options"),
         Input("poll-interval", "n_intervals"),
-        State("output-selector", "value"),
+        Input("output-selector", "value"),
         State({"type": "remove-task", "index": ALL}, "id"),
         Input("run-prev", "n_clicks", allow_optional=True),
         Input("run-next", "n_clicks", allow_optional=True),
@@ -342,28 +363,65 @@ def _register_poll_callback(app: Dash, controller: RunController) -> None:
         return *status, *panels
 
 
-def _register_warning_callback(app: Dash, controller: RunController) -> None:
+def _register_issue_callback(app: Dash, controller: RunController) -> None:
     @app.callback(
-        Output("run-warnings", "className"),
-        Output("run-warnings-count", "children"),
-        Output("run-warnings-list", "children"),
-        Output("warnings-shown", "data"),
+        Output("run-warnings-tab", "label"),
+        Output("run-warnings-tab", "disabled"),
+        Output("run-warnings", "children"),
+        Output("run-errors-tab", "label"),
+        Output("run-errors-tab", "disabled"),
+        Output("run-errors", "children"),
+        Output("run-tabs", "value"),
+        Output("issues-shown", "data"),
         Input("poll-interval", "n_intervals"),
-        State("warnings-shown", "data"),
+        State("issues-shown", "data"),
+        State("run-tabs", "value"),
     )
-    def poll_warnings(
-        _n_intervals: int, shown: list[str] | None = None
-    ) -> tuple[object, object, object, object]:
-        """Show the run's warnings, or change nothing while they match what is shown.
+    def poll_issues(_n_intervals: int, shown: list | None, open_tab: str | None) -> tuple:
+        """Fill the Warnings and Errors tabs, or change nothing while they match what is shown.
 
-        Skipping the update keeps the list open while the user reads it.
+        Skipping the update keeps a list still while the user reads it. A tab that
+        empties while open falls back to Steps, so no disabled tab stays selected.
         """
-        warnings = list(controller.snapshot().warnings)
-        if warnings == (shown or []):
-            return no_update, no_update, no_update, no_update
-        visible = "run-warnings block" if warnings else "run-warnings hidden"
-        label = f"{len(warnings)} warning" if len(warnings) == 1 else f"{len(warnings)} warnings"
-        return visible, label, [html.Li(item) for item in warnings], warnings
+        warnings, errors = _run_issues(controller.snapshot())
+        if [warnings, errors] == (shown or []):
+            return (no_update,) * 8
+        open_entries = {"warnings": warnings, "errors": errors}.get(open_tab or "", (True,))
+        tab = no_update if open_entries else "steps"
+        return (
+            _issue_label("Warnings", warnings),
+            not warnings,
+            render_issues(warnings, "warning"),
+            _issue_label("Errors", errors),
+            not errors,
+            render_issues(errors, "error"),
+            tab,
+            [warnings, errors],
+        )
+
+
+def _issue_label(name: str, entries: list[str]) -> str:
+    return f"{name} · {len(entries)}" if entries else name
+
+
+def _run_issues(snapshot: RunSnapshot) -> tuple[list[str], list[str]]:
+    """Split what the run reported into warnings (the run went on) and errors (it stopped).
+
+    A task's failed attempts count as warnings while it keeps retrying; the last
+    failure of a task that ended failed is an error, as is the run's own error.
+    """
+    warnings = list(snapshot.warnings)
+    errors: list[str] = []
+    # While running, a failed task is between attempts: its failure is still a warning.
+    ended = snapshot.status not in {RunState.RUNNING, RunState.STOPPED}
+    for task in snapshot.tasks:
+        notes = [f"Task {task.index + 1} · {note}" for note in task.failures]
+        if ended and task.state is StepState.FAILED and notes:
+            errors.append(notes.pop())
+        warnings.extend(notes)
+    if snapshot.error and snapshot.status is not RunState.STOPPED:
+        errors.append(snapshot.error)
+    return warnings, errors
 
 
 def _register_result_callback(app: Dash, controller: RunController) -> None:
@@ -437,19 +495,40 @@ def _register_graph_callbacks(app: Dash) -> None:
 # ======================================================================================
 
 
-def _load_environment(contents: str | None, filename: str | None) -> tuple[object, str, object]:
+def _load_environment(
+    contents: str | None, filename: str | None
+) -> tuple[object, str, object, object]:
     if not contents:
         raise PreventUpdate
     try:
-        markdown = _decode_uploaded_markdown(contents)
-    except (ValueError, UnicodeDecodeError) as error:
-        return no_update, f"Could not load UTF-8 Markdown: {error}", no_update
-    environment_name = filename or _DEFAULT_ENVIRONMENT_NAME
+        upload = _uploaded_environment(contents, filename)
+    except (ValueError, UnicodeDecodeError, OSError, RecursionError) as error:
+        return no_update, f"Could not load {filename or 'the file'}: {error}", no_update, no_update
+    if upload.tasks is None:
+        rows: object = no_update
+        status = f"Loaded {filename or _DEFAULT_ENVIRONMENT_NAME}; edit the text before generating."
+    else:
+        rows = [task_row(index, task) for index, task in enumerate(upload.tasks)]
+        status = (
+            f"Loaded {len(upload.tasks)} tasks and {upload.environment_filename} from {filename}; "
+            "edit before generating."
+        )
     return (
-        markdown,
-        f"Loaded {environment_name}; edit the text before generating.",
-        _available_output_filename(_environment_output_stem(filename, markdown)),
+        upload.markdown,
+        status,
+        _available_output_filename(upload.output_stem, len(upload.tasks or ())),
+        rows,
     )
+
+
+def _load_environment_code(contents: str | None, filename: str | None) -> tuple[object, str]:
+    if not contents:
+        raise PreventUpdate
+    try:
+        text = _decode_uploaded_markdown(contents)
+    except (ValueError, UnicodeDecodeError) as error:
+        return no_update, f"Could not load {filename or 'the file'}: {error}"
+    return text, f"Loaded {filename or CODE_FILE_NAME}; edit the text before generating."
 
 
 def _load_reward_machine(contents: str | None, filename: str | None) -> tuple[object, str, str]:
@@ -485,6 +564,9 @@ def _update_task_rows(
     _remove_clicks: list[int | None],
     values: list[str | None],
 ) -> list:
+    # Rows another callback adds (a tasks manifest) re-fire this one with n_clicks=0.
+    if not ctx.triggered or not ctx.triggered[0].get("value"):
+        raise PreventUpdate
     rows = [value or "" for value in values or []]
     triggered = ctx.triggered_id
     if triggered == "add-task":
@@ -611,10 +693,19 @@ def _poll_panels(
         options.extend(_imported_options(imported))
     trigger = _triggered_id()
     selected = _selected_output(snapshot, imported, selected_index, trigger)
-    task_selected, next_selection = _task_selection(snapshot, selection_data, trigger)
+    task_selected, next_selection = _task_selection(
+        snapshot, selection_data, trigger, selected_index
+    )
+    # The chevrons and dots lead the selector; an imported selection leaves them where they are.
+    if _is_task_navigation(trigger) and _is_generated_index(
+        task_selected, len(snapshot.output_paths)
+    ):
+        selected = task_selected
     remove_ids = remove_ids or []
     return (
         "\n".join(snapshot.logs) if snapshot.logs else "No run yet.",
+        active,
+        active,
         active,
         active,
         [active] * len(remove_ids),
@@ -670,10 +761,17 @@ def _selected_output(
     return selected_index
 
 
+def _is_task_navigation(trigger: str | dict | None) -> bool:
+    return trigger in {"run-prev", "run-next"} or (
+        isinstance(trigger, dict) and trigger.get("type") == "task-dot"
+    )
+
+
 def _task_selection(
     snapshot: RunSnapshot,
     selection_data: dict[str, int | None] | None,
     trigger: str | dict | None,
+    selected_output: int | str | None,
 ) -> tuple[int, dict[str, int | None]]:
     """Return the task to show and the selection state to store for the next poll."""
     selection_data = selection_data or {}
@@ -687,6 +785,10 @@ def _task_selection(
     task_selected = max(0, min(task_selected, total_tasks - 1)) if total_tasks else 0
 
     task_selected, navigated = _navigate(task_selected, total_tasks, trigger)
+    if trigger == "output-selector" and _is_generated_index(
+        selected_output, min(total_tasks, len(snapshot.output_paths))
+    ):
+        task_selected, navigated = selected_output, True
     if (
         not navigated
         and snapshot.active_task_index is not None
@@ -993,12 +1095,12 @@ def _resolve_environment_filename(
     if not current_markdown or not upload_contents or not upload_filename:
         return None
     try:
-        uploaded_markdown = _decode_uploaded_markdown(upload_contents)
-    except (ValueError, UnicodeDecodeError):
+        upload = _uploaded_environment(upload_contents, upload_filename)
+    except (ValueError, UnicodeDecodeError, OSError, RecursionError):
         return None
-    if _normalize_line_endings(current_markdown) != _normalize_line_endings(uploaded_markdown):
+    if _normalize_line_endings(current_markdown) != _normalize_line_endings(upload.markdown):
         return None
-    return upload_filename
+    return upload.environment_filename
 
 
 def _normalize_line_endings(markdown: str) -> str:
@@ -1038,6 +1140,50 @@ def _export_filename(name: object, extension: str) -> str:
         if stem:
             return f"{stem}.{extension}"
     return f"reward-machine.{extension}"
+
+
+@dataclass(frozen=True)
+class _UploadedEnvironment:
+    markdown: str
+    environment_filename: str
+    output_stem: str
+    tasks: tuple[str, ...] | None = None
+
+
+def _uploaded_environment(contents: str, filename: str | None) -> _UploadedEnvironment:
+    """Read an Environment upload: Markdown, or a tasks manifest that points at it.
+
+    A manifest must carry ``env``, ``env_description`` and a non-empty ``tasks``
+    list. Its Markdown is read from ``env_description`` resolved against the
+    repository root and kept inside it; the output is named after ``env``.
+    Raises ``ValueError`` for a manifest missing fields, ``OSError`` when the
+    referenced file cannot be read.
+    """
+    text = _decode_uploaded_markdown(contents)
+    if not (filename or "").lower().endswith(".json"):
+        return _UploadedEnvironment(
+            text,
+            filename or _DEFAULT_ENVIRONMENT_NAME,
+            _environment_output_stem(filename, text),
+        )
+    manifest = json.loads(text.lstrip("\ufeff"))
+    if not isinstance(manifest, dict) or any(not manifest.get(field) for field in _MANIFEST_FIELDS):
+        raise ValueError(f"a tasks manifest needs {', '.join(_MANIFEST_FIELDS)}")
+    tasks = manifest["tasks"]
+    if not isinstance(tasks, list) or any(
+        not isinstance(task, str) or not task.strip() for task in tasks
+    ):
+        raise ValueError("tasks must be a list of non-empty strings")
+    description = (_REPO_ROOT / str(manifest["env_description"])).resolve()
+    if not description.is_relative_to(_REPO_ROOT):
+        raise ValueError("env_description must stay inside the repository")
+    slug = re.sub(r"[^a-z0-9]+", "-", str(manifest["env"]).lower()).strip("-")
+    return _UploadedEnvironment(
+        description.read_text(encoding="utf-8"),
+        description.name,
+        slug or _DEFAULT_ENVIRONMENT_NAME,
+        tuple(task.strip() for task in tasks),
+    )
 
 
 def _environment_output_stem(filename: str | None, markdown: str) -> str:

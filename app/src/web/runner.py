@@ -9,6 +9,7 @@ from threading import Event, Lock, Thread
 
 from src.compiler import CompilationResult
 from src.config import Configuration
+from src.models import CODE_FILE_NAME
 from src.utils import (
     GenerationHooks,
     PipelineStep,
@@ -53,7 +54,7 @@ class TaskSnapshot:
     attempt: int = 0
     attempts: int = Configuration.attempts  # the limit the attempt counts against
     steps: tuple[StepSnapshot, ...] = ()
-    retry_note: str | None = None
+    failures: tuple[str, ...] = ()  # every failed attempt's detail, oldest first
 
     @property
     def state(self) -> StepState:
@@ -93,6 +94,7 @@ class RunRequest:
     tasks: Sequence[str]
     output_filename: str
     environment_filename: str | None = None
+    environment_code: str = ""
     critic: bool = True
     reasoning: str = Configuration.reasoning
     attempts: int = Configuration.attempts
@@ -146,6 +148,11 @@ class RunController:
 
     def start(self, request: RunRequest) -> None:
         """Start one run using submitted Markdown and UI values."""
+        if request.labeling and not request.environment_code.strip():
+            raise ValueError(
+                f"labeling needs the text of {CODE_FILE_NAME}: upload or paste it under the "
+                "environment Markdown"
+            )
         request = replace(request, tasks=tuple(request.tasks))
         with self._lock:
             if self._status is RunState.RUNNING or (
@@ -191,6 +198,10 @@ class RunController:
                     request.environment_filename
                 )
                 environment_path.write_text(request.environment_markdown, encoding="utf-8")
+                if request.environment_code.strip():
+                    environment_path.with_name(CODE_FILE_NAME).write_text(
+                        request.environment_code, encoding="utf-8"
+                    )
                 CONFIG = Configuration(
                     environment=environment_path,
                     tasks=list(request.tasks),
@@ -274,9 +285,9 @@ class RunController:
                 elapsed=event.elapsed,
                 detail=event.detail,
             )
-            retry_note = task.retry_note
+            failures = task.failures
             if event.state is StepState.FAILED and event.detail:
-                retry_note = event.detail
+                failures = (*failures, f"Attempt {event.attempt}: {event.detail}")
             self._tasks = (
                 *self._tasks[: event.task_index],
                 TaskSnapshot(
@@ -285,7 +296,7 @@ class RunController:
                     attempt=event.attempt,
                     attempts=task.attempts,
                     steps=tuple(steps),
-                    retry_note=retry_note,
+                    failures=failures,
                 ),
                 *self._tasks[event.task_index + 1 :],
             )
@@ -347,7 +358,7 @@ def _reset_task(task: TaskSnapshot, attempt: int) -> TaskSnapshot:
             )
             for step in task.steps
         ),
-        retry_note=task.retry_note,
+        failures=task.failures,
     )
 
 

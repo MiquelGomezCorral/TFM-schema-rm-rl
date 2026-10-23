@@ -61,6 +61,13 @@ STATUS_REASON_CLASS = (
     "[scrollbar-width:thin] empty:hidden "
     "max-[900px]:left-auto max-[900px]:right-0 max-[900px]:w-[min(32rem,calc(100vw-3.5rem))]"
 )
+# The task title's popover lives inside the tab panel, which clips overflow, so it spans the
+# panel instead of the status popover's fixed width.
+TASK_TITLE_POPOVER_CLASS = (
+    STATUS_REASON_CLASS.replace("w-[min(32rem,calc(100vw-2rem))]", "w-full")
+    .replace("max-[900px]:w-[min(32rem,calc(100vw-3.5rem))]", "")
+    .replace("max-[900px]:left-auto max-[900px]:right-0", "")
+)
 
 INPUT_REGION_CLASS = (
     "input-region grid items-stretch gap-3 [grid-area:input] grid-cols-2 max-[1200px]:grid-cols-1"
@@ -73,8 +80,11 @@ RUN_SIDEBAR_CLASS = (
 # The output row is the page leftover, but the panels must never cross their card borders when
 # that leftover is short: 38rem is the Compiled Reward Machine panel's own minimum (fixed
 # controls, the summary rows, and the 12rem code floor).
+# The output row never drops below a readable height: on short viewports the page scrolls
+# instead of squeezing the Reward Machine text and the graph.
 OUTPUT_REGION_CLASS = (
-    "output-region grid items-stretch gap-3 [grid-area:output] grid-cols-2 max-[1200px]:grid-cols-1"
+    "output-region grid min-h-[36rem] items-stretch gap-3 [grid-area:output] grid-cols-2 "
+    "max-[1200px]:grid-cols-1 max-[1200px]:min-h-0"
 )
 # Two rows: the input cards take what their content needs, the output row fills the rest, so
 # the four cards end at the bottom of the viewport instead of leaving a blank band. Below the
@@ -217,17 +227,14 @@ STEPPER_INPUT_CLASS = (
     "[&>input::-webkit-outer-spin-button]:!appearance-none "
     "[&>.dash-input-stepper]:!hidden"
 )
-WARNING_BADGE_CLASS = (
-    "run-warning-badge inline-flex cursor-pointer list-none items-center gap-1.5 "
-    "rounded-full border border-transparent bg-warning-tint px-2.5 py-1 text-sm font-medium "
-    "text-warning-ink transition duration-150 ease-out hover:border-warning "
-    "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-warning-ink "
-    "[&::-webkit-details-marker]:hidden"
+ISSUE_LIST_CLASS = (
+    "issue-list m-0 grid list-none gap-1.5 overflow-auto p-0 text-sm leading-[1.4] text-text "
+    "[scrollbar-color:var(--color-border-strong)_transparent] [scrollbar-width:thin]"
 )
-WARNING_LIST_CLASS = (
-    "run-warning-list m-0 mt-2 grid list-none gap-1 overflow-auto p-0 text-sm "
-    "leading-[1.4] text-muted"
-)
+ISSUE_ITEM_CLASSES = {
+    "warning": "border-warning bg-warning-tint",
+    "error": "border-danger bg-danger-tint",
+}
 
 CRITIC_OPTIONS = [{"label": " Critic", "value": "critic"}]
 STEPS_REPORT_OPTIONS = [{"label": " Step report (.md)", "value": "steps_report"}]
@@ -239,6 +246,13 @@ RUN_TAB_CLASS = (
     "run-tab !flex-none !border-x-0 !border-t-0 !px-2.5 !py-1.5 text-sm font-medium text-muted"
 )
 RUN_TAB_SELECTED_CLASS = "run-tab-selected !border-b-2 !border-accent !text-text font-semibold"
+RUN_TAB_WARNING_SELECTED_CLASS = (
+    "run-tab-selected !border-b-2 !border-warning !text-warning-ink font-semibold"
+)
+RUN_TAB_ERROR_SELECTED_CLASS = (
+    "run-tab-selected !border-b-2 !border-danger !text-danger-ink font-semibold"
+)
+RUN_TAB_DISABLED_CLASS = "run-tab-disabled cursor-not-allowed opacity-50"
 RUN_TAB_STYLE = {"backgroundColor": "transparent"}
 RUN_TAB_SELECTED_STYLE = {"backgroundColor": "transparent"}
 STEP_OUTPUT_CLASS = (
@@ -514,6 +528,7 @@ def render_steps(tasks: tuple[TaskSnapshot, ...], selected_index: int = 0) -> ht
                 _icon("chevron-right", "size-4 -rotate-180"),
                 id="run-prev",
                 n_clicks=0,
+                disabled=selected_index == 0,
                 className=TASK_NAV_BUTTON_CLASS,
                 **{"aria-label": "View previous task"},
             ),
@@ -522,6 +537,7 @@ def render_steps(tasks: tuple[TaskSnapshot, ...], selected_index: int = 0) -> ht
                 _icon("chevron-right", "size-4"),
                 id="run-next",
                 n_clicks=0,
+                disabled=selected_index == len(tasks) - 1,
                 className=TASK_NAV_BUTTON_CLASS,
                 **{"aria-label": "View next task"},
             ),
@@ -535,16 +551,16 @@ def render_steps(tasks: tuple[TaskSnapshot, ...], selected_index: int = 0) -> ht
                             [
                                 html.H3(
                                     task.task,
-                                    title=task.task,
                                     className=(
-                                        "run-task-title min-w-0 text-sm font-semibold "
+                                        "run-task-title min-w-0 truncate text-sm font-semibold "
                                         "leading-[1.35] text-text"
                                     ),
+                                    tabIndex="0",
                                 ),
+                                # The full text; the title above keeps one line.
+                                html.Div(task.task, className=TASK_TITLE_POPOVER_CLASS),
                             ],
-                            className=(
-                                "run-task-title-row flex min-w-0 items-start justify-between gap-2"
-                            ),
+                            className="run-task-title-row group relative min-w-0",
                         ),
                         html.P(
                             status,
@@ -554,26 +570,13 @@ def render_steps(tasks: tuple[TaskSnapshot, ...], selected_index: int = 0) -> ht
                     className="run-task-heading min-w-0 w-full",
                 ),
             ],
-            className="run-task-header min-w-0",
+            className="run-task-header min-w-0 pt-3",
         ),
         html.Div(
             [_step_row(step) for step in task.steps],
             className="run-steps-list grid gap-2",
         ),
     ]
-    if task.retry_note:
-        children.append(
-            html.P(
-                [
-                    _icon("warning", "size-3.5 flex-none"),
-                    html.Span(f"Latest retry: {task.retry_note}"),
-                ],
-                className=(
-                    "run-retry-note flex items-start gap-1.5 rounded-sm border border-warning "
-                    "bg-warning-tint px-2 py-1.5 text-xs leading-[1.4] text-warning-ink"
-                ),
-            )
-        )
     if navigation:
         children.append(
             html.Nav(
@@ -583,6 +586,24 @@ def render_steps(tasks: tuple[TaskSnapshot, ...], selected_index: int = 0) -> ht
             )
         )
     return html.Div(children, className="run-steps-content flex min-h-40 flex-col gap-2")
+
+
+def render_issues(entries: tuple[str, ...] | list[str], kind: str) -> object:
+    """Render one Warnings or Errors tab body: a tinted list, or a short empty note."""
+    if not entries:
+        return html.P(f"No {kind}s.", className="issues-empty m-0 text-sm text-muted")
+    return html.Ul(
+        [
+            html.Li(
+                entry,
+                className=(
+                    f"issue-item rounded-sm border-l-2 px-2 py-1.5 {ISSUE_ITEM_CLASSES[kind]}"
+                ),
+            )
+            for entry in entries
+        ],
+        className=ISSUE_LIST_CLASS,
+    )
 
 
 # ======================================================================================
@@ -595,12 +616,14 @@ def environment_input() -> html.Section:
     return html.Section(
         [
             _section_heading(
-                "file-text", "Environment", "Upload UTF-8 Markdown or paste it below."
+                "file-text",
+                "Environment",
+                "Upload UTF-8 Markdown, a tasks.json manifest, or paste it below.",
             ),
             _upload(
                 "environment-upload",
-                "Choose a Markdown file or drop it here",
-                ".md,text/markdown,text/plain",
+                "Choose a Markdown or tasks.json file or drop it here",
+                ".md,.json,text/markdown,text/plain,application/json",
             ),
             html.Div(
                 "No file uploaded; pasted content uses environment.md.",
@@ -621,6 +644,27 @@ def environment_input() -> html.Section:
                     disabled=False,
                 ),
                 class_name=f"{FIELD_CLASS} flex-1 min-h-0",
+            ),
+            _upload(
+                "environment-code-upload",
+                "Optional: choose environment-code.md or drop it here",
+                ".md,text/markdown,text/plain",
+            ),
+            html.Div(
+                "Labeling reads this code file; the generator and critic never do.",
+                id="code-upload-status",
+                className=FIELD_HINT_CLASS,
+            ),
+            _field(
+                "Code file",
+                dcc.Textarea(
+                    id="environment-code-markdown",
+                    value="",
+                    placeholder="# Environment: code notes\n\n## Labeling API",
+                    className=f"markdown-input min-h-[4rem] {FIELD_TEXTAREA_CLASS}",
+                    spellCheck=False,
+                    disabled=False,
+                ),
             ),
         ],
         className=(
@@ -965,20 +1009,6 @@ def output_controls() -> html.Aside:
                 ],
                 className="status-heading flex flex-wrap items-center justify-between gap-3",
             ),
-            html.Details(
-                [
-                    html.Summary(
-                        [
-                            _icon("warning", "size-3.5"),
-                            html.Span("0 warnings", id="run-warnings-count"),
-                        ],
-                        className=WARNING_BADGE_CLASS,
-                    ),
-                    html.Ul(id="run-warnings-list", className=WARNING_LIST_CLASS),
-                ],
-                id="run-warnings",
-                className="run-warnings hidden",
-            ),
             dcc.Tabs(
                 id="run-tabs",
                 value="steps",
@@ -1014,6 +1044,8 @@ def output_controls() -> html.Aside:
                             className="steps-empty text-sm text-muted",
                         ),
                     ),
+                    _issue_tab("warning", RUN_TAB_WARNING_SELECTED_CLASS),
+                    _issue_tab("error", RUN_TAB_ERROR_SELECTED_CLASS),
                     dcc.Tab(
                         label="Log",
                         value="log",
@@ -1038,6 +1070,27 @@ def output_controls() -> html.Aside:
         ],
         id="run-sidebar",
         className=RUN_SIDEBAR_CLASS,
+    )
+
+
+def _issue_tab(kind: str, selected_class: str) -> dcc.Tab:
+    """Build a Warnings or Errors tab; it starts disabled until the run reports one."""
+    return dcc.Tab(
+        label=f"{kind.title()}s",
+        value=f"{kind}s",
+        id=f"run-{kind}s-tab",
+        disabled=True,
+        className=RUN_TAB_CLASS,
+        selected_className=selected_class,
+        disabled_className=RUN_TAB_DISABLED_CLASS,
+        style=RUN_TAB_STYLE,
+        selected_style=RUN_TAB_SELECTED_STYLE,
+        disabled_style=RUN_TAB_STYLE,
+        children=html.Div(
+            render_issues((), kind),
+            id=f"run-{kind}s",
+            className="issues-body max-h-[34rem] overflow-auto",
+        ),
     )
 
 
@@ -1118,7 +1171,7 @@ def result_panel() -> html.Section:
                         PipelineStep.REWARD_MACHINE,
                     ),
                     className=(
-                        "step-bodies grid min-w-0 flex-1 min-h-[12rem] [contain:size] [grid-template-rows:minmax(0,1fr)]"
+                        "step-bodies grid min-w-0 flex-1 min-h-[16rem] [contain:size] [grid-template-rows:minmax(0,1fr)]"
                     ),
                 ),
                 class_name=f"{FIELD_CLASS} flex-1 min-h-0",
@@ -1299,7 +1352,7 @@ def graph_panel(stylesheet: list[dict] | None = None) -> html.Section:
                         userZoomingEnabled=True,
                         wheelSensitivity=0.15,
                         style={"width": "100%", "height": "100%"},
-                        className="graph-canvas min-h-[18rem] h-full w-full flex-1",
+                        className="graph-canvas min-h-[22rem] h-full w-full flex-1",
                     ),
                 ],
                 className=(
@@ -1381,7 +1434,7 @@ def create_layout(stylesheet: list[dict] | None = None) -> html.Main:
             ),
             dcc.Store(id="imported-reward-machine", data=None),
             dcc.Store(id="graph-attached", data=None),
-            dcc.Store(id="warnings-shown", data=[]),
+            dcc.Store(id="issues-shown", data=[]),
             dcc.Store(id="graph-focus-state", data=False),
             dcc.Store(id="graph-export-name", data=None),
             dcc.Store(id="graph-export-payload", data=None),

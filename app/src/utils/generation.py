@@ -1,6 +1,7 @@
 """Retry history and engine setup shared by the generation pipeline."""
 
 import json
+from collections.abc import Callable
 
 from src.compiler import CompilationResult
 from src.config import Configuration
@@ -87,7 +88,12 @@ def setup_environment_and_engines(
     progress(f"Using LLM provider '{CONFIG.llm_provider}'.")
 
     environment = EnvironmentDescription.from_file(CONFIG.environment)
-    generator_engine = get_engine(CONFIG, environment, CONFIG.generator_model)
+    generator_engine = get_engine(
+        CONFIG,
+        environment,
+        CONFIG.generator_model,
+        should_stop=progress.hooks.is_cancelled,
+    )
     progress(
         f"Generator engine ready: role=generator model={CONFIG.generator_model} "
         f"reasoning={CONFIG.reasoning}."
@@ -109,7 +115,12 @@ def setup_environment_and_engines(
             f"The generator and critic models must differ, both resolved to '{CONFIG.critic_model}'"
         )
 
-    critic_engine = get_engine(CONFIG, environment, CONFIG.critic_model)
+    critic_engine = get_engine(
+        CONFIG,
+        environment,
+        CONFIG.critic_model,
+        should_stop=progress.hooks.is_cancelled,
+    )
     progress(
         f"Critic engine ready: role=critic model={CONFIG.critic_model} "
         f"reasoning={CONFIG.reasoning}."
@@ -123,6 +134,8 @@ def get_engine(
     CONFIG: Configuration,
     environment: EnvironmentDescription,
     model: str | None = None,
+    *,
+    should_stop: Callable[[], bool] | None = None,
 ) -> GenericEngine:
     """Create the selected provider's engine, defaulting to the baseline model."""
     engine_types = {
@@ -130,6 +143,8 @@ def get_engine(
         "opencode": OpenCodeEngine,
         "antigravity": AntigravityEngine,
     }
-    return engine_types[CONFIG.llm_provider](
+    engine = engine_types[CONFIG.llm_provider](
         environment, model if model is not None else CONFIG.model, CONFIG.reasoning
     )
+    engine.should_stop = should_stop
+    return engine

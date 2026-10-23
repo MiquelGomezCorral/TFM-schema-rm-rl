@@ -26,7 +26,11 @@ from src.utils import (
     reward_machine_to_elements,
 )
 from src.web.application import (
+    IMPORTED_RM_VALUE,
     _load_environment,
+    _load_environment_code,
+    _poll_panels,
+    _resolve_environment_filename,
     _run_status,
     _select_reasoning,
     _step_attempts,
@@ -37,6 +41,7 @@ from src.web.runner import (
     STEP_ORDER,
     RunController,
     RunRequest,
+    RunSnapshot,
     RunState,
     StepSnapshot,
     TaskSnapshot,
@@ -203,10 +208,71 @@ class WebTests(unittest.TestCase):
             payload = "data:text/markdown;base64," + base64.b64encode(text.encode()).decode()
             with self.subTest(filename=filename, text=text.splitlines()[0]):
                 with patch("src.web.application._existing_output_names", return_value=set()):
-                    markdown, status, output_name = _load_environment(payload, filename)
+                    markdown, status, output_name, rows = _load_environment(payload, filename)
                 self.assertEqual(markdown, text)
                 self.assertEqual(status, f"Loaded {filename}; edit the text before generating.")
                 self.assertEqual(output_name, expected)
+                self.assertIs(rows, no_update)
+
+    def test_tasks_manifest_upload_fills_environment_name_and_tasks(self):
+        with TemporaryDirectory() as root:
+            Path(root, "env.md").write_text("# Door Key\n", encoding="utf-8")
+            manifest = {
+                "env": "MiniGrid DoorKey",
+                "env_description": "env.md",
+                "tasks": ["Eventually acquire the key.", "Reach the goal."],
+            }
+            payload = (
+                "data:application/json;base64,"
+                + base64.b64encode(json.dumps(manifest).encode()).decode()
+            )
+            with (
+                patch("src.web.application._REPO_ROOT", Path(root)),
+                patch("src.web.application._existing_output_names", return_value=set()),
+            ):
+                markdown, status, output_name, rows = _load_environment(payload, "tasks.json")
+                incomplete = _load_environment(
+                    "data:application/json;base64," + base64.b64encode(b'{"env": "x"}').decode(),
+                    "tasks.json",
+                )
+                resolved = _resolve_environment_filename(markdown, payload, "tasks.json")
+        self.assertEqual(markdown, "# Door Key\n")
+        self.assertEqual(output_name, "minigrid-doorkey.rm")
+        self.assertIn("2 tasks and env.md from tasks.json", status)
+        self.assertEqual([row.children[1].children[1].value for row in rows], manifest["tasks"])
+        self.assertEqual(resolved, "env.md")
+        self.assertIs(incomplete[0], no_update)
+        self.assertIn("env, env_description, tasks", incomplete[1])
+
+    def test_labeling_run_gets_the_code_file_beside_the_facts(self):
+        facts = "# Demo\n## Propositions\n- `done`: Finished\n"
+        code = "# Demo: code notes\n\n## Labeling API\n\n- `env.grid.get(x, y)`: a cell\n"
+        seen = {}
+
+        def generate(CONFIG, hooks):
+            seen["facts"] = EnvironmentDescription.from_file(CONFIG.environment)
+            seen["labeling"] = EnvironmentDescription.from_file(CONFIG.environment, code=True)
+            return True
+
+        controller = RunController(generate)
+        with self.assertRaisesRegex(ValueError, "environment-code.md"):
+            controller.start(RunRequest(facts, ["finish"], "out.rm", labeling=True))
+        controller.start(
+            RunRequest(
+                facts,
+                ["finish"],
+                "out.rm",
+                environment_filename="doorkey.md",
+                environment_code=code,
+                labeling=True,
+            )
+        )
+        controller._worker.join(timeout=5)
+        self.assertEqual(controller.snapshot().status, RunState.COMPLETED)
+        self.assertIsNone(seen["facts"].labeling_api)
+        self.assertEqual(seen["labeling"].require_labeling_api(), "- `env.grid.get(x, y)`: a cell")
+        payload = "data:text/markdown;base64," + base64.b64encode(code.encode()).decode()
+        self.assertEqual(_load_environment_code(payload, "environment-code.md")[0], code)
 
     def test_state_descriptions_skip_follows_the_request_flag(self):
         enabled = _initial_task(0, "finish", RunRequest("# Demo", ["finish"], "out.rm"))
@@ -399,13 +465,14 @@ class WebTests(unittest.TestCase):
         key = next(key for key in app.callback_map if "critic-options.options" in key)
         poll = app.callback_map[key]["callback"].__wrapped__
         idle = poll(0, None, [{"index": 0}])
-        self.assertFalse(idle[14][0]["disabled"])
-        controller._status = RunState.RUNNING
+        self.assertFalse(idle[16][0]["disabled"])
+        controller._status, controller._error = RunState.RUNNING, None
         active = poll(0, None, [{"index": 0}])
         self.assertTrue(active[4])
-        self.assertTrue(all(item["disabled"] for item in active[14]))
-        self.assertTrue(all(active[15]))  # reasoning segments
-        self.assertTrue(active[16])  # attempts input
+        self.assertTrue(active[5] and active[6] and active[7])  # markdown, code upload, code text
+        self.assertTrue(all(item["disabled"] for item in active[16]))
+        self.assertTrue(all(active[17]))  # reasoning segments
+        self.assertTrue(active[18])  # attempts input
         self.assertTrue(all(item["disabled"] for item in active[-1]))
         controller._status = RunState.COMPLETED
         controller._results = (
@@ -483,19 +550,74 @@ class WebTests(unittest.TestCase):
             controller._record_event(ProgressEvent(0, 1, step, state, detail="timeout"))
         task = controller.snapshot().tasks[0]
         self.assertEqual(task.state, StepState.RUNNING)
-        self.assertEqual(task.retry_note, "timeout")
+        self.assertEqual(task.failures, ("Attempt 1: timeout",))
         self.assertIn("Attempt 1 of 3", str(render_steps((task,))))
 
-    def test_warning_list_follows_the_run_not_the_count(self):
+    def test_issue_tabs_follow_the_run_and_split_warnings_from_errors(self):
         controller = RunController(generate_rm)
         app = create_app(controller)
-        key = next(key for key in app.callback_map if "run-warnings-count.children" in key)
+        key = next(key for key in app.callback_map if "run-warnings-tab.label" in key)
         poll = app.callback_map[key]["callback"].__wrapped__
         controller._warnings = ["Task 1: second run"]
-        update = poll(0, ["Task 1: first run"])
-        self.assertEqual(update[1], "1 warning")
-        self.assertEqual(update[3], ["Task 1: second run"])
-        self.assertIs(poll(0, ["Task 1: second run"])[0], no_update)
+        controller._tasks = (
+            TaskSnapshot(
+                0,
+                "finish",
+                steps=(StepSnapshot(PipelineStep.GENERATE, StepState.FAILED),),
+                failures=("Attempt 1: unclear", "Attempt 2: still unclear"),
+            ),
+        )
+        controller._error = "Generation failed."
+        update = poll(0, [], "errors")
+        self.assertEqual(update[0], "Warnings · 2")
+        self.assertFalse(update[1])
+        self.assertEqual(update[3], "Errors · 2")
+        self.assertIs(update[6], no_update)
+        self.assertEqual(
+            update[7],
+            [
+                ["Task 1: second run", "Task 1 · Attempt 1: unclear"],
+                ["Task 1 · Attempt 2: still unclear", "Generation failed."],
+            ],
+        )
+        self.assertIs(poll(0, update[7], "steps")[0], no_update)
+        controller._status, controller._error = RunState.STOPPED, "Stopped by the user"
+        self.assertEqual(poll(0, [], "steps")[7][1], [])
+        controller._status, controller._error = RunState.RUNNING, None
+        self.assertEqual(poll(0, [], "steps")[7][1], [])
+        controller._status = RunState.IDLE
+        controller._warnings, controller._tasks, controller._error = [], (), None
+        empty = poll(0, update[7], "warnings")
+        self.assertEqual((empty[0], empty[1], empty[6]), ("Warnings", True, "steps"))
+
+    def test_output_selector_and_task_chevrons_follow_each_other(self):
+        tasks = tuple(TaskSnapshot(index, f"t{index}") for index in range(3))
+        paths = tuple(Path(f"out-{index}.rm") for index in range(3))
+        snapshot = RunSnapshot(RunState.COMPLETED, (), (), paths, tasks=tasks, run_id=7)
+        selection = {"selected": 0, "last_active": None, "run_id": 7}
+        imported = {"filename": "x.rm", "text": "0 0 0\n"}
+
+        def poll(trigger, selected, imported_data=None):
+            with patch("src.web.application._triggered_id", return_value=trigger):
+                panels = _poll_panels(snapshot, selected, [], selection, imported_data)
+            return panels[17], panels[19]
+
+        selector, _ = poll("run-next", 0)
+        self.assertEqual(selector, 1)
+        selector, steps = poll("output-selector", 2)
+        self.assertIs(selector, no_update)
+        self.assertIn("Task 3 of 3", str(steps))
+        selector, steps = poll("output-selector", IMPORTED_RM_VALUE, imported)
+        self.assertIs(selector, no_update)
+        self.assertIn("Task 1 of 3", str(steps))
+        selector, _ = poll("run-next", IMPORTED_RM_VALUE, imported)
+        self.assertEqual(selector, 1)
+
+    def test_task_arrows_disable_at_the_edges(self):
+        tasks = tuple(TaskSnapshot(index, f"t{index}") for index in range(3))
+        for selected, expected in ((0, (True, False)), (1, (False, False)), (2, (False, True))):
+            nav = render_steps(tasks, selected).children[-1]
+            self.assertEqual((nav.children[0].disabled, nav.children[-1].disabled), expected)
 
     def test_structured_steps_and_retry_reset(self):
         controller = RunController(generate_rm)
@@ -513,7 +635,7 @@ class WebTests(unittest.TestCase):
         controller._record_event(ProgressEvent(0, 2, PipelineStep.GENERATE, StepState.RUNNING))
         snapshot = controller.snapshot()
         self.assertEqual(snapshot.tasks[0].attempt, 2)
-        self.assertEqual(snapshot.tasks[0].retry_note, "bad proposal")
+        self.assertEqual(snapshot.tasks[0].failures, ("Attempt 1: bad proposal",))
         self.assertEqual(snapshot.tasks[0].state, StepState.RUNNING)
         self.assertIn("Task 1 of 1", str(render_steps(snapshot.tasks)))
 
@@ -578,7 +700,7 @@ class WebTests(unittest.TestCase):
 
     def test_a_stopping_run_keeps_the_running_pill(self):
         controller = RunController(generate_rm)
-        controller._status = RunState.RUNNING
+        controller._status, controller._error = RunState.RUNNING, None
         controller._stopping = True
         self.assertEqual(
             _run_status(controller.snapshot()),
@@ -590,17 +712,17 @@ class WebTests(unittest.TestCase):
         app = create_app(controller)
         key = next(key for key in app.callback_map if "critic-options.options" in key)
         poll = app.callback_map[key]["callback"].__wrapped__
-        idle_generate, idle_stop, idle_stop_disabled = poll(0, None, [{"index": 0}])[11:14]
+        idle_generate, idle_stop, idle_stop_disabled = poll(0, None, [{"index": 0}])[13:16]
         self.assertNotIn("!hidden", idle_generate.split())
         self.assertIn("!hidden", idle_stop.split())
         self.assertFalse(idle_stop_disabled)
-        controller._status = RunState.RUNNING
-        running_generate, running_stop, running_stop_disabled = poll(0, None, [{"index": 0}])[11:14]
+        controller._status, controller._error = RunState.RUNNING, None
+        running_generate, running_stop, running_stop_disabled = poll(0, None, [{"index": 0}])[13:16]
         self.assertIn("!hidden", running_generate.split())
         self.assertNotIn("!hidden", running_stop.split())
         self.assertFalse(running_stop_disabled)
         controller._stopping = True
-        self.assertTrue(poll(0, None, [{"index": 0}])[13])
+        self.assertTrue(poll(0, None, [{"index": 0}])[15])
 
     def test_stop_control_reports_whether_a_run_was_active(self):
         controller = RunController(generate_rm)
@@ -608,7 +730,7 @@ class WebTests(unittest.TestCase):
         key = next(key for key in app.callback_map if key.startswith("run-feedback.children@"))
         stop = app.callback_map[key]["callback"].__wrapped__
         self.assertEqual(stop(1), "No run is active.")
-        controller._status = RunState.RUNNING
+        controller._status, controller._error = RunState.RUNNING, None
         self.assertEqual(stop(1), "Stopping after the current request…")
 
 
