@@ -96,6 +96,7 @@ class RunRequest:
     environment_filename: str | None = None
     environment_code: str = ""
     critic: bool = True
+    recurrent_soft_penalty: bool = True
     reasoning: str = Configuration.reasoning
     attempts: int = Configuration.attempts
     labeling: bool = False
@@ -207,6 +208,7 @@ class RunController:
                     tasks=list(request.tasks),
                     output=Path(request.output_filename),
                     critic=request.critic,
+                    recurrent_soft_penalty=request.recurrent_soft_penalty,
                     reasoning=request.reasoning,
                     attempts=request.attempts,
                     labeling=request.labeling,

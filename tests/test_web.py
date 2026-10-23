@@ -288,6 +288,7 @@ class WebTests(unittest.TestCase):
     def test_layout_uses_critic_options_and_no_approval_controls(self):
         layout = str(create_layout())
         self.assertIn("critic-options", layout)
+        self.assertIn("recurrent-soft-penalty-toggle", layout)
         self.assertIn("descriptions-toggle", layout)
         self.assertIn("labeling-toggle", layout)
         self.assertIn("embeddings-toggle", layout)
@@ -473,6 +474,7 @@ class WebTests(unittest.TestCase):
         self.assertTrue(all(item["disabled"] for item in active[16]))
         self.assertTrue(all(active[17]))  # reasoning segments
         self.assertTrue(active[18])  # attempts input
+        self.assertTrue(all(item["disabled"] for item in active[24]))  # recurrent soft penalty
         self.assertTrue(all(item["disabled"] for item in active[-1]))
         controller._status = RunState.COMPLETED
         controller._results = (
