@@ -35,6 +35,10 @@ tasks, while keeping the generator and critic responsibilities stable.
   rewards; hard also changes the RM structure (a hard violation leads to the rejecting state and a
   pending hard obligation blocks finishing). The reward layer is described in
   `docs/COMPILER_REWARD_DESIGN.md`.
+- Tasks are assumed free of contradictions. The compiler rejects hard clauses that cannot all
+  hold together (no final is reachable), but it does not check soft preferences against the hard
+  part: a preference that every way of finishing must break is charged at its cost like any
+  other break, and the task's wording is trusted not to ask for that.
 - In compiler mode, one critic reviews the compiled candidate after RM construction: it receives
   the environment, task, validated clauses, and the compiled RM with its final and rejecting
   states and compile warnings. It returns a strict acceptance decision and nonempty feedback,
@@ -80,9 +84,9 @@ tasks, while keeping the generator and critic responsibilities stable.
   model.
 - The creator assumes the task is feasible in its environment; there is no refusal field.
   Whether a task can be done at all is the environment author's and the user's responsibility.
-- The environment's `## Constraints` are declared facts the compiler applies to drop the states
-  and transitions the environment cannot reach; they are never clauses and the model does not
-  write them.
+- The environment's `## Constraints` are declared facts that the generator and the critic read. The
+  compiler never applies them; the critic rejects a clause that restates one or that rests on an
+  event the environment cannot produce, and keeps any clause it doubts.
 - The generator and the critic run at one shared reasoning level (`--reasoning`: `none`, `low`,
   `medium`, `high`, `max`; default `none`), sent on every provider request of the run.
 - Compiler model selection is role-specific: one generator model writes clauses and state
@@ -122,7 +126,7 @@ tasks, while keeping the generator and critic responsibilities stable.
 - Both modes follow [RM execution](rm-execution.md) and produce separate task bundles for
   shared-policy training and evaluation.
 - Compiler mode optionally generates labeling functions after RM acceptance, for any
-  environment whose `environment.md` declares a `## Labeling API`, which labeling requires.
+  environment whose `environment-code.md` declares a `## Labeling API`, which labeling requires.
   The expert receives the environment, task, validated clauses, accepted RM and node
   descriptions, declared propositions, explicit runtime API, and bounded feedback.
   It uses the generator engine; its associated critic uses the critic engine when

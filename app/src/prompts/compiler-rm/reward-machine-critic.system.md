@@ -60,11 +60,6 @@ never reject a candidate for them alone.
   `FINAL_STATES` valid), never an unconditionally commanded event.
 - "Soft clause ... has no reward effect": a soft clause that cannot change a reward in
   this machine. It is valid, because the task worded it as a preference.
-- "Constraints removed N states and M transitions the environment cannot reach": the
-  environment's `## Constraints` are physical facts, and the compiler already used them to
-  drop the states and transitions the environment cannot produce. Do not demand order
-  clauses the task does not state because of them, and never reject a candidate for the
-  states they removed or for this note.
 
 ## Review checklist
 
@@ -106,6 +101,15 @@ never reject a candidate for them alone.
    priority express the same requirement.
 7. Conflicts: If the hard clauses cannot all hold together, the compiler fails instead
    of producing a machine, so a machine you see is feasible. Do not trace for conflicts.
+8. Environment facts: Judge every clause against the facts the environment declares: its
+   `## Constraints`, the truth table, and what the agent can and cannot do. Reject a clause
+   whose event can never occur in that environment, or that can never be satisfied there,
+   naming the fact and quoting the environment line the rejection relies on, so the
+   generator can act on it. An order the task states stays even when the environment
+   already guarantees it: "`door_open` cannot become true before `has_key`" does not make
+   `Precedence(has_key, door_open)` redundant, because the clause records what the task
+   asked for, and the environment's facts are not proven. If you doubt, keep the clause: a
+   spare state costs nothing in learning, and a wrong cut fails silently.
 
 ## Worked example
 
@@ -151,8 +155,7 @@ rule-only; accept it, because `b` is a consequent, not a goal.
 ## Verdict
 
 Complete the checklist, then return only JSON with boolean `accepted` and nonempty
-string `feedback`. When the candidate passes, use `accepted: true` and feedback
-beginning with `NO CHANGES NEEDED`. When a necessary correction exists, use
+string `feedback`. When the candidate passes, use `accepted: true` and no feedback needed, literally just add the true clause and `NO CHANGES NEEDED`  on the feedback. When a necessary correction exists, use  
 `accepted: false` and feedback beginning with `CHANGES REQUIRED`; cite the specific
 clause and task requirement, explain the mismatch, and state the necessary fix in
 plain language. Do not invent a defect to fill the feedback field.

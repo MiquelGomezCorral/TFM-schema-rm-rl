@@ -68,11 +68,12 @@ without changing how labels, transitions, and rewards are interpreted.
   the RM state or reward unless that state's guards explicitly depend on it.
 - Graph fallback edges must not mutate the input machine, serialized output, or
   execution semantics. An explicit `else` destination and reward must remain intact.
-- The environment's declared constraints only remove the states and transitions the environment
-  cannot reach; they never add rewards, wells or finals. A final the constraints cut off fails
-  the compilation (an uncounted rerun, like conflicting clauses). The kept states are renumbered
-  breadth first, so the removal note gives counts, never state numbers. A kept state can lose its
-  edge to the final and become a dead end that is not the well; the pass does not flag it.
+- The compiler never removes states or transitions on environment facts. The critic judges every
+  clause against the environment file (`## Constraints`, the truth table, what the agent can and
+  cannot do) and rejects a clause that restates an order the environment guarantees or that rests on
+  an event that cannot occur there; the whole flow then runs again with a new clause set. When the
+  critic doubts, the clause stays. Spare states are accepted: they cost nothing in learning, while a
+  wrong cut fails silently (the machine keeps its state and pays 0).
 
 ## Rationale and tradeoffs
 
@@ -126,8 +127,9 @@ without expanding the machine or adding a guard-coverage calculation.
 - 2026-10-14: Added the interactive HTML export with one shared interaction script, and the
   circle-state layout: longest-path ranks, final last, rejecting states in a side lane, no state
   on a foreign edge (user requests).
-- 2026-10-15: The compiler applies the environment's `## Constraints` as a deterministic pass
-  after the reward layer: it removes the states and transitions no constraint-respecting run
-  reaches, and reports the removal as a compile warning (coordinator-approved plan,
-  iteration 2). Unlike the graph defaults above, this changes the compiled machine. A final cut
-  off by the constraints fails the compilation; kept states are renumbered breadth first.
+- 2026-10-15: Added a deterministic constraints pass that removed the states and transitions no
+  constraint-respecting run reaches (coordinator-approved plan, iteration 2).
+- 2026-10-17: Removed that pass. The compiler never removes states on environment facts: random
+  episodes can only disprove a constraint, never prove one, and a wrong cut fails silently. The
+  critic judges clauses against the environment and the flow reruns; spare states are accepted
+  (user decision).
