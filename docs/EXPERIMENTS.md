@@ -26,9 +26,9 @@ python app/main.py --<command> --<parameters>
 
 | Step | Command | Reads | Writes |
 | --- | --- | --- | --- |
-| 1. Describe the environment | (you write it) | — | `examples/arm-fm/<env>/environment.md`, `tasks.md` |
-| 2. Compiler bundle | `generate-larm --mode compiler` | `environment.md`, task text | `outputs/bundles/<Env>-<n>/` |
-| 3. Paper bundle | `generate-larm --mode arm-fm` + `embed-larm` | `environment.md`, task text | `outputs/bundles/<Env>-paper-<n>/` |
+| 1. Describe the environment | (you write it) | — | `examples/arm-fm/<env>/environment.md`, `environment-code.md`, `tasks.md` |
+| 2. Compiler bundle | `generate-larm --mode compiler` | `environment.md` + `environment-code.md`, task text | `outputs/bundles/<Env>-<n>/` |
+| 3. Paper bundle | `generate-larm --mode arm-fm` + `embed-larm` | `environment.md` + `environment-code.md`, task text | `outputs/bundles/<Env>-paper-<n>/` |
 | 4. Check the bundles | `render-rm`, a real-environment probe | bundle | SVGs, probe output |
 | 5. Configs for the 3 agents | (you write them) | bundles | `configs/<env>/<wave>/{sparse,compiler,paper}.yaml` |
 | 6. Train | `train-rl` | config | `outputs/runs/<exp_name>/seed<N>-<UTC>-<pid>/` |
@@ -61,14 +61,19 @@ a registered Gymnasium id of a supported family needs an adapter in `app/src/arm
 
 ## 1. Describe the environment
 
-Create `examples/arm-fm/<env>/environment.md`. It is the only thing the generator LLMs know about the
-environment, so it must say everything they need to write a correct Reward Machine and correct labeling code.
-The required sections, the evidence rules (every fact cites its source or says `unknown`, never a guess) and the
-constraint and trace formats are in [ENVIRONMENT_AUTHORING.md](ENVIRONMENT_AUTHORING.md); this section keeps only
-the shape and the lessons.
+Create two files in `examples/arm-fm/<env>/`. `environment.md` holds the facts and nothing about the
+implementation; it is the only thing the clause generator and the critic know about the environment, so it must
+say everything they need to write a correct Reward Machine. `environment-code.md` holds all implementation:
+the `## Labeling API`, sources, truth conditions in code, evidence and links. The steps that write code load
+the two files as one text: the `generate-larm --mode arm-fm` generator and the labeling stage (`generate-rm
+--labeling`, so also `generate-larm --mode compiler`). The clause generator and the critic read `environment.md`
+alone.
+The required sections, the per-line test, the evidence rules (every fact cites its source or says `unknown`,
+never a guess) and the constraint and trace formats are in [ENVIRONMENT_AUTHORING.md](ENVIRONMENT_AUTHORING.md);
+this section keeps only the shape and the lessons.
 
-Required shape. Every command rejects a file without `## Propositions`; every command that generates
-labeling or trains also rejects one without `## Labeling API`:
+Required shape of `environment.md`: a title and these eight sections, in this order. Every command rejects a
+file without `## Propositions`:
 
 ```markdown
 # <Environment name>
@@ -76,8 +81,7 @@ labeling or trains also rejects one without `## Labeling API`:
 ## Environment
 
 What the world looks like: rooms, objects and their colours, what is random in each episode and what is fixed,
-what the agent sees, the actions and what each one does (including the ones that do nothing), what the agent
-can carry, what blocks movement, the step limit.
+what the agent sees, the actions the agent has, what blocks movement, the step limit.
 
 ## Objective and episode boundary
 
@@ -87,17 +91,24 @@ success: `success: rm` in the config; the RM's final and rejecting states end ev
 
 ## Proposition semantics
 
-How each proposition is computed: from the live environment, once per step. Say which ones are conditions
-(true while something holds) and which are one-step events (true only on the step something happens), what
-"next to", "in a corner", "inside a room" mean exactly, and the edge cases (a carried object is not on the
-grid, a door is not a wall, ...).
+One row per proposition: its kind (event, condition or latch) and when it is true, in plain words. Events are
+true only on the step something happens; conditions are true while something holds. Name the reading chosen
+where the description leaves one open ("next to", "in a corner", "inside a room"; a carried object is not on
+the grid, a door is not a wall, ...).
 
-## Labeling API
+## Constraints
 
-The exact attributes and calls the labeling code may read, with types and meaning: positions, directions,
-grid access, object attributes, inventory, counters, plus any hint on how to use them (for example how to scan
-the grid safely). This section is the only thing the labeling generators know about the runtime: there is no
-built-in default, not even for MiniGrid. Name nothing that does not exist on the real env.
+One physical fact per bullet, in the shapes of ENVIRONMENT_AUTHORING.md: "`b` cannot become true before `a`",
+"`a` and `b` never hold together", "`a` cannot become false once true".
+
+## What the agent can and cannot do
+
+Actions with their exact conditions, what is blocked or irreversible, what a reader might doubt, and what is
+not known.
+
+## Example trace
+
+A numbered list of one real successful episode: per step, the action and the propositions that change.
 
 ## Propositions
 - `snake_case_id`: One line: what is true when this proposition holds.
@@ -106,6 +117,36 @@ built-in default, not even for MiniGrid. Name nothing that does not exist on the
 ## Example tasks
 
 - One task per line, in the words you will pass to the generators.
+```
+
+Required shape of `environment-code.md`: everything that only helps implement or verify, referring to the facts
+file by section and proposition id, with no `## Propositions` heading of its own. Every command that generates
+labeling or trains also rejects an environment without a `## Labeling API` section, which lives here:
+
+```markdown
+# <Environment name>: code notes
+
+Addition to `environment.md`; read both. Facts live there; this file says where they come from and how code reads them.
+
+## Source and runtime
+
+The official source and version, the gym id, pinned package versions, how to build the environment.
+
+## Truth conditions in code
+
+Per proposition id, the expression over the runtime state that the labeling code computes, including how an
+event or a latch uses the previous valuation.
+
+## Evidence
+
+Per fact of `environment.md`, the `[code: file:function]` or `[run: script]` that supports it.
+
+## Labeling API
+
+The exact attributes and calls the labeling code may read, with types and meaning: positions, directions,
+grid access, object attributes, inventory, counters, plus any hint on how to use them (for example how to scan
+the grid safely). This section is the only thing the labeling generators know about the runtime: there is no
+built-in default, not even for MiniGrid. Name nothing that does not exist on the real env.
 ```
 
 Rules that came from real failures:
@@ -129,7 +170,7 @@ colour, which is wrong in most layouts; the door is found by its position. Descr
 `tasks.json` holds the same texts for scripted runs.
 
 The best models to copy are `examples/arm-fm/babyai-chosen-mission/environment.md` (objects, events,
-corners), `examples/arm-fm/minigrid-key-corridor/environment.md` (a standard MiniGrid `## Labeling API`) and
+corners), `examples/arm-fm/minigrid-key-corridor/environment-code.md` (a standard MiniGrid `## Labeling API`) and
 `examples/arm-fm/craftium-diamond/environment.md` (inventory and milestones).
 
 ## 2. Generate the compiler bundle (compiler RM + labeling + descriptions + embeddings)
@@ -467,6 +508,24 @@ The KeyCorridorS6R3 trace quotes the DoorKey mission, so that bundle's `task` te
 UnlockToUnlock RM sets `entered_goal_room` to `x < 5`, which fires before the ball is picked up on that layout, so its
 +1.0 `got_ball` reward is not paid.
 
+## 12. Present the results
+
+Every result shown to someone carries its natural-language task, its IBM clauses with their LTLf and its Reward Machine, and
+anything added to the real ones is stated. `app/scripts/present_results.py` builds that page from real runs: pass the run
+directories written with `--trace-dir` and an `--out` page folder, then fill and publish it with the artifacts skill (the usage
+line at the top of the script has the commands). The format lives in `app/src/utils/presentation.py`; reuse it for any new page
+instead of writing a builder.
+
+## Rejected experiment: pruning the machine with the environment's constraints
+
+Commit `b4553f7` added a compiler pass that dropped the states and transitions the `## Constraints` of the environment
+file rule out. It worked on paper: on KeyCorridor the same task gave 13, 13 and 9 states with the old file, 7, 5 and 7 with
+the richer file, and 6, 6 and 5 with the pass. It was rejected on 2026-10-17 and removed. The constraints rest on code readings
+and random episodes, which can disprove a constraint but never prove one, and a wrong cut fails silently at runtime: the machine
+keeps its state and pays 0. The richer environment files stay. The critic now judges every clause against them and the flow
+reruns with a new clause set; a spare state costs nothing in learning. The measurement (tables, graphs, inputs and the
+unreachable-state counter) is in `.git/agent-memory/paper-staging/environment-constraints/`.
+
 ## Future work: what the environment file is worth
 
 An ablation, not run yet: take the upgraded environment files and remove one section at a time (the example
@@ -477,7 +536,7 @@ when the environment is described poorly, which is the case for most environment
 
 ## Checklist for one environment
 
-1. `environment.md` with the sections of `ENVIRONMENT_AUTHORING.md`, `tasks.md`, `tasks.json`.
+1. `environment.md` and `environment-code.md` with the sections of `ENVIRONMENT_AUTHORING.md`, `tasks.md`, `tasks.json`.
 2. Compiler bundle and paper bundle, both drawn and probed.
 3. Three configs; a short smoke run of each.
 4. Full runs: 3 agents × 3 seeds.

@@ -188,8 +188,12 @@ Identifiers must match `^[a-z_][a-z0-9_]*$`, be unique, and cannot be `true` or
 `false`. Validation errors include the offending line. See
 `examples/multitaxi/environment.md` for the transition-based MultiTaxi propositions.
 
-Environments used for labeling or training must also have a `## Labeling API` section listing
-what the labeling code may read from the live environment; see
+Environments used for labeling or training need an `environment-code.md` next to `environment.md`,
+with a `## Labeling API` section listing what the labeling code may read from the live environment.
+`environment.md` holds the facts only; the steps that write code (the `generate-larm --mode arm-fm`
+generator and the labeling stage) load both files as one text, while the clause generator and the
+critic read the facts alone. See
+[docs/ENVIRONMENT_AUTHORING.md](docs/ENVIRONMENT_AUTHORING.md) and
 [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md#1-describe-the-environment).
 
 ## Generate a Reward Machine
@@ -347,9 +351,12 @@ be installed separately and available on `PATH` (or configured through
 `MONA_EXECUTABLE`), just as for the CLI.
 
 Upload a UTF-8 environment Markdown file or paste it into the editor, add one or more
-tasks, and provide one base output filename. The UI
-validates each task automatically with the critic. Multiple tasks retain the CLI's numbered output
-behavior under `Configuration.OUTPUT_PATH`, for example `batch-1.rm`, `batch-2.rm`, and
+tasks, and provide one base output filename. Uploading a tasks manifest such as
+`examples/arm-fm/minigrid-doorkey/tasks.json` (`env`, `env_description`, `tasks`) instead
+reads the referenced Markdown, fills every task, and names the output after `env`. The optional
+Code file box takes `environment-code.md` (upload or paste); the labeling option needs it and refuses
+to start without it. The UI validates each task automatically with the critic. Multiple tasks
+retain the CLI's numbered output behavior under `Configuration.OUTPUT_PATH`, for example `batch-1.rm`, `batch-2.rm`, and
 `batch-3.rm`. Each completed file is shown with its exact path, serialized text, and
 read-only state graph.
 

@@ -16,7 +16,7 @@ semantic rather than byte-for-byte.
   Compiler generation passes its accepted numeric RM in memory instead of writing a
   second `.rm` file; both modes use the same downstream embedding and training flow.
 - An environment used for labeling or training must declare a `## Labeling API` in its
-  `environment.md`; it is the only labeling surface given to generators, and labeling and
+  `environment-code.md`; it is the only labeling surface given to generators, and labeling and
   training commands reject an environment without one. There is no built-in MiniGrid fallback:
   MiniGrid files declare their surface like any other. Run configs pass
   `env_kwargs` to `gym.make`, and custom environments register in `app/src/arm_fm/custom_envs/`.
