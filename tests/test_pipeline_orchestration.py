@@ -36,11 +36,11 @@ from src.utils import (
 )
 from src.utils.generation_pipeline import derive_output_paths
 
-ENV = EnvironmentDescription.from_markdown(
-    "# Demo\n## Propositions\n- `done`: Finished\n"
-    "## Labeling API\n\n- `env.grid.get(x, y)`: the object at a cell\n",
-    source="demo.md",
-)
+FACTS = "# Demo\n## Propositions\n- `done`: Finished\n"
+CODE = "# Demo: code notes\n\n## Labeling API\n\n- `env.grid.get(x, y)`: the object at a cell\n"
+# What the clause generator and the critic load, and what the labeling steps load.
+ENV = EnvironmentDescription.from_markdown(FACTS, source="demo.md")
+LABELING_ENV = EnvironmentDescription.from_markdown(f"{FACTS}\n\n{CODE}", source="demo.md")
 SELECTION = ProposalSelection(
     "finish done",
     "Existence",
@@ -142,6 +142,14 @@ class OrchestrationTests(unittest.TestCase):
         self.logs_patch = patch.object(Configuration, "LOGS_PATH", Path(self.log_directory.name))
         self.addCleanup(self.logs_patch.stop)
         self.logs_patch.start()
+        # "demo.md" does not exist on disk: only code=True returns the text with the API.
+        from_file_patch = patch.object(
+            EnvironmentDescription,
+            "from_file",
+            side_effect=lambda _path, *, code=False: LABELING_ENV if code else ENV,
+        )
+        self.addCleanup(from_file_patch.stop)
+        from_file_patch.start()
         self.engine = Engine()
         self.engine.verdicts = []
         self.critic = Engine()
@@ -574,6 +582,10 @@ class OrchestrationTests(unittest.TestCase):
         self.assertEqual(self.critic.labeling_requests, [])
         self.assertEqual(len(self.critic.labeling_reviews), 1)
         review = self.critic.labeling_reviews[0]
+        # The labeling generator and its critic read the code file; the saved result keeps it.
+        self.assertIn("env.grid.get", self.engine.labeling_requests[0])
+        self.assertEqual(review["api"], "- `env.grid.get(x, y)`: the object at a cell")
+        self.assertIs(self.saved.call_args.args[0][0].environment, LABELING_ENV)
         self.assertIn("def done(env)", review["labeling"])
         self.assertIn('"u0": "description u0"', review["state_descriptions_json"])
         self.assertIn('"done"', review["propositions_json"])
@@ -730,6 +742,8 @@ class OrchestrationTests(unittest.TestCase):
             self.assertEqual(manifest["stage_status"]["labeling"], "complete")
             self.assertEqual(manifest["stage_status"]["descriptions"], "complete")
             self.assertIn("env.grid.get", manifest["api_definitions"]["labeling"])
+            # The judge reviews code, so the manifest stores the text the labeling step read.
+            self.assertEqual(manifest["inputs"]["environment_markdown"], LABELING_ENV.markdown)
             self.assertEqual(
                 manifest["api_definitions"]["labeling"],
                 manifest["generation"]["labeling_api"],
@@ -859,13 +873,23 @@ class OrchestrationTests(unittest.TestCase):
             )
             context = contextual["settings"]["context"]
             self.assertEqual(contextual["effective_texts"]["u0"], f"{context}\ndescription u0")
+            # Labeling puts the code file into the result; the embedding context stays facts-only.
+            self.assertTrue(run(config(overwrite=True, embedding_context=True, labeling=True)))
+            self.assertIn("env.grid.get", self.engine.labeling_requests[-1])
+            labeled = json.loads(
+                (root / "embeddings" / "out" / "embeddings.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(labeled["settings"]["context"], context)
+            self.assertNotIn("Labeling API", labeled["settings"]["context"])
 
     def test_labeling_needs_the_environment_api_section(self):
         undeclared = EnvironmentDescription.from_markdown(
             "# Demo\n## Propositions\n- `done`: Finished", source="demo.md"
         )
 
-        self.assertEqual(ENV.require_labeling_api(), "- `env.grid.get(x, y)`: the object at a cell")
+        self.assertEqual(
+            LABELING_ENV.require_labeling_api(), "- `env.grid.get(x, y)`: the object at a cell"
+        )
         with self.assertRaisesRegex(EnvironmentValidationError, "## Labeling API"):
             undeclared.require_labeling_api()
 

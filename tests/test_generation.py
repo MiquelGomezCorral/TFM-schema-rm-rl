@@ -2,13 +2,17 @@ import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from threading import Event
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+
+from httpx import Request, Response
+from openai import BadRequestError
 
 from scripts import generate_rm
 from src.arm_fm import record_bundle_role_models
 from src.config import Configuration
-from src.engines import AntigravityEngine
+from src.engines import AntigravityEngine, GenericEngine, RunCancelled
 from src.models import EnvironmentDescription
 from src.utils import (
     GenerationHooks,
@@ -17,6 +21,7 @@ from src.utils import (
     ProgressEvent,
     StepState,
     get_engine,
+    setup_environment_and_engines,
 )
 
 
@@ -35,6 +40,32 @@ class GenerationTests(unittest.TestCase):
                 SimpleNamespace(manifest=manifest), Configuration(critic=critic)
             )
             self.assertEqual(manifest.validation.get("critic"), True if critic else None)
+
+    def test_only_code_writing_steps_load_the_code_file(self):
+        facts = "# Demo\n## Propositions\n- `done`: Finished\n"
+        code = "# Demo: code notes\n\n## Labeling API\n\n- `env.grid.get(x, y)`: a cell\n"
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "environment.md"
+            path.write_text(facts, encoding="utf-8")
+            alone = EnvironmentDescription.from_file(path, code=True)
+            self.assertEqual(alone.markdown, facts)
+            self.assertIsNone(alone.labeling_api)
+            Path(directory, "environment-code.md").write_text(code, encoding="utf-8")
+            joined = EnvironmentDescription.from_file(path, code=True)
+            self.assertEqual(joined.markdown, f"{facts}\n\n{code}")
+            self.assertEqual(joined.require_labeling_api(), "- `env.grid.get(x, y)`: a cell")
+            self.assertEqual(joined.proposition_ids, ("done",))
+            self.assertEqual(EnvironmentDescription.from_file(path).markdown, facts)
+
+            CONFIG = Configuration(
+                environment=path, generator_model="generator", critic_model="critic"
+            )
+            with patch("src.utils.generation.get_engine", return_value=object()) as engines:
+                loaded, _generator, _critic = setup_environment_and_engines(
+                    CONFIG, Progress(GenerationHooks())
+                )
+            self.assertEqual(loaded.markdown, facts)
+            self.assertEqual([call.args[1] for call in engines.call_args_list], [loaded, loaded])
 
     def test_embeddings_configuration_defaults_and_validation(self):
         CONFIG = Configuration(embeddings=True)
@@ -174,6 +205,36 @@ class GenerationTests(unittest.TestCase):
         event = ProgressEvent(0, 1, PipelineStep.DFA, StepState.COMPLETED, 0.2)
         with self.assertRaises(AttributeError):
             event.state = StepState.FAILED
+
+    def test_progress_start_raises_once_the_client_stopped_the_run(self):
+        stopped = Event()
+        progress = Progress(GenerationHooks(cancelled=stopped.is_set))
+        progress.begin_attempt(0, 1, 3)
+        stopped.set()
+        with self.assertRaises(RunCancelled):
+            progress.start(PipelineStep.GENERATE)
+        with self.assertRaises(RunCancelled):
+            progress.begin_attempt(0, 1, 3)
+
+    def test_provider_retry_loop_stops_when_the_run_is_stopped(self):
+        response = Response(400, request=Request("POST", "https://provider.test/v1"))
+        failure = BadRequestError("Error code: 400", response=response, body=None)
+        engine = GenericEngine(
+            EnvironmentDescription.from_markdown(
+                "# Demo\n## Propositions\n- `done`: Finished", source="demo.md"
+            ),
+            "test-model",
+            "Test",
+            lambda *args: "",
+            Mock(side_effect=failure),
+        )
+        engine.should_stop = lambda: True
+        with (
+            patch("src.engines.generic_engine.sleep") as sleep,
+            self.assertRaises(RunCancelled),
+        ):
+            engine.request_text("system", "user")
+        self.assertEqual(sleep.call_count, 0)
 
     def test_generate_rm_closes_handlers_if_run_started_raises(self):
         progress_instances = []

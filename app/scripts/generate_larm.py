@@ -49,7 +49,7 @@ def generate_larm(CONFIG: Configuration) -> None:
             "--embeddings is available for compiler bundles; use embed-larm for baseline bundles"
         )
 
-    environment = EnvironmentDescription.from_file(CONFIG.environment)
+    environment = EnvironmentDescription.from_file(CONFIG.environment, code=True)
 
     if CONFIG.mode == "compiler":
         CONFIG.output = CONFIG.output or Path("arm-fm.rm")

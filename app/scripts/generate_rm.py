@@ -33,6 +33,7 @@ from src.engines import (
     ProposalValidationError,
     RetryableEngineError,
 )
+from src.models import EnvironmentDescription
 from src.utils import (
     GenerationHooks,
     PipelineStep,
@@ -132,7 +133,12 @@ class _Pipeline:
             CONFIG, progress
         )
         if CONFIG.labeling:
-            self.environment.require_labeling_api()
+            # Only the labeling generator reads the code file; the clause generator and the
+            # critic keep the facts alone.
+            self.labeling_environment = EnvironmentDescription.from_file(
+                CONFIG.environment, code=True
+            )
+            self.labeling_environment.require_labeling_api()
 
     def run_task(self, task_index: int, task: str) -> CompilationResult:
         """Return the accepted result for one task, or raise after the last critic rejection.
@@ -333,6 +339,8 @@ class _Pipeline:
             return compiled
         self.progress.start(PipelineStep.LABELING)
 
+        # The result keeps the text the labeling generator reads, so every bundle stores it.
+        compiled = replace(compiled, environment=self.labeling_environment)
         try:
             source, attempts = generate_compiler_labeling(
                 task, compiled, self.generator_engine, self.critic_engine
@@ -363,7 +371,12 @@ class _Pipeline:
         descriptions = pair_state_descriptions(compiled, compiled.state_descriptions)
         if not descriptions:
             raise ImmediateEngineError("Embedding stage requires accepted state descriptions")
-        context = state_embedding_context(compiled) if CONFIG.embedding_context else ""
+        # The vectors keep the facts the state tagger read, not the code file.
+        context = (
+            state_embedding_context(replace(compiled, environment=self.environment))
+            if CONFIG.embedding_context
+            else ""
+        )
         settings = EmbeddingSettings(
             model=CONFIG.embedding_model,
             model_revision=CONFIG.embedding_revision,
