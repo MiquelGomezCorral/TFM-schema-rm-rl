@@ -60,7 +60,7 @@ Every clause is `hard` or `soft`. The priority never changes what the template m
   and a hard rule that is broken for good fails the task. This is the default.
 - `soft`: the task only prefers it, with wording such as "if possible", "preferably",
   "ideally", "try to", "when you can", or "it would be nice". A soft clause never decides
-  whether the task is finished; breaking it costs reward and honoring it earns a little.
+  whether the task is finished; breaking it costs reward and keeping it costs nothing.
 
 Choose `soft` only when the task words the clause as a preference. Without such a cue,
 "never", "must", "before", "then", and "only after" are hard. A clause scoped by a

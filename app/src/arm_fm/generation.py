@@ -377,6 +377,7 @@ def record_bundle_role_models(bundle: ArtifactBundle, CONFIG: Configuration) -> 
         {
             "generator_model": CONFIG.generator_model,
             "critic_model": CONFIG.critic_model if CONFIG.critic else None,
+            "recurrent_soft_penalty": CONFIG.recurrent_soft_penalty,
         }
     )
 

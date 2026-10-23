@@ -45,7 +45,7 @@ The supported patterns are IBM DECLARE templates:
 A `hard` clause is a requirement: a hard goal must be reached to finish, and a
 hard rule broken for good fails the task. A `soft` clause is a preference: it
 never decides whether the task is finished, breaking it costs reward, and
-honoring it earns a little.
+keeping it costs nothing.
 
 All clauses belong to the same task and apply together. Their list order
 does not impose an execution order.

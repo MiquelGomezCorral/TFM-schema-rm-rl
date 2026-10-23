@@ -179,10 +179,9 @@ class Configuration:
     PROGRESS_REWARD: ClassVar[float] = 0.1
     TASK_COMPLETION_REWARD: ClassVar[float] = 1.0
     WELL_REWARD: ClassVar[float] = -1.0
-    # Soft clauses: paid when one breaks, and on the finishing edge by how each one ends.
+    # Soft clauses: paid when one breaks, and on the finishing edge when one is still pending.
     SOFT_BREAK_REWARD: ClassVar[float] = -0.5
     SOFT_PENDING_AT_FINISH_REWARD: ClassVar[float] = -0.5
-    SOFT_SATISFIED_AT_FINISH_REWARD: ClassVar[float] = 0.25
     # Added to the RM reward on the step where the time limit ends an episode the RM did not.
     TIME_LIMIT_PENALTY: ClassVar[float] = -0.5
 
@@ -199,6 +198,8 @@ class Configuration:
     mona_executable: str | None = None
     overwrite: bool = False
     critic: bool = True
+    # A soft rule's -0.5 is paid at every new break (on) or once per episode (off).
+    recurrent_soft_penalty: bool = True
     reasoning: str = "none"
     attempts: int = 3
     labeling: bool = False

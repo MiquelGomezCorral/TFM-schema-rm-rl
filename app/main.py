@@ -126,6 +126,12 @@ if __name__ == "__main__":
         help="Enable the critic that reviews each compiled candidate (default: enabled)",
     )
     generate_parser.add_argument(
+        "--recurrent-soft-penalty",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Charge a soft rule's -0.5 at every new break (default: enabled)",
+    )
+    generate_parser.add_argument(
         "--reasoning",
         choices=REASONING_LEVELS,
         default=Configuration.reasoning,
@@ -249,6 +255,12 @@ if __name__ == "__main__":
         default=True,
         help="compiler mode only: review each compiled candidate with the critic "
         "(arm-fm and paper modes always run their own critic; default: enabled)",
+    )
+    larm_parser.add_argument(
+        "--recurrent-soft-penalty",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="compiler mode only: charge a soft rule's -0.5 at every new break (default: enabled)",
     )
     larm_parser.add_argument(
         "--reasoning",

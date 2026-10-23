@@ -27,6 +27,9 @@ without changing how labels, transitions, and rewards are interpreted.
 - Only declared final states accept the task. A declared rejecting state (`REJECTING_STATES`)
   marks an irreversible violation; RMs without that line (such as ARM-FM paper RMs) have none.
   States remember earlier events; a false proposition now does not erase recorded progress.
+  The one exception is a broken soft rule with the recurrent soft penalty on: its state takes the
+  start state's edges, so the rule watches for the next break. That break was already paid, and
+  recorded goal progress is kept; only the progress reward is re-scored.
 - Entering a final or rejecting state ends the episode, as do the environment's own termination
   and its time limit, for every RM-wrapped run. A truncated step that did not terminate adds -0.5
   to the RM reward.
@@ -133,3 +136,5 @@ without expanding the machine or adding a guard-coverage calculation.
   episodes can only disprove a constraint, never prove one, and a wrong cut fails silently. The
   critic judges clauses against the environment and the flow reruns; spare states are accepted
   (user decision).
+- 2026-10-23: A broken soft rule re-arms when the recurrent soft penalty is on (user and
+  supervisor).

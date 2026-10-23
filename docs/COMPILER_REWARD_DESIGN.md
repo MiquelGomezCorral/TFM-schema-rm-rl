@@ -129,8 +129,8 @@ allowed to be empty. Other pipeline steps own the rest.
 ### Rewards
 
 - **[decision] Drop FL-AT's rewards and our per-clause 0.1.** Final rewards = progress
-  shaping + task completion +1 + soft bonuses and penalties. The clause 0.1 and the progress
-  term reward the same thing.
+  shaping + task completion +1 + soft penalties. The clause 0.1 and the progress term reward the
+  same thing.
 - **[decision] Progress formula:** every edge adds `Phi(next) - Phi(current)`, with
   `Phi(u) = -k * (longest remaining steps from u to a final state)`, `k = 0.1`, and `Phi = 0` at
   final states. Moving forward pays, staying pays 0, going back costs the same amount, and any
@@ -156,17 +156,19 @@ allowed to be empty. Other pipeline steps own the rest.
   (Ng's theorem also needs a bounded score). Some papers use -infinity for rejecting states; we
   do not need it.
 
-### Why loops pay nothing, and how we check it
+### Why no loop gains reward, and how we check it
 
-Two things keep every loop at 0: how the rewards are built, and one check on the finished RM.
+Two things keep no loop above 0: how the rewards are built, and one check on the finished RM.
 
 - **[code] By construction.** Progress is a difference of one score per state, so around any loop
   the differences cancel. States on the same loop share one score (the loop is collapsed to one
-  node before scoring), so edges inside a loop pay 0 progress. The other rewards cannot repeat:
-  `+1` and the soft finish terms are paid only on edges into the final, the `-1` only on edges
-  into the well, and both are absorbing. A soft break pays once because a broken clause stays
-  broken (its DFA cannot leave a violated state). Dropping the duplicate start removes a state and
-  its edges and adds none, so it cannot open a loop.
+  node before scoring), so edges inside a loop pay 0 progress. The other rewards cannot repeat
+  for gain: `+1` and the soft finish penalty are paid only on edges into the final, the `-1` only
+  on edges into the well, and both are absorbing. A soft break costs -0.5 and nothing pays it
+  back, so a loop through a re-armed soft rule (see "Recurrent soft penalty") loses reward on
+  every lap. With the switch off a broken clause stays broken (its DFA cannot leave a violated
+  state), so the break is paid once. Dropping the duplicate start removes a state and its edges
+  and adds none, so it cannot open a loop.
 - **[code] Checked on every RM.** After the rewards are set, `_has_positive_cycle` in
   `app/src/compiler/reward_layer.py` runs Bellman-Ford on the undiscounted rewards: if the best
   total reachable at some state still grows after as many rounds as there are states, a loop pays
@@ -215,19 +217,23 @@ the finished RM.
 ### Hard and soft
 
 - **[decision] Hard/soft is set per clause, independently,** by our prompt's output. The tag
-  never changes the LTLf formula or the DFA. Soft only changes rewards; hard changes rewards
-  and the RM's structure.
+  never changes the LTLf formula. Soft changes rewards and, with the recurrent soft penalty on,
+  re-arms a broken soft rule (edges only, no new states); hard changes rewards and the RM's
+  structure.
 - **[decision] Soft is what FL-AT's product gives for free.** The agent may finish in a bad
-  state but pays a penalty; preferred behavior gets a bonus. Preferences get both a bonus and a
-  penalty, to push harder. An irreversible soft rule ("if possible never touch lava") keeps the
-  clean and the touched section; entering the touched section pays one penalty.
+  state but pays a penalty. Keeping a preference earns nothing: the +0.25 finish bonus for a kept
+  soft clause was removed in both switch positions (2026-10-23, user: it is redundant next to the
+  penalty; it reversed 2026-10-12). A soft rule ("if possible never touch lava") keeps the clean
+  and the touched section, and entering the touched section pays -0.5; with the recurrent soft
+  penalty off that is the only charge, with it on the next break pays again (next section).
 - **[decision] Hard means the agent cannot finish in a bad state.** A permanent violation goes
   to one shared well (penalty, episode ends). A fixable one, such as a pending `Response`, only
   blocks finishing until it is fixed; it never ends the episode early.
 - **[decision] Soft clauses never affect the final condition.** If the agent touches lava under
   a soft rule, it still has to open the door to finish. Final = every hard goal clause done and
   every hard rule clause satisfied. Soft clauses only change the reward on the finishing edge
-  (bonus if satisfied, penalty if not) or on the edge where they break.
+  (-0.5 for a soft clause still pending: a soft goal, or an open obligation such as
+  `ChainResponse`'s) or on the edge where they break.
 - **[decision] No end-of-episode check in the RM.** Reaching a final state ends the episode, so
   the rule is judged on that last edge. A task that never reaches final ends by the time limit;
   the runtime then adds the time-limit penalty (see below) and nothing else.
@@ -237,13 +243,87 @@ the finished RM.
   matters only when a proposition such as `key_lost` exists and a clause uses it. A plain
   `Existence(has_key)` (`F has_key`) never goes back.
 
+### Recurrent soft penalty
+
+- **[decision] Why.** LTLf can only say that a rule was broken somewhere in the sequence, so a soft
+  rule's break was charged once per episode: an agent that broke a preference 15 times got the
+  same reward as one that broke it once. With `--recurrent-soft-penalty` (the default, also a web
+  checkbox, recorded in every run) each new break costs -0.5. `--no-recurrent-soft-penalty` keeps
+  the single charge. Decided 2026-10-23 (user and supervisor).
+- **[decision] What.** It applies to a soft clause of `Absence`, `Precedence`, `ChainResponse` or
+  `NotCoExistence`, the four templates whose DFA has a violated state. The others stay as they were:
+  - `Existence` and `ExistenceTwo` are goals; paying again would invite reward farming.
+  - `RespondedExistence` never breaks in the middle of an episode, and re-armed it would be
+    `Response`.
+  - `Response` already re-arms; its DFA has no violated state.
+- **[code] How.** `_rearm_violated` (`app/src/compiler/reward_layer.py`) rewrites a copy of the
+  soft clause's DFA before FL-AT builds the product:
+  - The states are labeled first, on the original DFA. A re-armed state is no longer a trap, so
+    labeled afterwards it would read as pending, and the -0.5 (a step from a not-violated state
+    into a violated one) would never fire.
+  - Each violated state drops its own edges and copies the edges of the DFA's start state (MONA's
+    "no step yet" state). A copied edge keeps its destination, except that an edge into a violated
+    state loops on the state instead: a step that breaks the rule again while it is still broken
+    is free, and the rule is armed again on the next step.
+  - No state is added and no table is needed. Hard clauses, and every clause with the switch off,
+    reach FL-AT unchanged. The input DFAs are not mutated.
+- **[run] Shape.** Each of the four templates has a start `S1`, an idle twin `S2` with the same
+  successors, and one absorbing violated state; no copied edge points back at `S1`, so the start
+  merge still applies. A single soft rule keeps its RM state count.
+- **[run] The supervisor's examples** (`x` and `y` are the template's `a` and `b`, `-` is a step
+  with neither). With the switch on, each row charges:
+
+  | Template | Steps | Charges |
+  |---|---|---|
+  | `Absence(x)` | `x x` | 1 |
+  | `Absence(x)` | `x !x x` | 2 |
+  | `Precedence(x, y)` | `x y y` | 0 |
+  | `Precedence(x, y)` | `y - y x` | 2 |
+  | `ChainResponse(x, y)` | `x y` | 0 |
+  | `ChainResponse(x, y)` | `x - x -` | 2 |
+  | `NotCoExistence(x, y)` | `x y` | 1 |
+  | `NotCoExistence(x, y)` | `x y x` | 1 |
+  | `NotCoExistence(x, y)` | `x y x y` | 2 |
+
+  With the switch off, each row charges at most 1.
+
+- **[decision] The charge is per new break.** A step that breaks the rule again while it is still
+  broken is free, and the rule is armed again on the next step. `Absence(x)` on `x x x` charges 1,
+  on `x - x x` charges 2; `Precedence(x, y)` on `y y` charges 1. The accepted `ChainResponse`
+  result `x x -` = 1 is one instance of this.
+- **[run] Progress is re-scored.** The re-arm joins the clean and the broken state into one
+  strongly connected component, so `_progress` scores the merged component and pays 0 inside it.
+  The break step is therefore -0.5 plus that step's progress, which is zero inside the merged
+  component. With a hard `Existence(at_goal)` and a soft `Absence(key_lost)`:
+
+  | Case | Before | Off | On |
+  |---|---|---|---|
+  | Clean finish | 1.45 | 1.2 | 1.1 |
+  | Break step | -0.4 | -0.4 | -0.5 |
+  | Break on the finishing step | 0.7 | 0.7 | 0.6 |
+
+  "Before" is the compiler without this change; "Off" differs from it only by the removed +0.25.
+  The gap between a clean and a one-break finish stays 0.5. Against the off position a clean
+  finish can lose 0.1 (`Absence`, `ChainResponse`) or 0.2 (`NotCoExistence`) of progress.
+- **[run] The product can grow with several soft rules.** The re-arm adds edges between states
+  that were separate, so the product of two or more rules can reach more states than before: 8 of
+  the 12 pairs of the four templates grew, and all four with a goal went from 11 to 13 states.
+- **[decision] Forced breaks.** Tasks are assumed free of contradictions (above), so a soft rule
+  that every way of finishing must break is not checked. With n forced breaks, finishing pays
+  1 - 0.5n plus progress: about a timeout's -0.5 at n = 3, and no more than the -1 well from
+  n = 4-5.
+- **[decision] A soft clause already violated at the start pays nothing,** as before: it is inert,
+  and the compile warning names it.
+
 ### Cleanup passes, in order
 
 1. **Label each clause's DFA states** as satisfied (accepting), pending (not accepting, accepting
    still reachable) or violated (accepting never reachable again). This is a reachability check on a
    small DFA, so it is exact, not a guess (matches the four-valued monitors of De Giacomo et al.
    2020). Each clause DFA must be total, with exactly one transition per valuation; a missing or
-   duplicated transition is a compile error naming the clause.
+   duplicated transition is a compile error naming the clause. The labels come from the original
+   DFAs; the recurrent soft penalty then re-arms soft rules on a copy, and the product keeps
+   those labels (see "Recurrent soft penalty").
 2. **Redirect hard violations:** every edge whose target has a hard clause violated goes to one
    shared well instead.
 3. **Remove "final" where a hard clause is not satisfied** (for example "goal done, `Response`
@@ -264,8 +344,8 @@ the finished RM.
    the mirror edge S1 -> S2 looks like "stay in my group", the same as S2's own lava self-loop.
    With the soft-violation split they stay apart. The gain (fewer states to describe and embed)
    is small next to that risk, so the first version skips it; FL-AT's product is kept as is
-   after pruning.
-7. **Compute rewards** on the pruned RM: progress, task completion, soft bonuses and penalties.
+   after pruning. A re-armed violated state keeps its violated label, so that split still holds.
+7. **Compute rewards** on the pruned RM: progress, task completion, soft penalties.
 
 After passes 4 and 5, check that a final state is still reachable; if not, report the task as
 having conflicting clauses.
@@ -294,7 +374,8 @@ having conflicting clauses.
   clauses (e.g. `Existence(p)` + `Absence(p)`), never compiled as a rule-only task.
 - **[decision] Soft clauses without reward effect are allowed and named in the warning.** In a
   task with no hard goal, soft clauses never reach a finishing edge: soft goals pay nothing and
-  soft rules only pay their break penalty.
+  soft rules only pay their break penalty, at every new break when the recurrent soft penalty is
+  on and once otherwise.
 
 ### FL-AT change
 
@@ -337,7 +418,11 @@ single paper describes this exact scheme; the combination is ours.
 
 ## Still open
 
-- Soft details per template (bonus and penalty values, where each is paid).
+- ~~Soft details per template (bonus and penalty values, where each is paid).~~ Decided
+  2026-10-23: no bonus anywhere; -0.5 at a break (at every new break for `Absence`, `Precedence`,
+  `ChainResponse` and `NotCoExistence` when the recurrent soft penalty is on); -0.5 at the finish
+  for a soft clause still pending (a soft goal, or an open obligation such as `ChainResponse`'s).
+  See "Recurrent soft penalty".
 - ~~Verify each template's RM shape against these rules, `ChainResponse` included.~~ Done in the
   T2.1 live test (27 clause sets, all eight templates, hard and soft).
 - ~~Test that our runtime's guard parser accepts FL-AT's guard strings (`!door_open&has_key`, `true`).~~

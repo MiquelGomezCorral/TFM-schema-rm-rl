@@ -74,6 +74,7 @@ def generate_rm(
         if progress.log_path is not None:
             hooks.notify_run_started(progress.log_path)
             progress(f"Run log: {progress.log_path}")
+        progress(f"Recurrent soft penalty: {'on' if CONFIG.recurrent_soft_penalty else 'off'}")
 
         _run_pipeline(CONFIG, hooks, progress, write_outputs=write_outputs)
         return True
@@ -260,7 +261,9 @@ class _Pipeline:
     def _build_reward_machine(self, proposal: Proposal, dfas: Sequence[dict]) -> CompilationResult:
         self.progress.start(PipelineStep.REWARD_MACHINE)
 
-        compiled = build_compilation_result(self.environment, proposal, dfas)
+        compiled = build_compilation_result(
+            self.environment, proposal, dfas, self.CONFIG.recurrent_soft_penalty
+        )
 
         self.progress.artifact("Serialized Reward Machine", compiled.text)
         for warning in compiled.warnings:

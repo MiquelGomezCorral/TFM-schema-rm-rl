@@ -53,9 +53,9 @@ BOUNCE = {
 }
 
 
-def rewards_of(clauses, soft, propositions, steps):
+def rewards_of(clauses, soft, propositions, steps, recurrent_soft_penalty=True):
     """Run one episode of true-proposition sets through the compiled, serialized machine."""
-    machine = build_reward_machine(clauses, soft).reward_machine
+    machine = build_reward_machine(clauses, soft, recurrent_soft_penalty).reward_machine
     text = serialize_reward_machine(machine)
     runtime = RewardMachineRuntime(parse_paper_reward_machine(text, propositions=propositions))
     return [runtime.step({name: name in step for name in propositions}).reward for step in steps]
@@ -97,18 +97,29 @@ class RewardLayerTests(unittest.TestCase):
         # The start, the final and the well; an idle first step stays in the start.
         self.assertEqual(len(machine.states), 3)
 
-    def test_soft_clauses_pay_their_break_once_and_how_they_end_at_the_finish(self):
-        # A soft rule: the break pays -0.5 once (-0.4 with the +0.1 progress of the same step), and
-        # finishing pays +0.25 only while it holds (1.45 = 0.2 progress + 1 + 0.25).
+    def test_a_broken_soft_rule_pays_the_break_and_a_pending_soft_goal_pays_at_the_finish(self):
+        # A soft rule: the break pays -0.5 and, as the break and the start share a component, no
+        # progress. Finishing pays 1.1 (0.1 progress + 1) whether or not the rule held.
         never_lava = ((GOAL, NO_LAVA), (False, True), ("goal", "lava"))
-        self.assertEqual(rewards_of(*never_lava, [{"lava"}, {"lava"}, {"goal"}]), [-0.4, 0.0, 1.1])
-        self.assertEqual(rewards_of(*never_lava, [{"goal"}]), [1.45])
+        self.assertEqual(rewards_of(*never_lava, [{"lava"}, {"lava"}, {"goal"}]), [-0.5, 0.0, 1.1])
+        self.assertEqual(rewards_of(*never_lava, [{"goal"}]), [1.1])
 
-        # A soft goal: finishing without it pays -0.5, with it +0.25.
+        # A soft goal: finishing without it pays -0.5; holding it adds nothing.
         get_key = ((GOAL, KEY), (False, True), ("goal", "key"))
         self.assertEqual(rewards_of(*get_key, [{"goal"}]), [0.7])
-        self.assertEqual(rewards_of(*get_key, [{"goal", "key"}]), [1.45])
-        self.assertEqual(rewards_of(*get_key, [{"key"}, {"goal"}]), [0.1, 1.35])
+        self.assertEqual(rewards_of(*get_key, [{"goal", "key"}]), [1.2])
+        self.assertEqual(rewards_of(*get_key, [{"key"}, {"goal"}]), [0.1, 1.1])
+
+    def test_a_soft_rule_pays_every_new_break_with_the_recurrent_penalty_and_once_without(self):
+        never_lava = ((NO_LAVA,), (True,), ("lava",))
+
+        # A step that breaks it again while still broken is free; the rule re-arms on the next.
+        self.assertEqual(rewards_of(*never_lava, [{"lava"}, {"lava"}]), [-0.5, 0.0])
+        self.assertEqual(rewards_of(*never_lava, [{"lava"}, set(), {"lava"}]), [-0.5, 0.0, -0.5])
+        self.assertEqual(
+            rewards_of(*never_lava, [{"lava"}, set(), {"lava"}], recurrent_soft_penalty=False),
+            [-0.5, 0.0, 0.0],
+        )
 
     def test_a_hard_goal_that_a_hard_rule_forbids_is_rejected(self):
         forbids_goal = {

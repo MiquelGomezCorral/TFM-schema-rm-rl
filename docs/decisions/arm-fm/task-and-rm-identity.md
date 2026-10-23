@@ -31,14 +31,18 @@ tasks, while keeping the generator and critic responsibilities stable.
   Template objects are built from IBM's template classes and every formula is IBM's `to_ltlf()`;
   IBM's grounding helper is not used because it builds `NotCoExistence(b, b)`.
 - Clause formulas follow IBM exactly; for example `Precedence(a, b)` means no `b` before `a`
-  and also holds when neither occurs. Hard and soft never change a formula: soft changes only
-  rewards; hard also changes the RM structure (a hard violation leads to the rejecting state and a
-  pending hard obligation blocks finishing). The reward layer is described in
+  and also holds when neither occurs. Hard and soft never change a formula. Soft changes rewards
+  and, with the recurrent soft penalty on (the default), re-arms a broken soft rule so its next
+  break pays again: the broken DFA state gets the start state's edges, never a new state. Hard
+  changes the RM structure (a hard violation leads to the rejecting state and a pending hard
+  obligation blocks finishing). The reward layer is described in
   `docs/COMPILER_REWARD_DESIGN.md`.
 - Tasks are assumed free of contradictions. The compiler rejects hard clauses that cannot all
   hold together (no final is reachable), but it does not check soft preferences against the hard
-  part: a preference that every way of finishing must break is charged at its cost like any
-  other break, and the task's wording is trusted not to ask for that.
+  part: a preference that every way of finishing must break is charged at every new break when
+  the recurrent soft penalty is on, and the task's wording is trusted not to ask for that. With n
+  forced breaks, finishing pays 1 - 0.5n plus progress: about a timeout's -0.5 at n = 3, and no
+  more than the -1 rejecting state from n = 4-5.
 - In compiler mode, one critic reviews the compiled candidate after RM construction: it receives
   the environment, task, validated clauses, and the compiled RM with its final and rejecting
   states and compile warnings. It returns a strict acceptance decision and nonempty feedback,
@@ -141,8 +145,8 @@ tasks, while keeping the generator and critic responsibilities stable.
 
 - Every compiler clause uses only propositions declared by that environment.
 - In compiler mode, one task's clauses have conjunction semantics; incompatible hard clauses are
-  rejected rather than weakened, and a soft clause may be violated only at its recorded cost,
-  never silently dropped.
+  rejected rather than weakened, and a soft clause may be violated only at its recorded cost per
+  break, never silently dropped.
 - Separate tasks remain separate RMs even when they share propositions or subgoals.
 - Task terminology is used consistently across CLI, web, configuration, prompts, and
   output; the removed instruction and priority-override interfaces are not aliases.
@@ -267,3 +271,8 @@ through their inputs and prompts, while both challenge the same generator.
 - 2026-10-14: Attempts count critic rejections only, with `--attempts` up to 10 and visible warnings
   for uncounted reruns; one shared `--reasoning` level for both models; the task is assumed
   feasible, no refusal field (user decisions, iteration 2).
+- 2026-10-23: Soft rules of Absence, Precedence, ChainResponse and NotCoExistence pay -0.5 at every
+  new break when the recurrent soft penalty is on, the default; `--no-recurrent-soft-penalty` keeps
+  one charge per episode (user and supervisor).
+- 2026-10-23: The +0.25 finish bonus for a kept soft clause is removed in both positions, reversing
+  2026-10-12: a pending soft clause already pays -0.5 at the finish (user decision).

@@ -165,7 +165,10 @@ def _persist_compiler_failure(
         },
         inputs={"task": CONFIG.tasks[0], "environment_markdown": environment.markdown},
         errors=[error],
-        effective_settings={"mode": "compiler"},
+        effective_settings={
+            "mode": "compiler",
+            "recurrent_soft_penalty": CONFIG.recurrent_soft_penalty,
+        },
         rm_mode="compiler",
     )
     with suppress(OSError):

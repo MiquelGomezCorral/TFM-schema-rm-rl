@@ -17,7 +17,7 @@ automata composition, and the external MONA executable for LTLf-to-DFA compilati
 - `app/src/compiler/ltlf.py`: `pylogics` AST to FL-AT syntax serialization.
 - `app/src/compiler/pipeline.py`: per-task proposal and deterministic compilation boundaries.
 - `app/src/compiler/reward_machine.py`: guard parsing and the shared RM structures.
-- `app/src/compiler/reward_layer.py`: hard/soft clause labels, wells, pruning, and rewards over FL-AT's product.
+- `app/src/compiler/reward_layer.py`: hard/soft clause labels, wells, pruning, and rewards over FL-AT's product; re-arms a soft rule's broken state when the recurrent soft penalty is on.
 - `app/src/compiler/rm_format.py`: the shared ARM-FM RM text format (parse/serialize), below `src.arm_fm`.
 - `app/src/arm_fm/`: ARM-FM bundles, the string-state RM runtime, embeddings, per-family
   environment adapters plus the RM gym wrapper (`environments.py`), and the CleanRL-adapted
@@ -36,7 +36,7 @@ The environment Markdown owns the allowed proposition vocabulary. The selected p
 select only an IBM DECLARE template, declared propositions, and a hard/soft priority per clause. Antigravity
 uses its cached Google account through a schema-constrained `agy` subprocess whose custom agent
 exposes no tools. IBM templates own LTLf construction. FL-AT and MONA own the DFAs and their
-product; the reward layer owns wells, hard pruning, finality, and rewards. The compiler never removes
+product; the reward layer owns wells, hard pruning, finality, and rewards, and re-arms a soft rule's broken state when the recurrent soft penalty is on. The compiler never removes
 states on environment facts: the critic judges clauses against them. The serializer owns the reference repository's text format.
 
 The nested packages `dependencies/nl2ltl` and `dependencies/Flat` are editable
