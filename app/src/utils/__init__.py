@@ -23,6 +23,17 @@ from .generation_pipeline import (
     write_run_outputs,
 )
 from .html_graph import render_elements_html, render_structure_html
+from .presentation import (
+    Example,
+    dfa_items,
+    dfa_text,
+    ltlf_of,
+    pipeline_rows,
+    pretty_ltlf,
+    result_block,
+    result_card,
+    task_text,
+)
 from .step_trace import (
     STEP_OUTPUT_ORDER,
     attach_step_trace,
