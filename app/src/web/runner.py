@@ -96,7 +96,7 @@ class RunRequest:
     environment_filename: str | None = None
     environment_code: str = ""
     critic: bool = True
-    recurrent_soft_penalty: bool = True
+    recurrent_soft_penalty: bool = Configuration.recurrent_soft_penalty
     reasoning: str = Configuration.reasoning
     attempts: int = Configuration.attempts
     labeling: bool = False

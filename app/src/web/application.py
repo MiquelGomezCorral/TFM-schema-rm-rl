@@ -254,12 +254,12 @@ def _register_start_callback(app: Dash, controller: RunController) -> None:
             code,
             reasoning,
             attempts,
-            critic,
-            recurrent_soft_penalty,
-            steps_report,
-            state_descriptions,
-            labeling,
-            embeddings,
+            critic_options,
+            recurrent_soft_penalty_options,
+            steps_report_options,
+            state_descriptions_options,
+            labeling_options,
+            embeddings_options,
         ) = options
         if not (markdown or "").strip():
             return "Enter or upload environment Markdown first."
@@ -283,12 +283,14 @@ def _register_start_callback(app: Dash, controller: RunController) -> None:
             environment_code=code or "",
             reasoning=reasoning,
             attempts=int(attempts),
-            critic=_is_checked(critic, "critic"),
-            recurrent_soft_penalty=_is_checked(recurrent_soft_penalty, "recurrent_soft_penalty"),
-            labeling=_is_checked(labeling, "labeling"),
-            state_descriptions=_is_checked(state_descriptions, "state_descriptions"),
-            embeddings=_is_checked(embeddings, "embeddings"),
-            steps_report=_is_checked(steps_report, "steps_report"),
+            critic=_is_checked(critic_options, "critic"),
+            recurrent_soft_penalty=_is_checked(
+                recurrent_soft_penalty_options, "recurrent_soft_penalty"
+            ),
+            labeling=_is_checked(labeling_options, "labeling"),
+            state_descriptions=_is_checked(state_descriptions_options, "state_descriptions"),
+            embeddings=_is_checked(embeddings_options, "embeddings"),
+            steps_report=_is_checked(steps_report_options, "steps_report"),
         )
         try:
             controller.start(request)
