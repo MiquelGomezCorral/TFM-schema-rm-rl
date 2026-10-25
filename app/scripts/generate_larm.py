@@ -28,6 +28,7 @@ from src.utils import (
     embedding_artifact_path,
     get_engine,
     preflight_paths,
+    print_warning,
     write_embedding_artifact,
 )
 
@@ -63,7 +64,7 @@ def generate_larm(CONFIG: Configuration) -> None:
         try:
             succeeded = generate_rm(
                 CONFIG,
-                hooks=GenerationHooks(completion=capture),
+                hooks=GenerationHooks(completion=capture, warning=print_warning),
                 write_outputs=False,
             )
         except Exception as error:
@@ -87,7 +88,9 @@ def generate_larm(CONFIG: Configuration) -> None:
             record_bundle_embeddings(bundles[0], accepted[0], destination)
         bundles[0].save(CONFIG.bundle, overwrite=CONFIG.overwrite)
     else:
-        engine = get_engine(CONFIG, environment)
+        engine = get_engine(
+            CONFIG, environment, warn=lambda message: print_warning(f"Baseline {message}")
+        )
         result = generate_baseline_bundle(CONFIG.tasks[0], environment, engine, CONFIG)
         result.bundle.save(CONFIG.bundle, overwrite=CONFIG.overwrite)
 
@@ -121,8 +124,18 @@ def generate_paper(CONFIG: Configuration) -> None:
     )
 
     engines = Engines(
-        get_engine(CONFIG, None, CONFIG.generator_model),
-        get_engine(CONFIG, None, CONFIG.critic_model),
+        get_engine(
+            CONFIG,
+            None,
+            CONFIG.generator_model,
+            warn=lambda message: print_warning(f"Generator {message}"),
+        ),
+        get_engine(
+            CONFIG,
+            None,
+            CONFIG.critic_model,
+            warn=lambda message: print_warning(f"Critic {message}"),
+        ),
     )
     models = {"generator": CONFIG.generator_model, "critic": CONFIG.critic_model}
     run = PaperRun(prompts, sources, models, engines)
@@ -165,7 +178,10 @@ def _persist_compiler_failure(
         },
         inputs={"task": CONFIG.tasks[0], "environment_markdown": environment.markdown},
         errors=[error],
-        effective_settings={"mode": "compiler"},
+        effective_settings={
+            "mode": "compiler",
+            "recurrent_soft_penalty": CONFIG.recurrent_soft_penalty,
+        },
         rm_mode="compiler",
     )
     with suppress(OSError):

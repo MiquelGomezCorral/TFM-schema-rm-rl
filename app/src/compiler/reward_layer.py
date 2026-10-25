@@ -31,15 +31,20 @@ _EPSILON = 1e-9
 
 
 class ClauseState(StrEnum):
-    """Where one clause stands: done, still open, or broken for good."""
+    """Where one clause's DFA stands: done, still open, or unable to accept again.
+
+    The label belongs to the DFA state. A soft rule's violated state may still be left in the
+    Reward Machine when the recurrent soft penalty is on.
+    """
 
     SATISFIED = "satisfied"
     PENDING = "pending"
     VIOLATED = "violated"
 
 
+# No soft clause pays a bonus for finishing while it holds; the key stays for the lookup.
 _FINISH_REWARD = {
-    ClauseState.SATISFIED: Configuration.SOFT_SATISFIED_AT_FINISH_REWARD,
+    ClauseState.SATISFIED: 0.0,
     ClauseState.PENDING: Configuration.SOFT_PENDING_AT_FINISH_REWARD,
     ClauseState.VIOLATED: 0.0,
 }
@@ -71,12 +76,16 @@ class RewardLayerResult:
     inert_soft_clauses: tuple[int, ...]
 
 
-def build_reward_machine(dfas: Sequence[dict], soft: Sequence[bool]) -> RewardLayerResult:
+def build_reward_machine(
+    dfas: Sequence[dict], soft: Sequence[bool], *, recurrent_soft_penalty: bool = True
+) -> RewardLayerResult:
     """Compile the clause DFAs into one Reward Machine with hard pruning and rewards.
 
-    ``soft[i]`` marks clause ``i`` soft; the others are hard. Without a hard goal clause the
-    machine has no final state (a rule-only task). Raises ``ValueError`` on a non-total DFA,
-    conflicting clauses, or a positive reward cycle.
+    ``soft[i]`` marks clause ``i`` soft; the others are hard. With ``recurrent_soft_penalty`` a
+    soft rule's violated state takes the start state's edges, so each new break pays again
+    instead of once per episode. Without a hard goal clause the machine has no final
+    state (a rule-only task). Raises ``ValueError`` on a non-total DFA, conflicting clauses, or
+    a positive reward cycle.
     """
     if len(dfas) != len(soft):
         raise ValueError(
@@ -90,7 +99,8 @@ def build_reward_machine(dfas: Sequence[dict], soft: Sequence[bool]) -> RewardLa
     soft_clauses = [index for index, is_soft in enumerate(soft) if is_soft]
     hard_goal = any(_is_goal(dfas[index]) for index in hard_clauses)
 
-    product = _clause_product(dfas)
+    rearm = [recurrent_soft_penalty and is_soft for is_soft in soft]
+    product = _clause_product(dfas, rearm)
     edges, finals = _prune_by_hard_clauses(product, hard_clauses, hard_goal)
     initial, edges = _drop_pre_step_start(edges, product, finals)
     priced, paying = _price_edges(edges, product, finals, soft_clauses)
@@ -175,10 +185,45 @@ def _destination(
     raise ValueError(f"State {source} has no transition on {valuation}")
 
 
-def _clause_product(dfas: Sequence[dict]) -> _Product:
+def _rearm_violated(dfa: dict, by_state: dict[str, ClauseState]) -> dict:
+    """Copy ``dfa`` so each violated state leaves the way the start state does.
+
+    A violated state drops its own edges and takes the start's: a step that would not break
+    the rule goes where it would from the start, and a step that would break it again stays,
+    already paid. No state is added.
+    """
+    start = dfa["initial_state"]
+    violated = {state for state, label in by_state.items() if label is ClauseState.VIOLATED}
+    start_edges = [
+        (guard, destination)
+        for (source, guard), destination in dfa["transitions"].items()
+        if source == start
+    ]
+
+    rearmed = deepcopy(dfa)
+    rearmed["transitions"] = {
+        (source, guard): destination
+        for (source, guard), destination in dfa["transitions"].items()
+        if source not in violated
+    }
+    for state in violated:
+        for guard, destination in start_edges:
+            rearmed["transitions"][(state, guard)] = (
+                state if destination in violated else destination
+            )
+    return rearmed
+
+
+def _clause_product(dfas: Sequence[dict], rearm: Sequence[bool]) -> _Product:
+    # Labels come from the original DFAs: the re-armed state would read as pending, and its
+    # break would never be paid.
     clause_labels = [_clause_labels(dfa) for dfa in dfas]
     # FL-AT annotates its input DFAs in place, so it gets copies.
-    machine = automatas_to_rm(deepcopy(list(dfas)), [1] * len(dfas))
+    copies = [
+        _rearm_violated(dfa, by_state) if rearm_clause else deepcopy(dfa)
+        for dfa, by_state, rearm_clause in zip(dfas, clause_labels, rearm, strict=True)
+    ]
+    machine = automatas_to_rm(copies, [1] * len(dfas))
     labels = {
         state: tuple(
             by_state[clause_state]

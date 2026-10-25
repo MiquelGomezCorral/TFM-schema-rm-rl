@@ -62,7 +62,8 @@ diagnostics to reproduce a failed run without changing compilation semantics.
   lines too.
 - Logs include validated proposal data, critic verdicts, LTLf clauses, complete DFA data,
   serialized Reward Machines, validated node descriptions and labeling source, and embedding
-  metadata, but never explicitly include credentials, environment
+  metadata, and the recurrent-soft-penalty setting (also in the step trace, the steps report and
+  ARM-FM bundle settings), but never explicitly include credentials, environment
   variables, request headers, full prompts, or raw provider response objects.
 - The persistent log is plain text without ANSI escape sequences, and the UI uses text
   labels with color rather than color alone to identify state.
@@ -104,3 +105,4 @@ keeps their association visible when a trace is reopened.
 
 - 2026-10-14: Attempt limit configurable; warnings became a typed hook surfaced on the CLI and in
   the web Run status (iteration 2).
+- 2026-10-23: Runs record whether the recurrent soft penalty was on (user decision).

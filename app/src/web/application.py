@@ -38,6 +38,7 @@ from .components import (
     INPUT_REGION_CLASS,
     LABELING_OPTIONS,
     OUTPUT_REGION_CLASS,
+    RECURRENT_SOFT_PENALTY_OPTIONS,
     RUN_SIDEBAR_CLASS,
     STATE_DESCRIPTIONS_OPTIONS,
     STATUS_CLASSES,
@@ -228,6 +229,7 @@ def _register_start_callback(app: Dash, controller: RunController) -> None:
         State("reasoning-level", "data"),
         State("attempts", "value"),
         State("critic-options", "value"),
+        State("recurrent-soft-penalty-toggle", "value"),
         State("steps-report-toggle", "value"),
         State("descriptions-toggle", "value"),
         State("labeling-toggle", "value"),
@@ -245,10 +247,20 @@ def _register_start_callback(app: Dash, controller: RunController) -> None:
     ) -> str:
         """Start a run from the form.
 
-        ``options`` are the code file text, the reasoning level, the attempt limit, then the five
+        ``options`` are the code file text, the reasoning level, the attempt limit, then the six
         checklist values in layout order.
         """
-        code, reasoning, attempts, *toggles = options
+        (
+            code,
+            reasoning,
+            attempts,
+            critic_options,
+            recurrent_soft_penalty_options,
+            steps_report_options,
+            state_descriptions_options,
+            labeling_options,
+            embeddings_options,
+        ) = options
         if not (markdown or "").strip():
             return "Enter or upload environment Markdown first."
         tasks = tuple((value or "").strip() for value in task_values or [])
@@ -271,7 +283,14 @@ def _register_start_callback(app: Dash, controller: RunController) -> None:
             environment_code=code or "",
             reasoning=reasoning,
             attempts=int(attempts),
-            **_run_flags(*toggles),
+            critic=_is_checked(critic_options, "critic"),
+            recurrent_soft_penalty=_is_checked(
+                recurrent_soft_penalty_options, "recurrent_soft_penalty"
+            ),
+            labeling=_is_checked(labeling_options, "labeling"),
+            state_descriptions=_is_checked(state_descriptions_options, "state_descriptions"),
+            embeddings=_is_checked(embeddings_options, "embeddings"),
+            steps_report=_is_checked(steps_report_options, "steps_report"),
         )
         try:
             controller.start(request)
@@ -324,6 +343,7 @@ def _register_poll_callback(app: Dash, controller: RunController) -> None:
         Output("output-selector", "disabled"),
         Output("run-steps", "children"),
         Output("task-selection", "data"),
+        Output("recurrent-soft-penalty-toggle", "options"),
         Output("steps-report-toggle", "options"),
         Output("descriptions-toggle", "options"),
         Output("labeling-toggle", "options"),
@@ -628,23 +648,6 @@ def _select_reasoning(
     )
 
 
-def _run_flags(
-    critic_options: list[str] | None,
-    steps_report_options: list[str] | None,
-    descriptions_options: list[str] | None,
-    labeling_options: list[str] | None,
-    embeddings_options: list[str] | None,
-) -> dict[str, bool]:
-    """Turn the five checklist values into the run request's boolean flags."""
-    return {
-        "critic": _is_checked(critic_options, "critic"),
-        "labeling": _is_checked(labeling_options, "labeling"),
-        "state_descriptions": _is_checked(descriptions_options, "state_descriptions"),
-        "embeddings": _is_checked(embeddings_options, "embeddings"),
-        "steps_report": _is_checked(steps_report_options, "steps_report"),
-    }
-
-
 def _is_checked(options: list[str] | None, name: str) -> bool:
     return bool(options and name in options)
 
@@ -724,6 +727,7 @@ def _poll_panels(
         not bool(options),
         render_steps(snapshot.tasks, task_selected),
         next_selection,
+        _locked(RECURRENT_SOFT_PENALTY_OPTIONS, active),
         _locked(STEPS_REPORT_OPTIONS, active),
         _locked(STATE_DESCRIPTIONS_OPTIONS, active),
         _locked(LABELING_OPTIONS, active),

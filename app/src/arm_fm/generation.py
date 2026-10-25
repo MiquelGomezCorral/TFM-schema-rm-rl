@@ -366,9 +366,10 @@ def build_compiler_bundle(
 
 
 def record_bundle_role_models(bundle: ArtifactBundle, CONFIG: Configuration) -> None:
-    """Record the resolved compiler role models and whether a critic accepted the machine.
+    """Record the resolved compiler role models, the critic verdict and the soft-penalty setting.
 
-    A run without the critic records no critic validation: a recorded ``False`` would make
+    The critic verdict is whether a critic accepted the machine. A run without the critic
+    records no critic validation: a recorded ``False`` would make
     ``validate(require_complete=True)`` reject the bundle for training.
     """
     if CONFIG.critic:
@@ -377,6 +378,7 @@ def record_bundle_role_models(bundle: ArtifactBundle, CONFIG: Configuration) -> 
         {
             "generator_model": CONFIG.generator_model,
             "critic_model": CONFIG.critic_model if CONFIG.critic else None,
+            "recurrent_soft_penalty": CONFIG.recurrent_soft_penalty,
         }
     )
 

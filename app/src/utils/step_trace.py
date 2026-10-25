@@ -151,6 +151,7 @@ class _StepTraceWriter:
         payload = {
             "format": TRACE_FORMAT,
             "environment": Path(self._CONFIG.environment).name if self._CONFIG.environment else "",
+            "recurrent_soft_penalty": self._CONFIG.recurrent_soft_penalty,
             "tasks": [
                 self._trace_task(index, result, output_path)
                 for index, (result, output_path) in enumerate(
@@ -201,6 +202,8 @@ class _StepTraceWriter:
             "",
             "One accepted attempt per task; each sub-step is the pipeline's own artifact",
             "output, rendered deterministically in fixed order.",
+            "",
+            f"Recurrent soft penalty: {'on' if self._CONFIG.recurrent_soft_penalty else 'off'}",
             "",
         ]
         for index, (result, output_path) in enumerate(zip(results, output_paths, strict=True)):

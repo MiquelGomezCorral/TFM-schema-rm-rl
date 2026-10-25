@@ -8,7 +8,8 @@ from functools import partial
 from typing import Any
 from uuid import uuid4
 
-from openai import OpenAI
+from openai import BadRequestError, OpenAI
+from openai.types.chat import ChatCompletion
 
 from src.config import Configuration
 from src.models import EnvironmentDescription
@@ -146,7 +147,7 @@ class OpenCodeEngine(GenericEngine):
     def _request_chat_completions(
         self, model: str, system: str, user: str, schema: dict, name: str
     ) -> str:
-        response = self._client.chat.completions.create(
+        response = self._create_completion(
             model=model,
             messages=[
                 {"role": "system", "content": system},
@@ -156,20 +157,49 @@ class OpenCodeEngine(GenericEngine):
                 "type": "json_schema",
                 "json_schema": {"name": name, "strict": True, "schema": schema},
             },
-            reasoning_effort=self.reasoning,
         )
         return completion_text(response)
 
     def _request_chat_completions_text(self, model: str, system: str, user: str) -> str:
-        response = self._client.chat.completions.create(
+        response = self._create_completion(
             model=model,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            reasoning_effort=self.reasoning,
         )
         return completion_text(response)
+
+    def _create_completion(self, **request: Any) -> ChatCompletion:
+        """Send one chat completion, resending at once with ``low`` if the model refuses ``none``.
+
+        The switch is kept for the engine's later requests and warned once. The resend is not a
+        provider repeat; a refusal that survives ``low`` raises like any other 400.
+        """
+        try:
+            return self._client.chat.completions.create(**request, reasoning_effort=self.reasoning)
+        except BadRequestError as error:
+            # The provider sends no error code and words the refusal differently per request.
+            # Observed on glm-5.3-flash (2026-10-25):
+            # - "GLM-5.3 is a thinking-only model; disabling thinking (reasoning_effort='none')
+            #   is not supported"
+            # - "Reasoning is mandatory for this model and cannot be disabled"
+            # - "This model always reasons and does not support disabling reasoning; do not send
+            #   a reasoning-off selector"
+            message = error.message.lower()
+            about_reasoning = "reason" in message or "think" in message
+            cannot_disable = any(
+                word in message for word in ("disabl", "mandatory", "not supported")
+            )
+            if self.reasoning != "none" or not (about_reasoning and cannot_disable):
+                raise
+        self.reasoning = "low"
+        if self.warn is not None:
+            self.warn(
+                f'model {self.model} does not accept reasoning "none"; '
+                'using "low" for the rest of the run'
+            )
+        return self._client.chat.completions.create(**request, reasoning_effort=self.reasoning)
 
 
 class AntigravityEngine(GenericEngine):

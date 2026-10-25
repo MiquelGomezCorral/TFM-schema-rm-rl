@@ -110,8 +110,11 @@ The reward layer computes every reward from the clause DFAs; the full rules and 
 in `docs/COMPILER_REWARD_DESIGN.md`. In short: progress shaping pays `0.1` per step closer to the
 goal (longest remaining path, idle steps pay 0, cycles sum to 0), finishing pays `+1`, a hard
 violation enters one rejecting well (`-1`, episode ends), a pending hard obligation blocks
-finishing, and each soft clause pays `-0.5` once when it breaks, `-0.5` if still pending at the
-finish and `+0.25` if satisfied at the finish. A task with no hard goal clause has no final state.
+finishing, and each soft clause pays `-0.5` when it breaks and `-0.5` if still pending at the
+finish; keeping a soft clause earns nothing. LTLf cannot say "broken again", so by default (the
+recurrent soft penalty, switched off with `--no-recurrent-soft-penalty`) a soft `Absence`,
+`Precedence`, `ChainResponse` or `NotCoExistence` is re-armed after a break and pays `-0.5` at every
+new break; with the switch off it pays once. A task with no hard goal clause has no final state.
 
 ## Relationship to ARM-FM
 

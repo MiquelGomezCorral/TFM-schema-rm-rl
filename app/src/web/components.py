@@ -237,6 +237,9 @@ ISSUE_ITEM_CLASSES = {
 }
 
 CRITIC_OPTIONS = [{"label": " Critic", "value": "critic"}]
+RECURRENT_SOFT_PENALTY_OPTIONS = [
+    {"label": " Recurrent soft penalty", "value": "recurrent_soft_penalty"}
+]
 STEPS_REPORT_OPTIONS = [{"label": " Step report (.md)", "value": "steps_report"}]
 LABELING_OPTIONS = [{"label": " MiniGrid labeling", "value": "labeling"}]
 STATE_DESCRIPTIONS_OPTIONS = [{"label": " State descriptions", "value": "state_descriptions"}]
@@ -943,6 +946,24 @@ def output_controls() -> html.Aside:
                     ),
                 ],
                 className=f"reasoning-controls {FIELDSET_CLASS}",
+            ),
+            html.Fieldset(
+                [
+                    html.Legend(
+                        "Rewards",
+                        className=f"rewards-legend {FIELD_LEGEND_CLASS}",
+                    ),
+                    html.Div(
+                        dcc.Checklist(
+                            id="recurrent-soft-penalty-toggle",
+                            options=RECURRENT_SOFT_PENALTY_OPTIONS,
+                            value=["recurrent_soft_penalty"],
+                            className=OUTPUTS_OPTIONS_CLASS,
+                        ),
+                        className=FIELD_BODY_CLASS,
+                    ),
+                ],
+                className=f"rewards-controls {FIELDSET_CLASS}",
             ),
             html.Fieldset(
                 [
