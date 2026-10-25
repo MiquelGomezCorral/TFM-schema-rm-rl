@@ -6,9 +6,9 @@ was merged into main on 2026-10-25.
 
 ## The problem
 
-LTLf can only say that a rule was broken somewhere in the trace. So a soft rule charged −0.5
-once per episode: an agent that broke a preference 15 times got the same reward as one that
-broke it once.
+An LTLf formula gives one verdict per trace: it says whether the rule was broken, not how
+often. So a soft rule charged −0.5 once per episode: an agent that broke a preference 15 times
+got the same reward as one that broke it once.
 
 ## Which rules re-arm
 
@@ -53,22 +53,26 @@ With the switch off, every row charges at most 1.
 ## Rules that only say "eventually": no repeat
 
 Existence, ExistenceTwo and RespondedExistence say that something happens at some point. None
-of them can break mid-episode: each is "not yet" until it happens, then "done" for good. The
-only failure is that it never happened by the end of the episode. That is one fact at the end,
-so there is no break to charge again.
+of them can break mid-episode. Existence and ExistenceTwo are "not yet" until `x` happens, then
+done for good. RespondedExistence is kept from the start, owes a `y` once an `x` comes with no
+`y` seen yet, and is done for good once a `y` has been seen. The only failure is that it never
+happened by the end of the episode. That is one fact at the end, so there is no break to charge
+again.
 
 - **Existence and ExistenceTwo are goals.** A recurring version would pay `x` again after a
   reset. The agent would learn to do `x`, undo it and do it again instead of finishing:
   reward farming. From a goal we want the agent to reach it, not to repeat it.
 - **RespondedExistence has no exact recurring version.** It means "if `x`, then `y` at some
-  point, in any order". It splits into two rules, and each depends on order:
-  - `y` before `x` is Precedence(`y`, `x`). It can break mid-episode, so with recurrent soft
-    rules on it charges every `x` that comes before the first `y`. This is the closest to a
-    recurring RespondedExistence.
-  - `y` after `x` is Response(`x`, `y`). Each new `x` opens a new obligation, but the rule
-    never breaks mid-episode, so nothing is charged until the end.
+  point, in any order". Two stricter rules come close, and each fixes an order:
+  - The `y`-before version is Precedence(`y`, `x`). It can break mid-episode, so with
+    recurrent soft rules on it charges each new `x` before the first `y`; an `x` straight after
+    a charged one is free. This is the closest to a recurring RespondedExistence.
+  - The `y`-after version is Response(`x`, `y`). Each new `x` opens a new obligation, but the
+    rule never breaks mid-episode, so nothing is charged until the end.
 
-  Keeping "any order" with its own `y` for each `x` needs counting; see the limitation below.
+  They are not a split of RespondedExistence: on `x y x` it holds, while the first breaks at
+  the first `x` and the second leaves the last `x` without a `y` after it. Keeping "any order"
+  with its own `y` for each `x` needs counting; see the limitation below.
 - **Response already re-arms.** Its DFA has no broken-for-good state.
 
 ## Limitation: the setup cannot count
@@ -122,6 +126,8 @@ We have not tried or tested this. It stays a theory note.
 - Design: the "Recurrent soft rules" section of `docs/COMPILER_REWARD_DESIGN.md`. Decision
   records: `docs/decisions/arm-fm/task-and-rm-identity.md` and
   `docs/decisions/arm-fm/rm-execution.md`.
+- Per-template traces for all eight templates, hard, soft and recurrent soft, from the real
+  compiler and runtime: [`../clause-semantics/README.md`](../clause-semantics/README.md).
 - Commits: `ddb0c82` (`merge: recurrent soft penalty and the reasoning none fallback`) and
   `0effa25` (`merge: recurrent soft rules wording`).
 - Check: `test_a_soft_rule_pays_every_new_break_with_the_recurrent_penalty_and_once_without`

@@ -92,8 +92,9 @@ Precedence, ChainResponse and NotCoExistence. For these the goal is recovery: wi
 per episode, the first break makes every later one free, and a penalty cannot be farmed. Rules
 that only say "eventually" (Existence, ExistenceTwo, RespondedExistence) never break
 mid-episode, and paying a goal again would invite reward farming. RespondedExistence has no
-exact recurring version: its two halves are Precedence and Response, and keeping "any order"
-would need counting, which the setup cannot do. The note ends with a theory it did not try:
+exact recurring version: the two ordered, stricter rules near it are Precedence (`y` before `x`)
+and Response (`y` after `x`), and keeping "any order" would need counting, which the setup cannot
+do. The note ends with a theory it did not try:
 sending the Reward Machine back to its start while the environment keeps running, as the
 cookie domain of Toro Icarte et al. (NeurIPS 2019) does.
 
@@ -115,3 +116,47 @@ PYTHONPATH=app python -W ignore -m unittest tests.test_reward_layer
 fallback`) and `0effa25` (`merge: recurrent soft rules wording`); `_rearm_violated` in
 `app/src/compiler/reward_layer.py`; the design is the "Recurrent soft rules" section of
 `docs/COMPILER_REWARD_DESIGN.md`.
+
+### Clause semantics appendix (`clause-semantics/`), 2026-10-25
+
+**What it shows.** What the hard, soft and recurrent-soft version of each of the eight IBM
+templates (Existence, ExistenceTwo, Absence, RespondedExistence, Response, Precedence,
+ChainResponse, NotCoExistence) means, shown as step-by-step traces with the state and reward at
+every step. Each template has its meaning in plain words and in DoorKey, its LTLf formula, its
+Reward Machines, and the traces that tell the versions apart. Each also has a "What it does not
+mean" part: the readings a reader may expect, with the formula each would need, compiled through
+the same path and walked next to the real template. The scope section states that the clause DFAs
+are MONA's, unchanged, except the re-arm of a soft rule's broken-for-good state, and that the
+compiler's hard passes then only redirect, unmark or prune the product from the DFA labels,
+without changing any formula or break. It holds a paragraph ready to quote in the pipeline
+section.
+
+**Evidence.**
+- 192 asserted counts (charges with the recurrent soft setting on and off, and every episode
+  total), all checked against the real machines; 0 differ. Every packet count held.
+- Charges are counted from the reward layer's own product labels, and the rewards come from
+  `RewardMachineRuntime` on the reloaded RM text, cross-checked against the layer's priced edge.
+- The 57 trace tables in the README are pasted from `check/traces.txt`; the script fails if one
+  differs. No number in the README was computed by hand.
+- 45 graphs (SVG and RM text), one per distinct machine.
+
+**Files.**
+- `README.md`: the appendix; it opens on its own from disk.
+- `check/clause_semantics.py`: compiles each template through the real path (nl2ltl formula,
+  MONA, FL-AT, reward layer), walks the traces, asserts the counts and writes the files below.
+- `check/traces.txt` and `check/traces.json`: all traces, formulas, DFAs and tables.
+- `check/graphs/`: the 45 machines as SVG and RM text.
+
+**Rerun** from the repository root, inside `RM_RL_env`:
+
+```bash
+PYTHONPATH=app python -W ignore docs/paper/clause-semantics/check/clause_semantics.py
+```
+
+It ends with `192 asserted counts checked, 0 differ` and
+`OK: all assertions hold; wrote traces.txt and graphs/`. No LLM call.
+
+**Code.** `build_reward_machine`, `_clause_labels` and `_rearm_violated` in
+`app/src/compiler/reward_layer.py`; the design is in `docs/COMPILER_REWARD_DESIGN.md`. Branch
+`docs/clause-semantics-appendix`, from `05f13d8`; not committed when this entry was written.
+The note on which soft rules recur is in [`recurrent-soft-rules/`](recurrent-soft-rules/README.md).
