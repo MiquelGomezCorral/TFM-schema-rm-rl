@@ -83,3 +83,35 @@ prints the proposition ids and the labeling API text.
 (the join), called by `generate_larm` in `app/scripts/generate_larm.py` and by the labeling stage of
 `app/scripts/generate_rm.py`; the rule is in `docs/ENVIRONMENT_AUTHORING.md` and
 `docs/decisions/arm-fm/catalogue-and-evidence.md`. Not committed when this entry was written.
+
+### Recurrent soft rules (`recurrent-soft-rules/`), 2026-10-25
+
+**What it shows.** Which soft rules charge −0.5 again at every new break, and why only those.
+A soft rule re-arms only when its DFA has a "broken for good" state, which holds for Absence,
+Precedence, ChainResponse and NotCoExistence. For these the goal is recovery: with one charge
+per episode, the first break makes every later one free, and a penalty cannot be farmed. Rules
+that only say "eventually" (Existence, ExistenceTwo, RespondedExistence) never break
+mid-episode, and paying a goal again would invite reward farming. RespondedExistence has no
+exact recurring version: its two halves are Precedence and Response, and keeping "any order"
+would need counting, which the setup cannot do. The note ends with a theory it did not try:
+sending the Reward Machine back to its start while the environment keeps running, as the
+cookie domain of Toro Icarte et al. (NeurIPS 2019) does.
+
+**Evidence.** A design note, not a measured result. It holds the supervisor's nine example
+traces with their charges, which the feature's live check reproduced through the real runtime,
+and the two published sources behind the theory section.
+
+**Files.**
+- `README.md`: the note.
+
+**Rerun.** The unit check of the on and off charges, from the repository root inside
+`RM_RL_env`:
+
+```bash
+PYTHONPATH=app python -W ignore -m unittest tests.test_reward_layer
+```
+
+**Code.** Merge commits `ddb0c82` (`merge: recurrent soft penalty and the reasoning none
+fallback`) and `0effa25` (`merge: recurrent soft rules wording`); `_rearm_violated` in
+`app/src/compiler/reward_layer.py`; the design is the "Recurrent soft rules" section of
+`docs/COMPILER_REWARD_DESIGN.md`.
