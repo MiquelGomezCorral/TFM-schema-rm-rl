@@ -238,7 +238,7 @@ ISSUE_ITEM_CLASSES = {
 
 CRITIC_OPTIONS = [{"label": " Critic", "value": "critic"}]
 RECURRENT_SOFT_PENALTY_OPTIONS = [
-    {"label": " Recurrent soft penalty", "value": "recurrent_soft_penalty"}
+    {"label": " Recurrent soft rules", "value": "recurrent_soft_penalty"}
 ]
 STEPS_REPORT_OPTIONS = [{"label": " Step report (.md)", "value": "steps_report"}]
 LABELING_OPTIONS = [{"label": " MiniGrid labeling", "value": "labeling"}]

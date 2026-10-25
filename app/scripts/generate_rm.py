@@ -74,7 +74,7 @@ def generate_rm(
         if progress.log_path is not None:
             hooks.notify_run_started(progress.log_path)
             progress(f"Run log: {progress.log_path}")
-        progress(f"Recurrent soft penalty: {'on' if CONFIG.recurrent_soft_penalty else 'off'}")
+        progress(f"Recurrent soft rules: {'on' if CONFIG.recurrent_soft_penalty else 'off'}")
 
         _run_pipeline(CONFIG, hooks, progress, write_outputs=write_outputs)
         return True

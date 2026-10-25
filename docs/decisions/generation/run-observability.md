@@ -62,7 +62,7 @@ diagnostics to reproduce a failed run without changing compilation semantics.
   lines too.
 - Logs include validated proposal data, critic verdicts, LTLf clauses, complete DFA data,
   serialized Reward Machines, validated node descriptions and labeling source, and embedding
-  metadata, and the recurrent-soft-penalty setting (also in the step trace, the steps report and
+  metadata, and whether recurrent soft rules are on (also in the step trace, the steps report and
   ARM-FM bundle settings), but never explicitly include credentials, environment
   variables, request headers, full prompts, or raw provider response objects.
 - The persistent log is plain text without ANSI escape sequences, and the UI uses text
