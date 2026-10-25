@@ -34,7 +34,7 @@ class GenericEngine:
 
     # Set by the pipeline so the provider retry loop stops when the client stops the run.
     should_stop: Callable[[], bool] | None = None
-    # Set by the pipeline so an engine can report a run-wide change as a run warning.
+    # Set by the caller of get_engine so an engine can report a run-wide change as a run warning.
     warn: Callable[[str], None] | None = None
 
     def __init__(

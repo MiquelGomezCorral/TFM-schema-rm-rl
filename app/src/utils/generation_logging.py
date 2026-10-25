@@ -122,7 +122,7 @@ class GenerationHooks:
 
 
 def print_warning(message: str) -> None:
-    """Print a run warning on stderr; the CLI commands pass it as ``GenerationHooks.warning``."""
+    """Print a run warning on stderr."""
     print(f"warning: {message}", file=sys.stderr)
 
 
