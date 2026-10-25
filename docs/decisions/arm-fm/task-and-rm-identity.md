@@ -32,7 +32,7 @@ tasks, while keeping the generator and critic responsibilities stable.
   IBM's grounding helper is not used because it builds `NotCoExistence(b, b)`.
 - Clause formulas follow IBM exactly; for example `Precedence(a, b)` means no `b` before `a`
   and also holds when neither occurs. Hard and soft never change a formula. Soft changes rewards
-  and, with the recurrent soft penalty on (the default), re-arms a broken soft rule so its next
+  and, with recurrent soft rules on (the default), re-arms a broken soft rule so its next
   break pays again: the broken DFA state gets the start state's edges, never a new state. Hard
   changes the RM structure (a hard violation leads to the rejecting state and a pending hard
   obligation blocks finishing). The reward layer is described in
@@ -40,7 +40,7 @@ tasks, while keeping the generator and critic responsibilities stable.
 - Tasks are assumed free of contradictions. The compiler rejects hard clauses that cannot all
   hold together (no final is reachable), but it does not check soft preferences against the hard
   part: a preference that every way of finishing must break is charged at every new break when
-  the recurrent soft penalty is on, and the task's wording is trusted not to ask for that. With n
+  recurrent soft rules are on, and the task's wording is trusted not to ask for that. With n
   forced breaks, finishing pays 1 - 0.5n plus progress: about a timeout's -0.5 at n = 3, and no
   more than the -1 rejecting state from n = 4-5.
 - In compiler mode, one critic reviews the compiled candidate after RM construction: it receives

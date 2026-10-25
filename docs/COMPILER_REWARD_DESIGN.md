@@ -165,7 +165,7 @@ Two things keep no loop above 0: how the rewards are built, and one check on the
   node before scoring), so edges inside a loop pay 0 progress. The other rewards cannot repeat
   for gain: `+1` and the soft finish penalty are paid only on edges into the final, the `-1` only
   on edges into the well, and both are absorbing. A soft break costs -0.5 and nothing pays it
-  back, so a loop through a re-armed soft rule (see "Recurrent soft penalty") loses reward on
+  back, so a loop through a re-armed soft rule (see "Recurrent soft rules") loses reward on
   every lap. With the switch off a broken clause stays broken (its DFA cannot leave a violated
   state), so the break is paid once. Dropping the duplicate start removes a state and its edges
   and adds none, so it cannot open a loop.
@@ -217,7 +217,7 @@ the finished RM.
 ### Hard and soft
 
 - **[decision] Hard/soft is set per clause, independently,** by our prompt's output. The tag
-  never changes the LTLf formula. Soft changes rewards and, with the recurrent soft penalty on,
+  never changes the LTLf formula. Soft changes rewards and, with recurrent soft rules on,
   re-arms a broken soft rule (edges only, no new states); hard changes rewards and the RM's
   structure.
 - **[decision] Soft is what FL-AT's product gives for free.** The agent may finish in a bad
@@ -243,13 +243,13 @@ the finished RM.
   matters only when a proposition such as `key_lost` exists and a clause uses it. A plain
   `Existence(has_key)` (`F has_key`) never goes back.
 
-### Recurrent soft penalty
+### Recurrent soft rules
 
 - **[decision] Why.** LTLf can only say that a rule was broken somewhere in the sequence, so a soft
   rule's break was charged once per episode: an agent that broke a preference 15 times got the
-  same reward as one that broke it once. With `--recurrent-soft-penalty` (the default, also a web
-  checkbox, recorded in every run) each new break costs -0.5. `--no-recurrent-soft-penalty` keeps
-  the single charge. Decided 2026-10-23 (user and supervisor).
+  same reward as one that broke it once. With recurrent soft rules on (`--recurrent-soft-penalty`,
+  the default, also a web checkbox, recorded in every run) each new break costs -0.5.
+  `--no-recurrent-soft-penalty` keeps the single charge. Decided 2026-10-23 (user and supervisor).
 - **[decision] What.** It applies to a soft clause of `Absence`, `Precedence`, `ChainResponse` or
   `NotCoExistence`, the four templates whose DFA has a violated state. The others stay as they were:
   - `Existence` and `ExistenceTwo` are goals; paying again would invite reward farming.
@@ -322,8 +322,8 @@ the finished RM.
    small DFA, so it is exact, not a guess (matches the four-valued monitors of De Giacomo et al.
    2020). Each clause DFA must be total, with exactly one transition per valuation; a missing or
    duplicated transition is a compile error naming the clause. The labels come from the original
-   DFAs; the recurrent soft penalty then re-arms soft rules on a copy, and the product keeps
-   those labels (see "Recurrent soft penalty").
+   DFAs; with recurrent soft rules on, the soft clauses are then re-armed on a copy, and the product
+   keeps those labels (see "Recurrent soft rules").
 2. **Redirect hard violations:** every edge whose target has a hard clause violated goes to one
    shared well instead.
 3. **Remove "final" where a hard clause is not satisfied** (for example "goal done, `Response`
@@ -374,8 +374,8 @@ having conflicting clauses.
   clauses (e.g. `Existence(p)` + `Absence(p)`), never compiled as a rule-only task.
 - **[decision] Soft clauses without reward effect are allowed and named in the warning.** In a
   task with no hard goal, soft clauses never reach a finishing edge: soft goals pay nothing and
-  soft rules only pay their break penalty, at every new break when the recurrent soft penalty is
-  on and once otherwise.
+  soft rules only pay their break penalty, at every new break when recurrent soft rules are on
+  and once otherwise.
 
 ### FL-AT change
 
@@ -420,9 +420,9 @@ single paper describes this exact scheme; the combination is ours.
 
 - ~~Soft details per template (bonus and penalty values, where each is paid).~~ Decided
   2026-10-23: no bonus anywhere; -0.5 at a break (at every new break for `Absence`, `Precedence`,
-  `ChainResponse` and `NotCoExistence` when the recurrent soft penalty is on); -0.5 at the finish
+  `ChainResponse` and `NotCoExistence` when recurrent soft rules are on); -0.5 at the finish
   for a soft clause still pending (a soft goal, or an open obligation such as `ChainResponse`'s).
-  See "Recurrent soft penalty".
+  See "Recurrent soft rules".
 - ~~Verify each template's RM shape against these rules, `ChainResponse` included.~~ Done in the
   T2.1 live test (27 clause sets, all eight templates, hard and soft).
 - ~~Test that our runtime's guard parser accepts FL-AT's guard strings (`!door_open&has_key`, `true`).~~
