@@ -93,6 +93,7 @@ def setup_environment_and_engines(
         environment,
         CONFIG.generator_model,
         should_stop=progress.hooks.is_cancelled,
+        warn=lambda message: progress.warn(f"Generator {message}"),
     )
     progress(
         f"Generator engine ready: role=generator model={CONFIG.generator_model} "
@@ -120,6 +121,7 @@ def setup_environment_and_engines(
         environment,
         CONFIG.critic_model,
         should_stop=progress.hooks.is_cancelled,
+        warn=lambda message: progress.warn(f"Critic {message}"),
     )
     progress(
         f"Critic engine ready: role=critic model={CONFIG.critic_model} "
@@ -136,6 +138,7 @@ def get_engine(
     model: str | None = None,
     *,
     should_stop: Callable[[], bool] | None = None,
+    warn: Callable[[str], None] | None = None,
 ) -> GenericEngine:
     """Create the selected provider's engine, defaulting to the baseline model."""
     engine_types = {
@@ -147,4 +150,5 @@ def get_engine(
         environment, model if model is not None else CONFIG.model, CONFIG.reasoning
     )
     engine.should_stop = should_stop
+    engine.warn = warn
     return engine

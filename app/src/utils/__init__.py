@@ -13,6 +13,7 @@ from .generation_logging import (
     RunCancelled,
     StepArtifact,
     StepState,
+    print_warning,
 )
 from .generation_pipeline import (
     derive_output_names,

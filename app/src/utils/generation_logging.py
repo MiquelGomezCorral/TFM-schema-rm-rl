@@ -121,6 +121,11 @@ class GenerationHooks:
             self.completion(results, output_paths)
 
 
+def print_warning(message: str) -> None:
+    """Print a run warning on stderr; the CLI commands pass it as ``GenerationHooks.warning``."""
+    print(f"warning: {message}", file=sys.stderr)
+
+
 class Progress:
     """Run-scoped plain-text logging and stage event fan-out."""
 

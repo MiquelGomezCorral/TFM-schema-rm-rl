@@ -18,18 +18,14 @@ from scripts import (
     train_rl,
 )
 from src.config import REASONING_LEVELS, Configuration
-from src.utils import GenerationHooks
+from src.utils import GenerationHooks, print_warning
 
 
 def cmd_generate_rm(args: argparse.Namespace) -> None:
     """Generate a Reward Machine from parsed CLI configuration."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
-    if not generate_rm(CONFIG, GenerationHooks(warning=_print_warning)):
+    if not generate_rm(CONFIG, GenerationHooks(warning=print_warning)):
         sys.exit(1)
-
-
-def _print_warning(message: str) -> None:
-    print(f"warning: {message}", file=sys.stderr)
 
 
 def cmd_render_rm(args: argparse.Namespace) -> None:

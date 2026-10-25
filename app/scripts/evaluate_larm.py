@@ -13,7 +13,7 @@ from src.arm_fm import (
 )
 from src.config import Configuration
 from src.models import EnvironmentDescription
-from src.utils import get_engine
+from src.utils import get_engine, print_warning
 
 
 def evaluate_larm(CONFIG: Configuration) -> None:
@@ -34,7 +34,11 @@ def evaluate_larm(CONFIG: Configuration) -> None:
                 bundle.manifest.inputs["environment_markdown"],
                 source=bundle.manifest.environment,
             )
-            engine = get_engine(replace(CONFIG, model=judge_model), environment)
+            engine = get_engine(
+                replace(CONFIG, model=judge_model),
+                environment,
+                warn=lambda message: print_warning(f"Judge {message}"),
+            )
             decisions.append(judge_bundle(bundle, engine))
         except Exception as error:
             if bundle is None or not _generation_complete(bundle):

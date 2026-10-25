@@ -92,7 +92,9 @@ tasks, while keeping the generator and critic responsibilities stable.
   compiler never applies them; the critic rejects a clause that restates one or that rests on an
   event the environment cannot produce, and keeps any clause it doubts.
 - The generator and the critic run at one shared reasoning level (`--reasoning`: `none`, `low`,
-  `medium`, `high`, `max`; default `none`), sent on every provider request of the run.
+  `medium`, `high`, `max`; default `none`), sent on every provider request of the run. On the
+  OpenCode provider, a model that refuses `none` (HTTP 400: it cannot turn thinking off) gets `low`
+  from that request on, with one warning; the switch uses no provider repeat and no attempt.
 - Compiler model selection is role-specific: one generator model writes clauses and state
   descriptions; a different critic model reviews the clauses and the compiled RM.
   Create the generator engine and, when the critic is enabled, the critic engine once
@@ -276,3 +278,5 @@ through their inputs and prompts, while both challenge the same generator.
   one charge per episode (user and supervisor).
 - 2026-10-23: The +0.25 finish bonus for a kept soft clause is removed in both positions, reversing
   2026-10-12: a pending soft clause already pays -0.5 at the finish (user decision).
+- 2026-10-25: An OpenCode model that refuses reasoning `none` falls back to `low` with a warning
+  instead of ending the run after ten refused repeats (user decision).
