@@ -1,4 +1,6 @@
-exclude: ^\.agents/
+exclude: ^(\.agents|paper)/
+default_install_hook_types: [pre-commit, post-commit, post-merge]
+default_stages: [pre-commit]
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -58,3 +60,11 @@ repos:
         entry: lint-imports
         pass_filenames: false
         types: [python]
+      - id: overleaf-push
+        name: ship paper/ to Overleaf
+        language: system
+        # post-commit and post-merge hooks get no file list, so the entry checks paper/ itself
+        entry: bash -c 'git diff --quiet HEAD~1 HEAD -- paper || git subtree push --prefix=paper overleaf main || { echo "Overleaf push failed. If Overleaf has newer edits, pull them with git subtree pull --prefix=paper overleaf main"; exit 1; }'
+        stages: [post-commit, post-merge]
+        always_run: true
+        pass_filenames: false
