@@ -421,16 +421,25 @@ def machine_section(machines: dict[str, Machine], letters: dict, stems: dict) ->
 # ======================================================================================
 
 
+def check_soft_prices(pattern: str, trace: str, steps: list, bad: list) -> None:
+    """A soft step pays its break when charged and progress in whole steps of 0.1, nothing else."""
+    for step in steps:
+        progress = (step.reward - (CONFIG.SOFT_BREAK_REWARD if step.charged else 0.0)) / (
+            CONFIG.PROGRESS_REWARD
+        )
+        if abs(progress - round(progress)) > 1e-6:
+            bad.append(f"{pattern} {trace!r}: a soft step pays more than a break and progress")
+
+
 def check_alone(pattern: str, machines: dict[str, Machine], walks: dict, expected: dict, bad: list):
-    """The asserted charges, the hard end of each irreparable rule, and the inert rules."""
+    """The asserted charges, the hard end of each irreparable rule, and that no soft rule is inert."""
     off, on = machines["soft-off"], machines["soft-on"]
     if (off.text != on.text) != (pattern in REARMED):
         bad.append(f"{pattern}: the soft machines differ with the switch: {off.text != on.text}")
     if pattern not in GOALS and machines["hard"].paper.final_states:
         bad.append(f"{pattern} alone: a hard rule alone must not have a final")
-    inert = pattern in GOALS | {"RespondedExistence", "Response"}
-    if off.inert != inert:
-        bad.append(f"{pattern}: inert soft rule expected {inert}, got {off.inert}")
+    if off.inert or on.inert:
+        bad.append(f"{pattern}: no soft rule alone may be inert (progress or a break pays it)")
     for trace, per_version in walks.items():
         hard, soft_off, soft_on = (per_version[v] for v in ("hard", *SOFT))
         got, wanted = [charges(soft_on), charges(soft_off)], expected[trace]
@@ -439,8 +448,7 @@ def check_alone(pattern: str, machines: dict[str, Machine], walks: dict, expecte
             bad.append(
                 f"{pattern} {trace!r}: charges on/off {got}, expected {wanted}; steps {steps}"
             )
-        if abs(total(soft_off) - CONFIG.SOFT_BREAK_REWARD * charges(soft_off)) > 1e-9:
-            bad.append(f"{pattern} {trace!r}: the soft total is not charges x the break reward")
+        check_soft_prices(pattern, trace, soft_off, bad)
         first_charge = next((i for i, s in enumerate(soft_off) if s.charged), None)
         hard_well = next((i for i, s in enumerate(hard) if s.ended == "well"), None)
         if pattern in REARMED and first_charge != hard_well:
@@ -712,7 +720,8 @@ def main() -> None:
             "# Clause semantics: every trace, walked through the real compiler and runtime",
             f"Rewards: soft break {number(CONFIG.SOFT_BREAK_REWARD)}, well {number(CONFIG.WELL_REWARD)}, "
             f"completion {number(CONFIG.TASK_COMPLETION_REWARD)}, "
-            f"progress {number(CONFIG.PROGRESS_REWARD)} per step closer to the final, "
+            f"progress {number(CONFIG.PROGRESS_REWARD)} per step closer to the final (with none, to the "
+            f"states where no rule is pending), "
             f"soft rule open at the finish {number(CONFIG.SOFT_PENDING_AT_FINISH_REWARD)}",
         ]
     )

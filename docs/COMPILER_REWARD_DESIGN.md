@@ -142,6 +142,20 @@ allowed to be empty. Other pipeline steps own the rest.
 - **[decision] Longest path, not shortest,** for the shortcut reason above, and because the
   environment may never produce the shortcut. For RMs with cycles, compute it on the graph with
   each cycle collapsed to one node; edges inside a cycle get 0.
+- **[decision] With no final state, progress aims at the states where no clause is pending.** A
+  rule-only task has no final, so the target is every product state where each clause is satisfied
+  (accepting) or violated, and none is waiting for something to happen. The rest of the formula is
+  the same: `Phi(u) = -k * (longest remaining steps to a target)`, `Phi = 0` at a target, loops
+  collapsed to one node. Targets absorb: their outgoing edges are left out when the distance is
+  measured, so a rule that is satisfied again and then opens again does not push the score away
+  from it. A state from which no target can be reached scores 0, and an edge into it pays no progress,
+  like an edge into a well: otherwise a step from two steps out into a dead end (soft `Existence(g)`
+  with hard `Response(a, b)` and hard `NotCoExistence(a, b)`, step `a & !b & !g`) would pay +0.2 for
+  getting nowhere. Wells still pay no progress. A machine with a final is unchanged. In the 20 one-clause machines this
+  changed 9: a rule that waits for an answer (`Response`, `RespondedExistence`, `ChainResponse`)
+  costs 0.1 on the step that leaves it waiting and pays 0.1 back on the step that answers, and a
+  soft `Existence` or `ExistenceTwo` pays 0.1 for each step toward done (the simulation and the
+  numbers: [rule-only progress](paper/rule-only-progress/README.md)).
 - **[run + decision] The duplicate start is dropped, so an idle first step pays 0.** MONA gives
   each rule clause a "no step yet" start state that is left on the first step and never re-entered.
   On every input it goes where the state after an idle step goes, so the product carried one extra
@@ -245,16 +259,18 @@ the finished RM.
 
 ### Recurrent soft rules
 
-- **[decision] Why.** LTLf can only say that a rule was broken somewhere in the sequence, so a soft
-  rule's break was charged once per episode: an agent that broke a preference 15 times got the
+- **[decision] Why.** An LTLf formula gives one verdict per trace: it says whether a rule was broken,
+  not how often. So a soft rule's break was charged once per episode: an agent that broke a preference 15 times got the
   same reward as one that broke it once. With recurrent soft rules on (`--recurrent-soft-penalty`,
   the default, also a web checkbox, recorded in every run) each new break costs -0.5.
   `--no-recurrent-soft-penalty` keeps the single charge. Decided 2026-10-23 (user and supervisor).
 - **[decision] What.** It applies to a soft clause of `Absence`, `Precedence`, `ChainResponse` or
   `NotCoExistence`, the four templates whose DFA has a violated state. The others stay as they were:
   - `Existence` and `ExistenceTwo` are goals; paying again would invite reward farming.
-  - `RespondedExistence` never breaks in the middle of an episode, and re-armed it would be
-    `Response`.
+  - `RespondedExistence` never breaks in the middle of an episode and has no exact recurring
+    version: the two close ones, `Precedence` and `Response`, each fix an order, and on `x y x`
+    the rule holds while `Response` leaves the last `x` unanswered (see the
+    [note](paper/recurrent-soft-rules/README.md#rules-that-only-say-eventually-no-repeat)).
   - `Response` already re-arms; its DFA has no violated state.
 - **[code] How.** `_rearm_violated` (`app/src/compiler/reward_layer.py`) rewrites a copy of the
   soft clause's DFA before FL-AT builds the product:
@@ -373,9 +389,13 @@ having conflicting clauses.
 - **[decision] A hard goal with no reachable final is an error,** reported as conflicting
   clauses (e.g. `Existence(p)` + `Absence(p)`), never compiled as a rule-only task.
 - **[decision] Soft clauses without reward effect are allowed and named in the warning.** In a
-  task with no hard goal, soft clauses never reach a finishing edge: soft goals pay nothing and
-  soft rules only pay their break penalty, at every new break when recurrent soft rules are on
-  and once otherwise.
+  task with no hard goal, soft clauses never reach a finishing edge, so the soft finish penalty
+  never applies. What a soft clause can still pay is its break penalty (at every new break when
+  recurrent soft rules are on, once otherwise) and the progress step where it starts or stops
+  waiting. A soft clause that pays neither on any edge is inert and named in the warning. With a
+  final state only the break and the finish count, as before. With none, the progress step is
+  judged by a proxy (the clause's waiting flips on an edge that pays progress), approximate both
+  ways: it can call a clause paid that changes nothing, or inert when it changes rewards.
 
 ### FL-AT change
 

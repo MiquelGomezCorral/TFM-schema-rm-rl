@@ -28,8 +28,9 @@ Contents: [Notation](#notation) · [Scope](#scope) · [Hard, soft and recurrent 
   valuations DoorKey never produces. The text says where DoorKey rules a trace out.
 - A **charge** is the −0.5 a soft rule pays when it breaks: the step where the rule goes from not
   broken to broken in the machine's own product. The other rewards are constants too (see
-  `traces.txt`): well −1, completion +1, progress 0.1 per step closer to the final, and −0.5 on the
-  finishing edge for a soft rule still open.
+  `traces.txt`): well −1, completion +1, progress 0.1 per step closer to the final (with no final, to
+  the states where no rule is waiting for an answer), and −0.5 on the finishing edge for a soft rule
+  still open.
 - A table cell reads `state, reward`: the RM state after the step and the reward of that step.
   `(well)` and `(final)` mark the step where the episode ends, and the rows after it show `—`. A
   hard trace therefore stops at the step the episode ends.
@@ -110,17 +111,22 @@ that breaks the rule again while it is still broken is free. Only Absence, Prece
 ChainResponse and NotCoExistence have such a state. With the switch off, the rule charges once per
 episode. The reasons are in the [recurrent soft rules note](../recurrent-soft-rules/README.md).
 
-**Alone, and with a goal.** The traces use the template alone: exactly one clause and no goal, so
-the numbers are the pure charges. Two consequences follow. A hard Existence or ExistenceTwo alone
-is the goal itself. The soft versions of Existence, ExistenceTwo, RespondedExistence and Response,
-and the hard versions of RespondedExistence and Response, pay 0 on every edge alone, because the
-machine has no final for them to block or to price (the compiler reports the soft ones as having
-no reward effect). Their effect shows next to a goal, so these four templates also get a "with a goal" table, using the hard
-stand-in goal `Existence(at_goal)`. Next to a goal, the progress term adds small amounts to a
-total (design: [Rewards](../../COMPILER_REWARD_DESIGN.md#rewards)). The progress term depends on the
-machine's shape, so totals next to a goal can differ by 0.1 between versions; the charges do not.
-For the four re-armed templates the script walks each alone-trace again next to the goal and asserts
-the same charge count.
+**Alone, and with a goal.** The traces use the template alone: exactly one clause and no goal.
+A hard Existence or ExistenceTwo alone is the goal itself. Every other machine alone has no final,
+so progress aims at the states where no rule is waiting for an answer (design:
+[Rewards](../../COMPILER_REWARD_DESIGN.md#rewards)). That pays 0.1 per step closer and costs 0.1 per
+step away. Soft Existence and ExistenceTwo get +0.1 for each `x` that moves them toward done.
+RespondedExistence and Response, hard and soft, cost 0.1 on the `x` that leaves a `y` owed and pay
+0.1 back on the `y`, so a rule kept ends at 0 and a rule left open at the end of the trace costs 0.1.
+ChainResponse costs 0.1 on `x` and pays 0.1 on the next step, which answers or breaks it (a soft
+break reads −0.4). Absence, Precedence and NotCoExistence never wait, so they pay only their breaks.
+No soft rule alone is left without a reward effect. The charges stay the −0.5 breaks and nothing else, and the script checks that every soft step
+pays a break plus whole steps of 0.1. Next to a goal the same progress term adds small amounts to a
+total, and what a rule still open at the finish costs shows there, so the four "eventually" templates
+also get a "with a goal" table, using the hard stand-in goal `Existence(at_goal)`. The progress term
+depends on the machine's shape, so totals next to a goal can differ by 0.1 between versions; the
+charges do not. For the four re-armed templates the script walks each alone-trace again next to the
+goal and asserts the same charge count.
 
 ## The eight templates at a glance
 
@@ -130,11 +136,11 @@ subsection.
 
 | Template | Looks | Meaning | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|---|
-| [Existence](#1-existence) | whole episode | `x` happens at least once | goal: the first `x` reaches the final | alone: no effect; next to a goal, finishing without `x` costs −0.5 | same as off |
-| [ExistenceTwo](#2-existencetwo) | whole episode | `x` is true at two different steps | goal: the second step with `x` reaches the final | alone: no effect; next to a goal, finishing with fewer than two costs −0.5 | same as off |
+| [Existence](#1-existence) | whole episode | `x` happens at least once | goal: the first `x` reaches the final | alone: +0.1 when `x` happens; next to a goal, finishing without `x` costs −0.5 | same as off |
+| [ExistenceTwo](#2-existencetwo) | whole episode | `x` is true at two different steps | goal: the second step with `x` reaches the final | alone: +0.1 for each of the two; next to a goal, finishing with fewer than two costs −0.5 | same as off |
 | [Absence](#3-absence) | whole episode | `x` never happens | first `x`: well, −1, episode ends | first `x` costs −0.5, once per episode | each new break costs −0.5; `x` right after `x` is free; a step without `x` re-arms |
-| [RespondedExistence](#4-respondedexistence) | whole episode, any order | if `x` happens, `y` happens too: before, with or after | cannot finish with `x` seen and `y` missing; never the well | alone: no effect; next to a goal, finishing with `y` missing costs −0.5 | same as off |
-| [Response](#5-response) | future | every `x` is followed by `y` on the same step or later | cannot finish with an unanswered `x`; never the well | alone: no effect; next to a goal, finishing with an unanswered `x` costs −0.5 | same as off |
+| [RespondedExistence](#4-respondedexistence) | whole episode, any order | if `x` happens, `y` happens too: before, with or after | cannot finish with `x` seen and `y` missing; never the well; alone, −0.1 on the `x` and +0.1 back on the `y` | alone: the same −0.1 and +0.1; next to a goal, finishing with `y` missing costs −0.5 | same as off |
+| [Response](#5-response) | future | every `x` is followed by `y` on the same step or later | cannot finish with an unanswered `x`; never the well; alone, −0.1 on the `x` and +0.1 back on the `y` | alone: the same −0.1 and +0.1; next to a goal, finishing with an unanswered `x` costs −0.5 | same as off |
 | [Precedence](#6-precedence) | past | no `y` until `x` has happened (the same step counts) | `y` before any `x`: well, −1, episode ends | first break costs −0.5, once per episode | each new `y` before the first `x` costs −0.5; after the first `x`, free for good |
 | [ChainResponse](#7-chainresponse) | next step | every `x` is followed by `y` on the very next step | an `x` without `y` next: well, −1, episode ends | first break costs −0.5, once; an `x` on the finishing step costs −0.5 | each new break costs −0.5; an `x` on the finishing step costs −0.5; the `x` on a breaking step opens no new obligation |
 | [NotCoExistence](#8-notcoexistence) | whole episode, any order | `x` and `y` never both appear | the step where both have appeared: well, −1, episode ends | the first time both have appeared costs −0.5, once | each time both have appeared again since the last charge costs −0.5 |
@@ -177,7 +183,8 @@ FINAL_STATES:
 DEFAULT_REWARD: 0
 TRANSITION_FUNCTION:
 (u0, has_key) -&gt; u1
-REWARD_FUNCTION:</pre>
+REWARD_FUNCTION:
+(u0, has_key, u1) -&gt; 0.1</pre>
 </details>
 </td>
 </tr></table>
@@ -191,11 +198,11 @@ REWARD_FUNCTION:</pre>
 |---|---|---|---|---|
 | 1 | `-` | u0, 0 | u0, 0 | u0, 0 |
 | 2 | `-` | u0, 0 | u0, 0 | u0, 0 |
-| 3 | `x` | u1 (final), 1.1 | u1, 0 | u1, 0 |
-| **Total** | | 1.1 | 0 (0 charges) | 0 (0 charges) |
+| 3 | `x` | u1 (final), 1.1 | u1, 0.1 | u1, 0.1 |
+| **Total** | | 1.1 | 0.1 (0 charges) | 0.1 (0 charges) |
 
-**Soft.** Alone, the soft rule pays 0 on every edge and the machine has no final, so there is
-nothing to observe (summary below). Next to the hard goal `Existence(at_goal)`, the rule shows at
+**Soft.** Alone, the machine has no final, so the only reward is progress: +0.1 on the `x` that
+moves the rule from waiting to done (summary below). Next to the hard goal `Existence(at_goal)`, the rule shows at
 the finish: the soft run ends when the goal is reached, and pays 0.5 less if `x` has not happened
 by then. The hard run cannot finish before `x`.
 
@@ -203,8 +210,8 @@ by then. The hard run cannot finish before `x`.
 
 | Trace | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|
-| `- - x` | 1.1, ends at step 3 (final) | 0 (0 charges) | 0 (0 charges) |
-| `x x` | 1.1, ends at step 1 (final) | 0 (0 charges) | 0 (0 charges) |
+| `- - x` | 1.1, ends at step 3 (final) | 0.1 (0 charges) | 0.1 (0 charges) |
+| `x x` | 1.1, ends at step 1 (final) | 0.1 (0 charges) | 0.1 (0 charges) |
 | `- -` | 0, no end | 0 (0 charges) | 0 (0 charges) |
 
 **Existence next to the goal `Existence(at_goal)`**
@@ -289,7 +296,9 @@ DEFAULT_REWARD: 0
 TRANSITION_FUNCTION:
 (u0, door_open) -&gt; u1
 (u1, door_open) -&gt; u2
-REWARD_FUNCTION:</pre>
+REWARD_FUNCTION:
+(u0, door_open, u1) -&gt; 0.1
+(u1, door_open, u2) -&gt; 0.1</pre>
 </details>
 </td>
 </tr></table>
@@ -301,21 +310,21 @@ trace `x - x` ends at step 3, and `x x` at step 2. The first `x` pays only the p
 
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u1, 0.1 | u1, 0 | u1, 0 |
+| 1 | `x` | u1, 0.1 | u1, 0.1 | u1, 0.1 |
 | 2 | `-` | u1, 0 | u1, 0 | u1, 0 |
-| 3 | `x` | u2 (final), 1.1 | u2, 0 | u2, 0 |
-| **Total** | | 1.2 | 0 (0 charges) | 0 (0 charges) |
+| 3 | `x` | u2 (final), 1.1 | u2, 0.1 | u2, 0.1 |
+| **Total** | | 1.2 | 0.2 (0 charges) | 0.2 (0 charges) |
 
-**Soft.** Alone, no effect (summary). Next to the goal, finishing with fewer than two steps of `x`
+**Soft.** Alone, +0.1 on each of the two steps of `x` (summary). Next to the goal, finishing with fewer than two steps of `x`
 leaves the rule open and costs 0.5 on the finishing edge.
 
 **ExistenceTwo, all traces**
 
 | Trace | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|
-| `x` | 0.1, no end | 0 (0 charges) | 0 (0 charges) |
-| `x - x` | 1.2, ends at step 3 (final) | 0 (0 charges) | 0 (0 charges) |
-| `x x` | 1.2, ends at step 2 (final) | 0 (0 charges) | 0 (0 charges) |
+| `x` | 0.1, no end | 0.1 (0 charges) | 0.1 (0 charges) |
+| `x - x` | 1.2, ends at step 3 (final) | 0.2 (0 charges) | 0.2 (0 charges) |
+| `x x` | 1.2, ends at step 2 (final) | 0.2 (0 charges) | 0.2 (0 charges) |
 | `- - -` | 0, no end | 0 (0 charges) | 0 (0 charges) |
 
 **ExistenceTwo next to the goal `Existence(at_goal)`**
@@ -534,13 +543,17 @@ TRANSITION_FUNCTION:
 (u0, door_open&amp;!has_key) -&gt; u2
 (u0, door_open&amp;has_key) -&gt; u1
 (u2, has_key) -&gt; u1
-REWARD_FUNCTION:</pre>
+REWARD_FUNCTION:
+(u0, door_open&amp;!has_key, u2) -&gt; -0.1
+(u2, has_key, u1) -&gt; 0.1</pre>
 </details>
 </td>
 </tr></table>
 
-**Hard and soft, alone.** No effect. The machine has no final, so a missing `y` blocks nothing and
-costs nothing, and the rule never reaches the well. The summary shows 0 in every column.
+**Hard and soft, alone.** The machine has no final, so a missing `y` blocks nothing, and the rule
+never reaches the well. Progress aims at the states where no `y` is owed: the `x` that leaves a `y`
+owed costs 0.1 and the `y` pays it back (`x y` totals 0), so an `x` left unanswered when the trace
+ends totals −0.1 (`x -` in the summary). Hard and soft are the same machine.
 
 **RespondedExistence, all traces**
 
@@ -549,16 +562,16 @@ costs nothing, and the rule never reaches the well. The summary shows 0 in every
 | `y x` | 0, no end | 0 (0 charges) | 0 (0 charges) |
 | `x y` | 0, no end | 0 (0 charges) | 0 (0 charges) |
 | `x x y` | 0, no end | 0 (0 charges) | 0 (0 charges) |
-| `x -` | 0, no end | 0 (0 charges) | 0 (0 charges) |
+| `x -` | −0.1, no end | −0.1 (0 charges) | −0.1 (0 charges) |
 | `- -` | 0, no end | 0 (0 charges) | 0 (0 charges) |
 
 **RespondedExistence, trace `x x y`**
 
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u2, 0 | u2, 0 | u2, 0 |
+| 1 | `x` | u2, −0.1 | u2, −0.1 | u2, −0.1 |
 | 2 | `x` | u2, 0 | u2, 0 | u2, 0 |
-| 3 | `y` | u1, 0 | u1, 0 | u1, 0 |
+| 3 | `y` | u1, 0.1 | u1, 0.1 | u1, 0.1 |
 | **Total** | | 0 | 0 (0 charges) | 0 (0 charges) |
 
 **Next to a goal.** The effect shows at the finish. In the hard run an owed `y` blocks the final:
@@ -663,13 +676,16 @@ DEFAULT_REWARD: 0
 TRANSITION_FUNCTION:
 (u0, !door_open&amp;has_key) -&gt; u1
 (u1, door_open) -&gt; u0
-REWARD_FUNCTION:</pre>
+REWARD_FUNCTION:
+(u0, !door_open&amp;has_key, u1) -&gt; -0.1
+(u1, door_open, u0) -&gt; 0.1</pre>
 </details>
 </td>
 </tr></table>
 
-**Hard and soft, alone.** No effect, as for RespondedExistence: no final to block or to price, and
-no well.
+**Hard and soft, alone.** As for RespondedExistence: no final to block, and no well. The `x` that
+opens an obligation costs 0.1 and the `y` that answers it pays it back; an `x` still unanswered when
+the trace ends totals −0.1. Hard and soft are the same machine.
 
 **Response, all traces**
 
@@ -678,8 +694,8 @@ no well.
 | `x y` | 0, no end | 0 (0 charges) | 0 (0 charges) |
 | `x x y` | 0, no end | 0 (0 charges) | 0 (0 charges) |
 | `x - y` | 0, no end | 0 (0 charges) | 0 (0 charges) |
-| `x x` | 0, no end | 0 (0 charges) | 0 (0 charges) |
-| `x y x` | 0, no end | 0 (0 charges) | 0 (0 charges) |
+| `x x` | −0.1, no end | −0.1 (0 charges) | −0.1 (0 charges) |
+| `x y x` | −0.1, no end | −0.1 (0 charges) | −0.1 (0 charges) |
 | `y` | 0, no end | 0 (0 charges) | 0 (0 charges) |
 | `- -` | 0, no end | 0 (0 charges) | 0 (0 charges) |
 | `xy` | 0, no end | 0 (0 charges) | 0 (0 charges) |
@@ -688,9 +704,9 @@ no well.
 
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u1, 0 | u1, 0 | u1, 0 |
+| 1 | `x` | u1, −0.1 | u1, −0.1 | u1, −0.1 |
 | 2 | `x` | u1, 0 | u1, 0 | u1, 0 |
-| 3 | `y` | u0, 0 | u0, 0 | u0, 0 |
+| 3 | `y` | u0, 0.1 | u0, 0.1 | u0, 0.1 |
 | **Total** | | 0 | 0 (0 charges) | 0 (0 charges) |
 
 `x x y` keeps the rule: one `y` answers every earlier `x`. A `y` on the same step as `x` also
@@ -753,8 +769,8 @@ since after a `y` the machine is back in `u0`, and the next `x` opens a new obli
 | Trace | Response | Variant WithinOneStep |
 |---|---|---|
 | `x y` | 0, no end; charges 0 / 0 | 0, no end; charges 0 / 0 |
-| `x - y` | 0, no end; charges 0 / 0 | −1, ends at step 2 (well); charges 1 / 1 |
-| `x - -` | 0, no end; charges 0 / 0 | −1, ends at step 2 (well); charges 1 / 1 |
+| `x - y` | 0, no end; charges 0 / 0 | −1.1, ends at step 2 (well); charges 1 / 1 |
+| `x - -` | −0.1, no end; charges 0 / 0 | −1.1, ends at step 2 (well); charges 1 / 1 |
 
 ## 6 Precedence
 
@@ -1006,7 +1022,9 @@ TRANSITION_FUNCTION:
 (u1, !door_open) -&gt; u2
 (u1, door_open&amp;!has_key) -&gt; u0
 REWARD_FUNCTION:
-(u1, !door_open, u2) -&gt; -1</pre>
+(u0, has_key, u1) -&gt; -0.1
+(u1, !door_open, u2) -&gt; -1
+(u1, door_open&amp;!has_key, u0) -&gt; 0.1</pre>
 </details>
 </td>
 <td valign="top">
@@ -1023,7 +1041,9 @@ TRANSITION_FUNCTION:
 (u1, !door_open) -&gt; u2
 (u1, door_open&amp;!has_key) -&gt; u0
 REWARD_FUNCTION:
-(u1, !door_open, u2) -&gt; -0.5</pre>
+(u0, has_key, u1) -&gt; -0.1
+(u1, !door_open, u2) -&gt; -0.4
+(u1, door_open&amp;!has_key, u0) -&gt; 0.1</pre>
 </details>
 </td>
 <td valign="top">
@@ -1042,7 +1062,10 @@ TRANSITION_FUNCTION:
 (u2, !has_key) -&gt; u0
 (u2, has_key) -&gt; u1
 REWARD_FUNCTION:
-(u1, !door_open, u2) -&gt; -0.5</pre>
+(u0, has_key, u1) -&gt; -0.1
+(u1, !door_open, u2) -&gt; -0.4
+(u1, door_open&amp;!has_key, u0) -&gt; 0.1
+(u2, has_key, u1) -&gt; -0.1</pre>
 </details>
 </td>
 </tr></table>
@@ -1060,48 +1083,48 @@ from the step after the break.
 | Next step | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|
 | `-` | u2, 0 | u0, 0 |
-| `x` | u2, 0 | u1, 0 |
+| `x` | u2, 0 | u1, −0.1 |
 | `y` | u2, 0 | u0, 0 |
-| `xy` | u2, 0 | u1, 0 |
+| `xy` | u2, 0 | u1, −0.1 |
 
 **ChainResponse, all traces**
 
 | Trace | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|
 | `x y` | 0, no end | 0 (0 charges) | 0 (0 charges) |
-| `x - x -` | −1, ends at step 2 (well) | −0.5 (1 charge) | −1 (2 charges) |
-| `x x -` | −1, ends at step 2 (well) | −0.5 (1 charge) | −0.5 (1 charge) |
-| `x -` | −1, ends at step 2 (well) | −0.5 (1 charge) | −0.5 (1 charge) |
-| `x xy -` | −1, ends at step 3 (well) | −0.5 (1 charge) | −0.5 (1 charge) |
+| `x - x -` | −1.1, ends at step 2 (well) | −0.5 (1 charge) | −1 (2 charges) |
+| `x x -` | −1.1, ends at step 2 (well) | −0.5 (1 charge) | −0.5 (1 charge) |
+| `x -` | −1.1, ends at step 2 (well) | −0.5 (1 charge) | −0.5 (1 charge) |
+| `x xy -` | −1.1, ends at step 3 (well) | −0.5 (1 charge) | −0.5 (1 charge) |
 | `x y x y` | 0, no end | 0 (0 charges) | 0 (0 charges) |
 
 **ChainResponse, trace `x - x -`**
 
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u1, 0 | u1, 0 | u1, 0 |
-| 2 | `-` | u2 (well), −1 | u2, −0.5 | u2, −0.5 |
-| 3 | `x` | — | u2, 0 | u1, 0 |
-| 4 | `-` | — | u2, 0 | u2, −0.5 |
-| **Total** | | −1 | −0.5 (1 charge) | −1 (2 charges) |
+| 1 | `x` | u1, −0.1 | u1, −0.1 | u1, −0.1 |
+| 2 | `-` | u2 (well), −1 | u2, −0.4 | u2, −0.4 |
+| 3 | `x` | — | u2, 0 | u1, −0.1 |
+| 4 | `-` | — | u2, 0 | u2, −0.4 |
+| **Total** | | −1.1 | −0.5 (1 charge) | −1 (2 charges) |
 
 **ChainResponse, trace `x x -`**
 
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u1, 0 | u1, 0 | u1, 0 |
-| 2 | `x` | u2 (well), −1 | u2, −0.5 | u2, −0.5 |
+| 1 | `x` | u1, −0.1 | u1, −0.1 | u1, −0.1 |
+| 2 | `x` | u2 (well), −1 | u2, −0.4 | u2, −0.4 |
 | 3 | `-` | — | u2, 0 | u0, 0 |
-| **Total** | | −1 | −0.5 (1 charge) | −0.5 (1 charge) |
+| **Total** | | −1.1 | −0.5 (1 charge) | −0.5 (1 charge) |
 
 **ChainResponse, trace `x xy -`**
 
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u1, 0 | u1, 0 | u1, 0 |
+| 1 | `x` | u1, −0.1 | u1, −0.1 | u1, −0.1 |
 | 2 | `xy` | u1, 0 | u1, 0 | u1, 0 |
-| 3 | `-` | u2 (well), −1 | u2, −0.5 | u2, −0.5 |
-| **Total** | | −1 | −0.5 (1 charge) | −0.5 (1 charge) |
+| 3 | `-` | u2 (well), −1 | u2, −0.4 | u2, −0.4 |
+| **Total** | | −1.1 | −0.5 (1 charge) | −0.5 (1 charge) |
 
 `x - x -` charges twice: the first `x` breaks at step 2; the `x` at step 3 is read from the start, so
 it opens a new obligation that step 4 breaks. `x xy -` shows the chain: the `y` of step 2 answers

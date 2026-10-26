@@ -1,5 +1,5 @@
 # Clause semantics: every trace, walked through the real compiler and runtime
-Rewards: soft break −0.5, well −1, completion 1, progress 0.1 per step closer to the final, soft rule open at the finish −0.5
+Rewards: soft break −0.5, well −1, completion 1, progress 0.1 per step closer to the final (with none, to the states where no rule is pending), soft rule open at the finish −0.5
 
 ## Existence
 x = has_key
@@ -43,6 +43,7 @@ DEFAULT_REWARD: 0
 TRANSITION_FUNCTION:
 (u0, has_key) -> u1
 REWARD_FUNCTION:
+(u0, has_key, u1) -> 0.1
 ```
 #### Soft, recurrent on (default) (graph graphs/Existence.soft.svg)
 final -, well -
@@ -57,12 +58,13 @@ DEFAULT_REWARD: 0
 TRANSITION_FUNCTION:
 (u0, has_key) -> u1
 REWARD_FUNCTION:
+(u0, has_key, u1) -> 0.1
 ```
 ### Summary
 | Trace | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|
-| `- - x` | 1.1, ends at step 3 (final) | 0 (0 charges) | 0 (0 charges) |
-| `x x` | 1.1, ends at step 1 (final) | 0 (0 charges) | 0 (0 charges) |
+| `- - x` | 1.1, ends at step 3 (final) | 0.1 (0 charges) | 0.1 (0 charges) |
+| `x x` | 1.1, ends at step 1 (final) | 0.1 (0 charges) | 0.1 (0 charges) |
 | `- -` | 0, no end | 0 (0 charges) | 0 (0 charges) |
 ### Traces
 #### Existence: - - x
@@ -70,14 +72,14 @@ REWARD_FUNCTION:
 |---|---|---|---|---|
 | 1 | `-` | u0, 0 | u0, 0 | u0, 0 |
 | 2 | `-` | u0, 0 | u0, 0 | u0, 0 |
-| 3 | `x` | u1 (final), 1.1 | u1, 0 | u1, 0 |
-| **Total** | | 1.1 | 0 (0 charges) | 0 (0 charges) |
+| 3 | `x` | u1 (final), 1.1 | u1, 0.1 | u1, 0.1 |
+| **Total** | | 1.1 | 0.1 (0 charges) | 0.1 (0 charges) |
 #### Existence: x x
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u1 (final), 1.1 | u1, 0 | u1, 0 |
+| 1 | `x` | u1 (final), 1.1 | u1, 0.1 | u1, 0.1 |
 | 2 | `x` | — | u1, 0 | u1, 0 |
-| **Total** | | 1.1 | 0 (0 charges) | 0 (0 charges) |
+| **Total** | | 1.1 | 0.1 (0 charges) | 0.1 (0 charges) |
 #### Existence: - -
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
@@ -134,6 +136,8 @@ TRANSITION_FUNCTION:
 (u0, door_open) -> u1
 (u1, door_open) -> u2
 REWARD_FUNCTION:
+(u0, door_open, u1) -> 0.1
+(u1, door_open, u2) -> 0.1
 ```
 #### Soft, recurrent on (default) (graph graphs/ExistenceTwo.soft.svg)
 final -, well -
@@ -150,33 +154,35 @@ TRANSITION_FUNCTION:
 (u0, door_open) -> u1
 (u1, door_open) -> u2
 REWARD_FUNCTION:
+(u0, door_open, u1) -> 0.1
+(u1, door_open, u2) -> 0.1
 ```
 ### Summary
 | Trace | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|
-| `x` | 0.1, no end | 0 (0 charges) | 0 (0 charges) |
-| `x - x` | 1.2, ends at step 3 (final) | 0 (0 charges) | 0 (0 charges) |
-| `x x` | 1.2, ends at step 2 (final) | 0 (0 charges) | 0 (0 charges) |
+| `x` | 0.1, no end | 0.1 (0 charges) | 0.1 (0 charges) |
+| `x - x` | 1.2, ends at step 3 (final) | 0.2 (0 charges) | 0.2 (0 charges) |
+| `x x` | 1.2, ends at step 2 (final) | 0.2 (0 charges) | 0.2 (0 charges) |
 | `- - -` | 0, no end | 0 (0 charges) | 0 (0 charges) |
 ### Traces
 #### ExistenceTwo: x
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u1, 0.1 | u1, 0 | u1, 0 |
-| **Total** | | 0.1 | 0 (0 charges) | 0 (0 charges) |
+| 1 | `x` | u1, 0.1 | u1, 0.1 | u1, 0.1 |
+| **Total** | | 0.1 | 0.1 (0 charges) | 0.1 (0 charges) |
 #### ExistenceTwo: x - x
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u1, 0.1 | u1, 0 | u1, 0 |
+| 1 | `x` | u1, 0.1 | u1, 0.1 | u1, 0.1 |
 | 2 | `-` | u1, 0 | u1, 0 | u1, 0 |
-| 3 | `x` | u2 (final), 1.1 | u2, 0 | u2, 0 |
-| **Total** | | 1.2 | 0 (0 charges) | 0 (0 charges) |
+| 3 | `x` | u2 (final), 1.1 | u2, 0.1 | u2, 0.1 |
+| **Total** | | 1.2 | 0.2 (0 charges) | 0.2 (0 charges) |
 #### ExistenceTwo: x x
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u1, 0.1 | u1, 0 | u1, 0 |
-| 2 | `x` | u2 (final), 1.1 | u2, 0 | u2, 0 |
-| **Total** | | 1.2 | 0 (0 charges) | 0 (0 charges) |
+| 1 | `x` | u1, 0.1 | u1, 0.1 | u1, 0.1 |
+| 2 | `x` | u2 (final), 1.1 | u2, 0.1 | u2, 0.1 |
+| **Total** | | 1.2 | 0.2 (0 charges) | 0.2 (0 charges) |
 #### ExistenceTwo: - - -
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
@@ -346,6 +352,8 @@ TRANSITION_FUNCTION:
 (u0, door_open&has_key) -> u1
 (u2, has_key) -> u1
 REWARD_FUNCTION:
+(u0, door_open&!has_key, u2) -> -0.1
+(u2, has_key, u1) -> 0.1
 ```
 #### Soft, recurrent off (graph graphs/RespondedExistence.all.svg)
 final -, well -
@@ -364,6 +372,8 @@ TRANSITION_FUNCTION:
 (u0, door_open&has_key) -> u1
 (u2, has_key) -> u1
 REWARD_FUNCTION:
+(u0, door_open&!has_key, u2) -> -0.1
+(u2, has_key, u1) -> 0.1
 ```
 #### Soft, recurrent on (default) (graph graphs/RespondedExistence.all.svg)
 final -, well -
@@ -382,6 +392,8 @@ TRANSITION_FUNCTION:
 (u0, door_open&has_key) -> u1
 (u2, has_key) -> u1
 REWARD_FUNCTION:
+(u0, door_open&!has_key, u2) -> -0.1
+(u2, has_key, u1) -> 0.1
 ```
 ### Summary
 | Trace | Hard | Soft, recurrent off | Soft, recurrent on (default) |
@@ -389,7 +401,7 @@ REWARD_FUNCTION:
 | `y x` | 0, no end | 0 (0 charges) | 0 (0 charges) |
 | `x y` | 0, no end | 0 (0 charges) | 0 (0 charges) |
 | `x x y` | 0, no end | 0 (0 charges) | 0 (0 charges) |
-| `x -` | 0, no end | 0 (0 charges) | 0 (0 charges) |
+| `x -` | −0.1, no end | −0.1 (0 charges) | −0.1 (0 charges) |
 | `- -` | 0, no end | 0 (0 charges) | 0 (0 charges) |
 ### Traces
 #### RespondedExistence: y x
@@ -401,22 +413,22 @@ REWARD_FUNCTION:
 #### RespondedExistence: x y
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u2, 0 | u2, 0 | u2, 0 |
-| 2 | `y` | u1, 0 | u1, 0 | u1, 0 |
+| 1 | `x` | u2, −0.1 | u2, −0.1 | u2, −0.1 |
+| 2 | `y` | u1, 0.1 | u1, 0.1 | u1, 0.1 |
 | **Total** | | 0 | 0 (0 charges) | 0 (0 charges) |
 #### RespondedExistence: x x y
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u2, 0 | u2, 0 | u2, 0 |
+| 1 | `x` | u2, −0.1 | u2, −0.1 | u2, −0.1 |
 | 2 | `x` | u2, 0 | u2, 0 | u2, 0 |
-| 3 | `y` | u1, 0 | u1, 0 | u1, 0 |
+| 3 | `y` | u1, 0.1 | u1, 0.1 | u1, 0.1 |
 | **Total** | | 0 | 0 (0 charges) | 0 (0 charges) |
 #### RespondedExistence: x -
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u2, 0 | u2, 0 | u2, 0 |
+| 1 | `x` | u2, −0.1 | u2, −0.1 | u2, −0.1 |
 | 2 | `-` | u2, 0 | u2, 0 | u2, 0 |
-| **Total** | | 0 | 0 (0 charges) | 0 (0 charges) |
+| **Total** | | −0.1 | −0.1 (0 charges) | −0.1 (0 charges) |
 #### RespondedExistence: - -
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
@@ -457,6 +469,8 @@ TRANSITION_FUNCTION:
 (u0, !door_open&has_key) -> u1
 (u1, door_open) -> u0
 REWARD_FUNCTION:
+(u0, !door_open&has_key, u1) -> -0.1
+(u1, door_open, u0) -> 0.1
 ```
 #### Soft, recurrent off (graph graphs/Response.all.svg)
 final -, well -
@@ -472,6 +486,8 @@ TRANSITION_FUNCTION:
 (u0, !door_open&has_key) -> u1
 (u1, door_open) -> u0
 REWARD_FUNCTION:
+(u0, !door_open&has_key, u1) -> -0.1
+(u1, door_open, u0) -> 0.1
 ```
 #### Soft, recurrent on (default) (graph graphs/Response.all.svg)
 final -, well -
@@ -487,6 +503,8 @@ TRANSITION_FUNCTION:
 (u0, !door_open&has_key) -> u1
 (u1, door_open) -> u0
 REWARD_FUNCTION:
+(u0, !door_open&has_key, u1) -> -0.1
+(u1, door_open, u0) -> 0.1
 ```
 ### Summary
 | Trace | Hard | Soft, recurrent off | Soft, recurrent on (default) |
@@ -494,8 +512,8 @@ REWARD_FUNCTION:
 | `x y` | 0, no end | 0 (0 charges) | 0 (0 charges) |
 | `x x y` | 0, no end | 0 (0 charges) | 0 (0 charges) |
 | `x - y` | 0, no end | 0 (0 charges) | 0 (0 charges) |
-| `x x` | 0, no end | 0 (0 charges) | 0 (0 charges) |
-| `x y x` | 0, no end | 0 (0 charges) | 0 (0 charges) |
+| `x x` | −0.1, no end | −0.1 (0 charges) | −0.1 (0 charges) |
+| `x y x` | −0.1, no end | −0.1 (0 charges) | −0.1 (0 charges) |
 | `y` | 0, no end | 0 (0 charges) | 0 (0 charges) |
 | `- -` | 0, no end | 0 (0 charges) | 0 (0 charges) |
 | `xy` | 0, no end | 0 (0 charges) | 0 (0 charges) |
@@ -503,36 +521,36 @@ REWARD_FUNCTION:
 #### Response: x y
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u1, 0 | u1, 0 | u1, 0 |
-| 2 | `y` | u0, 0 | u0, 0 | u0, 0 |
+| 1 | `x` | u1, −0.1 | u1, −0.1 | u1, −0.1 |
+| 2 | `y` | u0, 0.1 | u0, 0.1 | u0, 0.1 |
 | **Total** | | 0 | 0 (0 charges) | 0 (0 charges) |
 #### Response: x x y
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u1, 0 | u1, 0 | u1, 0 |
+| 1 | `x` | u1, −0.1 | u1, −0.1 | u1, −0.1 |
 | 2 | `x` | u1, 0 | u1, 0 | u1, 0 |
-| 3 | `y` | u0, 0 | u0, 0 | u0, 0 |
+| 3 | `y` | u0, 0.1 | u0, 0.1 | u0, 0.1 |
 | **Total** | | 0 | 0 (0 charges) | 0 (0 charges) |
 #### Response: x - y
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u1, 0 | u1, 0 | u1, 0 |
+| 1 | `x` | u1, −0.1 | u1, −0.1 | u1, −0.1 |
 | 2 | `-` | u1, 0 | u1, 0 | u1, 0 |
-| 3 | `y` | u0, 0 | u0, 0 | u0, 0 |
+| 3 | `y` | u0, 0.1 | u0, 0.1 | u0, 0.1 |
 | **Total** | | 0 | 0 (0 charges) | 0 (0 charges) |
 #### Response: x x
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u1, 0 | u1, 0 | u1, 0 |
+| 1 | `x` | u1, −0.1 | u1, −0.1 | u1, −0.1 |
 | 2 | `x` | u1, 0 | u1, 0 | u1, 0 |
-| **Total** | | 0 | 0 (0 charges) | 0 (0 charges) |
+| **Total** | | −0.1 | −0.1 (0 charges) | −0.1 (0 charges) |
 #### Response: x y x
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u1, 0 | u1, 0 | u1, 0 |
-| 2 | `y` | u0, 0 | u0, 0 | u0, 0 |
-| 3 | `x` | u1, 0 | u1, 0 | u1, 0 |
-| **Total** | | 0 | 0 (0 charges) | 0 (0 charges) |
+| 1 | `x` | u1, −0.1 | u1, −0.1 | u1, −0.1 |
+| 2 | `y` | u0, 0.1 | u0, 0.1 | u0, 0.1 |
+| 3 | `x` | u1, −0.1 | u1, −0.1 | u1, −0.1 |
+| **Total** | | −0.1 | −0.1 (0 charges) | −0.1 (0 charges) |
 #### Response: y
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
@@ -777,7 +795,9 @@ TRANSITION_FUNCTION:
 (u1, !door_open) -> u2
 (u1, door_open&!has_key) -> u0
 REWARD_FUNCTION:
+(u0, has_key, u1) -> -0.1
 (u1, !door_open, u2) -> -1
+(u1, door_open&!has_key, u0) -> 0.1
 ```
 #### Soft, recurrent off (graph graphs/ChainResponse.soft-off.svg)
 final -, well -
@@ -795,7 +815,9 @@ TRANSITION_FUNCTION:
 (u1, !door_open) -> u2
 (u1, door_open&!has_key) -> u0
 REWARD_FUNCTION:
-(u1, !door_open, u2) -> -0.5
+(u0, has_key, u1) -> -0.1
+(u1, !door_open, u2) -> -0.4
+(u1, door_open&!has_key, u0) -> 0.1
 ```
 #### Soft, recurrent on (default) (graph graphs/ChainResponse.soft-on.svg)
 final -, well -
@@ -815,66 +837,69 @@ TRANSITION_FUNCTION:
 (u2, !has_key) -> u0
 (u2, has_key) -> u1
 REWARD_FUNCTION:
-(u1, !door_open, u2) -> -0.5
+(u0, has_key, u1) -> -0.1
+(u1, !door_open, u2) -> -0.4
+(u1, door_open&!has_key, u0) -> 0.1
+(u2, has_key, u1) -> -0.1
 ```
 ### Summary
 | Trace | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|
 | `x y` | 0, no end | 0 (0 charges) | 0 (0 charges) |
-| `x - x -` | −1, ends at step 2 (well) | −0.5 (1 charge) | −1 (2 charges) |
-| `x x -` | −1, ends at step 2 (well) | −0.5 (1 charge) | −0.5 (1 charge) |
-| `x -` | −1, ends at step 2 (well) | −0.5 (1 charge) | −0.5 (1 charge) |
-| `x xy -` | −1, ends at step 3 (well) | −0.5 (1 charge) | −0.5 (1 charge) |
+| `x - x -` | −1.1, ends at step 2 (well) | −0.5 (1 charge) | −1 (2 charges) |
+| `x x -` | −1.1, ends at step 2 (well) | −0.5 (1 charge) | −0.5 (1 charge) |
+| `x -` | −1.1, ends at step 2 (well) | −0.5 (1 charge) | −0.5 (1 charge) |
+| `x xy -` | −1.1, ends at step 3 (well) | −0.5 (1 charge) | −0.5 (1 charge) |
 | `x y x y` | 0, no end | 0 (0 charges) | 0 (0 charges) |
 ### After a charge: ChainResponse
 | Next step | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|
 | `-` | u2, 0 | u0, 0 |
-| `x` | u2, 0 | u1, 0 |
+| `x` | u2, 0 | u1, −0.1 |
 | `y` | u2, 0 | u0, 0 |
-| `xy` | u2, 0 | u1, 0 |
+| `xy` | u2, 0 | u1, −0.1 |
 ### Traces
 #### ChainResponse: x y
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u1, 0 | u1, 0 | u1, 0 |
-| 2 | `y` | u0, 0 | u0, 0 | u0, 0 |
+| 1 | `x` | u1, −0.1 | u1, −0.1 | u1, −0.1 |
+| 2 | `y` | u0, 0.1 | u0, 0.1 | u0, 0.1 |
 | **Total** | | 0 | 0 (0 charges) | 0 (0 charges) |
 #### ChainResponse: x - x -
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u1, 0 | u1, 0 | u1, 0 |
-| 2 | `-` | u2 (well), −1 | u2, −0.5 | u2, −0.5 |
-| 3 | `x` | — | u2, 0 | u1, 0 |
-| 4 | `-` | — | u2, 0 | u2, −0.5 |
-| **Total** | | −1 | −0.5 (1 charge) | −1 (2 charges) |
+| 1 | `x` | u1, −0.1 | u1, −0.1 | u1, −0.1 |
+| 2 | `-` | u2 (well), −1 | u2, −0.4 | u2, −0.4 |
+| 3 | `x` | — | u2, 0 | u1, −0.1 |
+| 4 | `-` | — | u2, 0 | u2, −0.4 |
+| **Total** | | −1.1 | −0.5 (1 charge) | −1 (2 charges) |
 #### ChainResponse: x x -
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u1, 0 | u1, 0 | u1, 0 |
-| 2 | `x` | u2 (well), −1 | u2, −0.5 | u2, −0.5 |
+| 1 | `x` | u1, −0.1 | u1, −0.1 | u1, −0.1 |
+| 2 | `x` | u2 (well), −1 | u2, −0.4 | u2, −0.4 |
 | 3 | `-` | — | u2, 0 | u0, 0 |
-| **Total** | | −1 | −0.5 (1 charge) | −0.5 (1 charge) |
+| **Total** | | −1.1 | −0.5 (1 charge) | −0.5 (1 charge) |
 #### ChainResponse: x -
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u1, 0 | u1, 0 | u1, 0 |
-| 2 | `-` | u2 (well), −1 | u2, −0.5 | u2, −0.5 |
-| **Total** | | −1 | −0.5 (1 charge) | −0.5 (1 charge) |
+| 1 | `x` | u1, −0.1 | u1, −0.1 | u1, −0.1 |
+| 2 | `-` | u2 (well), −1 | u2, −0.4 | u2, −0.4 |
+| **Total** | | −1.1 | −0.5 (1 charge) | −0.5 (1 charge) |
 #### ChainResponse: x xy -
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u1, 0 | u1, 0 | u1, 0 |
+| 1 | `x` | u1, −0.1 | u1, −0.1 | u1, −0.1 |
 | 2 | `xy` | u1, 0 | u1, 0 | u1, 0 |
-| 3 | `-` | u2 (well), −1 | u2, −0.5 | u2, −0.5 |
-| **Total** | | −1 | −0.5 (1 charge) | −0.5 (1 charge) |
+| 3 | `-` | u2 (well), −1 | u2, −0.4 | u2, −0.4 |
+| **Total** | | −1.1 | −0.5 (1 charge) | −0.5 (1 charge) |
 #### ChainResponse: x y x y
 | Step | Labels | Hard | Soft, recurrent off | Soft, recurrent on (default) |
 |---|---|---|---|---|
-| 1 | `x` | u1, 0 | u1, 0 | u1, 0 |
-| 2 | `y` | u0, 0 | u0, 0 | u0, 0 |
-| 3 | `x` | u1, 0 | u1, 0 | u1, 0 |
-| 4 | `y` | u0, 0 | u0, 0 | u0, 0 |
+| 1 | `x` | u1, −0.1 | u1, −0.1 | u1, −0.1 |
+| 2 | `y` | u0, 0.1 | u0, 0.1 | u0, 0.1 |
+| 3 | `x` | u1, −0.1 | u1, −0.1 | u1, −0.1 |
+| 4 | `y` | u0, 0.1 | u0, 0.1 | u0, 0.1 |
 | **Total** | | 0 | 0 (0 charges) | 0 (0 charges) |
 
 ## NotCoExistence
@@ -1954,7 +1979,9 @@ TRANSITION_FUNCTION:
 (u1, !door_open) -> u2
 (u1, door_open) -> u0
 REWARD_FUNCTION:
+(u0, !door_open&has_key, u1) -> -0.1
 (u1, !door_open, u2) -> -1
+(u1, door_open, u0) -> 0.1
 ```
 #### Soft, recurrent off (graph graphs/Variant.WithinOneStep.soft-off.svg)
 final -, well -
@@ -1972,7 +1999,9 @@ TRANSITION_FUNCTION:
 (u1, !door_open) -> u2
 (u1, door_open) -> u0
 REWARD_FUNCTION:
-(u1, !door_open, u2) -> -0.5
+(u0, !door_open&has_key, u1) -> -0.1
+(u1, !door_open, u2) -> -0.4
+(u1, door_open, u0) -> 0.1
 ```
 #### Soft, recurrent on (default) (graph graphs/Variant.WithinOneStep.soft-on.svg)
 final -, well -
@@ -1993,14 +2022,17 @@ TRANSITION_FUNCTION:
 (u2, !door_open&has_key) -> u1
 (u2, door_open) -> u0
 REWARD_FUNCTION:
-(u1, !door_open, u2) -> -0.5
+(u0, !door_open&has_key, u1) -> -0.1
+(u1, !door_open, u2) -> -0.4
+(u1, door_open, u0) -> 0.1
+(u2, !door_open&has_key, u1) -> -0.1
 ```
 ### Contrast
 | Trace | Response | Variant WithinOneStep |
 |---|---|---|
 | `x y` | 0, no end; charges 0 / 0 | 0, no end; charges 0 / 0 |
-| `x - y` | 0, no end; charges 0 / 0 | −1, ends at step 2 (well); charges 1 / 1 |
-| `x - -` | 0, no end; charges 0 / 0 | −1, ends at step 2 (well); charges 1 / 1 |
+| `x - y` | 0, no end; charges 0 / 0 | −1.1, ends at step 2 (well); charges 1 / 1 |
+| `x - -` | −0.1, no end; charges 0 / 0 | −1.1, ends at step 2 (well); charges 1 / 1 |
 
 ## Variant ExistenceThree: x at three different steps
 x = door_open
@@ -2058,6 +2090,9 @@ TRANSITION_FUNCTION:
 (u1, door_open) -> u2
 (u2, door_open) -> u3
 REWARD_FUNCTION:
+(u0, door_open, u1) -> 0.1
+(u1, door_open, u2) -> 0.1
+(u2, door_open, u3) -> 0.1
 ```
 #### Soft, recurrent on (default) (graph graphs/Variant.ExistenceThree.soft.svg)
 final -, well -
@@ -2076,6 +2111,9 @@ TRANSITION_FUNCTION:
 (u1, door_open) -> u2
 (u2, door_open) -> u3
 REWARD_FUNCTION:
+(u0, door_open, u1) -> 0.1
+(u1, door_open, u2) -> 0.1
+(u2, door_open, u3) -> 0.1
 ```
 ### Contrast
 | Trace | ExistenceTwo | Variant ExistenceThree |
@@ -2218,6 +2256,9 @@ TRANSITION_FUNCTION:
 (u1, !door_open) -> u2
 (u2, door_open) -> u3
 REWARD_FUNCTION:
+(u0, door_open, u1) -> 0.1
+(u1, !door_open, u2) -> 0.1
+(u2, door_open, u3) -> 0.1
 ```
 #### Soft, recurrent on (default) (graph graphs/Variant.TwoSeparate.soft.svg)
 final -, well -
@@ -2236,6 +2277,9 @@ TRANSITION_FUNCTION:
 (u1, !door_open) -> u2
 (u2, door_open) -> u3
 REWARD_FUNCTION:
+(u0, door_open, u1) -> 0.1
+(u1, !door_open, u2) -> 0.1
+(u2, door_open, u3) -> 0.1
 ```
 ### Contrast
 | Trace | ExistenceTwo | Variant TwoSeparate |

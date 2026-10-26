@@ -160,3 +160,54 @@ It ends with `192 asserted counts checked, 0 differ` and
 `app/src/compiler/reward_layer.py`; the design is in `docs/COMPILER_REWARD_DESIGN.md`. Branch
 `docs/clause-semantics-appendix`, from `05f13d8`; not committed when this entry was written.
 The note on which soft rules recur is in [`recurrent-soft-rules/`](recurrent-soft-rules/README.md).
+
+### Rule-only progress, simulated (`rule-only-progress/`), 2026-10-26
+
+**What it shows.** Proposal P2 simulated before any code change. A task made only of rules has no
+final state, so today its progress reward pays 0. P2 measures progress toward the states where no
+rule clause is still waiting (each is kept or already broken): +0.1 per step closer, -0.1 per step
+away, only when the task has no final state. The page shows all 16 machines (the eight IBM templates
+alone, hard and soft), the Reward Machine today and with P2 for each changed one, and the traces
+walked on both with their totals. The examples for rules that wait are events the environment
+causes (a box falls, an alarm rings, the power goes out) and the agent only recovers: the trigger
+costs 0.1 until the promise is kept, and when the agent controls the trigger the 0.1 comes back when
+it keeps the promise, so the total is the same (apart from discounting). The note ends with what P2
+leaves open and the next step in the user's framing: the machine "accepting" or "rejecting" the
+"string of propositions" the environment generates.
+
+**Evidence.**
+- 20 compiled machines (the 16 plus four soft rows with the recurrent soft rules off): 9 change,
+  among them 8 of the 16 (soft Existence and ExistenceTwo; RespondedExistence, Response and
+  ChainResponse, hard and soft). The positive-cycle check is false on all 20, and every machine with
+  a final state (hard Existence, hard ExistenceTwo) is unchanged.
+- 35 traces walked on both machines, with every step's reward checked against the layer's priced
+  edge. A kept rule totals 0 today and with P2; a promise left open at the end totals 0 today and
+  -0.1 with P2; hard ChainResponse broken goes from -1 to -1.1; soft ChainResponse broken stays at
+  -0.5; soft Existence done pays +0.1.
+- Each renamed example matches the one it replaces: same rewards and state count on all 1,364
+  input sequences up to 5 steps, today and with P2, for 9 pairs.
+
+**Files.**
+- `index.html`: open it in a browser. A summary table, one card per changed machine with an "RM text"
+  fold-out, trace tables, and "What P2 leaves open". `data.json`: the page's content.
+- `README.md`: the note. `graphs/`: the 18 graphs as live HTML.
+- `check/`: the script (`p2_sim.py`), the check on the real code (`real_code_check.py`), the page
+  builder (`build_page.py`) and the outputs (`results.json`, `rm-texts.txt`, `traces.txt`).
+
+**Rerun** from the repository root, inside `RM_RL_env`. "Today" is the code of `e0a054a`, so the
+simulation runs against a copy of it:
+
+```bash
+COPY=$(mktemp -d); git archive e0a054a app | tar -x -C "$COPY"
+PYTHONPATH="$COPY/app" python -W ignore docs/paper/rule-only-progress/check/p2_sim.py
+```
+
+It prints one line per machine and the traces, and ends with `20 machines, 9 changed; positive-cycle
+check false on every machine; every machine with a final unchanged; every renamed example matches the
+one it replaces`. The real code is checked with
+`PYTHONPATH=app python -W ignore docs/paper/rule-only-progress/check/real_code_check.py`. No LLM call.
+
+**Code.** Implemented in `app/src/compiler/reward_layer.py` (`_progress` and `_price_edges`) on branch
+`feat/rule-only-rewards`, base commit `e0a054a`; not committed when this entry was updated. The real code
+compiles the 20 machines to exactly the P2 texts (`check/real_code_check.py`). The simulation itself
+reproduces only on the code of `e0a054a`; the entry's README says how to rerun it.

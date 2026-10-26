@@ -51,6 +51,20 @@ BOUNCE = {
         ("D", ""): "D",
     },
 }
+# G(x -> F y): `x` without `y` leaves an answer owed (state Q) until a later `y`.
+RESPONSE = {
+    "alphabet": {"x", "y"},
+    "states": {"R", "Q"},
+    "initial_state": "R",
+    "accepting_states": {"R"},
+    "transitions": {
+        ("R", "!x"): "R",
+        ("R", "x&y"): "R",
+        ("R", "x&!y"): "Q",
+        ("Q", "y"): "R",
+        ("Q", "!y"): "Q",
+    },
+}
 
 
 def rewards_of(clauses, soft, propositions, steps, recurrent_soft_penalty=True):
@@ -122,6 +136,23 @@ class RewardLayerTests(unittest.TestCase):
             rewards_of(*never_lava, [{"lava"}, set(), {"lava"}], recurrent_soft_penalty=False),
             [-0.5, 0.0, 0.0],
         )
+
+    def test_without_a_final_progress_runs_toward_the_states_where_no_answer_is_owed(self):
+        for soft in (False, True):
+            with self.subTest(soft=soft):
+                clauses, priorities, propositions = (RESPONSE,), (soft,), ("x", "y")
+
+                # The trigger costs one step of progress and the answer pays it back.
+                self.assertEqual(
+                    rewards_of(clauses, priorities, propositions, [{"x"}, {"y"}]), [-0.1, 0.1]
+                )
+                self.assertEqual(
+                    rewards_of(clauses, priorities, propositions, [{"x"}, set(), {"y"}]),
+                    [-0.1, 0.0, 0.1],
+                )
+                result = build_reward_machine(clauses, priorities)
+                self.assertIsNone(result.reward_machine.final_state)
+                self.assertEqual(result.inert_soft_clauses, ())
 
     def test_a_hard_goal_that_a_hard_rule_forbids_is_rejected(self):
         forbids_goal = {

@@ -84,8 +84,8 @@ def build_reward_machine(
     ``soft[i]`` marks clause ``i`` soft; the others are hard. With ``recurrent_soft_penalty`` a
     soft rule's violated state takes the start state's edges, so each new break pays again
     instead of once per episode. Without a hard goal clause the machine has no final
-    state (a rule-only task). Raises ``ValueError`` on a non-total DFA, conflicting clauses, or
-    a positive reward cycle.
+    state (a rule-only task), and progress aims at the states where no clause is pending.
+    Raises ``ValueError`` on a non-total DFA, conflicting clauses, or a positive reward cycle.
     """
     if len(dfas) != len(soft):
         raise ValueError(
@@ -328,9 +328,14 @@ def _price_edges(
     finals: set[str],
     soft_clauses: Sequence[int],
 ) -> tuple[list[tuple[_Edge, float]], set[int]]:
-    """Reward each edge from its destination's clause labels; also return the soft clauses paid."""
+    """Reward each edge from its destination's clause labels; also return the soft clauses paid.
+
+    With no final, progress pays a soft clause where the clause starts or stops waiting. That is
+    a proxy, approximate both ways: it can call a clause paid that changes nothing, or inert when
+    it changes rewards.
+    """
     labels = product.labels
-    progress = _progress(edges, finals)
+    progress = _progress(edges, product, finals)
     paying: set[int] = set()
     priced = []
     for edge in edges:
@@ -343,10 +348,10 @@ def _price_edges(
         if finishing:
             reward += Configuration.TASK_COMPLETION_REWARD
         for clause in soft_clauses:
-            term = _soft_term(
-                labels[edge.source][clause], labels[edge.destination][clause], finishing
-            )
-            if term:
+            before, after = labels[edge.source][clause], labels[edge.destination][clause]
+            term = _soft_term(before, after, finishing)
+            waits = (before is ClauseState.PENDING) != (after is ClauseState.PENDING)
+            if term or (waits and not finals and progress.get(edge)):
                 paying.add(clause)
                 reward += term
         priced.append((edge, round(reward, 9)))
@@ -362,29 +367,39 @@ def _soft_term(before: ClauseState, after: ClauseState, finishing: bool) -> floa
     return term
 
 
-def _progress(edges: Sequence[_Edge], finals: set[str]) -> dict[_Edge, float]:
-    """Potential-based shaping: pay per step closer to a final along the longest path.
+def _progress(edges: Sequence[_Edge], product: _Product, finals: set[str]) -> dict[_Edge, float]:
+    """Potential-based shaping: pay per step closer to a target along the longest path.
 
-    Each cycle is collapsed to one node, so edges inside a cycle pay nothing and no cycle can
-    be farmed. Edges into the well pay no progress.
+    The targets are the finals. A task without one aims at the states where no clause is
+    pending. Targets absorb: their outgoing edges are left out of the distance, so a rule that
+    waits for an answer (``Response``) still has one. Each cycle is collapsed to one node, so
+    edges inside a cycle pay nothing and no cycle can be farmed. Edges into the well, and into a
+    state that reaches no target, pay no progress.
     """
-    if not finals:
-        return {}
-
     inner = [edge for edge in edges if edge.destination != _WELL]
-    graph = _graph((), inner)
+    nodes = {edge.source for edge in edges} | {edge.destination for edge in inner}
+    targets = finals or {
+        state for state in nodes if ClauseState.PENDING not in product.labels[state]
+    }
+    graph = _graph(nodes, [edge for edge in inner if edge.source not in targets])
     dag = nx.condensation(graph)
     components = dag.graph["mapping"]
     steps: dict[int, int] = {}
+    reaches: dict[int, bool] = {}
     for component in reversed(list(nx.topological_sort(dag))):
-        if finals.isdisjoint(dag.nodes[component]["members"]):
-            steps[component] = 1 + max(steps[child] for child in dag.successors(component))
-        else:
-            steps[component] = 0
+        if not targets.isdisjoint(dag.nodes[component]["members"]):
+            steps[component], reaches[component] = 0, True
+            continue
+        ahead = [steps[child] for child in dag.successors(component) if reaches[child]]
+        reaches[component] = bool(ahead)
+        steps[component] = 1 + max(ahead) if ahead else 0
     remaining = {state: steps[component] for state, component in components.items()}
+    reachable = {state for state, component in components.items() if reaches[component]}
 
     return {
         edge: Configuration.PROGRESS_REWARD * (remaining[edge.source] - remaining[edge.destination])
+        if edge.destination in reachable
+        else 0.0
         for edge in inner
     }
 

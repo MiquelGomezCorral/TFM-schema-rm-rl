@@ -1,0 +1,877 @@
+{
+  "title": "Rule-only progress, simulated",
+  "eyebrow": "rule-only rewards · proposal P2 · no code changed",
+  "subtitle": "What the Reward Machines and their rewards would become if a task with no final state paid progress toward the states where every clause is fine. Simulated on the clauses alone: no model, no training.",
+  "sections": [
+    {
+      "title": "What P2 changes",
+      "id": "intro",
+      "blocks": [
+        {
+          "type": "callout",
+          "tone": "info",
+          "title": "P2 in plain words",
+          "text": "A task made only of rules has no goal to reach, so it has no final state and today's progress reward measures toward nothing: it pays 0. P2 gives it something to measure toward, the states where no clause is still waiting on something (each clause is kept or already broken). Each step that gets closer pays +0.1, each step that moves away costs 0.1."
+        },
+        {
+          "type": "list",
+          "items": [
+            "**8 of 16 machines change.** Soft Existence and ExistenceTwo; RespondedExistence, Response and ChainResponse, hard and soft.",
+            "**8 stay the same.** Hard Existence and ExistenceTwo have a final state; Absence, Precedence and NotCoExistence never leave a clause waiting.",
+            "**The examples.** The trigger costs 0.1 until the promise is kept, so the examples use events the environment causes (a box falls, an alarm rings, the power goes out) and the agent only recovers. When the agent controls the trigger, the 0.1 comes back when it keeps the promise, so the total is the same (apart from discounting).",
+            "**The check passed.** No P2 machine has a positive reward cycle (`_has_positive_cycle`), and the hard Existence and ExistenceTwo machines are byte-identical. Each renamed example is the same machine as the one it replaces."
+          ]
+        },
+        {
+          "type": "details",
+          "items": [
+            {
+              "title": "P2 in four steps (technical)",
+              "text": "Only when the task has no final state (no hard goal); otherwise nothing changes.\n\n1. Targets are the product states where no clause is `PENDING`: each clause is `SATISFIED` or `VIOLATED`.\n2. For measuring only, drop the targets' outgoing edges and the edges into the well. Without this, Response's `u0 -> u1 -> u0` loop collapses to one node and pays nothing.\n3. `remaining(u)` is the longest number of steps to a target on that graph, cycles collapsed (the body of `_progress`); 0 at targets, and 0 where no target is reachable.\n4. Every real edge, targets' edges included and well edges excluded, pays `0.1 × (remaining(source) − remaining(destination))` on top of today's price.\n\nRun as a runtime patch of `_price_edges` in `check/p2_sim.py`; no tracked code file is edited."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "All 16 machines at a glance",
+      "id": "glance",
+      "intro": "The eight IBM templates alone, hard and soft. Soft rows use the default, recurrent soft rules on; where the setting changes today's machine, the soft row with it off follows.",
+      "blocks": [
+        {
+          "type": "table",
+          "columns": [
+            "Machine",
+            "Changes with P2",
+            "Why"
+          ],
+          "rows": [
+            [
+              "`Existence(has_key)` hard",
+              {
+                "text": "no",
+                "tone": "muted"
+              },
+              "has a final state: P2 does not apply"
+            ],
+            [
+              "[`Existence(has_key)` soft](#existence-templates)",
+              {
+                "text": "yes",
+                "tone": "info"
+              },
+              "the clause is pending until the key is taken: +0.1 when it is"
+            ],
+            [
+              "`ExistenceTwo(door_open)` hard",
+              {
+                "text": "no",
+                "tone": "muted"
+              },
+              "has a final state: P2 does not apply"
+            ],
+            [
+              "[`ExistenceTwo(door_open)` soft](#existencetwo-templates)",
+              {
+                "text": "yes",
+                "tone": "info"
+              },
+              "pending until the second time: +0.1 for each of the two"
+            ],
+            [
+              "`Absence(key_lost)` hard",
+              {
+                "text": "no",
+                "tone": "muted"
+              },
+              "the clause is never left waiting: every state is already a target, nothing to measure"
+            ],
+            [
+              "`Absence(key_lost)` soft",
+              {
+                "text": "no",
+                "tone": "muted"
+              },
+              "the clause is never left waiting: every state is already a target, nothing to measure"
+            ],
+            [
+              "[`RespondedExistence(power_cut, generator_on)` hard](#respondedexistence-templates)",
+              {
+                "text": "yes",
+                "tone": "info"
+              },
+              "a power cut leaves it pending until the generator runs: -0.1 on the cut, +0.1 when the generator starts"
+            ],
+            [
+              "[`RespondedExistence(power_cut, generator_on)` soft](#respondedexistence-templates)",
+              {
+                "text": "yes",
+                "tone": "info"
+              },
+              "a power cut leaves it pending until the generator runs: -0.1 on the cut, +0.1 when the generator starts"
+            ],
+            [
+              "[`Response(box_fell, box_on_shelf)` hard](#response-templates)",
+              {
+                "text": "yes",
+                "tone": "info"
+              },
+              "a fallen box leaves it pending: -0.1 when it falls, +0.1 when it is back on the shelf"
+            ],
+            [
+              "[`Response(box_fell, box_on_shelf)` soft](#response-templates)",
+              {
+                "text": "yes",
+                "tone": "info"
+              },
+              "a fallen box leaves it pending: -0.1 when it falls, +0.1 when it is back on the shelf"
+            ],
+            [
+              "`Precedence(has_key, door_open)` hard",
+              {
+                "text": "no",
+                "tone": "muted"
+              },
+              "the clause is never left waiting: every state is already a target, nothing to measure"
+            ],
+            [
+              "`Precedence(has_key, door_open)` soft",
+              {
+                "text": "no",
+                "tone": "muted"
+              },
+              "the clause is never left waiting: every state is already a target, nothing to measure"
+            ],
+            [
+              "[`ChainResponse(alarm_rings, alarm_off)` hard](#chainresponse-templates)",
+              {
+                "text": "yes",
+                "tone": "info"
+              },
+              "a ringing alarm leaves it pending for one step: -0.1 when it rings, +0.1 when it is off"
+            ],
+            [
+              "[`ChainResponse(alarm_rings, alarm_off)` soft](#chainresponse-templates)",
+              {
+                "text": "yes",
+                "tone": "info"
+              },
+              "a ringing alarm leaves it pending for one step: -0.1 when it rings, +0.1 when it is off"
+            ],
+            [
+              "`NotCoExistence(has_key, key_lost)` hard",
+              {
+                "text": "no",
+                "tone": "muted"
+              },
+              "the clause is never left waiting: every state is already a target, nothing to measure"
+            ],
+            [
+              "`NotCoExistence(has_key, key_lost)` soft",
+              {
+                "text": "no",
+                "tone": "muted"
+              },
+              "the clause is never left waiting: every state is already a target, nothing to measure"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Existence(has_key): soft",
+      "id": "existence-templates",
+      "intro": "Clause `Existence(has_key)`, LTLf `(F has_key)`. Illustrative tasks, hand-written: *soft: Pick up the key if you can.*",
+      "blocks": [
+        {
+          "type": "gallery",
+          "heading": "The Reward Machine today and with P2",
+          "width": 490,
+          "groups": [
+            {
+              "title": "Soft",
+              "items": [
+                {
+                  "src": "graphs/Existence-has_key.soft.today.html",
+                  "height": 400,
+                  "alt": "Existence(has_key) soft Today",
+                  "caption": "**Today** · 2 states · no final · no well · rewards 0\nTask (illustrative): *Pick up the key if you can.*",
+                  "details": {
+                    "title": "Task, clauses, LTLf and RM text",
+                    "text": "**Task (illustrative, hand-written):** Pick up the key if you can.",
+                    "code": "# IBM clauses in the proposal\nExistence(has_key)  [soft]\n\n# LTLf, one per clause\nExistence(has_key):\n - (F has_key)\n\n# Raw LTLf, as IBM writes it and MONA reads it\n - (Fhas_key)\n\n# RM text, as the compiler writes it\nREWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, has_key) -> u1\nREWARD_FUNCTION:\n# empty: every transition pays 0 (the soft clause is inert: it never changes a reward)"
+                  }
+                },
+                {
+                  "src": "graphs/Existence-has_key.soft.p2.html",
+                  "height": 400,
+                  "alt": "Existence(has_key) soft With P2",
+                  "caption": "**With P2** · 2 states · no final · no well · rewards 0.1\nTask (illustrative): *Pick up the key if you can.*",
+                  "details": {
+                    "title": "Task, clauses, LTLf and RM text",
+                    "text": "**Task (illustrative, hand-written):** Pick up the key if you can.",
+                    "code": "# IBM clauses in the proposal\nExistence(has_key)  [soft]\n\n# LTLf, one per clause\nExistence(has_key):\n - (F has_key)\n\n# Raw LTLf, as IBM writes it and MONA reads it\n - (Fhas_key)\n\n# RM text, as the compiler writes it\nREWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, has_key) -> u1\nREWARD_FUNCTION:\n(u0, has_key, u1) -> 0.1"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "heading": "Traces walked on both machines",
+          "text": "`x` is `has_key`; `-` is a step where neither holds. Each trace runs through the compiled machine today and with P2. A blue total is one P2 changed."
+        },
+        {
+          "type": "table",
+          "heading": "Traces: soft",
+          "columns": [
+            "Trace",
+            "Case",
+            "Today: reward per step",
+            "Today: total",
+            "P2: reward per step",
+            "P2: total",
+            "Clause at the end"
+          ],
+          "rows": [
+            [
+              "`- x -`",
+              "kept",
+              "`0, 0, 0`",
+              "0",
+              "`0, 0.1, 0`",
+              {
+                "text": "0.1",
+                "tone": "info"
+              },
+              "satisfied"
+            ],
+            [
+              "`- - -`",
+              "left open",
+              "`0, 0, 0`",
+              "0",
+              "`0, 0, 0`",
+              "0",
+              "pending"
+            ],
+            [
+              "`x - x`",
+              "done twice",
+              "`0, 0, 0`",
+              "0",
+              "`0.1, 0, 0`",
+              {
+                "text": "0.1",
+                "tone": "info"
+              },
+              "satisfied"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "title": "ExistenceTwo(door_open): soft",
+      "id": "existencetwo-templates",
+      "intro": "Clause `ExistenceTwo(door_open)`, LTLf `(F (door_open & (X (F door_open))))`. Illustrative tasks, hand-written: *soft: Ideally, open the door at two different moments.*",
+      "blocks": [
+        {
+          "type": "gallery",
+          "heading": "The Reward Machine today and with P2",
+          "width": 490,
+          "groups": [
+            {
+              "title": "Soft",
+              "items": [
+                {
+                  "src": "graphs/ExistenceTwo-door_open.soft.today.html",
+                  "height": 400,
+                  "alt": "ExistenceTwo(door_open) soft Today",
+                  "caption": "**Today** · 3 states · no final · no well · rewards 0\nTask (illustrative): *Ideally, open the door at two different moments.*",
+                  "details": {
+                    "title": "Task, clauses, LTLf and RM text",
+                    "text": "**Task (illustrative, hand-written):** Ideally, open the door at two different moments.",
+                    "code": "# IBM clauses in the proposal\nExistenceTwo(door_open)  [soft]\n\n# LTLf, one per clause\nExistenceTwo(door_open):\n - (F (door_open & (X (F door_open))))\n\n# Raw LTLf, as IBM writes it and MONA reads it\n - (F(door_open&(X(Fdoor_open))))\n\n# RM text, as the compiler writes it\nREWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, door_open) -> u1\n(u1, door_open) -> u2\nREWARD_FUNCTION:\n# empty: every transition pays 0 (the soft clause is inert: it never changes a reward)"
+                  }
+                },
+                {
+                  "src": "graphs/ExistenceTwo-door_open.soft.p2.html",
+                  "height": 400,
+                  "alt": "ExistenceTwo(door_open) soft With P2",
+                  "caption": "**With P2** · 3 states · no final · no well · rewards 0.1\nTask (illustrative): *Ideally, open the door at two different moments.*",
+                  "details": {
+                    "title": "Task, clauses, LTLf and RM text",
+                    "text": "**Task (illustrative, hand-written):** Ideally, open the door at two different moments.",
+                    "code": "# IBM clauses in the proposal\nExistenceTwo(door_open)  [soft]\n\n# LTLf, one per clause\nExistenceTwo(door_open):\n - (F (door_open & (X (F door_open))))\n\n# Raw LTLf, as IBM writes it and MONA reads it\n - (F(door_open&(X(Fdoor_open))))\n\n# RM text, as the compiler writes it\nREWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, door_open) -> u1\n(u1, door_open) -> u2\nREWARD_FUNCTION:\n(u0, door_open, u1) -> 0.1\n(u1, door_open, u2) -> 0.1"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "heading": "Traces walked on both machines",
+          "text": "`x` is `door_open`; `-` is a step where neither holds. Each trace runs through the compiled machine today and with P2. A blue total is one P2 changed."
+        },
+        {
+          "type": "table",
+          "heading": "Traces: soft",
+          "columns": [
+            "Trace",
+            "Case",
+            "Today: reward per step",
+            "Today: total",
+            "P2: reward per step",
+            "P2: total",
+            "Clause at the end"
+          ],
+          "rows": [
+            [
+              "`x - x`",
+              "kept",
+              "`0, 0, 0`",
+              "0",
+              "`0.1, 0, 0.1`",
+              {
+                "text": "0.2",
+                "tone": "info"
+              },
+              "satisfied"
+            ],
+            [
+              "`- -`",
+              "left open, none yet",
+              "`0, 0`",
+              "0",
+              "`0, 0`",
+              "0",
+              "pending"
+            ],
+            [
+              "`x -`",
+              "left open, one of two",
+              "`0, 0`",
+              "0",
+              "`0.1, 0`",
+              {
+                "text": "0.1",
+                "tone": "info"
+              },
+              "pending"
+            ],
+            [
+              "`x x x`",
+              "done three times",
+              "`0, 0, 0`",
+              "0",
+              "`0.1, 0.1, 0`",
+              {
+                "text": "0.2",
+                "tone": "info"
+              },
+              "satisfied"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "title": "RespondedExistence(power_cut, generator_on): hard and soft",
+      "id": "respondedexistence-templates",
+      "intro": "Clause `RespondedExistence(power_cut, generator_on)`, LTLf `((F power_cut) -> (F generator_on))`. Illustrative tasks, hand-written: *hard: If the power ever goes out, the generator must run at some point in the episode (before or after the cut). / soft: If the power goes out, it would be good for the generator to run at some point in the episode (before or after the cut).*",
+      "blocks": [
+        {
+          "type": "gallery",
+          "heading": "The Reward Machine today and with P2",
+          "width": 490,
+          "groups": [
+            {
+              "title": "Hard and soft: identical machines",
+              "items": [
+                {
+                  "src": "graphs/RespondedExistence-power_cut-generator_on.hard.today.html",
+                  "height": 400,
+                  "alt": "RespondedExistence(power_cut, generator_on) hard Today",
+                  "caption": "**Today** · 3 states · no final · no well · rewards 0",
+                  "details": {
+                    "title": "Task, clauses, LTLf and RM text",
+                    "text": "**Task (illustrative, hand-written):** hard: If the power ever goes out, the generator must run at some point in the episode (before or after the cut). / soft: If the power goes out, it would be good for the generator to run at some point in the episode (before or after the cut).",
+                    "code": "# IBM clauses in the proposal\nRespondedExistence(power_cut, generator_on)  [hard / soft]\n\n# LTLf, one per clause\nRespondedExistence(power_cut, generator_on):\n - ((F power_cut) -> (F generator_on))\n\n# Raw LTLf, as IBM writes it and MONA reads it\n - ((Fpower_cut)->(Fgenerator_on))\n\n# RM text, as the compiler writes it\nREWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !generator_on&power_cut) -> u1\n(u0, generator_on) -> u2\n(u1, generator_on) -> u2\nREWARD_FUNCTION:\n# empty: every transition pays 0 (the soft clause is inert: it never changes a reward)"
+                  }
+                },
+                {
+                  "src": "graphs/RespondedExistence-power_cut-generator_on.hard.p2.html",
+                  "height": 400,
+                  "alt": "RespondedExistence(power_cut, generator_on) hard With P2",
+                  "caption": "**With P2** · 3 states · no final · no well · rewards -0.1, 0, 0.1",
+                  "details": {
+                    "title": "Task, clauses, LTLf and RM text",
+                    "text": "**Task (illustrative, hand-written):** hard: If the power ever goes out, the generator must run at some point in the episode (before or after the cut). / soft: If the power goes out, it would be good for the generator to run at some point in the episode (before or after the cut).",
+                    "code": "# IBM clauses in the proposal\nRespondedExistence(power_cut, generator_on)  [hard / soft]\n\n# LTLf, one per clause\nRespondedExistence(power_cut, generator_on):\n - ((F power_cut) -> (F generator_on))\n\n# Raw LTLf, as IBM writes it and MONA reads it\n - ((Fpower_cut)->(Fgenerator_on))\n\n# RM text, as the compiler writes it\nREWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !generator_on&power_cut) -> u1\n(u0, generator_on) -> u2\n(u1, generator_on) -> u2\nREWARD_FUNCTION:\n(u0, !generator_on&power_cut, u1) -> -0.1\n(u1, generator_on, u2) -> 0.1"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "heading": "Traces walked on both machines",
+          "text": "`x` is `power_cut`, `y` is `generator_on`; `-` is a step where neither holds. Each trace runs through the compiled machine today and with P2. A blue total is one P2 changed."
+        },
+        {
+          "type": "table",
+          "heading": "Traces: hard and soft: identical machines",
+          "columns": [
+            "Trace",
+            "Case",
+            "Today: reward per step",
+            "Today: total",
+            "P2: reward per step",
+            "P2: total",
+            "Clause at the end"
+          ],
+          "rows": [
+            [
+              "`y x`",
+              "kept, generator first",
+              "`0, 0`",
+              "0",
+              "`0, 0`",
+              "0",
+              "satisfied"
+            ],
+            [
+              "`x - y`",
+              "broken then fixed",
+              "`0, 0, 0`",
+              "0",
+              "`-0.1, 0, 0.1`",
+              "0",
+              "satisfied"
+            ],
+            [
+              "`x -`",
+              "left open",
+              "`0, 0`",
+              "0",
+              "`-0.1, 0`",
+              {
+                "text": "-0.1",
+                "tone": "info"
+              },
+              "pending"
+            ],
+            [
+              "`y x y x`",
+              "done twice",
+              "`0, 0, 0, 0`",
+              "0",
+              "`0, 0, 0, 0`",
+              "0",
+              "satisfied"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Response(box_fell, box_on_shelf): hard and soft",
+      "id": "response-templates",
+      "intro": "Clause `Response(box_fell, box_on_shelf)`, LTLf `(G (box_fell -> (F box_on_shelf)))`. Illustrative tasks, hand-written: *hard: Whenever the box falls off the shelf, put it back. / soft: Whenever the box falls off the shelf, preferably put it back.*",
+      "blocks": [
+        {
+          "type": "gallery",
+          "heading": "The Reward Machine today and with P2",
+          "width": 490,
+          "groups": [
+            {
+              "title": "Hard and soft: identical machines",
+              "items": [
+                {
+                  "src": "graphs/Response-box_fell-box_on_shelf.hard.today.html",
+                  "height": 400,
+                  "alt": "Response(box_fell, box_on_shelf) hard Today",
+                  "caption": "**Today** · 2 states · no final · no well · rewards 0",
+                  "details": {
+                    "title": "Task, clauses, LTLf and RM text",
+                    "text": "**Task (illustrative, hand-written):** hard: Whenever the box falls off the shelf, put it back. / soft: Whenever the box falls off the shelf, preferably put it back.",
+                    "code": "# IBM clauses in the proposal\nResponse(box_fell, box_on_shelf)  [hard / soft]\n\n# LTLf, one per clause\nResponse(box_fell, box_on_shelf):\n - (G (box_fell -> (F box_on_shelf)))\n\n# Raw LTLf, as IBM writes it and MONA reads it\n - (G(box_fell->(Fbox_on_shelf)))\n\n# RM text, as the compiler writes it\nREWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, box_fell&!box_on_shelf) -> u1\n(u1, box_on_shelf) -> u0\nREWARD_FUNCTION:\n# empty: every transition pays 0 (the soft clause is inert: it never changes a reward)"
+                  }
+                },
+                {
+                  "src": "graphs/Response-box_fell-box_on_shelf.hard.p2.html",
+                  "height": 400,
+                  "alt": "Response(box_fell, box_on_shelf) hard With P2",
+                  "caption": "**With P2** · 2 states · no final · no well · rewards -0.1, 0.1",
+                  "details": {
+                    "title": "Task, clauses, LTLf and RM text",
+                    "text": "**Task (illustrative, hand-written):** hard: Whenever the box falls off the shelf, put it back. / soft: Whenever the box falls off the shelf, preferably put it back.",
+                    "code": "# IBM clauses in the proposal\nResponse(box_fell, box_on_shelf)  [hard / soft]\n\n# LTLf, one per clause\nResponse(box_fell, box_on_shelf):\n - (G (box_fell -> (F box_on_shelf)))\n\n# Raw LTLf, as IBM writes it and MONA reads it\n - (G(box_fell->(Fbox_on_shelf)))\n\n# RM text, as the compiler writes it\nREWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, box_fell&!box_on_shelf) -> u1\n(u1, box_on_shelf) -> u0\nREWARD_FUNCTION:\n(u0, box_fell&!box_on_shelf, u1) -> -0.1\n(u1, box_on_shelf, u0) -> 0.1"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "heading": "Traces walked on both machines",
+          "text": "`x` is `box_fell`, `y` is `box_on_shelf`; `-` is a step where neither holds. Each trace runs through the compiled machine today and with P2. A blue total is one P2 changed."
+        },
+        {
+          "type": "table",
+          "heading": "Traces: hard and soft: identical machines",
+          "columns": [
+            "Trace",
+            "Case",
+            "Today: reward per step",
+            "Today: total",
+            "P2: reward per step",
+            "P2: total",
+            "Clause at the end"
+          ],
+          "rows": [
+            [
+              "`x y`",
+              "kept",
+              "`0, 0`",
+              "0",
+              "`-0.1, 0.1`",
+              "0",
+              "satisfied"
+            ],
+            [
+              "`x - - y`",
+              "broken then fixed",
+              "`0, 0, 0, 0`",
+              "0",
+              "`-0.1, 0, 0, 0.1`",
+              "0",
+              "satisfied"
+            ],
+            [
+              "`x - -`",
+              "left open",
+              "`0, 0, 0`",
+              "0",
+              "`-0.1, 0, 0`",
+              {
+                "text": "-0.1",
+                "tone": "info"
+              },
+              "pending"
+            ],
+            [
+              "`x y x y`",
+              "done twice",
+              "`0, 0, 0, 0`",
+              "0",
+              "`-0.1, 0.1, -0.1, 0.1`",
+              "0",
+              "satisfied"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "title": "ChainResponse(alarm_rings, alarm_off): hard and soft",
+      "id": "chainresponse-templates",
+      "intro": "Clause `ChainResponse(alarm_rings, alarm_off)`, LTLf `(G (alarm_rings -> (X alarm_off)))`. Illustrative tasks, hand-written: *hard: When the alarm rings, switch it off at the very next step.* *soft: Ideally, switch the alarm off at the very next step after it rings.*",
+      "blocks": [
+        {
+          "type": "gallery",
+          "heading": "The Reward Machine today and with P2",
+          "width": 490,
+          "groups": [
+            {
+              "title": "Hard",
+              "items": [
+                {
+                  "src": "graphs/ChainResponse-alarm_rings-alarm_off.hard.today.html",
+                  "height": 400,
+                  "alt": "ChainResponse(alarm_rings, alarm_off) hard Today",
+                  "caption": "**Today** · 3 states · no final · well · rewards -1, 0\nTask (illustrative): *When the alarm rings, switch it off at the very next step.*",
+                  "details": {
+                    "title": "Task, clauses, LTLf and RM text",
+                    "text": "**Task (illustrative, hand-written):** When the alarm rings, switch it off at the very next step.",
+                    "code": "# IBM clauses in the proposal\nChainResponse(alarm_rings, alarm_off)  [hard]\n\n# LTLf, one per clause\nChainResponse(alarm_rings, alarm_off):\n - (G (alarm_rings -> (X alarm_off)))\n\n# Raw LTLf, as IBM writes it and MONA reads it\n - (G(alarm_rings->(Xalarm_off)))\n\n# RM text, as the compiler writes it\nREWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, alarm_rings) -> u1\n(u1, !alarm_off) -> u2\n(u1, alarm_off&!alarm_rings) -> u0\nREWARD_FUNCTION:\n(u1, !alarm_off, u2) -> -1"
+                  }
+                },
+                {
+                  "src": "graphs/ChainResponse-alarm_rings-alarm_off.hard.p2.html",
+                  "height": 400,
+                  "alt": "ChainResponse(alarm_rings, alarm_off) hard With P2",
+                  "caption": "**With P2** · 3 states · no final · well · rewards -1, -0.1, 0.1\nTask (illustrative): *When the alarm rings, switch it off at the very next step.*",
+                  "details": {
+                    "title": "Task, clauses, LTLf and RM text",
+                    "text": "**Task (illustrative, hand-written):** When the alarm rings, switch it off at the very next step.",
+                    "code": "# IBM clauses in the proposal\nChainResponse(alarm_rings, alarm_off)  [hard]\n\n# LTLf, one per clause\nChainResponse(alarm_rings, alarm_off):\n - (G (alarm_rings -> (X alarm_off)))\n\n# Raw LTLf, as IBM writes it and MONA reads it\n - (G(alarm_rings->(Xalarm_off)))\n\n# RM text, as the compiler writes it\nREWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, alarm_rings) -> u1\n(u1, !alarm_off) -> u2\n(u1, alarm_off&!alarm_rings) -> u0\nREWARD_FUNCTION:\n(u0, alarm_rings, u1) -> -0.1\n(u1, !alarm_off, u2) -> -1\n(u1, alarm_off&!alarm_rings, u0) -> 0.1"
+                  }
+                }
+              ]
+            },
+            {
+              "title": "Soft, recurrent soft rules on",
+              "items": [
+                {
+                  "src": "graphs/ChainResponse-alarm_rings-alarm_off.soft.today.html",
+                  "height": 400,
+                  "alt": "ChainResponse(alarm_rings, alarm_off) soft Today",
+                  "caption": "**Today** · 3 states · no final · no well · rewards -0.5, 0\nTask (illustrative): *Ideally, switch the alarm off at the very next step after it rings.*",
+                  "details": {
+                    "title": "Task, clauses, LTLf and RM text",
+                    "text": "**Task (illustrative, hand-written):** Ideally, switch the alarm off at the very next step after it rings.",
+                    "code": "# IBM clauses in the proposal\nChainResponse(alarm_rings, alarm_off)  [soft]\n\n# LTLf, one per clause\nChainResponse(alarm_rings, alarm_off):\n - (G (alarm_rings -> (X alarm_off)))\n\n# Raw LTLf, as IBM writes it and MONA reads it\n - (G(alarm_rings->(Xalarm_off)))\n\n# RM text, as the compiler writes it\nREWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, alarm_rings) -> u1\n(u1, !alarm_off) -> u2\n(u1, alarm_off&!alarm_rings) -> u0\n(u2, !alarm_rings) -> u0\n(u2, alarm_rings) -> u1\nREWARD_FUNCTION:\n(u1, !alarm_off, u2) -> -0.5"
+                  }
+                },
+                {
+                  "src": "graphs/ChainResponse-alarm_rings-alarm_off.soft.p2.html",
+                  "height": 400,
+                  "alt": "ChainResponse(alarm_rings, alarm_off) soft With P2",
+                  "caption": "**With P2** · 3 states · no final · no well · rewards -0.4, -0.1, 0, 0.1\nTask (illustrative): *Ideally, switch the alarm off at the very next step after it rings.*",
+                  "details": {
+                    "title": "Task, clauses, LTLf and RM text",
+                    "text": "**Task (illustrative, hand-written):** Ideally, switch the alarm off at the very next step after it rings.",
+                    "code": "# IBM clauses in the proposal\nChainResponse(alarm_rings, alarm_off)  [soft]\n\n# LTLf, one per clause\nChainResponse(alarm_rings, alarm_off):\n - (G (alarm_rings -> (X alarm_off)))\n\n# Raw LTLf, as IBM writes it and MONA reads it\n - (G(alarm_rings->(Xalarm_off)))\n\n# RM text, as the compiler writes it\nREWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, alarm_rings) -> u1\n(u1, !alarm_off) -> u2\n(u1, alarm_off&!alarm_rings) -> u0\n(u2, !alarm_rings) -> u0\n(u2, alarm_rings) -> u1\nREWARD_FUNCTION:\n(u0, alarm_rings, u1) -> -0.1\n(u1, !alarm_off, u2) -> -0.4\n(u1, alarm_off&!alarm_rings, u0) -> 0.1\n(u2, alarm_rings, u1) -> -0.1"
+                  }
+                }
+              ]
+            },
+            {
+              "title": "Soft, recurrent soft rules off",
+              "items": [
+                {
+                  "src": "graphs/ChainResponse-alarm_rings-alarm_off.soft-off.today.html",
+                  "height": 400,
+                  "alt": "ChainResponse(alarm_rings, alarm_off) soft (recurrent off) Today",
+                  "caption": "**Today** · 3 states · no final · no well · rewards -0.5, 0\nTask (illustrative): *Ideally, switch the alarm off at the very next step after it rings.*",
+                  "details": {
+                    "title": "Task, clauses, LTLf and RM text",
+                    "text": "**Task (illustrative, hand-written):** Ideally, switch the alarm off at the very next step after it rings.",
+                    "code": "# IBM clauses in the proposal\nChainResponse(alarm_rings, alarm_off)  [soft]\n\n# LTLf, one per clause\nChainResponse(alarm_rings, alarm_off):\n - (G (alarm_rings -> (X alarm_off)))\n\n# Raw LTLf, as IBM writes it and MONA reads it\n - (G(alarm_rings->(Xalarm_off)))\n\n# RM text, as the compiler writes it\nREWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, alarm_rings) -> u1\n(u1, !alarm_off) -> u2\n(u1, alarm_off&!alarm_rings) -> u0\nREWARD_FUNCTION:\n(u1, !alarm_off, u2) -> -0.5"
+                  }
+                },
+                {
+                  "src": "graphs/ChainResponse-alarm_rings-alarm_off.soft-off.p2.html",
+                  "height": 400,
+                  "alt": "ChainResponse(alarm_rings, alarm_off) soft (recurrent off) With P2",
+                  "caption": "**With P2** · 3 states · no final · no well · rewards -0.4, -0.1, 0.1\nTask (illustrative): *Ideally, switch the alarm off at the very next step after it rings.*",
+                  "details": {
+                    "title": "Task, clauses, LTLf and RM text",
+                    "text": "**Task (illustrative, hand-written):** Ideally, switch the alarm off at the very next step after it rings.",
+                    "code": "# IBM clauses in the proposal\nChainResponse(alarm_rings, alarm_off)  [soft]\n\n# LTLf, one per clause\nChainResponse(alarm_rings, alarm_off):\n - (G (alarm_rings -> (X alarm_off)))\n\n# Raw LTLf, as IBM writes it and MONA reads it\n - (G(alarm_rings->(Xalarm_off)))\n\n# RM text, as the compiler writes it\nREWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, alarm_rings) -> u1\n(u1, !alarm_off) -> u2\n(u1, alarm_off&!alarm_rings) -> u0\nREWARD_FUNCTION:\n(u0, alarm_rings, u1) -> -0.1\n(u1, !alarm_off, u2) -> -0.4\n(u1, alarm_off&!alarm_rings, u0) -> 0.1"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "heading": "Traces walked on both machines",
+          "text": "`x` is `alarm_rings`, `y` is `alarm_off`; `-` is a step where neither holds. Each trace runs through the compiled machine today and with P2. A blue total is one P2 changed."
+        },
+        {
+          "type": "table",
+          "heading": "Traces: hard",
+          "columns": [
+            "Trace",
+            "Case",
+            "Today: reward per step",
+            "Today: total",
+            "P2: reward per step",
+            "P2: total",
+            "Clause at the end"
+          ],
+          "rows": [
+            [
+              "`x y`",
+              "kept",
+              "`0, 0`",
+              "0",
+              "`-0.1, 0.1`",
+              "0",
+              "satisfied"
+            ],
+            [
+              "`x - y`",
+              "broken",
+              "`0, -1`",
+              "-1",
+              "`-0.1, -1`",
+              {
+                "text": "-1.1",
+                "tone": "info"
+              },
+              {
+                "text": "well",
+                "tone": "bad"
+              }
+            ],
+            [
+              "`- x`",
+              "left open",
+              "`0, 0`",
+              "0",
+              "`0, -0.1`",
+              {
+                "text": "-0.1",
+                "tone": "info"
+              },
+              "pending"
+            ],
+            [
+              "`x y x y`",
+              "done twice",
+              "`0, 0, 0, 0`",
+              "0",
+              "`-0.1, 0.1, -0.1, 0.1`",
+              "0",
+              "satisfied"
+            ]
+          ]
+        },
+        {
+          "type": "table",
+          "heading": "Traces: soft, recurrent soft rules on",
+          "columns": [
+            "Trace",
+            "Case",
+            "Today: reward per step",
+            "Today: total",
+            "P2: reward per step",
+            "P2: total",
+            "Clause at the end"
+          ],
+          "rows": [
+            [
+              "`x y`",
+              "kept",
+              "`0, 0`",
+              "0",
+              "`-0.1, 0.1`",
+              "0",
+              "satisfied"
+            ],
+            [
+              "`x - y`",
+              "broken",
+              "`0, -0.5, 0`",
+              "-0.5",
+              "`-0.1, -0.4, 0`",
+              "-0.5",
+              "satisfied"
+            ],
+            [
+              "`- x`",
+              "left open",
+              "`0, 0`",
+              "0",
+              "`0, -0.1`",
+              {
+                "text": "-0.1",
+                "tone": "info"
+              },
+              "pending"
+            ],
+            [
+              "`x y x y`",
+              "done twice",
+              "`0, 0, 0, 0`",
+              "0",
+              "`-0.1, 0.1, -0.1, 0.1`",
+              "0",
+              "satisfied"
+            ]
+          ]
+        },
+        {
+          "type": "table",
+          "heading": "Traces: soft, recurrent soft rules off",
+          "columns": [
+            "Trace",
+            "Case",
+            "Today: reward per step",
+            "Today: total",
+            "P2: reward per step",
+            "P2: total",
+            "Clause at the end"
+          ],
+          "rows": [
+            [
+              "`x y`",
+              "kept",
+              "`0, 0`",
+              "0",
+              "`-0.1, 0.1`",
+              "0",
+              "satisfied"
+            ],
+            [
+              "`x - y`",
+              "broken",
+              "`0, -0.5, 0`",
+              "-0.5",
+              "`-0.1, -0.4, 0`",
+              "-0.5",
+              "violated"
+            ],
+            [
+              "`- x`",
+              "left open",
+              "`0, 0`",
+              "0",
+              "`0, -0.1`",
+              {
+                "text": "-0.1",
+                "tone": "info"
+              },
+              "pending"
+            ],
+            [
+              "`x y x y`",
+              "done twice",
+              "`0, 0, 0, 0`",
+              "0",
+              "`-0.1, 0.1, -0.1, 0.1`",
+              "0",
+              "satisfied"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "title": "What P2 leaves open",
+      "id": "open",
+      "intro": "From the traces above. P2 adds a signal to rule-only tasks, but a small one.",
+      "blocks": [
+        {
+          "type": "list",
+          "heading": "Where kept and broken episodes still end close",
+          "items": [
+            "**A promise left open costs 0.1.** In Response, RespondedExistence and ChainResponse, the kept trace totals 0 and the trace left open at the end totals -0.1 (`x - -`, `x -`, `- x`). Today both total 0. The box that stays on the floor until the episode ends costs 0.1, the same as a power cut that never gets its generator.",
+            "**Fixing late costs nothing.** `x y` and `x - - y` both total 0. Only the learner's discount prices the wait: a fix 50 steps late loses about 0.039 (0.1 × (1 − 0.99^50), computed, not measured).",
+            "**A break the compiler already prices keeps its price.** Soft ChainResponse: broken is -0.5 today and -0.5 with P2 (-0.1, -0.4, 0). Hard ChainResponse: broken is -1 today and -1.1 with P2; the extra 0.1 is the step where the alarm rings.",
+            "**Soft goals get 0.1, nothing more.** Soft Existence done = +0.1, done twice = +0.1, not done = 0. Soft ExistenceTwo: one of two = +0.1, both = +0.2, a third time = 0. The +1 for finishing needs a hard goal."
+          ]
+        },
+        {
+          "type": "list",
+          "heading": "Surprises",
+          "items": [
+            "**Hard and soft are the same machine for Response and RespondedExistence.** Both can always be repaired, so no state is ever violated; today and with P2 the two compile to identical text. \"You must\" and \"preferably\" pay the same.",
+            "**The trigger step is charged.** In Response, `x` costs -0.1 the moment it happens, before anything is wrong. The kept trace nets 0 only because the answer pays it back; a run that never triggers the rule also totals 0. This is why the examples use events the environment causes: a trigger the agent controls would look like a cost to avoid.",
+            "**Breaking a rule pays the 0.1 too.** A violated state counts as a target, like a kept one. In soft ChainResponse the break edge reads -0.4: the -0.5 charge plus +0.1 for getting there.",
+            "**Absence, Precedence and NotCoExistence are untouched,** so after P2 two kinds of rule sit on different scales: rules that wait are priced in tenths, rules that forbid keep -0.5 or the well."
+          ]
+        }
+      ]
+    }
+  ]
+}
