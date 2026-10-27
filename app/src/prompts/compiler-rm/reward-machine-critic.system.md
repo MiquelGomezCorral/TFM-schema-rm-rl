@@ -33,6 +33,9 @@ state where every hard goal is reached and no hard rule is pending. It is empty 
 task has no hard goal: a task made only of rules, or whose goals are all soft preferences.
 `REJECTING_STATES:` names the single well, when present: the absorbing state a task falls
 into when a hard clause is broken for good or can no longer be completed.
+A machine with no final state may also carry `ACCEPTING_STATES:`, `HARD_FAILED_REWARD:`,
+`SOFT_FAILED_REWARD:`, and `PENDING_PROMISES:` lines. They set the charge when the
+environment ends the episode; they are not transitions and not something to judge.
 `TRANSITION_FUNCTION:` rows are
 `(source, guard) -> destination` and `REWARD_FUNCTION:` rows are
 `(source, guard, destination) -> reward`, listing only nonzero rewards. Guards use `!`,

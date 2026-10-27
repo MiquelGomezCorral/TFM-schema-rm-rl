@@ -198,7 +198,8 @@ class RewardMachineObservation(gym.Wrapper):
     one RM update per step, the episode ends on an RM final or rejecting state, the reward
     follows ``reward_source``, RM reset on env reset. Observations are
     ``{"image": obs, "rm_embedding": phi(u)}`` with phi(u_I) after reset. ``info`` gains
-    ``env_reward``, ``rm_reward``, ``rm_state`` and ``rm_accept`` (state is final).
+    ``env_reward``, ``rm_reward``, ``rm_state`` and ``rm_accept`` (state is final, or accepting
+    where the environment ended the episode of a machine with no final).
     """
 
     def __init__(
@@ -214,6 +215,8 @@ class RewardMachineObservation(gym.Wrapper):
             env, RewardMachineRuntime(machine), labeling, reward_source=reward_source
         )
         self.final_states = frozenset(machine.final_states)
+        self.judged = machine.judgment is not None
+        self.accepting_states = frozenset(machine.judgment.accepting if self.judged else ())
         self.accepted = False
         self.embeddings = {
             state: np.asarray(vector, dtype=np.float32)
@@ -238,17 +241,21 @@ class RewardMachineObservation(gym.Wrapper):
     def step(self, action):
         observation, reward, terminated, truncated, info = self.reward_machine.step(action)
         state = info["rm_state"]
-        self.accepted = info["rm_accept"] = state in self.final_states
+        self.accepted = info["rm_accept"] = state in self.final_states or (
+            (terminated or truncated) and state in self.accepting_states
+        )
         return self._observation(observation, state), reward, terminated, truncated, info
 
     def is_success(self, terminated: bool, _env_reward: float) -> bool:
         """Success rule of config ``success: rm``, for missions the environment cannot judge.
 
-        The RM already ends the episode, so this only reads whether it ended on a final state.
+        The RM already ends the episode, so this only reads whether it ended on a final state. A
+        machine with no final is judged where the environment ends the episode, terminated or
+        truncated, and succeeds when it ends accepting.
         """
         # reset keeps ``accepted``: PPO's SyncVectorEnv SAME_STEP autoreset resets the RM before
         # success is read.
-        return terminated and self.accepted
+        return (terminated or self.judged) and self.accepted
 
     def _observation(self, image: np.ndarray, state: str) -> dict[str, np.ndarray]:
         return {"image": image, "rm_embedding": self.embeddings[state]}
@@ -318,6 +325,7 @@ class MultiTaskEnvironment(gym.Env):
         self._task_rng = random.Random(f"tasks-{seed}")
         self._started: set[int] = set()
         self._index = 0
+        self._stepped = 0
 
     @property
     def current_task(self) -> str:
@@ -329,7 +337,8 @@ class MultiTaskEnvironment(gym.Env):
         return self.runs[self._index].env.unwrapped
 
     def is_success(self, terminated: bool, env_reward: float) -> bool:
-        return self.runs[self._index].is_success(terminated, env_reward)
+        # The task that ran the last step: PPO's SAME_STEP autoreset may already have drawn the next one.
+        return self.runs[self._stepped].is_success(terminated, env_reward)
 
     def reset(self, *, seed: int | None = None, options: dict | None = None):
         task = (options or {}).get("task")
@@ -342,6 +351,7 @@ class MultiTaskEnvironment(gym.Env):
         return observation, {**info, "task": self.current_task}
 
     def step(self, action):
+        self._stepped = self._index
         observation, reward, terminated, truncated, info = self.runs[self._index].env.step(action)
         return observation, reward, terminated, truncated, {**info, "task": self.current_task}
 

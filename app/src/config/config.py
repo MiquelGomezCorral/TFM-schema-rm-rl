@@ -184,6 +184,10 @@ class Configuration:
     SOFT_PENDING_AT_FINISH_REWARD: ClassVar[float] = -0.5
     # Added to the RM reward on the step where the time limit ends an episode the RM did not.
     TIME_LIMIT_PENALTY: ClassVar[float] = -0.5
+    # A machine with no final state is judged where the environment ends an episode: each hard
+    # and soft promise still open pays one of these, instead of TIME_LIMIT_PENALTY.
+    HARD_FAILED_REWARD: ClassVar[float] = -1.0
+    SOFT_FAILED_REWARD: ClassVar[float] = -0.5
 
     # ============================== Runtime options ==============================
 

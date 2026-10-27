@@ -27,9 +27,11 @@ Clauses apply together; their list order imposes no execution order.
 The accepted serialized machine: `STATES`, `INITIAL_STATE`, `FINAL_STATES` (empty for a
 task made only of rules or preference-only goals), `REJECTING_STATES` (the failure state, when present),
 `DEFAULT_REWARD`, `TRANSITION_FUNCTION`, and `REWARD_FUNCTION`, using declared
-propositions in guards. Use it to understand which propositions matter and how the
-machine advances. Never derive an observation fact from the RM state, its progress, or
-its reward.
+propositions in guards. A machine with no final state may also carry `ACCEPTING_STATES`,
+`HARD_FAILED_REWARD`, `SOFT_FAILED_REWARD`, and `PENDING_PROMISES` lines: they set the
+charge when the environment ends the episode and are not transitions. Use it to
+understand which propositions matter and how the machine advances. Never derive an
+observation fact from the RM state, its progress, or its reward.
 
 ### State descriptions
 An ordered JSON object mapping node identifiers (`u0`, `u1`, ...) to the machine progress

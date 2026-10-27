@@ -322,7 +322,9 @@ reward: `rm` (default) the RM reward only, `both` environment + RM reward, `env`
 (plain sparse-reward DQN). With an RM the run loads `bundle` (RM, labeling, state embeddings):
 each step evaluates the labeling, makes one RM transition, and feeds the Q-network the embedding
 of the current RM state. The episode ends when the environment ends it, when the RM enters a
-declared final or rejecting state, or at the time limit, which adds -0.5 to the RM reward.
+declared final or rejecting state, or at the time limit, which adds -0.5 to the RM reward for an RM
+without `PENDING_PROMISES`; an RM with `PENDING_PROMISES` (a rule-only task) instead charges its open promises at
+every environment-caused end, see `docs/decisions/arm-fm/rm-execution.md`.
 `labeling_bundle` can take `labeling.py` from another bundle with the same propositions.
 RM configs need their local bundle under `outputs/bundles/`, which is gitignored, and bundle
 paths are relative to the repository root, so run `train-rl` from there.

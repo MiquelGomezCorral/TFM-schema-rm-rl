@@ -5,7 +5,8 @@ off, and soft with it on. Walks the traces of `traces.json` through the real com
 with the real runtime, asserts the charge counts that file states, and writes `traces.txt` and
 `graphs/` (SVG drawn by `app/scripts/render_rm.py`, plus the RM text). The four "eventually"
 templates also run next to the stand-in hard goal `Existence(at_goal)`. No LLM calls: MONA runs
-locally.
+locally. A machine with no final state also judges the end of an episode the environment cuts
+off: Response alone is played through `RewardMachineEnvironment` with and without that judgment.
 
 Usage, from the repository root, inside RM_RL_env:
     PYTHONPATH=app python -W ignore docs/paper/clause-semantics/check/clause_semantics.py
@@ -26,7 +27,7 @@ from pathlib import Path
 from pylogics.syntax.ltl import Atomic
 
 from scripts.render_rm import render_file
-from src.arm_fm.runtime import RewardMachineRuntime
+from src.arm_fm.runtime import RewardMachineEnvironment, RewardMachineRuntime
 from src.compiler import (
     PaperRewardMachine,
     compile_dfas,
@@ -74,6 +75,9 @@ COLUMNS = {
     "soft-on": "Soft, recurrent on (default)",
 }
 GOAL_COLUMNS = {"hard": "Hard", "soft-off": "Soft (recurrent off and on alike)"}
+# Response alone, the time limit after the last step: total reward [hard, soft, without the end
+# judgment]. The agent holds the key (x) and the door (y) opens or does not.
+END_EPISODES = {"x y": (0, 0, -0.5), "- -": (0, 0, -0.5), "x - -": (-1.1, -0.6, -0.6)}
 GOAL_TAGS = {"kept": "kept", "pending": "open", "late": "open, met after `g` (machine only)"}
 
 
@@ -287,6 +291,34 @@ def charges(steps: list[Step]) -> int:
 
 def total(steps: list[Step]) -> float:
     return round(sum(step.reward for step in steps), 9) + 0.0
+
+
+class CutOffEnvironment:
+    """Plays the given valuations, then the time limit ends the episode on the last step."""
+
+    def __init__(self, valuations: list[dict[str, bool]]) -> None:
+        self.valuations = valuations
+        self.current: dict[str, bool] = {}
+        self.index = 0
+
+    def reset(self, **_kwargs):
+        self.index = 0
+        return 0, {}
+
+    def step(self, _action):
+        self.current = self.valuations[self.index]
+        self.index += 1
+        return 0, 0.0, False, self.index == len(self.valuations), {}
+
+
+def cut_off_total(machine: PaperRewardMachine, valuations: list[dict[str, bool]]) -> float:
+    """The episode total through the wrapper, with the time limit after the last valuation."""
+    labeling = {name: (lambda env, name=name: env.current[name]) for name in machine.propositions}
+    environment = RewardMachineEnvironment(
+        CutOffEnvironment(valuations), RewardMachineRuntime(machine), labeling
+    )
+    environment.reset()
+    return round(sum(environment.step(0)[1] for _ in valuations), 9) + 0.0
 
 
 # ======================================================================================
@@ -653,6 +685,26 @@ def contrast_cell(walks: dict[str, list[Step]]) -> str:
     return f"{number(total(hard))}, {end_note(hard)}; charges {on} / {off}"
 
 
+def end_section(report: Report) -> None:
+    """Response alone, cut off by the time limit: what the end judgment charges for an open `y`."""
+    pattern = "Response"
+    machines, _ = compile_machines(pattern, TEMPLATES[pattern], with_goal=False)
+    letters = letters_of(TEMPLATES[pattern], with_goal=False)
+    lines = ["| Trace | Hard | Soft | Without the end judgment |", "|---|---|---|---|"]
+    for trace, wanted in END_EPISODES.items():
+        valuations = [valuation_of(machines["hard"], letters, token) for token in trace.split()]
+        hard, soft = (cut_off_total(machines[v].paper, valuations) for v in ("hard", "soft-on"))
+        without = {
+            cut_off_total(replace(machines[v].paper, judgment=None), valuations)
+            for v in ("hard", "soft-on")
+        }
+        report.asserted += len(wanted)
+        if (hard, soft, *without) != wanted:  # both versions must agree without the judgment
+            report.bad.append(f"{pattern} {trace!r}: totals {hard, soft, without} != {wanted}")
+        lines.append(f"| `{trace}` | {number(hard)} | {number(soft)} | {number(min(without))} |")
+    report.out += [f"\n## End of the episode: {pattern}", *lines]
+
+
 def counter_section(report: Report, spec: dict, graphs: Path) -> None:
     """Raw LTLf variants a reader may expect, walked next to the template they get mistaken for."""
     for case in spec["counter_cases"]:
@@ -720,6 +772,7 @@ def main() -> None:
     chain_goal_section(report, spec, graphs)
     doorkey_section(report, spec)
     counter_section(report, spec, graphs)
+    end_section(report)
 
     verdict = f"{report.asserted} asserted counts checked, {len(report.bad)} differ"
     text = "\n".join([*report.out, "", verdict]) + "\n"

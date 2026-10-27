@@ -19,6 +19,7 @@ from flat_tool import automatas_to_rm
 from src.config import Configuration
 
 from .reward_machine import (
+    EndJudgment,
     RewardMachineStructure,
     Transition,
     evaluate_boolean_guard,
@@ -84,7 +85,8 @@ def build_reward_machine(
     ``soft[i]`` marks clause ``i`` soft; the others are hard. With ``recurrent_soft_penalty`` a
     soft rule's violated state takes the start state's edges, so each new break pays again
     instead of once per episode. Without a hard goal clause the machine has no final
-    state (a rule-only task), and progress aims at the states where no clause is pending.
+    state (a rule-only task), progress aims at the states where no clause is pending and the
+    machine carries an end judgment.
     Raises ``ValueError`` on a non-total DFA, conflicting clauses, or a positive reward cycle.
     """
     if len(dfas) != len(soft):
@@ -104,7 +106,7 @@ def build_reward_machine(
     edges, finals = _prune_by_hard_clauses(product, hard_clauses, hard_goal)
     initial, edges = _drop_pre_step_start(edges, product, finals)
     priced, paying = _price_edges(edges, product, finals, soft_clauses)
-    machine = _structure(initial, priced, finals)
+    machine = _structure(initial, priced, finals, product, soft_clauses)
     if _has_positive_cycle(machine):
         raise ValueError("Reward Machine has a positive reward cycle")
 
@@ -422,9 +424,16 @@ def _has_positive_cycle(machine: RewardMachineStructure) -> bool:
 
 
 def _structure(
-    initial: str, priced: Sequence[tuple[_Edge, float]], finals: set[str]
+    initial: str,
+    priced: Sequence[tuple[_Edge, float]],
+    finals: set[str],
+    product: _Product,
+    soft_clauses: Sequence[int],
 ) -> RewardMachineStructure:
-    """Merge the finals into one node, number the states breadth first, drop implicit loops."""
+    """Merge the finals into one node, number the states breadth first, drop implicit loops.
+
+    A machine with no final also gets its end judgment, read from the numbered states.
+    """
     merged = [
         (
             edge._replace(destination=_FINAL if edge.destination in finals else edge.destination),
@@ -458,6 +467,38 @@ def _structure(
         final_state=numbers.get(_FINAL),
         rejecting_states=(numbers[_WELL],) if _WELL in numbers else (),
         transitions=tuple(transitions),
+        judgment=None if finals else _end_judgment(numbers, product.labels, soft_clauses),
+    )
+
+
+def _end_judgment(
+    numbers: dict[str, int],
+    labels: dict[str, tuple[ClauseState, ...]],
+    soft_clauses: Sequence[int],
+) -> EndJudgment:
+    """Split the numbered states into accepting ones and ones with promises still open.
+
+    A state is accepting when no clause is pending. A soft rule broken for good was paid when it
+    broke, so it counts as kept; the well is rejecting and in neither list.
+    """
+    accepting: list[int] = []
+    pending: list[tuple[int, int, int]] = []
+    for state, number in numbers.items():
+        if state == _WELL:
+            continue
+        open_clauses = [
+            clause for clause, label in enumerate(labels[state]) if label is ClauseState.PENDING
+        ]
+        soft = sum(clause in soft_clauses for clause in open_clauses)
+        if open_clauses:
+            pending.append((number, len(open_clauses) - soft, soft))
+        else:
+            accepting.append(number)
+    return EndJudgment(
+        tuple(accepting),
+        tuple(pending),
+        Configuration.HARD_FAILED_REWARD,
+        Configuration.SOFT_FAILED_REWARD,
     )
 
 

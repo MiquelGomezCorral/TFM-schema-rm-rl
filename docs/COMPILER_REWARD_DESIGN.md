@@ -29,8 +29,9 @@ Every claim is marked with how it was checked:
 5. **One critic** reviews the task, the clauses and the compiled RM before state descriptions.
 
 Out of scope for this redesign: labeling functions, RM state descriptions and embeddings, and
-the RM text format, except one new optional `REJECTING_STATES:` line and `FINAL_STATES:` being
-allowed to be empty. Other pipeline steps own the rest.
+the RM text format, except one new optional `REJECTING_STATES:` line, `FINAL_STATES:` being
+allowed to be empty, and the end-judgment lines of a machine with no final state (see "The end
+judgment"). Other pipeline steps own the rest.
 
 ## Why this shape
 
@@ -244,9 +245,12 @@ the finished RM.
   every hard rule clause satisfied. Soft clauses only change the reward on the finishing edge
   (-0.5 for a soft clause still pending: a soft goal, or an open obligation such as
   `ChainResponse`'s) or on the edge where they break.
-- **[decision] No end-of-episode check in the RM.** Reaching a final state ends the episode, so
-  the rule is judged on that last edge. A task that never reaches final ends by the time limit;
-  the runtime then adds the time-limit penalty (see below) and nothing else.
+- **[decision] A final state judges on its last edge; with none, the end is judged where the
+  environment ends the episode.** Reaching a final state ends the episode, so the rule is judged on
+  that last edge. A task with no final state (rule-only) ends on the environment or the time limit,
+  and the RM then charges each promise still open in its state (see "The end judgment"). This
+  reverses the earlier "no end-of-episode check in the RM", which left such a run with the flat
+  time-limit penalty and nothing else.
 - **[decision] States are classified per clause, from each clause's own DFA** (through `sdict`),
   not from the merged RM's "can still reach the goal", which mixes hard and soft violations.
 - **[decision] Regressions exist only if the task or environment states them.** "Drop the key"
@@ -370,7 +374,8 @@ having conflicting clauses.
   reaches a final state, the RM reaches the well, or the time limit / step limit is hit, for all
   runs. Only declared finals count: the ARM-FM authors' released RMs declare none, so imported
   author bundles end on the environment or the time limit (an inferred final can come before the
-  environment goal). Hitting the time limit adds -0.5 to the RM reward. Source:
+  environment goal). Hitting the time limit adds -0.5 to the RM reward, except for a machine with an
+  end judgment, which charges its open promises instead (see "The end judgment"). Source:
   Toro Icarte et al. 2022 end the episode on RM terminal states; ARM-FM never says it.
 - **[decision] Reward source is a flag** `reward_source: rm | env | both`, default `rm`
   everywhere, paper-reproduction configs included (the original RM papers use the RM as the only
@@ -380,7 +385,8 @@ having conflicting clauses.
   the compiled RM, with the generator's guidelines plus critique guidelines. It replaces today's
   task critic and RM critic.
 - **[decision] Rule-only tasks are allowed.** A task with no hard goal clause gets no final state;
-  only a well, the environment's end, or the time limit ends it. The critic accepts it, and the UI and CLI warn the user.
+  only a well, the environment's end, or the time limit ends it, and the machine judges that end
+  itself (see "The end judgment"). The critic accepts it, and the UI and CLI warn the user.
   Preference-only tasks are worth exploring later.
 - **[decision] A hard goal with no reachable final is an error,** reported as conflicting
   clauses (e.g. `Existence(p)` + `Absence(p)`), never compiled as a rule-only task.
@@ -392,6 +398,49 @@ having conflicting clauses.
   final state only the break and the finish count, as before. With none, the progress step is
   judged by a proxy (the clause's waiting flips on an edge that pays progress), approximate both
   ways: it can call a clause paid that changes nothing, or inert when it changes rewards.
+
+### The end judgment
+
+- **[decision] A machine with no final state judges an episode the environment ends.** On a step
+  where the environment terminates or truncates the episode and the RM did not (no final and no
+  well entered), the reward adds `hard x HARD_FAILED_REWARD + soft x SOFT_FAILED_REWARD`, with the
+  counts of the RM state after that step's update (`RewardMachineEnvironment.step`). It is paid
+  once, since the episode ends there, and never when the RM ended it. It replaces the flat -0.5
+  time-limit penalty; `info["rm_reward"]` includes it. The user's framing: the machine "accepts" or
+  "rejects" the string of propositions the environment generated, so the end judgment is the link
+  between the environment and the language side of the RM.
+- **[decision] The RM text carries the judgment.** The compiler writes `ACCEPTING_STATES` (the
+  states where no clause is pending), the two values `HARD_FAILED_REWARD: -1` and
+  `SOFT_FAILED_REWARD: -0.5`, and last `PENDING_PROMISES`, one row `uN: hard H, soft S` per state
+  that is neither accepting nor the well. It computes them from the product labels after the states
+  are numbered (`_end_judgment` in `reward_layer.py`), never by hand and with no clause names. A
+  soft rule broken for good was paid when it broke and counts as accepted; a hard rule broken for
+  good is the well, which rejects, ends the episode on its own, and is in neither list. A machine
+  with a final state, and an imported author bundle, gets none of these lines and keeps its text,
+  rewards, flat -0.5, bootstrap and success rule.
+- **[decision] The parser stays lenient on the old format and strict on the new lines.** A text
+  without the new lines parses as before. A text without the two values takes the
+  `Configuration` defaults (`HARD_FAILED_REWARD`, `SOFT_FAILED_REWARD`). A state that is both
+  accepting and pending, a non-final non-rejecting state in neither list, or a row for an unknown
+  state is rejected. `PENDING_PROMISES` must be the last section. Serialize, parse, serialize is
+  byte-identical on both public paths (the paper text and the numeric structure). The two values
+  are the only part meant to be edited.
+- **[decision] Success of a rule-only run.** `rm_accept` is true on the last step of an episode the
+  environment ended in an accepting state, and `is_success` (`success: rm`) is true whether the
+  episode terminated or was truncated (user, 2026-10-27). A machine with a final keeps its rule:
+  success needs the final.
+- **[decision] The trainers do not change.** PPO and DQN keep their time-limit bootstrap and receive
+  the charge as part of the step reward ("keep it but add ours": user, 2026-10-27).
+- **[decision] No loop gains reward.** The charge is paid once, at the end of an episode, outside
+  any edge, so `_has_positive_cycle` and the cycle argument above are untouched and a loop cannot
+  farm it.
+- **[decision, kept] Idling with two hard promises open costs more than breaking a hard rule on the
+  last step.** Two open hard promises charge -2; breaking a hard rule on that step costs the well,
+  -1, since the RM then ends the episode and the end is not charged again. The plan review found
+  it; it is disclosed here and not changed. In `paper/rule-only-progress/check/end_judgment_check.py`,
+  a box falls and an alarm rings in the same step, each with a hard `Response`, plus a hard
+  `Absence`, and one step is left: idling totals -2.1, breaking the `Absence` totals -1.1, answering
+  the box totals -1.1 ([rule-only progress](paper/rule-only-progress/README.md)).
 
 ### FL-AT change
 

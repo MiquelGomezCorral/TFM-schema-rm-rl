@@ -14,6 +14,7 @@ from src.compiler import (
     build_compilation_result,
     parse_paper_reward_machine,
     parse_reward_machine,
+    serialize_paper_reward_machine,
     serialize_reward_machine,
 )
 from src.config import PriorityLevel
@@ -92,6 +93,28 @@ REWARD_FUNCTION:
             self.assertEqual(path.read_text(encoding="utf-8"), expected)
             svg = ElementTree.fromstring(render_reward_machine(path.read_text(encoding="utf-8")))
             self.assertEqual(svg.tag, "{http://www.w3.org/2000/svg}svg")
+
+    def test_end_judgment_lines_round_trip_with_an_edited_value(self):
+        text = """REWARD_MACHINE:
+STATES: u0, u1
+INITIAL_STATE: u0
+FINAL_STATES:
+ACCEPTING_STATES: u0
+DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -2
+SOFT_FAILED_REWARD: -0.5
+TRANSITION_FUNCTION:
+(u0, a&!b) -> u1
+(u1, b) -> u0
+REWARD_FUNCTION:
+(u0, a&!b, u1) -> -0.1
+(u1, b, u0) -> 0.1
+PENDING_PROMISES:
+u1: hard 1, soft 2
+"""
+        self.assertEqual(serialize_paper_reward_machine(parse_paper_reward_machine(text)), text)
+        self.assertEqual(serialize_reward_machine(parse_reward_machine(text)), text)
+        self.assertEqual(parse_paper_reward_machine(text).judgment.end_charge("u1"), -3)
 
     def test_import_preserves_guards_self_loops_and_else(self):
         text = """REWARD_MACHINE:

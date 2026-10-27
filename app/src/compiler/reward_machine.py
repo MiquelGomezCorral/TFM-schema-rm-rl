@@ -19,10 +19,34 @@ class Transition:
 
 
 @dataclass(frozen=True)
+class EndJudgment:
+    """How a machine with no final state judges an episode the environment ends.
+
+    ``accepting`` lists the states where no promise is open; a soft rule broken for good was paid
+    when it broke and counts as kept. ``pending`` holds ``(state, hard, soft)``, the open promises
+    of every other state except the rejecting well. Each open promise pays its failed reward.
+    States are numbers in a ``RewardMachineStructure`` and names in a ``PaperRewardMachine``.
+    """
+
+    accepting: tuple[int | str, ...]
+    pending: tuple[tuple[int | str, int, int], ...]
+    hard_failed_reward: float
+    soft_failed_reward: float
+
+    def end_charge(self, state: int | str) -> float:
+        """The failed rewards owed for the promises open in ``state``."""
+        for name, hard, soft in self.pending:
+            if name == state:
+                return hard * self.hard_failed_reward + soft * self.soft_failed_reward
+        return 0.0
+
+
+@dataclass(frozen=True)
 class RewardMachineStructure:
     """A numeric Reward Machine with at most one success final state.
 
-    A rule-only machine (no hard goal) has no final state: ``final_state`` is ``None``.
+    A rule-only machine (no hard goal) has no final state: ``final_state`` is ``None`` and
+    ``judgment`` says how an episode the environment ends is judged.
     """
 
     states: tuple[int, ...]
@@ -30,6 +54,7 @@ class RewardMachineStructure:
     final_state: int | None
     rejecting_states: tuple[int, ...]
     transitions: tuple[Transition, ...]
+    judgment: EndJudgment | None = None
 
 
 # ======================================================================================

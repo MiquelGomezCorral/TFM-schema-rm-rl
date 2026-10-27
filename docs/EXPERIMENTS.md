@@ -307,7 +307,10 @@ Other keys you may need:
 - `env_kwargs: {...}`: arguments for `gym.make` (for example a BabyAI mission).
 - `success: rm`: RM acceptance counts as the success, for tasks the environment cannot judge. Every RM run ends
   its episode on the RM's declared final or rejecting state, on the environment's end, or at the time limit
-  (-0.5 RM reward); `reward_source: rm | env | both` (default `rm`) picks the reward.
+  (-0.5 RM reward for an RM without `PENDING_PROMISES`; an RM with `PENDING_PROMISES`, a rule-only task, instead charges
+  its open promises at every environment-caused end, see `docs/decisions/arm-fm/rm-execution.md`).
+  For an RM with no final state, `success: rm` counts an episode the environment ended in an
+  `ACCEPTING_STATES` state as a success. `reward_source: rm | env | both` (default `rm`) picks the reward.
 - `task_bundles:`: one agent trained on several tasks, one drawn per episode (see
 
 `configs/babyai-chosen-mission/wave3/compiler-multi.yaml`).

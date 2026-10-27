@@ -10,6 +10,7 @@ table differs from it. The design is in the
 [`COMPILER_REWARD_DESIGN.md`](../../COMPILER_REWARD_DESIGN.md).
 
 Contents: [Notation](#notation) · [Scope](#scope) · [Hard, soft and recurrent soft](#hard-soft-and-recurrent-soft) ·
+[Where the environment ends the episode](#where-the-environment-ends-the-episode) ·
 [The eight templates at a glance](#the-eight-templates-at-a-glance) ·
 [1 Existence](#1-existence) · [2 ExistenceTwo](#2-existencetwo) · [3 Absence](#3-absence) ·
 [4 RespondedExistence](#4-respondedexistence) · [5 Response](#5-response) · [6 Precedence](#6-precedence) ·
@@ -30,7 +31,9 @@ Contents: [Notation](#notation) · [Scope](#scope) · [Hard, soft and recurrent 
   broken to broken in the machine's own product. The other rewards are constants too (see
   `traces.txt`): well −1, completion +1, progress 0.1 per step closer to the final (with no final, to
   the states where no rule is waiting for an answer), and −0.5 on the finishing edge for a soft rule
-  still open.
+  still open. A machine with no final has no finishing edge: where the environment ends an episode
+  with a rule still open, it charges −1 for a hard promise and −0.5 for a soft one
+  ([the end of the episode](#where-the-environment-ends-the-episode)).
 - A table cell reads `state, reward`: the RM state after the step and the reward of that step.
   `(well)` and `(final)` mark the step where the episode ends, and the rows after it show `—`. A
   hard trace therefore stops at the step the episode ends.
@@ -128,6 +131,55 @@ depends on the machine's shape, so totals next to a goal can differ by 0.1 betwe
 charges do not. For the four re-armed templates the script walks each alone-trace again next to the
 goal and asserts the same charge count.
 
+## Where the environment ends the episode
+
+The traces above stop at the last step of the trace and show what the machine pays by itself. A
+machine with no final state, which is every template alone except hard Existence and hard
+ExistenceTwo, also judges the end. When the environment stops the episode (the goal is reached or
+the time limit hits) and the machine has not, each promise still open in the machine's state is
+charged its failed reward: −1 for a hard promise and −0.5 for a soft one. This replaces the flat
+−0.5 that a time limit used to cost every such run, kept or not. The machine ending the episode
+itself, by the well, is never charged again. The design is in
+[the end judgment](../../COMPILER_REWARD_DESIGN.md#the-end-judgment).
+
+The compiler writes the judgment into the RM text. Response alone, hard, has these lines
+(`check/graphs/Response.hard.rm`):
+
+```text
+ACCEPTING_STATES: u0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
+...
+PENDING_PROMISES:
+u1: hard 1, soft 0
+```
+
+`ACCEPTING_STATES` lists the states where no promise is open. `PENDING_PROMISES` comes last, one row
+per other state, with how many hard and how many soft promises it holds open. A soft rule broken for
+good was paid −0.5 when it broke, so its state counts as accepting. A hard rule broken for good is the
+well, which rejects: it is in neither list, and it ends the episode on its own. The two failed
+rewards are editable values; a text without them takes −1 and −0.5. Machines with a final state, and
+hand-written bundles, carry none of these lines and behave as before.
+
+Read as a machine that accepts or rejects the string of propositions the environment generates, an
+episode that ends in an accepting state is accepted: `rm_accept` is true and, with `success: rm`, so
+is the success flag, whether the episode terminated or was cut off. An episode that ends with a
+promise open pays for each one. The trainers do not change: PPO and DQN keep their time-limit
+bootstrap and receive the charge as part of the step reward. The machine only sees propositions, so
+the charge is the same whoever caused `x`.
+
+**Response alone, the time limit after the last step.** The totals come from the real
+`RewardMachineEnvironment`; the last column plays the same machines with the judgment lines removed.
+
+| Trace | Hard | Soft | Without the end judgment |
+|---|---|---|---|
+| `x y` | 0 | 0 | −0.5 |
+| `- -` | 0 | 0 | −0.5 |
+| `x - -` | −1.1 | −0.6 | −0.6 |
+
+A rule that was kept (`x y`) or never started (`- -`) no longer pays for the time limit. A `y` still
+owed at the end (`x - -`) costs the −0.1 of the `x` plus the failed reward, −1 hard and −0.5 soft.
+
 ## The eight templates at a glance
 
 The soft column on the right is the default. "Open" means a promise not yet kept when the episode
@@ -180,11 +232,16 @@ REWARD_FUNCTION:
 STATES: u0, u1
 INITIAL_STATE: u0
 FINAL_STATES:
+ACCEPTING_STATES: u1
 DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
 TRANSITION_FUNCTION:
 (u0, has_key) -&gt; u1
 REWARD_FUNCTION:
-(u0, has_key, u1) -&gt; 0.1</pre>
+(u0, has_key, u1) -&gt; 0.1
+PENDING_PROMISES:
+u0: hard 0, soft 1</pre>
 </details>
 </td>
 </tr></table>
@@ -292,13 +349,19 @@ REWARD_FUNCTION:
 STATES: u0, u1, u2
 INITIAL_STATE: u0
 FINAL_STATES:
+ACCEPTING_STATES: u2
 DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
 TRANSITION_FUNCTION:
 (u0, door_open) -&gt; u1
 (u1, door_open) -&gt; u2
 REWARD_FUNCTION:
 (u0, door_open, u1) -&gt; 0.1
-(u1, door_open, u2) -&gt; 0.1</pre>
+(u1, door_open, u2) -&gt; 0.1
+PENDING_PROMISES:
+u0: hard 0, soft 1
+u1: hard 0, soft 1</pre>
 </details>
 </td>
 </tr></table>
@@ -405,11 +468,15 @@ STATES: u0, u1
 INITIAL_STATE: u0
 FINAL_STATES:
 REJECTING_STATES: u1
+ACCEPTING_STATES: u0
 DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
 TRANSITION_FUNCTION:
 (u0, key_lost) -&gt; u1
 REWARD_FUNCTION:
-(u0, key_lost, u1) -&gt; -1</pre>
+(u0, key_lost, u1) -&gt; -1
+PENDING_PROMISES:</pre>
 </details>
 </td>
 <td valign="top">
@@ -420,11 +487,15 @@ REWARD_FUNCTION:
 STATES: u0, u1
 INITIAL_STATE: u0
 FINAL_STATES:
+ACCEPTING_STATES: u0, u1
 DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
 TRANSITION_FUNCTION:
 (u0, key_lost) -&gt; u1
 REWARD_FUNCTION:
-(u0, key_lost, u1) -&gt; -0.5</pre>
+(u0, key_lost, u1) -&gt; -0.5
+PENDING_PROMISES:</pre>
 </details>
 </td>
 <td valign="top">
@@ -435,12 +506,16 @@ REWARD_FUNCTION:
 STATES: u0, u1
 INITIAL_STATE: u0
 FINAL_STATES:
+ACCEPTING_STATES: u0, u1
 DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
 TRANSITION_FUNCTION:
 (u0, key_lost) -&gt; u1
 (u1, !key_lost) -&gt; u0
 REWARD_FUNCTION:
-(u0, key_lost, u1) -&gt; -0.5</pre>
+(u0, key_lost, u1) -&gt; -0.5
+PENDING_PROMISES:</pre>
 </details>
 </td>
 </tr></table>
@@ -526,18 +601,22 @@ door ever opens, the agent also holds the key at some step.
 
 **Machine.** `u0` is the start; `u2` is reached by `x` and means "`x` seen, `y` owed"; `u1` is
 reached by `y` (or by `xy`) and means "`y` seen", done for good. The DFA has no broken-for-good
-state: an owed `y` can always still arrive. The three versions are the same machine.
+state: an owed `y` can always still arrive. Soft with the recurrent setting off and on is the same
+machine; the hard one differs in one line of its text, the kind of promise `u2` holds open.
 
 <table><tr>
 <td valign="top">
-<b>Hard, soft off and soft on (the same machine alone)</b><br>
-<img src="check/graphs/RespondedExistence.all.svg" alt="Hard, soft off and soft on (the same machine alone)">
+<b>Hard</b><br>
+<img src="check/graphs/RespondedExistence.hard.svg" alt="Hard">
 <details><summary>RM text</summary>
 <pre>REWARD_MACHINE:
 STATES: u0, u1, u2
 INITIAL_STATE: u0
 FINAL_STATES:
+ACCEPTING_STATES: u0, u1
 DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
 TRANSITION_FUNCTION:
 (u0, !door_open&amp;has_key) -&gt; u1
 (u0, door_open&amp;!has_key) -&gt; u2
@@ -545,7 +624,33 @@ TRANSITION_FUNCTION:
 (u2, has_key) -&gt; u1
 REWARD_FUNCTION:
 (u0, door_open&amp;!has_key, u2) -&gt; -0.1
-(u2, has_key, u1) -&gt; 0.1</pre>
+(u2, has_key, u1) -&gt; 0.1
+PENDING_PROMISES:
+u2: hard 1, soft 0</pre>
+</details>
+</td>
+<td valign="top">
+<b>Soft, recurrent off and on (the same machine)</b><br>
+<img src="check/graphs/RespondedExistence.soft.svg" alt="Soft, recurrent off and on (the same machine)">
+<details><summary>RM text</summary>
+<pre>REWARD_MACHINE:
+STATES: u0, u1, u2
+INITIAL_STATE: u0
+FINAL_STATES:
+ACCEPTING_STATES: u0, u1
+DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
+TRANSITION_FUNCTION:
+(u0, !door_open&amp;has_key) -&gt; u1
+(u0, door_open&amp;!has_key) -&gt; u2
+(u0, door_open&amp;has_key) -&gt; u1
+(u2, has_key) -&gt; u1
+REWARD_FUNCTION:
+(u0, door_open&amp;!has_key, u2) -&gt; -0.1
+(u2, has_key, u1) -&gt; 0.1
+PENDING_PROMISES:
+u2: hard 0, soft 1</pre>
 </details>
 </td>
 </tr></table>
@@ -553,7 +658,10 @@ REWARD_FUNCTION:
 **Hard and soft, alone.** The machine has no final, so a missing `y` blocks nothing, and the rule
 never reaches the well. Progress aims at the states where no `y` is owed: the `x` that leaves a `y`
 owed costs 0.1 and the `y` pays it back (`x y` totals 0), so an `x` left unanswered when the trace
-ends totals −0.1 (`x -` in the summary). Hard and soft are the same machine.
+ends totals −0.1 (`x -` in the summary). The two machines move and pay alike; they differ only in
+the last line of the text, `u2: hard 1, soft 0` against `u2: hard 0, soft 1`, which is what the
+environment charges when it ends the episode with the `y` still owed
+([the end of the episode](#where-the-environment-ends-the-episode)).
 
 **RespondedExistence, all traces**
 
@@ -661,31 +769,62 @@ open on that step or later.
 
 **Machine.** `u0` is the start, with no open obligation; `u1` is reached by `x` and means "`x` seen,
 `y` owed". A `y` returns to `u0`. The DFA has no broken-for-good state: an unanswered `x` is never
-lost, since a later `y` still answers it. The three versions are the same machine.
+lost, since a later `y` still answers it. Soft with the recurrent setting off and on is the same
+machine; the hard one differs in one line of its text, the kind of promise `u1` holds open.
 
 <table><tr>
 <td valign="top">
-<b>Hard, soft off and soft on (the same machine alone)</b><br>
-<img src="check/graphs/Response.all.svg" alt="Hard, soft off and soft on (the same machine alone)">
+<b>Hard</b><br>
+<img src="check/graphs/Response.hard.svg" alt="Hard">
 <details><summary>RM text</summary>
 <pre>REWARD_MACHINE:
 STATES: u0, u1
 INITIAL_STATE: u0
 FINAL_STATES:
+ACCEPTING_STATES: u0
 DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
 TRANSITION_FUNCTION:
 (u0, !door_open&amp;has_key) -&gt; u1
 (u1, door_open) -&gt; u0
 REWARD_FUNCTION:
 (u0, !door_open&amp;has_key, u1) -&gt; -0.1
-(u1, door_open, u0) -&gt; 0.1</pre>
+(u1, door_open, u0) -&gt; 0.1
+PENDING_PROMISES:
+u1: hard 1, soft 0</pre>
+</details>
+</td>
+<td valign="top">
+<b>Soft, recurrent off and on (the same machine)</b><br>
+<img src="check/graphs/Response.soft.svg" alt="Soft, recurrent off and on (the same machine)">
+<details><summary>RM text</summary>
+<pre>REWARD_MACHINE:
+STATES: u0, u1
+INITIAL_STATE: u0
+FINAL_STATES:
+ACCEPTING_STATES: u0
+DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
+TRANSITION_FUNCTION:
+(u0, !door_open&amp;has_key) -&gt; u1
+(u1, door_open) -&gt; u0
+REWARD_FUNCTION:
+(u0, !door_open&amp;has_key, u1) -&gt; -0.1
+(u1, door_open, u0) -&gt; 0.1
+PENDING_PROMISES:
+u1: hard 0, soft 1</pre>
 </details>
 </td>
 </tr></table>
 
 **Hard and soft, alone.** As for RespondedExistence: no final to block, and no well. The `x` that
 opens an obligation costs 0.1 and the `y` that answers it pays it back; an `x` still unanswered when
-the trace ends totals −0.1. Hard and soft are the same machine.
+the trace ends totals −0.1. The two machines move and pay alike; they differ only in the last line
+of the text, `u1: hard 1, soft 0` against `u1: hard 0, soft 1`, charged when the environment ends the
+episode with the `y` still owed
+([the end of the episode](#where-the-environment-ends-the-episode)).
 
 **Response, all traces**
 
@@ -793,13 +932,17 @@ STATES: u0, u1, u2
 INITIAL_STATE: u0
 FINAL_STATES:
 REJECTING_STATES: u2
+ACCEPTING_STATES: u0, u1
 DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
 TRANSITION_FUNCTION:
 (u0, !door_open&amp;has_key) -&gt; u1
 (u0, door_open&amp;!has_key) -&gt; u2
 (u0, door_open&amp;has_key) -&gt; u1
 REWARD_FUNCTION:
-(u0, door_open&amp;!has_key, u2) -&gt; -1</pre>
+(u0, door_open&amp;!has_key, u2) -&gt; -1
+PENDING_PROMISES:</pre>
 </details>
 </td>
 <td valign="top">
@@ -810,13 +953,17 @@ REWARD_FUNCTION:
 STATES: u0, u1, u2
 INITIAL_STATE: u0
 FINAL_STATES:
+ACCEPTING_STATES: u0, u1, u2
 DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
 TRANSITION_FUNCTION:
 (u0, !door_open&amp;has_key) -&gt; u1
 (u0, door_open&amp;!has_key) -&gt; u2
 (u0, door_open&amp;has_key) -&gt; u1
 REWARD_FUNCTION:
-(u0, door_open&amp;!has_key, u2) -&gt; -0.5</pre>
+(u0, door_open&amp;!has_key, u2) -&gt; -0.5
+PENDING_PROMISES:</pre>
 </details>
 </td>
 <td valign="top">
@@ -827,7 +974,10 @@ REWARD_FUNCTION:
 STATES: u0, u1, u2
 INITIAL_STATE: u0
 FINAL_STATES:
+ACCEPTING_STATES: u0, u1, u2
 DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
 TRANSITION_FUNCTION:
 (u0, !door_open&amp;has_key) -&gt; u1
 (u0, door_open&amp;!has_key) -&gt; u2
@@ -836,7 +986,8 @@ TRANSITION_FUNCTION:
 (u2, !door_open&amp;has_key) -&gt; u1
 (u2, door_open&amp;has_key) -&gt; u1
 REWARD_FUNCTION:
-(u0, door_open&amp;!has_key, u2) -&gt; -0.5</pre>
+(u0, door_open&amp;!has_key, u2) -&gt; -0.5
+PENDING_PROMISES:</pre>
 </details>
 </td>
 </tr></table>
@@ -1016,7 +1167,10 @@ STATES: u0, u1, u2
 INITIAL_STATE: u0
 FINAL_STATES:
 REJECTING_STATES: u2
+ACCEPTING_STATES: u0
 DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
 TRANSITION_FUNCTION:
 (u0, has_key) -&gt; u1
 (u1, !door_open) -&gt; u2
@@ -1024,7 +1178,9 @@ TRANSITION_FUNCTION:
 REWARD_FUNCTION:
 (u0, has_key, u1) -&gt; -0.1
 (u1, !door_open, u2) -&gt; -1
-(u1, door_open&amp;!has_key, u0) -&gt; 0.1</pre>
+(u1, door_open&amp;!has_key, u0) -&gt; 0.1
+PENDING_PROMISES:
+u1: hard 1, soft 0</pre>
 </details>
 </td>
 <td valign="top">
@@ -1035,7 +1191,10 @@ REWARD_FUNCTION:
 STATES: u0, u1, u2
 INITIAL_STATE: u0
 FINAL_STATES:
+ACCEPTING_STATES: u0, u2
 DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
 TRANSITION_FUNCTION:
 (u0, has_key) -&gt; u1
 (u1, !door_open) -&gt; u2
@@ -1043,7 +1202,9 @@ TRANSITION_FUNCTION:
 REWARD_FUNCTION:
 (u0, has_key, u1) -&gt; -0.1
 (u1, !door_open, u2) -&gt; -0.4
-(u1, door_open&amp;!has_key, u0) -&gt; 0.1</pre>
+(u1, door_open&amp;!has_key, u0) -&gt; 0.1
+PENDING_PROMISES:
+u1: hard 0, soft 1</pre>
 </details>
 </td>
 <td valign="top">
@@ -1054,7 +1215,10 @@ REWARD_FUNCTION:
 STATES: u0, u1, u2
 INITIAL_STATE: u0
 FINAL_STATES:
+ACCEPTING_STATES: u0, u2
 DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
 TRANSITION_FUNCTION:
 (u0, has_key) -&gt; u1
 (u1, !door_open) -&gt; u2
@@ -1065,7 +1229,9 @@ REWARD_FUNCTION:
 (u0, has_key, u1) -&gt; -0.1
 (u1, !door_open, u2) -&gt; -0.4
 (u1, door_open&amp;!has_key, u0) -&gt; 0.1
-(u2, has_key, u1) -&gt; -0.1</pre>
+(u2, has_key, u1) -&gt; -0.1
+PENDING_PROMISES:
+u1: hard 0, soft 1</pre>
 </details>
 </td>
 </tr></table>
@@ -1202,7 +1368,10 @@ STATES: u0, u1, u2, u3
 INITIAL_STATE: u0
 FINAL_STATES:
 REJECTING_STATES: u3
+ACCEPTING_STATES: u0, u1, u2
 DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
 TRANSITION_FUNCTION:
 (u0, !has_key&amp;key_lost) -&gt; u1
 (u0, has_key&amp;!key_lost) -&gt; u2
@@ -1212,7 +1381,8 @@ TRANSITION_FUNCTION:
 REWARD_FUNCTION:
 (u0, has_key&amp;key_lost, u3) -&gt; -1
 (u1, has_key, u3) -&gt; -1
-(u2, key_lost, u3) -&gt; -1</pre>
+(u2, key_lost, u3) -&gt; -1
+PENDING_PROMISES:</pre>
 </details>
 </td>
 <td valign="top">
@@ -1223,7 +1393,10 @@ REWARD_FUNCTION:
 STATES: u0, u1, u2, u3
 INITIAL_STATE: u0
 FINAL_STATES:
+ACCEPTING_STATES: u0, u1, u2, u3
 DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
 TRANSITION_FUNCTION:
 (u0, !has_key&amp;key_lost) -&gt; u1
 (u0, has_key&amp;!key_lost) -&gt; u2
@@ -1233,7 +1406,8 @@ TRANSITION_FUNCTION:
 REWARD_FUNCTION:
 (u0, has_key&amp;key_lost, u3) -&gt; -0.5
 (u1, has_key, u3) -&gt; -0.5
-(u2, key_lost, u3) -&gt; -0.5</pre>
+(u2, key_lost, u3) -&gt; -0.5
+PENDING_PROMISES:</pre>
 </details>
 </td>
 <td valign="top">
@@ -1244,7 +1418,10 @@ REWARD_FUNCTION:
 STATES: u0, u1, u2, u3
 INITIAL_STATE: u0
 FINAL_STATES:
+ACCEPTING_STATES: u0, u1, u2, u3
 DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
 TRANSITION_FUNCTION:
 (u0, !has_key&amp;key_lost) -&gt; u1
 (u0, has_key&amp;!key_lost) -&gt; u2
@@ -1257,7 +1434,8 @@ TRANSITION_FUNCTION:
 REWARD_FUNCTION:
 (u0, has_key&amp;key_lost, u3) -&gt; -0.5
 (u1, has_key, u3) -&gt; -0.5
-(u2, key_lost, u3) -&gt; -0.5</pre>
+(u2, key_lost, u3) -&gt; -0.5
+PENDING_PROMISES:</pre>
 </details>
 </td>
 </tr></table>

@@ -142,9 +142,11 @@ class RewardMachineEnvironment:
 
     The episode ends when the environment ends or, with ``terminate_on_rm``, the RM enters a
     final or rejecting state. A step that hits the time limit without terminating adds the
-    time-limit penalty to the RM reward. ``info`` carries the raw ``env_reward`` and the
-    ``rm_reward``; the returned reward is the RM reward (``reward_source`` ``rm``) or env + RM
-    (``both``).
+    time-limit penalty to the RM reward. A machine with an end judgment takes the place of that
+    penalty: on the step where the environment ends the episode and the RM did not, it adds the
+    failed reward of every promise open in the RM state. ``info`` carries the raw ``env_reward``
+    and the ``rm_reward``; the returned reward is the RM reward (``reward_source`` ``rm``) or
+    env + RM (``both``).
     """
 
     def __init__(
@@ -165,6 +167,7 @@ class RewardMachineEnvironment:
             if terminate_on_rm
             else frozenset()
         )
+        self.judgment = runtime.machine.judgment
         self.propositions = runtime.machine.propositions
         self.labeling = (
             load_labeling_functions(labeling, self.propositions)
@@ -200,10 +203,15 @@ class RewardMachineEnvironment:
             truncated = False
         valuation = self.runtime.evaluate_labeling(self.environment, self.labeling)
         rm_step = self.runtime.step(valuation)
-        terminated = bool(terminated) or rm_step.destination in self.terminal_states
+        env_ended = bool(terminated) or truncated
+        rm_ended = rm_step.destination in self.terminal_states
+        terminated = bool(terminated) or rm_ended
         rm_reward = rm_step.reward
-        if truncated and not terminated:
-            rm_reward += Configuration.TIME_LIMIT_PENALTY
+        if self.judgment is None:
+            if truncated and not terminated:
+                rm_reward += Configuration.TIME_LIMIT_PENALTY
+        elif env_ended and not rm_ended:
+            rm_reward += self.judgment.end_charge(rm_step.destination)
         self.execution_evidence.append(
             {
                 "valuation": dict(valuation),

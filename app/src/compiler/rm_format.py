@@ -7,9 +7,12 @@ The compiler writes this format and the ARM-FM runtime reads it, so it lives bel
 import math
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+
+from src.config import Configuration
 
 from .reward_machine import (
+    EndJudgment,
     RewardMachineStructure,
     Transition,
     parse_boolean_guard,
@@ -24,6 +27,14 @@ _REWARD = re.compile(
 _IDENTIFIER = re.compile(r"[a-z_][a-z0-9_]*", re.IGNORECASE)
 _STATE_NUMBER = re.compile(r"^u(\d+)$", re.IGNORECASE)
 _HEADER_LINE = re.compile(r"([A-Z_]+):\s*(.*)")
+_PENDING_ROW = re.compile(r"^(\S+?)\s*:\s*hard\s+(\d+)\s*,\s*soft\s+(\d+)$")
+# The headers and the section that only a machine with an end judgment carries.
+_JUDGMENT_PARTS = {
+    "ACCEPTING_STATES",
+    "HARD_FAILED_REWARD",
+    "SOFT_FAILED_REWARD",
+    "PENDING_PROMISES",
+}
 
 
 class RuntimeValidationError(ValueError):
@@ -49,7 +60,7 @@ class PaperRewardMachine:
     """A paper-style RM with optional, possibly multiple final states and rejecting states.
 
     Both kinds end an episode; only a final state accepts the task. Paper RMs declare no
-    rejecting state.
+    rejecting state. A machine with no final state may carry an ``EndJudgment``.
     """
 
     states: tuple[str, ...]
@@ -59,12 +70,14 @@ class PaperRewardMachine:
     propositions: tuple[str, ...] = ()
     default_reward: float | None = None
     rejecting_states: tuple[str, ...] = ()
+    judgment: EndJudgment | None = None
 
     def __post_init__(self) -> None:
         states = tuple(str(state) for state in self.states)
         finals = tuple(self.final_states)
         rejecting = tuple(self.rejecting_states)
         _check_states(states, self.initial_state, finals, rejecting)
+        _check_judgment(states, finals, rejecting, self.judgment)
         _check_transitions(self.transitions, set(states))
         _check_default_reward(self.default_reward)
         proposition_names = tuple(self.propositions) or _guard_propositions(self.transitions)
@@ -91,6 +104,36 @@ def _check_states(
         raise RuntimeValidationError("Reward Machine rejecting state is not declared")
     if set(finals) & set(rejecting):
         raise RuntimeValidationError("A Reward Machine state cannot be both final and rejecting")
+
+
+def _check_judgment(
+    states: tuple[str, ...],
+    finals: tuple[str, ...],
+    rejecting: tuple[str, ...],
+    judgment: EndJudgment | None,
+) -> None:
+    """Every state but the rejecting ones is accepting or has promises open, never both."""
+    if judgment is None:
+        return
+    if finals:
+        raise RuntimeValidationError("Only a Reward Machine with no final state has a judgment")
+    accepting = set(judgment.accepting)
+    pending = {state for state, _, _ in judgment.pending}
+    listed = accepting | pending
+    if listed - set(states):
+        raise RuntimeValidationError(
+            f"ACCEPTING_STATES or PENDING_PROMISES names an unknown state: {sorted(listed - set(states))[0]}"
+        )
+    if listed & set(rejecting):
+        raise RuntimeValidationError("A rejecting state cannot be accepting or pending")
+    if accepting & pending:
+        raise RuntimeValidationError(
+            f"State {sorted(accepting & pending)[0]} is both accepting and pending"
+        )
+    if unlisted := set(states) - set(rejecting) - listed:
+        raise RuntimeValidationError(
+            f"State {sorted(unlisted)[0]} is in neither ACCEPTING_STATES nor PENDING_PROMISES"
+        )
 
 
 def _check_transitions(transitions: Sequence[RuntimeTransition], declared: set[str]) -> None:
@@ -184,7 +227,45 @@ def parse_paper_reward_machine(
         propositions=tuple(propositions),
         default_reward=default_reward,
         rejecting_states=rejecting,
+        judgment=_parse_judgment(sections),
     )
+
+
+def _parse_judgment(sections: Mapping[str, str]) -> EndJudgment | None:
+    """The end judgment of a machine that carries any of its parts; missing values take the defaults."""
+    if not _JUDGMENT_PARTS & sections.keys():
+        return None
+    if "PENDING_PROMISES" not in sections:
+        raise RuntimeValidationError("End-judgment lines need a PENDING_PROMISES section")
+    return EndJudgment(
+        accepting=_parse_names(sections.get("ACCEPTING_STATES", ""), "accepting state"),
+        pending=_parse_pending(sections.get("PENDING_PROMISES", "")),
+        hard_failed_reward=_parse_header_reward(
+            "HARD_FAILED_REWARD",
+            sections.get("HARD_FAILED_REWARD"),
+            Configuration.HARD_FAILED_REWARD,
+        ),
+        soft_failed_reward=_parse_header_reward(
+            "SOFT_FAILED_REWARD",
+            sections.get("SOFT_FAILED_REWARD"),
+            Configuration.SOFT_FAILED_REWARD,
+        ),
+    )
+
+
+def _parse_pending(section: str) -> tuple[tuple[str, int, int], ...]:
+    rows: list[tuple[str, int, int]] = []
+    seen: set[str] = set()
+    for line_number, line in _content_lines(section):
+        match = _PENDING_ROW.fullmatch(line)
+        if match is None:
+            raise RuntimeValidationError(f"Malformed pending promises row on line {line_number}")
+        state, hard, soft = match.group(1), int(match.group(2)), int(match.group(3))
+        if state in seen:
+            raise RuntimeValidationError(f"Duplicate pending promises row on line {line_number}")
+        seen.add(state)
+        rows.append((state, hard, soft))
+    return tuple(rows)
 
 
 def _parse_transitions(section: str, states: tuple[str, ...]) -> list[RuntimeTransition]:
@@ -287,8 +368,17 @@ def serialize_paper_reward_machine(machine: PaperRewardMachine) -> str:
     )
     if machine.rejecting_states:
         lines.append(f"REJECTING_STATES: {', '.join(machine.rejecting_states)}")
+    judgment = machine.judgment
+    if judgment is not None:
+        lines.append(
+            "ACCEPTING_STATES:"
+            + (f" {', '.join(map(str, judgment.accepting))}" if judgment.accepting else "")
+        )
     if machine.default_reward is not None:
         lines.append(f"DEFAULT_REWARD: {_format_reward(machine.default_reward)}")
+    if judgment is not None:
+        lines.append(f"HARD_FAILED_REWARD: {_format_reward(judgment.hard_failed_reward)}")
+        lines.append(f"SOFT_FAILED_REWARD: {_format_reward(judgment.soft_failed_reward)}")
     lines.append("TRANSITION_FUNCTION:")
     lines.extend(f"({item.source}, {item.condition}) -> {item.destination}" for item in transitions)
     lines.append("REWARD_FUNCTION:")
@@ -297,6 +387,9 @@ def serialize_paper_reward_machine(machine: PaperRewardMachine) -> str:
         for item in transitions
         if item.reward != 0
     )
+    if judgment is not None:
+        lines.append("PENDING_PROMISES:")
+        lines.extend(f"{state}: hard {hard}, soft {soft}" for state, hard, soft in judgment.pending)
     return "\n".join(lines) + "\n"
 
 
@@ -327,6 +420,7 @@ def compiler_machine_to_paper(
         propositions=tuple(propositions),
         default_reward=0.0,
         rejecting_states=tuple(state_names[state] for state in reward_machine.rejecting_states),
+        judgment=_rename_judgment(reward_machine.judgment, state_names),
     )
 
 
@@ -353,6 +447,20 @@ def paper_to_structure(machine: PaperRewardMachine) -> RewardMachineStructure:
         final_state=final_state,
         rejecting_states=_rejecting_indexes(machine, index, final_state, transitions),
         transitions=transitions,
+        judgment=_rename_judgment(machine.judgment, index),
+    )
+
+
+def _rename_judgment(
+    judgment: EndJudgment | None, names: Mapping[int | str, int | str]
+) -> EndJudgment | None:
+    """The same judgment with every state renamed: numbers to ``u<N>`` names or back."""
+    if judgment is None:
+        return None
+    return replace(
+        judgment,
+        accepting=tuple(names[state] for state in judgment.accepting),
+        pending=tuple((names[state], hard, soft) for state, hard, soft in judgment.pending),
     )
 
 
@@ -385,7 +493,14 @@ def _split_sections(text: str) -> dict[str, str]:
             continue
         if line.endswith(":") and line[:-1].strip().replace(" ", "_").isidentifier():
             name = line[:-1].strip().replace(" ", "_").upper()
-            if name in {"REWARD_MACHINE", "REWARD_FUNCTION", "TRANSITION_FUNCTION"}:
+            if name in {
+                "REWARD_MACHINE",
+                "REWARD_FUNCTION",
+                "TRANSITION_FUNCTION",
+                "PENDING_PROMISES",
+            }:
+                if "PENDING_PROMISES" in sections:
+                    raise RuntimeValidationError("PENDING_PROMISES must follow REWARD_FUNCTION")
                 current = name
                 sections.setdefault(name, [])
                 continue
@@ -402,6 +517,9 @@ def _split_sections(text: str) -> dict[str, str]:
             "FINAL_STATES",
             "REJECTING_STATES",
             "DEFAULT_REWARD",
+            "ACCEPTING_STATES",
+            "HARD_FAILED_REWARD",
+            "SOFT_FAILED_REWARD",
         }:
             sections[header.group(1)] = [header.group(2)]
         else:
@@ -438,12 +556,21 @@ def _finite_reward(value: str, line_number: int) -> float:
 def _parse_default_reward(value: str | None) -> float | None:
     if value is None:
         return None
+    reward = _parse_header_reward("DEFAULT_REWARD", value, 0.0)
+    if reward != 0:
+        raise RuntimeValidationError("DEFAULT_REWARD must be 0")
+    return reward
+
+
+def _parse_header_reward(name: str, value: str | None, default: float) -> float:
+    if value is None:
+        return default
     try:
         reward = float(value.strip())
     except ValueError as error:
-        raise RuntimeValidationError("Invalid DEFAULT_REWARD header") from error
-    if not math.isfinite(reward) or reward != 0:
-        raise RuntimeValidationError("DEFAULT_REWARD must be 0")
+        raise RuntimeValidationError(f"Invalid {name} header") from error
+    if not math.isfinite(reward):
+        raise RuntimeValidationError(f"{name} must be finite")
     return reward
 
 
