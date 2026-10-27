@@ -67,9 +67,12 @@ tasks, while keeping the generator and critic responsibilities stable.
   and follow the machine's event memory and fallback semantics.
 - The compiler critic uses a paper-inspired checklist adapted to deterministic compilation:
   logic, grounding, completeness, compactness, format, event coverage, and reward safety using
-  [RM execution](rm-execution.md). Rule-only tasks and warned soft clauses without reward effect
-  are valid output. Generic worked examples illustrate acceptance and
-  concrete rejection without declaring propositions for the submitted environment.
+  [RM execution](rm-execution.md). Rule-only tasks are valid output: they get progress toward
+  the states with no pending clause and the end judgment of [RM execution](rm-execution.md).
+  A soft clause is warned as having no reward effect when no edge pays it a break or finish term; in
+  a machine with no final, a progress edge where it starts or stops waiting also counts. That is
+  valid output. Generic worked examples illustrate
+  acceptance and concrete rejection without declaring propositions for the submitted environment.
 - A correct candidate is accepted without optional changes. Rejection identifies a
   necessary defect in an actual clause, header, or transition; an RM semantic defect
   includes a feasible event sequence following the candidate's rows. Critics do not
@@ -120,7 +123,13 @@ tasks, while keeping the generator and critic responsibilities stable.
   sections. Generated headers are `REWARD_MACHINE:`, `STATES:`, `INITIAL_STATE:`,
   `FINAL_STATES:` (zero or one state; empty for rule-only tasks), `REJECTING_STATES:`
   (the one rejecting well, only when present), and `DEFAULT_REWARD: 0`. `STATES` includes all
-  states, including accepting and rejecting states.
+  states, including accepting and rejecting states. A machine with no final state also gets
+  `ACCEPTING_STATES:` (the states with no pending clause; a broken soft clause, already paid,
+  counts as accepted) before `DEFAULT_REWARD`,
+  `HARD_FAILED_REWARD:` and `SOFT_FAILED_REWARD:` after it (from `Configuration`, -1 and -0.5,
+  editable in the file), and a last `PENDING_PROMISES:` section after `REWARD_FUNCTION`, one row
+  per state with open promises (`u2: hard 1, soft 1`). The compiler derives them from the clause
+  labels; clause names do not appear.
 - Transition rows are `(source, guard) -> destination`, including zero-reward state
   changes. Reward rows are `(source, guard, destination) -> reward` and generated text
   lists only nonzero rewards; omitted rewards are zero. Guards use `!`, `&`, `|`, and
@@ -280,3 +289,8 @@ through their inputs and prompts, while both challenge the same generator.
   2026-10-12: a pending soft clause already pays -0.5 at the finish (user decision).
 - 2026-10-25: An OpenCode model that refuses reasoning `none` falls back to `low` with a warning
   instead of ending the run after ten refused repeats (user decision).
+- 2026-10-26: Rule-only tasks get rewards: progress toward the states with no pending clause, and
+  the end-judgment lines in the RM text (`ACCEPTING_STATES`, the two failed rewards,
+  `PENDING_PROMISES`). Machines with a final are unchanged (user decisions).
+- 2026-10-27: `ACCEPTING_STATES` = no pending clause: a broken soft rule already paid and counts
+  as accepted, a broken hard rule is the rejecting well (user answer to the plan critique).

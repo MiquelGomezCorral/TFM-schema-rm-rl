@@ -24,18 +24,26 @@ without changing how labels, transitions, and rewards are interpreted.
 - Expect disjoint ordinary guards. If several match, select the first stored transition
   and emit a warning. An `else` row applies only when no ordinary guard matches.
 - Reset the RM and episode-local labeling memory on environment reset.
-- Only declared final states accept the task. A declared rejecting state (`REJECTING_STATES`)
-  marks an irreversible violation; RMs without that line (such as ARM-FM paper RMs) have none.
+- Only declared final states accept the task. A machine with no final may declare
+  `ACCEPTING_STATES` instead: an episode the environment ends in one of them is accepted
+  (`rm_accept`; a success when the run uses `success: rm`), and being there never ends the
+  episode. A declared rejecting state (`REJECTING_STATES`) marks an irreversible violation;
+  RMs without that line (such as ARM-FM paper RMs) have none.
   States remember earlier events; a false proposition now does not erase recorded progress.
   The one exception is a broken soft rule when recurrent soft rules are on: its state takes the
   start state's edges, so the rule watches for the next break. That break was already paid, and
   recorded goal progress is kept; only the progress reward is re-scored.
 - Entering a final or rejecting state ends the episode, as do the environment's own termination
-  and its time limit, for every RM-wrapped run. A truncated step that did not terminate adds -0.5
-  to the RM reward.
+  and its time limit, for every RM-wrapped run. When the environment ends the episode and the RM
+  text has a `PENDING_PROMISES` section, that step adds the end judgment: `HARD_FAILED_REWARD`
+  times the hard promises still open in the RM state after the step, plus `SOFT_FAILED_REWARD`
+  times the soft ones (0 in an accepting state). An RM without that section keeps the flat -0.5 on
+  a truncated step that did not terminate. An episode the RM ended itself gets neither.
 - The learner reward follows the run's `reward_source`: `rm` (default) the RM reward only,
   `both` environment + RM reward, `env` no RM at all. `info["env_reward"]` always holds the raw
-  environment reward and `info["rm_reward"]` the RM reward, including the time-limit penalty.
+  environment reward and `info["rm_reward"]` the RM reward, including the time-limit penalty or
+  the end judgment. The trainers are unchanged: a judged time limit still bootstraps as before,
+  and the end judgment is part of the step reward they receive.
 - App graphs, exported SVGs, the standalone graph script, and the interactive HTML export share
   the same fallback display. Show explicit fallback edges with an `else` label. For every declared state
   without an outgoing `else`, draw a zero-reward self-loop labeled `else`, including
@@ -71,6 +79,9 @@ without changing how labels, transitions, and rewards are interpreted.
   the RM state or reward unless that state's guards explicitly depend on it.
 - Graph fallback edges must not mutate the input machine, serialized output, or
   execution semantics. An explicit `else` destination and reward must remain intact.
+- The end judgment applies once, only on an episode end the RM did not cause, and only to RMs
+  whose text has `PENDING_PROMISES`. RMs without it, such as machines with a final state and
+  imported author bundles, keep the flat -0.5 at the time limit and get no end judgment.
 - The compiler never removes states or transitions on environment facts. The critic judges every
   clause against the environment file (`## Constraints`, the truth table, what the agent can and
   cannot do) and rejects a clause that restates an order the environment guarantees or that rests on
@@ -94,9 +105,12 @@ without expanding the machine or adding a guard-coverage calculation.
 
 - `app/src/arm_fm/runtime.py` owns guard evaluation, explicit fallback selection,
   zero-reward implicit loops, ordered overlap warnings, one update per step, episode termination
-  on final or rejecting states, the time-limit penalty, and the reward source.
-  `tests/test_arm_fm.py` checks the runtime contracts.
-- `app/src/compiler/rm_format.py` owns the shared text parser and serializer; the compiler
+  on final or rejecting states, the time-limit penalty, the end judgment, and the reward source.
+  `tests/test_arm_fm.py` checks the earlier runtime contracts. `app/src/arm_fm/environments.py`
+  owns the success rule. The end judgment and the no-final success rule have no repository test:
+  Review-only, checked live when they change.
+- `app/src/compiler/rm_format.py` owns the shared text parser and serializer, including the
+  optional accepting states, failed rewards, and `PENDING_PROMISES`; the compiler
   and the runtime both import it, and it never imports `src.arm_fm`.
   `tests/test_reward_machine_format.py` checks zero-reward progress, imported guards,
   explicit self-loops, and `else` fallbacks to other destinations.
@@ -138,3 +152,10 @@ without expanding the machine or adding a guard-coverage calculation.
   (user decision).
 - 2026-10-23: A broken soft rule re-arms when the recurrent soft penalty is on (user and
   supervisor).
+- 2026-10-26: Added the end judgment for RMs with `PENDING_PROMISES` (rule-only tasks): every
+  episode end the environment causes, termination or time limit, pays for the promises still open,
+  at values the RM text sets. Machines with a final and author bundles keep the flat -0.5 (user
+  decisions).
+- 2026-10-27: The trainers keep their time-limit bootstrap and the end judgment is added on top
+  ("keep it but add ours"); a machine with no final is accepted when the environment ends it in
+  an accepting state (user answers to the plan critique).

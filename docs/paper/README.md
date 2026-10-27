@@ -82,7 +82,7 @@ prints the proposition ids and the labeling API text.
 **Code.** `EnvironmentDescription.from_file(path, code=True)` in `app/src/models/environment.py`
 (the join), called by `generate_larm` in `app/scripts/generate_larm.py` and by the labeling stage of
 `app/scripts/generate_rm.py`; the rule is in `docs/ENVIRONMENT_AUTHORING.md` and
-`docs/decisions/arm-fm/catalogue-and-evidence.md`. Not committed when this entry was written.
+`docs/decisions/arm-fm/catalogue-and-evidence.md`. Committed as `0ba206b`.
 
 ### Recurrent soft rules (`recurrent-soft-rules/`), 2026-10-25
 
