@@ -208,6 +208,7 @@ one it replaces`. The real code is checked with
 `PYTHONPATH=app python -W ignore docs/paper/rule-only-progress/check/real_code_check.py`. No LLM call.
 
 **Code.** Implemented in `app/src/compiler/reward_layer.py` (`_progress` and `_price_edges`) on branch
-`feat/rule-only-rewards`, base commit `e0a054a`; not committed when this entry was updated. The real code
-compiles the 20 machines to exactly the P2 texts (`check/real_code_check.py`). The simulation itself
-reproduces only on the code of `e0a054a`; the entry's README says how to rerun it.
+`feat/rule-only-rewards`, base commit `e0a054a`; the progress change is commit `d4df200`, the cleanup
+commit `633c3cd`. The real code compiles the 20 machines to exactly the P2 texts
+(`check/real_code_check.py`). The simulation itself reproduces only on the code of `e0a054a`; the
+entry's README says how to rerun it.

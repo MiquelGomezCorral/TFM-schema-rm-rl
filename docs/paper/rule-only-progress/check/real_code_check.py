@@ -70,8 +70,7 @@ def main() -> int:
                 same_p2 = text == p2
                 differs_today = text != today
                 changed += differs_today
-                p2_changes = p2 != today
-                status = "ok" if same_p2 and differs_today == p2_changes else "DIFF"
+                status = "ok" if same_p2 else "DIFF"
                 if status == "DIFF":
                     bad.append(name)
                 print(

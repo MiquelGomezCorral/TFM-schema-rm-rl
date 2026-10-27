@@ -264,7 +264,7 @@ def main() -> None:
                                 "Only when the task has no final state (no hard goal); otherwise nothing changes.\n\n"
                                 "1. Targets are the product states where no clause is `PENDING`: each clause is `SATISFIED` or `VIOLATED`.\n"
                                 "2. For measuring only, drop the targets' outgoing edges and the edges into the well. Without this, Response's `u0 -> u1 -> u0` loop collapses to one node and pays nothing.\n"
-                                "3. `remaining(u)` is the longest number of steps to a target on that graph, cycles collapsed (the body of `_progress`); 0 at targets, and 0 where no target is reachable.\n"
+                                "3. `remaining(u)` is the longest number of steps to a target on that graph, cycles collapsed; 0 at targets, and 0 where no target is reachable.\n"
                                 "4. Every real edge, targets' edges included and well edges excluded, pays `0.1 \u00d7 (remaining(source) \u2212 remaining(destination))` on top of today's price.\n\n"
                                 "Run as a runtime patch of `_price_edges` in `check/p2_sim.py`; no tracked code file is edited."
                             ),

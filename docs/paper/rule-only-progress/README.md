@@ -122,12 +122,12 @@ changed, 11 unchanged`.
 ## Code
 
 Implemented in `app/src/compiler/reward_layer.py` on branch `feat/rule-only-rewards` (base commit
-`e0a054a`; not committed when this entry was updated). With no final state, `_progress` takes the
-states where no clause is pending as targets, cuts their outgoing edges, collapses cycles and scores
-0 where no target is reachable; an edge into such a state pays no progress, like an edge into the well.
-With no final, `_price_edges` counts a soft clause as paid when its waiting starts or stops on an
-edge that pays progress (a proxy, approximate both ways). Machines with a final are priced as before,
-inert warnings included.
+`e0a054a`; the progress change is commit `d4df200`, the cleanup commit `633c3cd`). With no final
+state, `_progress` takes the states where no clause is pending as targets, cuts their outgoing
+edges, collapses cycles and scores 0 where no target is reachable; an edge into such a state pays no
+progress, like an edge into the well. With no final, `_price_edges` counts a soft clause as paid when
+its waiting starts or stops on an edge that pays progress (a proxy, approximate both ways). Machines
+with a final are priced as before, inert warnings included.
 
 The simulation lacked that last rule: it paid the score difference into a state with no way to a
 target (+0.2 for `a & !b & !g` with soft `Existence(g)`, hard `Response(a, b)` and hard

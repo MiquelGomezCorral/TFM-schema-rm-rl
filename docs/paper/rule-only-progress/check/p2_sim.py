@@ -204,7 +204,7 @@ def product_step(captured, state, true_names):
 
 
 def remaining_steps(edges, targets, nodes) -> dict[str, int]:
-    """Longest steps from each node to a target, cycles collapsed (the body of `_progress`); 0 if none is reachable."""
+    """Longest steps from each node to a target, cycles collapsed; 0 if none is reachable."""
     dag = nx.condensation(reward_layer._graph(nodes, edges))
     steps, reaches = {}, {}
     for component in reversed(list(nx.topological_sort(dag))):
