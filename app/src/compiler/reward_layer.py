@@ -344,14 +344,14 @@ def _price_edges(
             continue
 
         finishing = edge.destination in finals
-        reward = progress.get(edge, 0.0)
+        reward = progress[edge]
         if finishing:
             reward += Configuration.TASK_COMPLETION_REWARD
         for clause in soft_clauses:
             before, after = labels[edge.source][clause], labels[edge.destination][clause]
             term = _soft_term(before, after, finishing)
             waits = (before is ClauseState.PENDING) != (after is ClauseState.PENDING)
-            if term or (waits and not finals and progress.get(edge)):
+            if term or (waits and not finals and progress[edge]):
                 paying.add(clause)
                 reward += term
         priced.append((edge, round(reward, 9)))
@@ -377,24 +377,21 @@ def _progress(edges: Sequence[_Edge], product: _Product, finals: set[str]) -> di
     state that reaches no target, pay no progress.
     """
     inner = [edge for edge in edges if edge.destination != _WELL]
-    nodes = {edge.source for edge in edges} | {edge.destination for edge in inner}
+    labels = product.labels
     targets = finals or {
-        state for state in nodes if ClauseState.PENDING not in product.labels[state]
+        state for state, states in labels.items() if ClauseState.PENDING not in states
     }
-    graph = _graph(nodes, [edge for edge in inner if edge.source not in targets])
-    dag = nx.condensation(graph)
+    graph = _graph(labels, [edge for edge in inner if edge.source not in targets])
+    reachable = _reaching(graph, targets)
+    dag = nx.condensation(graph.subgraph(reachable))
     components = dag.graph["mapping"]
     steps: dict[int, int] = {}
-    reaches: dict[int, bool] = {}
     for component in reversed(list(nx.topological_sort(dag))):
-        if not targets.isdisjoint(dag.nodes[component]["members"]):
-            steps[component], reaches[component] = 0, True
-            continue
-        ahead = [steps[child] for child in dag.successors(component) if reaches[child]]
-        reaches[component] = bool(ahead)
-        steps[component] = 1 + max(ahead) if ahead else 0
+        if targets.isdisjoint(dag.nodes[component]["members"]):
+            steps[component] = 1 + max(steps[child] for child in dag.successors(component))
+        else:
+            steps[component] = 0
     remaining = {state: steps[component] for state, component in components.items()}
-    reachable = {state for state, component in components.items() if reaches[component]}
 
     return {
         edge: Configuration.PROGRESS_REWARD * (remaining[edge.source] - remaining[edge.destination])

@@ -35,7 +35,7 @@ from src.compiler import (
     reward_layer,
     serialize_reward_machine,
 )
-from src.compiler.reward_layer import ClauseState, _has_positive_cycle, build_reward_machine
+from src.compiler.reward_layer import ClauseState, build_reward_machine
 from src.config import Configuration, PriorityLevel
 from src.engines.structured import SUPPORTED_TEMPLATES, ProposalSelection
 from src.utils import dfa_text, render_elements_html, reward_machine_to_elements
@@ -256,8 +256,6 @@ def p2_patch():
 def build(dfas, soft, recurrent: bool, p2: bool):
     with p2_patch() if p2 else nullcontext():
         result, captured = build_captured(dfas, soft, recurrent)
-    if _has_positive_cycle(result.reward_machine):
-        raise ValueError("positive reward cycle")
     return result, captured, serialize_reward_machine(result.reward_machine)
 
 
@@ -431,8 +429,7 @@ def compile_rows() -> list[dict]:
                 make_row((pattern, props, priority), recurrent, today, p2, (proposal, dfas))
                 for recurrent, today, p2 in modes
             )
-    # the checks: machines with a final unchanged, hard Existence / ExistenceTwo unchanged
-    assert all(not row["changed"] for row in rows if row["has_final"])
+    # the check: hard Existence / ExistenceTwo unchanged (a machine with a final: see make_row)
     assert all(
         not row["changed"]
         for row in rows

@@ -148,14 +148,10 @@ allowed to be empty. Other pipeline steps own the rest.
   the same: `Phi(u) = -k * (longest remaining steps to a target)`, `Phi = 0` at a target, loops
   collapsed to one node. Targets absorb: their outgoing edges are left out when the distance is
   measured, so a rule that is satisfied again and then opens again does not push the score away
-  from it. A state from which no target can be reached scores 0, and an edge into it pays no progress,
-  like an edge into a well: otherwise a step from two steps out into a dead end (soft `Existence(g)`
-  with hard `Response(a, b)` and hard `NotCoExistence(a, b)`, step `a & !b & !g`) would pay +0.2 for
-  getting nowhere. Wells still pay no progress. A machine with a final is unchanged. In the 20 one-clause machines this
-  changed 9: a rule that waits for an answer (`Response`, `RespondedExistence`, `ChainResponse`)
-  costs 0.1 on the step that leaves it waiting and pays 0.1 back on the step that answers, and a
-  soft `Existence` or `ExistenceTwo` pays 0.1 for each step toward done (the simulation and the
-  numbers: [rule-only progress](paper/rule-only-progress/README.md)).
+  from it. A state from which no target can be reached scores 0, and an edge into it pays no
+  progress, like an edge into a well: otherwise a step into a dead end would pay for getting
+  nowhere. Wells still pay no progress. A machine with a final is unchanged. The simulation, the
+  numbers and the dead-end witness: [rule-only progress](paper/rule-only-progress/README.md).
 - **[run + decision] The duplicate start is dropped, so an idle first step pays 0.** MONA gives
   each rule clause a "no step yet" start state that is left on the first step and never re-entered.
   On every input it goes where the state after an idle step goes, so the product carried one extra

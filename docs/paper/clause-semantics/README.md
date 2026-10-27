@@ -120,10 +120,10 @@ RespondedExistence and Response, hard and soft, cost 0.1 on the `x` that leaves 
 0.1 back on the `y`, so a rule kept ends at 0 and a rule left open at the end of the trace costs 0.1.
 ChainResponse costs 0.1 on `x` and pays 0.1 on the next step, which answers or breaks it (a soft
 break reads −0.4). Absence, Precedence and NotCoExistence never wait, so they pay only their breaks.
-No soft rule alone is left without a reward effect. The charges stay the −0.5 breaks and nothing else, and the script checks that every soft step
-pays a break plus whole steps of 0.1. Next to a goal the same progress term adds small amounts to a
-total, and what a rule still open at the finish costs shows there, so the four "eventually" templates
-also get a "with a goal" table, using the hard stand-in goal `Existence(at_goal)`. The progress term
+No soft rule alone is left without a reward effect. The charges stay the −0.5 breaks and nothing
+else. Next to a goal the same progress term adds small amounts to a total, and what a rule still
+open at the finish costs shows there, so the four "eventually" templates also get a "with a goal"
+table, using the hard stand-in goal `Existence(at_goal)`. The progress term
 depends on the machine's shape, so totals next to a goal can differ by 0.1 between versions; the
 charges do not. For the four re-armed templates the script walks each alone-trace again next to the
 goal and asserts the same charge count.

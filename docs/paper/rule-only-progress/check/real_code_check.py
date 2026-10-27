@@ -40,7 +40,7 @@ def expected_texts() -> dict[str, tuple[str, str]]:
     return blocks
 
 
-def compile_real(sim, pattern: str, props: list[str], priority: str):
+def compile_real(pattern: str, props: list[str], priority: str):
     """The clause alone, compiled by the real layer; one (recurrent, text) per setting that matters."""
     proposal = materialize_proposal(
         f"{pattern} {priority}", [sim.selection(pattern, props, priority)]
@@ -63,7 +63,7 @@ def main() -> int:
     bad, changed, seen = [], 0, set()
     for pattern, props in sim.TEMPLATES:
         for priority in ("hard", "soft"):
-            for recurrent, text in compile_real(sim, pattern, props, priority):
+            for recurrent, text in compile_real(pattern, props, priority):
                 name = f"{pattern}({', '.join(props)}) {priority}{'' if recurrent else ' (recurrent off)'}"
                 seen.add(name)
                 today, p2 = expected[name]
