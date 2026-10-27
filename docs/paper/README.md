@@ -229,5 +229,5 @@ entry's README says how to rerun it. The end judgment is a second step on the sa
 `a5ba449`: `EndJudgment` (`app/src/compiler/reward_machine.py`), the RM text parser and printer
 (`app/src/compiler/rm_format.py`), `_end_judgment` (`app/src/compiler/reward_layer.py`), the charge in
 `RewardMachineEnvironment.step` (`app/src/arm_fm/runtime.py`) and the success flag in
-`RewardMachineObservation` (`app/src/arm_fm/environments.py`). Not committed when this entry was
-written.
+`RewardMachineObservation` (`app/src/arm_fm/environments.py`). The end judgment is commit `29cf79f` on
+`feat/rule-only-rewards`.

@@ -437,10 +437,7 @@ having conflicting clauses.
 - **[decision, kept] Idling with two hard promises open costs more than breaking a hard rule on the
   last step.** Two open hard promises charge -2; breaking a hard rule on that step costs the well,
   -1, since the RM then ends the episode and the end is not charged again. The plan review found
-  it; it is disclosed here and not changed. In `paper/rule-only-progress/check/end_judgment_check.py`,
-  a box falls and an alarm rings in the same step, each with a hard `Response`, plus a hard
-  `Absence`, and one step is left: idling totals -2.1, breaking the `Absence` totals -1.1, answering
-  the box totals -1.1 ([rule-only progress](paper/rule-only-progress/README.md)).
+  it; it is disclosed here and not changed ([rule-only progress](paper/rule-only-progress/README.md)).
 
 ### FL-AT change
 

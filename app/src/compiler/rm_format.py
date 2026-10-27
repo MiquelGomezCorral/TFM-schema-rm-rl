@@ -59,8 +59,8 @@ class RuntimeTransition:
 class PaperRewardMachine:
     """A paper-style RM with optional, possibly multiple final states and rejecting states.
 
-    Both kinds end an episode; only a final state accepts the task. Paper RMs declare no
-    rejecting state. A machine with no final state may carry an ``EndJudgment``.
+    Both kinds end an episode. A final state accepts the task, or, with an ``EndJudgment``, so does
+    an episode the environment ends in an accepting state. Paper RMs declare no rejecting state.
     """
 
     states: tuple[str, ...]
@@ -232,14 +232,14 @@ def parse_paper_reward_machine(
 
 
 def _parse_judgment(sections: Mapping[str, str]) -> EndJudgment | None:
-    """The end judgment of a machine that carries any of its parts; missing values take the defaults."""
+    """The end judgment, switched on by PENDING_PROMISES; missing values take the defaults."""
     if not _JUDGMENT_PARTS & sections.keys():
         return None
     if "PENDING_PROMISES" not in sections:
         raise RuntimeValidationError("End-judgment lines need a PENDING_PROMISES section")
     return EndJudgment(
         accepting=_parse_names(sections.get("ACCEPTING_STATES", ""), "accepting state"),
-        pending=_parse_pending(sections.get("PENDING_PROMISES", "")),
+        pending=_parse_pending(sections["PENDING_PROMISES"]),
         hard_failed_reward=_parse_header_reward(
             "HARD_FAILED_REWARD",
             sections.get("HARD_FAILED_REWARD"),

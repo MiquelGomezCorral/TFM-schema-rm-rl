@@ -205,5 +205,5 @@ The end judgment is a second step on the same branch, after `a5ba449`: `EndJudgm
 `_end_judgment` in `app/src/compiler/reward_layer.py`, the two defaults in `app/src/config/config.py`,
 the charge in `RewardMachineEnvironment.step` (`app/src/arm_fm/runtime.py`) and `rm_accept` and
 `is_success` in `RewardMachineObservation` (`app/src/arm_fm/environments.py`). The trainers are not
-touched. Not committed when this note was written. The design is in the "The end judgment" section
-of `docs/COMPILER_REWARD_DESIGN.md`.
+touched. The end judgment is commit `29cf79f` on `feat/rule-only-rewards`. The design is in the
+"The end judgment" section of `docs/COMPILER_REWARD_DESIGN.md`.

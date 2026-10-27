@@ -7,14 +7,15 @@ Run from the repository root, inside RM_RL_env (no LLM calls; MONA and FL-AT run
 Reads rm-texts.txt (each machine's "today" and "P2" text), compiles every machine with
 `build_reward_machine` as it stands (the template list and `selection` come from p2_sim.py; its P2
 patch is never applied) and checks:
-  * the compiled text equals the "P2" text, byte for byte, for all 20, once the end-judgment lines
-    that a machine with no final state now carries are removed (they change no transition or reward);
+  * the compiled text equals the "P2" text, byte for byte, for all 20, with the end judgment removed
+    (it adds no transition and no REWARD_FUNCTION entry);
   * exactly the machines whose "P2" differs from "today" differ from "today": 9 (8 with the recurrent soft rules
     on, plus ChainResponse soft with them off); the rest equal their "today" text.
 Exits 1 on any difference.
 """
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import p2_sim as sim
@@ -25,18 +26,6 @@ from src.config import PriorityLevel
 
 HERE = Path(__file__).resolve().parent
 TEXTS = HERE / "rm-texts.txt"
-JUDGMENT_LINES = ("ACCEPTING_STATES:", "HARD_FAILED_REWARD:", "SOFT_FAILED_REWARD:")
-
-
-def without_judgment(text: str) -> str:
-    """The RM text without the end-judgment lines of a machine with no final state."""
-    kept = []
-    for line in text.splitlines(keepends=True):
-        if line.startswith("PENDING_PROMISES:"):
-            break  # the section is the last one
-        if not line.startswith(JUDGMENT_LINES):
-            kept.append(line)
-    return "".join(kept)
 
 
 def expected_texts() -> dict[str, tuple[str, str]]:
@@ -63,7 +52,7 @@ def compile_real(pattern: str, props: list[str], priority: str):
     texts = {}
     for recurrent in (False, True):
         layer = build_reward_machine(dfas, soft, recurrent_soft_penalty=recurrent)
-        texts[recurrent] = without_judgment(serialize_reward_machine(layer.reward_machine))
+        texts[recurrent] = serialize_reward_machine(replace(layer.reward_machine, judgment=None))
     return (
         [(True, texts[True])]
         if texts[False] == texts[True]
