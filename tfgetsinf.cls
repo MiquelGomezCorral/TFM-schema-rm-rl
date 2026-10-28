@@ -87,10 +87,13 @@
 %%%%%%%
 
 \newcommand{\tutor}[1]{\newcommand{\t@tor}{#1}}
-\newcommand{\curs}[1]{\newcommand{\c@rs}{#1}}
+\newcommand{\curs}[1]{\renewcommand{\c@rs}{#1}}
+% Provide a safe default for \c@rs (internal macro used on the title page)
+% so documents that don't call \curs{...} won't cause an "Undefined control sequence".
+\providecommand{\c@rs}{}
 
-\newcommand{\titulacioname}{Grau en Enginyeria Inform\`atica}
-\newcommand{\tfgname}{Treball fi de grau}
+\newcommand{\titulacioname}{Master universitario en Inteligencia Artificial, Reconocimiento de Formas e Imagen Digital}
+\newcommand{\tfgname}{Treball fi de master}
 
 \newcommand{\authorname}{Autor}
 \newcommand{\tutorname}{Tutor}
@@ -105,8 +108,8 @@
 \newcommand{\appendicesname}{Ap\`endixs}
 
 \addto\captionscatalan{%
-     \renewcommand{\titulacioname}{Grau en Enginyeria Inform\`atica}
-     \renewcommand{\tfgname}{Treball fi de grau}
+     \renewcommand{\titulacioname}{Master universitario en Inteligencia Artificial, Reconocimiento de Formas e Imagen Digital}
+     \renewcommand{\tfgname}{Treball fi de master}
      \renewcommand{\authorname}{Autor}
      \renewcommand{\tutorname}{Tutor}
      \renewcommand{\coursename}{Curs}
@@ -119,11 +122,11 @@
      
 
 \addto\captionsspanish{%
-     \renewcommand{\titulacioname}{Grado en Ingenier\'\i a Inform\'atica}
-     \renewcommand{\tfgname}{Trabajo fin de grado}
+     \renewcommand{\titulacioname}{Máster Universitario en Inteligencia Artificial, Reconocimiento de Formas e Imagen Digital}
+     \renewcommand{\tfgname}{TRABAJO de asignatura genérica}
      \renewcommand{\authorname}{Autor}
      \renewcommand{\tutorname}{Tutor}
-     \renewcommand{\coursename}{Curso}
+     \renewcommand{\coursename}{}
      \renewcommand{\keywordsname}{Palabras clave}
      \renewcommand{\tablename}{Tabla}
      \renewcommand{\listtablename}{\'Indice de tablas}
@@ -134,8 +137,8 @@
      \renewcommand{\appendicesname}{Ap\'endices}}
      
 \addto\captionsenglish{%
-     \renewcommand{\titulacioname}{Master's Degree in Artificial Intelligence, Pattern Recognition and Digital Imaging}
-     \renewcommand{\tfgname}{Masters' final work}
+     \renewcommand{\titulacioname}{Master in Artificial Intelligence, Pattern Recognition and Digital Image}
+     \renewcommand{\tfgname}{Degree final work}
      \renewcommand{\authorname}{Author}
      \renewcommand{\tutorname}{Tutor}
      \renewcommand{\coursename}{Course}
@@ -155,7 +158,7 @@
 
 \RequirePackage[justification=centerlast,small,bf,labelsep=colon]{caption}
 
-% \RequirePackage{algorithmic}
+\RequirePackage{algpseudocode}
 \RequirePackage[within=chapter]{newfloat}
 
 \DeclareFloatingEnvironment[fileext=loa,
@@ -293,11 +296,12 @@
 % Ãndexs
 %%%%%%%%%
 \newcommand{\makeindexes}{\cleardoublepage\tableofcontents\cleardoublepage
-                          \iflistfigures\listoffigures\fi
+                          \iflistfigures\listoffigures\clearpage\fi
                           \iflisttables\listoftables\fi
                           \iflistquadres\listofquadres\fi
                           \iflistalgorithms\listofalgorithms\fi
                           \addtocontents{toc}{\protect\noindent\protect\hrulefill\protect\par}}
+
 
 \setlength{\cftaftertoctitleskip}{\baselineskip}
 \setlength{\cftafterloftitleskip}{\baselineskip}
@@ -321,16 +325,16 @@
 \begin{titlepage}
 \AddToShipoutPicture*{\AtPageUpperLeft{%
     % Marges: dalt=esquerra=dreta=2cm 
-    \raisebox{-4cm}{\hspace{2cm}\includegraphics[height=2cm]{logo-upv}% grandÃ ria 116mmx37mm escalada a 62.7mmx20mm
+    \raisebox{-4cm}{\hspace{2cm}\includegraphics[height=2cm]{template-basis/logo-upv}% grandÃ ria 116mmx37mm escalada a 62.7mmx20mm
     \hspace{5.54cm}% 21cm-(2+6.27+5.19+2)cm
-                    \includegraphics[height=2cm]{logo-etsinf}% grandÃ ria 109mmx42mm escalada a 51.9mmx20mm
+                    \includegraphics[height=2cm]{template-basis/miarfid.eps}% grandÃ ria 109mmx42mm escalada a 51.9mmx20mm
                     }}}
-\AddToShipoutPicture*{\includegraphics[width=21cm,height=12.89cm]{baseportada}}
+\AddToShipoutPicture*{\includegraphics[width=21cm,height=12.89cm]{template-basis/baseportada}}
 \centering
 \vspace*{2cm}
 \begin{color}{grisfosc}
 \large
-Escuela Técnica Superior de Ingeniería Informática
+Master Universitario en Inteligencia Artificial, Reconocimiento de Formas e Imagen Digital\\
 
 Universidad Politécnica de Valencia
 \end{color}
@@ -348,8 +352,7 @@ Universidad Politécnica de Valencia
 \begin{flushright} 
 \begin{tabular}{l}
    \textit{\authorname:} \begin{tabular}[t]{l}\@author\end{tabular}\\[0.2cm]
-   \textit{\tutorname:} \begin{tabular}[t]{l}\t@tor\end{tabular}\\[0.2cm]
-   \textit{Experimental Director:} \begin{tabular}[t]{l} Ángel Aso Mollar \end{tabular}
+%    \textit{\tutorname:} \begin{tabular}[t]{l}\t@tor\end{tabular}
 \end{tabular}
 \medskip
 
