@@ -123,7 +123,7 @@
 
 \addto\captionsspanish{%
      \renewcommand{\titulacioname}{Máster Universitario en Inteligencia Artificial, Reconocimiento de Formas e Imagen Digital}
-     \renewcommand{\tfgname}{TRABAJO de asignatura genérica}
+     \renewcommand{\tfgname}{Trabajo fin de máster}
      \renewcommand{\authorname}{Autor}
      \renewcommand{\tutorname}{Tutor}
      \renewcommand{\coursename}{}
@@ -138,7 +138,7 @@
      
 \addto\captionsenglish{%
      \renewcommand{\titulacioname}{Master in Artificial Intelligence, Pattern Recognition and Digital Image}
-     \renewcommand{\tfgname}{Degree final work}
+     \renewcommand{\tfgname}{Master final work}
      \renewcommand{\authorname}{Author}
      \renewcommand{\tutorname}{Tutor}
      \renewcommand{\coursename}{Course}
@@ -352,7 +352,7 @@ Universidad Politécnica de Valencia
 \begin{flushright} 
 \begin{tabular}{l}
    \textit{\authorname:} \begin{tabular}[t]{l}\@author\end{tabular}\\[0.2cm]
-%    \textit{\tutorname:} \begin{tabular}[t]{l}\t@tor\end{tabular}
+   \textit{\tutorname:} \begin{tabular}[t]{l}\t@tor\end{tabular}
 \end{tabular}
 \medskip
 
