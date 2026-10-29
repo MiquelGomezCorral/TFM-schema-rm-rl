@@ -99,8 +99,7 @@ with no final state.
 
 Machines with a final state, and hand-written bundles, carry none of these lines and behave as before.
 The RM text schema is the one copied from ARM-FM (states, final states, transitions, rewards); these
-lines are optional additions to it. A shorter schema is possible, one list where every transition
-carries its reward, 0 included. It is a paper note and was not built.
+lines are optional additions to it.
 
 **What the environment does.** When the environment ends an episode (the goal, the time limit) and the
 machine did not, the step's reward adds `hard x HARD_FAILED_REWARD + soft x SOFT_FAILED_REWARD` for the
