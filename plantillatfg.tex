@@ -42,12 +42,44 @@
 \usepackage{graphicx}
 \usepackage{subcaption}
 \usepackage{tabularx}
-\usepackage{algorithm}
+% The class already defines the algorithm float; algorithm.sty would clash with it.
+% A literal name stops newfloat from expanding \algorithmname into itself.
+\SetupFloatingEnvironment{algorithm}{name=Algorithm,listname=List of algorithms}
 \usepackage{algpseudocode}
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
 \usepgfplotslibrary{groupplots}
-\usetikzlibrary{positioning,arrows.meta,calc,babel,automata}
+\usetikzlibrary{positioning,arrows.meta,calc,babel,automata,fit,backgrounds,shadows,shapes.multipart}
+% Shared styles of the FARM pipeline diagrams: the overview figure and the diagram of each step.
+% Rounded boxes are processes, square boxes are data. One colour and one corner icon per kind of
+% object, the same in every diagram. A stacked card stands for one item per clause.
+\usepackage{fontawesome5}
+\colorlet{farmLLM}{violet!18}   % a language model: generator and critic
+\colorlet{farmTool}{blue!12}    % a deterministic step
+\colorlet{farmText}{gray!14}    % plain text: task, environment description, comments
+\colorlet{farmItem}{orange!20}  % per-clause outputs: clauses, LTLf formulas, DFAs
+\colorlet{farmRM}{cyan!16}      % intermediate machines: FL-AT's product, the post-processed machine
+\colorlet{farmFinal}{green!30}  % the final Reward Machine
+\tikzset{
+    farm/.style={font=\scriptsize, >={Latex[length=1.6mm]}},
+    farm badge/.style={circle, draw=black!55, fill=white, inner sep=0pt, minimum size=3.4mm, font=\tiny},
+    farm icon/.style={label={[farm badge, anchor=center]north east:#1}},
+    farm number/.style={rectangle, rounded corners=1.5pt, fill=black!80, text=white, font=\tiny\bfseries, inner sep=1.2pt, minimum height=3.4mm, minimum width=4.4mm},
+    farm step/.style={label={[farm number, anchor=center]north west:#1}},
+    farm box/.style={draw, rounded corners=2pt, align=center, text width=3.3cm, minimum height=8mm, inner sep=2pt},
+    farm llm/.style={farm box, fill=farmLLM, farm icon={\textcolor{violet!75!black}{\faRobot}}},
+    farm tool/.style={farm box, fill=farmTool, farm icon={\textcolor{blue!70!black}{\faCogs}}},
+    farm data/.style={draw, align=center, text width=2.5cm, minimum height=5mm, inner sep=1pt},
+    farm text/.style={farm data, fill=farmText, farm icon={\textcolor{black!70}{\faFile}}},
+    farm items/.style={farm data, fill=farmItem, double copy shadow={shadow xshift=2pt, shadow yshift=-2pt},
+        farm icon={\textcolor{orange!70!black}{\faListUl}}},
+    farm rm/.style={farm data, fill=farmRM, farm icon={\textcolor{cyan!50!black}{\faProjectDiagram}}},
+    farm final/.style={farm data, fill=farmFinal, farm icon={\textcolor{green!45!black}{\faCheckCircle}}},
+    farm group/.style={draw=gray!60, rounded corners=4pt, fill=gray!6, inner sep=7pt},
+    farm title/.style={font=\scriptsize\bfseries},
+    farm flow/.style={->, semithick},
+    farm graph/.style={>={Latex[length=2mm]}, initial text=, font=\small, every state/.style={minimum size=9mm, inner sep=1pt}},
+}
 
 % Listings para código
 \usepackage{listings}
@@ -60,6 +92,27 @@
   keepspaces=true,
   numbers=none
 }
+% Reward Machine listings: one narrow width, titles and numbers in colour
+\colorlet{rmTitle}{blue!65!black}
+\colorlet{rmNumber}{orange!75!black}
+\newcommand\rmnum[1]{{\color{rmNumber}#1}}
+\lstdefinelanguage{rmtext}{
+  alsoletter={_}, sensitive=true,
+  morekeywords={REWARD_MACHINE, STATES, INITIAL_STATE, FINAL_STATES, REJECTING_STATES, ACCEPTING_STATES,
+    PENDING_PROMISES, DEFAULT_REWARD, HARD_FAILED_REWARD, SOFT_FAILED_REWARD, TRANSITION_FUNCTION, REWARD_FUNCTION},
+  % digits, dots and minus signs are coloured; state names (u0 to u9) and arrows are not
+  literate=*{0}{{\rmnum{0}}}1 {1}{{\rmnum{1}}}1 {2}{{\rmnum{2}}}1 {3}{{\rmnum{3}}}1 {4}{{\rmnum{4}}}1
+    {5}{{\rmnum{5}}}1 {6}{{\rmnum{6}}}1 {7}{{\rmnum{7}}}1 {8}{{\rmnum{8}}}1 {9}{{\rmnum{9}}}1
+    {.}{{\rmnum{.}}}1 {-}{{\rmnum{-}}}1 {->}{->}2
+    {u0}{u0}2 {u1}{u1}2 {u2}{u2}2 {u3}{u3}2 {u4}{u4}2 {u5}{u5}2 {u6}{u6}2 {u7}{u7}2 {u8}{u8}2 {u9}{u9}2
+}
+\lstdefinestyle{rm}{language=rmtext, keywordstyle=\color{rmTitle}\bfseries,
+  xleftmargin=0.18\linewidth, xrightmargin=0.18\linewidth}
+
+% Page layout: a figure that moves to the next page leaves space at the page bottom, not between
+% paragraphs, and lines with long code words may stretch a little instead of running into the margin
+\raggedbottom
+\setlength{\emergencystretch}{1.5em}
 
 % Bibliografía
 \usepackage[backend=biber,style=numeric,sorting=none]{biblatex}
@@ -165,13 +218,13 @@ The automated construction of Reward Machines (RMs) in Reinforcement Learning ha
 \section{Related work}
 \subsection{Reward Machines}
 \label{sec:sota-rm}
-In reinforcement learning (RL), an agent learns to act in a Markov decision process (MDP) by maximising the reward it receives \cite{sutton2018reinforcement}. Most methods treat the reward function as a black box: the agent observes the number returned after each step and nothing about how it is computed \cite{icarte2022reward}. A person writes that function by hand, and a hand-programmed reward can be exploited. Randl{\o}v and Alstr{\o}m \cite{randlov1998learning} shaped the reward of a bicycle-riding agent and observed it circling instead of reaching its destination. Amodei et al.~\cite{amodei2016concrete} and Skalse et al.~\cite{skalse2022defining} describe this failure as reward hacking: the agent obtains a high reward without doing what the designer intended.
+In reinforcement learning (RL), an agent learns to act in a Markov decision process (MDP) by maximising the reward it receives \cite{sutton2018reinforcement}. Most methods treat the reward function as a black box: the agent observes the number returned after each step and nothing about how it is computed \cite{icarte2022reward}. In practice a person writes that function by hand, so its structure is known and can be exploited to learn faster.
 
 Sparse rewards pose a second problem. When the reward arrives only on completing a long task, the agent receives almost no signal while it learns. Reward shaping adds intermediate reward to guide it. Ng et al.~\cite{ng1999policy} prove that shaping with the difference of a potential function over states, $\gamma\Phi(s') - \Phi(s)$, leaves the optimal policy unchanged, and that no other form of shaping gives this guarantee in general.
 
 Reward Machines (RMs) address both problems by exposing the structure of the reward to the learner. Toro Icarte et al.~\cite{toroicarte2018using} introduced them at ICML 2018 and gave a fuller account in the Journal of Artificial Intelligence Research (JAIR) \cite{icarte2022reward}. This thesis follows the JAIR article for the formalisation, counterfactual learning and reward shaping.
 
-An RM is a finite-state machine, written $\langle U, u_0, F, \delta_u, \delta_r\rangle$ in the JAIR formulation. $U$ is a finite set of states, $u_0 \in U$ the initial state and $F$ the set of terminal states. The transition function $\delta_u$ takes the current state and the set of propositions that hold and returns the next state. The reward function $\delta_r$ assigns to each state a reward function over environment transitions. The ICML formulation attaches the reward to the pair of states of a transition instead, which is the convention of the RM text format used in this thesis.
+An RM is a finite-state machine, written $\langle U, u_0, F, \delta_u, \delta_r\rangle$ in the JAIR formulation. $U$ is a finite set of states, $u_0 \in U$ the initial state and $F$ the set of terminal states. The transition function $\delta_u$ takes the current state and the set of propositions that hold and returns the next state. The reward function $\delta_r$ assigns to each state a reward function over environment transitions. The ICML formulation \textbf{attaches the reward to the pair of states of a transition instead}, which is the convention of the RM text format used in this thesis.
 
 Propositions come from outside the machine. A labelling function $L$ maps each environment transition to the set of propositions that hold in it, for example ``the agent holds the key''. At every step the machine reads that set and moves. The agent learns in the product of the MDP and the RM, whose states pair an environment state with an RM state; in the product the reward is Markovian even when the task is not.
 
@@ -181,15 +234,16 @@ RMs have two costs. Someone has to design the machine, and the authors note that
 
 \subsection{ARM-FM}
 \label{sec:sota-armfm}
-ARM-FM (Automated Reward Machines via Foundation Models), by Creus Castanyer et al.~\cite{creus2026armfm} and published at ICLR 2026, replaces the hand-built RM with one generated by a foundation model (FM) from a natural-language task description. The output is a Language-Aligned Reward Machine (LARM), made of three parts: an RM, the Python code of its labelling functions, and a natural-language description of each RM state. A text embedding of the description of the current state is given to the policy together with the environment observation, so that the policy knows which sub-goal is active. In this thesis ARM-FM is the method and LARM its output.
+ARM-FM (Automated Reward Machines via Foundation Models), by Creus Castanyer et al.~\cite{creus2026armfm} and published at ICLR 2026, replaces the hand-built RM with one generated by a foundation model (FM) from a natural-language task description. The output is a Language-Aligned Reward Machine (LARM), made of three parts: an RM, the Python code of its labelling functions, and a natural-language description of each RM state. A text embedding of the description of the current state is given to the policy together with the environment observation, so that the policy knows which sub-goal is active. In this thesis \textbf{ARM-FM is the method and LARM its output}.
 
 The RM is produced by a generator model and reviewed by a critic model over several rounds of self-improvement. A human may optionally approve the result or give corrective feedback. The generator prompt asks for the machine as plain text in a fixed format. The critic prompt asks, among other checks, that regressions are penalised and that no unintentional loops exist, and the critic answers either \texttt{NO CHANGES NEEDED} or \texttt{CHANGES REQUIRED} \cite[pp.~26--27]{creus2026armfm}. The paper uses GPT-4o to generate all LARM components, except for the 1\,000 XLand-MiniGrid LARMs, which come from several open-source models.
 
 The evaluation covers four environments: MiniGrid (DoorKey and the harder UnlockToUnlock, BlockedUnlockPickup and KeyCorridor), Craftium (a Minecraft-based environment where the agent mines a diamond after gathering wood, stone and iron), Meta-World manipulation tasks, and XLand-MiniGrid. On DoorKey the agent trained with the LARM outperforms DQN with ICM, ReAct and plain DQN; on the three harder MiniGrid tasks it is the only agent that solves all of them; on Craftium it learns where an agent without the LARM makes no progress. On XLand-MiniGrid a single policy trains on ten tasks at once and solves unseen combinations of known tasks without fine-tuning.
 
-Listing~\ref{lst:armfm-doorkey} reproduces the DoorKey machine printed in the appendix of the paper. Listing~\ref{lst:farm-example1} shows the machine FARM generates for the first running example of Chapter~\ref{chap:farm}.
+Listing~\ref{lst:armfm-doorkey} reproduces the DoorKey machine printed in the appendix of the paper.
 
-\begin{lstlisting}[caption={The DoorKey Reward Machine printed by ARM-FM (page 30 of the paper).},label={lst:armfm-doorkey}]
+\noindent\begin{minipage}{\linewidth}
+\begin{lstlisting}[style=rm,caption={The DoorKey Reward Machine printed by ARM-FM (page 30 of the paper).},label={lst:armfm-doorkey}]
 REWARD_MACHINE:
 STATES: u0, u1, u2, u3
 INITIAL_STATE: u0
@@ -208,18 +262,9 @@ REWARD_FUNCTION:
 (u1, not_has_key, u0) -> -0.2
 (u2, at_goal, u3) -> 1.0
 \end{lstlisting}
+\end{minipage}
 
-\lstinputlisting[caption={The Reward Machine FARM generates for the first running example.},label={lst:farm-example1}]{images/farm/rm-ex1.txt}
-
-The format of FARM differs from that of ARM-FM in five points.
-\begin{itemize}
-    \item There are no \texttt{else} self-loops. A state with no matching transition stays where it is and pays the default reward.
-    \item The states with a special role are listed explicitly: \texttt{FINAL\_STATES}, \texttt{REJECTING\_STATES} and \texttt{ACCEPTING\_STATES}.
-    \item A single event expression combines propositions with \texttt{!} and \texttt{\&}, such as \texttt{has\_key \& !door\_open}, instead of a separate predicate such as \texttt{not\_has\_key}.
-    \item \texttt{DEFAULT\_REWARD}, \texttt{HARD\_FAILED\_REWARD} and \texttt{SOFT\_FAILED\_REWARD} fix the reward of a transition without an entry and the charge for a failed promise.
-    \item \texttt{PENDING\_PROMISES} lists, for each state, the hard and soft obligations still open.
-\end{itemize}
-Appendix~\ref{app:running} lists the machine of a task made only of rules, where the last two points apply.
+FARM keeps this text format for its machines and extends it (Section~\ref{sec:output-format}).
 
 \subsection{Linear Temporal Logic}
 \label{sec:sota-ltl}
@@ -233,26 +278,19 @@ Linear Temporal Logic (LTL) is a logic for stating properties of sequences of st
 LTL is defined over infinite traces, whereas a reinforcement learning episode ends. LTLf, LTL over finite traces \cite{degiacomo2013linear}, keeps the syntax and reads a formula over a trace of finite length, where next requires a following step to exist. LTLf is as expressive as first-order logic over finite traces and corresponds to the star-free regular expressions.
 
 In the DoorKey task of Chapter~\ref{chap:farm}, the propositions are \texttt{has\_key}, \texttt{door\_open} and \texttt{at\_goal}. ``The agent reaches the goal at some point'' is
-\[ \mathrm{F}\ \mathit{at\_goal}, \]
+\[ \mathrm{F}\ \texttt{at\_goal}, \]
 and ``the door is not open before the key is held'' is
-\[ (\neg\,\mathit{door\_open}\ \mathrm{U}\ \mathit{has\_key}) \lor \mathrm{G}\,\neg\,\mathit{door\_open}. \]
+\[ (\neg\,\texttt{door\_open}\ \mathrm{U}\ \texttt{has\_key}) \lor \mathrm{G}\,\neg\,\texttt{door\_open}. \]
 
-For every LTLf formula there is a deterministic finite automaton (DFA) that accepts exactly the traces satisfying it. The construction follows the automata-theoretic approach that Vardi and Wolper \cite{vardi1986automata} introduced for LTL. In practice the formula is rewritten in monadic second-order logic over finite words, from which MONA \cite{henriksen1995mona} builds the minimal DFA. This is the bridge used by Step~2 of FARM (Section~\ref{sec:step2}).
+For every LTLf formula there is a deterministic finite automaton (DFA) that accepts exactly the traces satisfying it \cite{degiacomo2013linear}. In practice the formula is rewritten in monadic second-order logic over finite words, from which MONA \cite{henriksen1995mona} builds the minimal DFA. This is the bridge used by Step~2 of FARM (Section~\ref{sec:step2}).
 
-Several lines of work bring temporal logic to RL.
-\begin{itemize}
-    \item Camacho et al.~\cite{camacho2019ltl} show that RMs can express reward specifications written in LTL, LTLf and other formal languages. They translate a specification into an RM and combine several specifications with a product construction.
-    \item De Giacomo et al.~\cite{degiacomo2019foundations} constrain a learner with LTLf and LDLf ``restraining bolts'', and later define rewards from temporal-logic monitors built with transducers \cite{degiacomo2020temporal}.
-    \item Shielding \cite{alshiekh2018safe} enforces a temporal safety specification during learning by correcting the actions that would violate it.
-    \item Declare \cite{pesic2006declarative} defines a catalogue of templates, such as Existence, Response or Precedence, each with an LTL semantics, to specify business processes declaratively.
-    \item Natural language to LTL has its own tools. nl2ltl \cite{fuggitti2023nl2ltl} chooses a Declare template and its arguments with a language model. nl2spec \cite{cosler2023nl2spec} translates unstructured text into temporal logics interactively. Lang2LTL \cite{liu2023grounding} grounds temporal navigation commands in environments not seen before.
-\end{itemize}
+Camacho et al.~\cite{camacho2019ltl} bring this logic to RL. They show that RMs can express reward specifications written in LTL, LTLf and other formal languages, translate a specification into an RM and combine several specifications with a product construction.
 
-\subsection{Human preferences and AI alignment}
-\label{sec:sota-alignment}
-AI alignment is the field that aims to make AI systems behave in line with human intentions and values \cite{ji2025alignment}. Gabriel \cite{gabriel2020artificial} discusses the philosophical questions behind it, such as which values a system should be aligned with. In reinforcement learning, the most direct use of human preferences is to learn the reward from them: Christiano et al.~\cite{christiano2017deep} define the goal through a person's choices between pairs of trajectory segments instead of through a programmed reward.
+Declare \cite{pesic2006declarative} defines a catalogue of templates, such as Existence, Response or Precedence, each with an LTL semantics, to specify business processes declaratively. nl2ltl \cite{fuggitti2023nl2ltl} translates natural language into LTL by letting a language model choose a Declare template and its arguments.
 
-Planning offers a vocabulary to tell a rule from a wish. PDDL3 \cite{gerevini2006preferences} separates hard constraints, which every valid plan must satisfy, from soft constraints or preferences, whose violation only adds a cost to the plan. A person who describes a task to an agent uses both: what to do, in which order, what must never happen, and what would be preferable.
+\subsection{Hard and soft constraints in planning}
+\label{sec:sota-preferences}
+In automated planning, a plan is a sequence of actions that takes a system from an initial state to a goal, and PDDL is the standard language to describe such problems. PDDL3 \cite{gerevini2006preferences} adds two things to it. State trajectory constraints are conditions on the whole sequence of states that the plan goes through, not only on the last one, written with operators such as \texttt{always}, \texttt{sometime}, \texttt{at-most-once} and \texttt{sometime-before}, close to those of LTL. Preferences are soft constraints: a valid plan must satisfy every hard constraint, while each preference it breaks only adds a cost to the plan. Goals and trajectory constraints can both be stated as preferences, so a condition over time can be either required or only preferred.
 
 \subsection{Conclusions}
 Each line of work covers part of the problem. Reward Machines expose the structure of a reward but are built by hand. ARM-FM generates them from language, without formal guarantees on the result. LTLf gives task statements a precise meaning and a route to automata, and planning separates the rules that must hold from the preferences that only cost. Chapter~\ref{chap:proposal} combines these pieces.
@@ -260,7 +298,7 @@ Each line of work covers part of the problem. Reward Machines expose the structu
 \section{Critique of the state of the art}
 \label{sec:critique}
 \subsection{Narrow task variety}
-The Reward Machines that ARM-FM prints are chains of progress states with edges that undo progress: DoorKey is key, door, goal; UnlockToUnlock repeats key and door before the goal; Craftium gathers wood, stone, iron and diamond in order; Meta-World grasps, moves and succeeds \cite[pp.~30--32]{creus2026armfm}. None of them states a rule that must hold throughout the episode, such as keeping the key until the door is open, and none separates what must happen from what is only preferable. The nearest analogue is a penalty for losing a key, for example $-0.1$ in UnlockToUnlock.
+The tasks whose Reward Machines ARM-FM prints are all simple sequences of steps: first one thing, then the next, then the goal. DoorKey goes \texttt{key}, \texttt{door}, \texttt{goal}; UnlockToUnlock repeats \texttt{key} and \texttt{door} before the \texttt{goal}; Craftium gathers \texttt{wood}, \texttt{stone}, \texttt{iron} and \texttt{diamond} in order; Meta-World grasps, moves and succeeds \cite[pp.~30--32]{creus2026armfm}. Each machine is a chain of states, one per step. No task states a rule that must hold throughout the episode, such as keeping the key until the door is open, and none separates what must happen from what is only preferable. The closest the machines come to a rule is a penalty for losing a key, for example $-0.1$ in UnlockToUnlock.
 
 \subsection{Inconsistent and unstructured generation}
 Language models do not return the same output on every run, even with the temperature set to zero. Ouyang et al.~\cite{ouyang2025empirical} measured this for ChatGPT on 829 code-generation problems, and the same task can therefore yield different machines. ARM-FM places no schema on what the model writes: the machine is plain text in a format described by the prompt, and the rewards are free numbers.
@@ -272,7 +310,7 @@ A critic model can hallucinate as well \cite{huang2025survey}, so a critic, even
 \subsection{Verification by a human or another model}
 ARM-FM states the limitation itself: human verification during RM generation is a trade-off that presupposes access to human verifiers, and reducing it by exploiting the automaton structure, for example through formal verification, is left as future work \cite[pp.~9--10]{creus2026armfm}. Humans took part in four of the seven settings of its Table~3. In DoorKey a human check confirmed the machine after three iterations; in UnlockPickup a human added the transition for a dropped key; in KeyCorridor a human suggested intermediate rewards; and in Meta-World a human rescaled the rewards. BlockedUnlockPickup and Craftium needed no intervention, and the 1\,000 XLand-MiniGrid machines were scored by a second language model instead.
 
-\paragraph{Reproducibility.}
+\subsection{Reproducibility.}
 The ARM-FM paper releases no code. Its appendices print the generator and critic prompts, six Reward Machines, the labelling functions of four MiniGrid tasks and the hyperparameters. A public repository of the first author \cite{armfm_code}, which the paper does not reference, adds prompts, generated machines and labelling code for four MiniGrid tasks only. This material allows the method to be rebuilt but not its exact outputs, so the ARM-FM baseline of this thesis is a reconstruction whose results may differ from the original ones. The authors did not answer the contact attempts made for further material.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -281,15 +319,18 @@ The ARM-FM paper releases no code. Its appendices print the generator and critic
 \chapter{Proposal}
 \label{chap:proposal}
 \section{Human preferences}
+An RL agent pursues whatever its reward pays for, so the reward is the way a person tells the agent what to achieve \cite{sutton2018reinforcement}. AI alignment aims to make AI systems behave in line with human intentions and values \cite{ji2025alignment}. For an RL agent, one part of this aim is a reward that says everything the person means: the goal, the order of the steps, the rules that must not be broken and the preferences to keep when possible.
+
 A task is rarely a single chain of steps. FARM lets the user state four things in natural language: what to do, in which order, what to do in response to an event, and what must never happen. The temporal relations of order, response and prohibition are the vocabulary of the LTLf templates of Section~\ref{sec:sota-ltl}.
 
-Each statement is either hard or soft. A hard statement must hold for the task to count as done. A soft statement is a preference: the agent may give it up, at a cost. This split between constraints and preferences comes from planning \cite{gerevini2006preferences} and is carried here into Reward Machines.
+Each statement is either hard or soft. A hard statement must hold for the task to count as done. A soft statement is a preference: the agent may give it up, at a cost. This split between constraints and preferences comes from planning (Section~\ref{sec:sota-preferences}) and is carried here into Reward Machines.
 
 \section{No human expert}
 ARM-FM relies on a human or on a second model to verify its machines (Section~\ref{sec:critique}). FARM aims at generation without a human expert. The language model only chooses clauses from a fixed catalogue, and a compiler builds the machine from them, so the properties of the machine follow from the construction and do not depend on a reviewer. A critic model still reads the result, but it can only flag clauses; the generator retunes them, and the critic never edits the machine.
 
-\section{Formal and robust generation}
-The output of the language model is constrained by a schema over eight templates, so the model cannot write free-form rewards or states. From the same clauses the compiler always builds the same machine, which confines the variability of the language model to the choice of clauses. The rewards combine potential-based shaping with fixed constants, so no loop pays a positive reward by construction, and a Bellman--Ford check rejects any machine that still contains one.
+\section{Formal and robust generation: Schemas}
+\label{sec:schemas}
+FARM limits the role of the language model. Its answer is bounded: instead of writing a Reward Machine, the model only picks patterns from a fixed catalogue, the Declare templates of Section~\ref{sec:sota-ltl}, and fills them with the propositions of the environment. Any other answer is rejected. Everything after that choice is formal and deterministic. The machine is built from the chosen patterns alone, without the meaning of the propositions, so tasks of the same shape, such as any ``first $a$, then $b$, then $c$'', receive the same machine with only the propositions exchanged. These task schemas (Section~\ref{sec:task-schemas}) make the result predictable and confine the variability of the language model to that one choice. The rewards are designed so that the agent cannot earn reward by going round in circles, and every machine is checked for such loops.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                     FARM                                    %
@@ -306,11 +347,64 @@ The output of the language model is constrained by a schema over eight templates
 
 \section{Global overview of the pipeline}
 \label{sec:overview}
-FARM turns a natural-language task into a Reward Machine in five steps. A language model chooses clauses, fixed tools compile them into automata, a post-process prices the result and a critic reviews it. Table~\ref{tab:steps} gives the input, output and tool of each step.
+FARM turns a natural-language task into a Reward Machine in five steps. A language model chooses clauses, fixed tools compile them into automata, a post-process asigns rewards and tweaks the result and a critic reviews it. Only first  and last steps are not formal: the language model is the only source of variability in the system. Figure~\ref{fig:pipeline} draws the pipeline, and Table~\ref{tab:steps} gives the input, output and tool of each step.
 
-% TODO: Figure: the pipeline steps. Draft notes: show three columns (IBM, FL-AT, FARM) that still run
-% vertically and link to each other, and draw the five rectangles as a stack of cards, one behind
-% the other, instead of side by side. Three bullet points for each.
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[farm]
+% Step 1: the language model and IBM's templates
+\node[farm llm, farm step=1.1]  (gen) at (0,0)     {Language model};
+\node[farm items]               (cl)  at (0,-1.25) {Clauses};
+\node[farm tool, farm step=1.2] (ibm) at (0,-2.5)  {IBM templates};
+\node[farm items]               (ltl) at (0,-3.75) {LTLf formulas};
+% Steps 2 and 3: MONA and FL-AT
+\node[farm tool, farm step=2]   (mona) at (5,0)     {MONA};
+\node[farm items]               (dfa)  at (5,-1.25) {DFAs};
+\node[farm tool, farm step=3]   (flat) at (5,-2.5)  {FL-AT};
+\node[farm rm]                  (pm)   at (5,-3.75) {Product machine};
+% Step 4: FARM's post-process
+\node[farm tool] (merge) at (10,0)     {Merge start state};
+\node[farm tool] (hard)  at (10,-1.25) {Apply hard clauses};
+\node[farm tool] (rew)   at (10,-2.5)  {Assign rewards};
+\node[farm rm]   (rm)    at (10,-3.75) {Reward Machine};
+% Step 5: the critic
+\node[farm llm, farm step=5] (crit) at (5,-5.6) {Critic};
+\node[farm final, text width=3cm] (out) at (5,-6.9) {Final Reward Machine};
+% Inputs
+\node[farm text, text width=2.3cm, minimum height=7.5mm] (task) at (-1.25,1.55) {Task};
+\node[farm text, text width=2.3cm, minimum height=7.5mm] (env)  at (1.25,1.55)  {Environment description};
+% Groups
+\begin{scope}[on background layer]
+    \node[farm group, fit=(gen)(ltl)]    (g1) {};
+    \node[farm group, fit=(mona)(pm)]    (g2) {};
+    \node[farm group, fit=(merge)(rm)]   (g3) {};
+\end{scope}
+\node[farm title, above=0pt of g1.north] {IBM nl2ltl};
+\node[farm title, above=0pt of g2.north] {MONA and FL-AT};
+\node[farm title, above=0pt of g3.north] {FARM post-process};
+\node[farm number] at (g3.north west) {4};
+% Flow
+\draw[farm flow] (task.south) -- (task.south |- gen.north);
+\draw[farm flow] (env.south)  -- (env.south |- gen.north);
+\draw[farm flow] (gen) -- (cl);   \draw[farm flow] (cl) -- (ibm);   \draw[farm flow] (ibm) -- (ltl);
+\draw[farm flow] (mona) -- (dfa); \draw[farm flow] (dfa) -- (flat); \draw[farm flow] (flat) -- (pm);
+\draw[farm flow] (merge) -- (hard); \draw[farm flow] (hard) -- (rew); \draw[farm flow] (rew) -- (rm);
+\draw[farm flow] (ltl.east) -- (2.5,-3.75) -- (2.5,0) -- (mona.west);
+\draw[farm flow] (pm.east)  -- (7.5,-3.75) -- (7.5,0) -- (merge.west);
+\draw[farm flow] (rm.south) |- (crit.east);
+\draw[farm flow] (crit) -- node[right] {Accepted} (out);
+\draw[farm flow, dashed] (crit.west) -- (-2.45,-5.6) node[pos=0.5, above] {Rejected: comments to the generator} |- (gen.west);
+% Legend
+\node[farm llm, text width=1.9cm, minimum height=7mm] at (-1.3,-8.2) {Language model};
+\node[farm tool, text width=1.9cm, minimum height=7mm] at (1.2,-8.2) {Deterministic step};
+\node[farm text, text width=1.9cm, minimum height=7mm] at (3.7,-8.2) {Text};
+\node[farm items, text width=1.9cm, minimum height=7mm] at (6.2,-8.2) {Per-clause output};
+\node[farm rm, text width=1.9cm, minimum height=7mm] at (8.7,-8.2) {Intermediate machine};
+\node[farm final, text width=1.9cm, minimum height=7mm] at (11.2,-8.2) {Final machine};
+\end{tikzpicture}
+\caption[The FARM pipeline]{The FARM pipeline. Rounded boxes are processes and square boxes are data. The colour and the corner icon give the kind of each box, as in the legend, and are the same in every diagram of this chapter. A stack stands for one item per clause.}
+\label{fig:pipeline}
+\end{figure}
 
 \begin{table}[H]
 \centering
@@ -321,56 +415,57 @@ FARM turns a natural-language task into a Reward Machine in five steps. A langua
 \begin{tabularx}{\textwidth}{@{}l>{\raggedright\arraybackslash}p{2.6cm}>{\raggedright\arraybackslash}p{2.6cm}>{\raggedright\arraybackslash}p{2.6cm}>{\raggedright\arraybackslash}X@{}}
 \toprule
 \textbf{Step} & \textbf{Input} & \textbf{Output} & \textbf{Tool} & \textbf{Description} \\ \midrule
-1 & Task and environment description & Clauses: template, propositions, hard or soft & Language model; IBM nl2ltl templates & The model chooses clauses from eight Declare templates. \\
-2 & Clauses & One DFA per clause & IBM nl2ltl; FL-AT; MONA & Each clause becomes an LTLf formula, and MONA builds its DFA. \\
-3 & One DFA per clause & One product machine & FL-AT & The product follows all clauses at once and records where each one stands. \\
-4 & Product machine and clause states & Reward Machine & FARM post-process & Hard clauses prune and reject, soft clauses cost reward, and the rewards are assigned. \\
+1.1 & Task and environment description & Clauses: template, propositions, hard or soft & Language model & The model chooses clauses from eight Declare templates. \\
+1.2 & Clauses & One LTLf formula per clause & IBM nl2ltl templates & The template of each clause writes its LTLf formula. \\
+2 & LTLf formulas & One DFA per formula & FL-AT; MONA & FL-AT rewrites each formula for MONA, and MONA builds its DFA. \\
+3 & One DFA per formula & Product Reward Machine and clause states & FL-AT & The product follows all clauses at once and records where each one stands. \\
+4 & Product Reward Machine and clause states & Final Reward Machine & FARM post-process & Redundant states are merged, hard clauses set the final states and the rejecting well, soft clauses cost reward, and new rewards replace those of FL-AT. \\
 5 & Task, clauses and Reward Machine & Verdict and comments on clauses & Critic model & The critic accepts the result or flags clauses, which the generator retunes. \\ \bottomrule
 \end{tabularx}
 \end{table}
 
 \subsection{Running examples}
 \label{sec:running-examples}
-Three tasks in the DoorKey environment of ARM-FM run through the chapter. The environment provides four propositions: \texttt{has\_key}, \texttt{door\_open}, \texttt{at\_goal} and \texttt{key\_lost}, the event of dropping the key while the door is still closed. Table~\ref{tab:running} gives each task with the clauses the pipeline produces and their LTLf formulas. The resulting Reward Machines are in Appendix~\ref{app:running}, together with a fourth task made only of rules.
-
-\begin{table}[H]
-\centering
-\caption[The three running examples]{The three running examples, with the clauses and LTLf formulas the pipeline produced. All clauses are hard unless marked soft.}
-\label{tab:running}
-\footnotesize
-\renewcommand{\arraystretch}{1.2}
-\begin{tabularx}{\textwidth}{@{}l>{\raggedright\arraybackslash}p{5.4cm}>{\raggedright\arraybackslash}X@{}}
-\toprule
-\textbf{\#} & \textbf{Clauses} & \textbf{LTLf} \\ \midrule
-1 & \multicolumn{2}{@{}l@{}}{\textit{Pick up the key, then open the door, then reach the goal}} \\
-  & Existence(\texttt{has\_key}) & $\mathrm{F}\,\mathit{has\_key}$ \\
-  & Precedence(\texttt{has\_key}, \texttt{door\_open}) & $(\neg\mathit{door\_open}\ \mathrm{U}\ \mathit{has\_key}) \lor \mathrm{G}\,\neg\mathit{door\_open}$ \\
-  & Existence(\texttt{door\_open}) & $\mathrm{F}\,\mathit{door\_open}$ \\
-  & Precedence(\texttt{door\_open}, \texttt{at\_goal}) & $(\neg\mathit{at\_goal}\ \mathrm{U}\ \mathit{door\_open}) \lor \mathrm{G}\,\neg\mathit{at\_goal}$ \\
-  & Existence(\texttt{at\_goal}) & $\mathrm{F}\,\mathit{at\_goal}$ \\ \addlinespace
-2 & \multicolumn{2}{@{}l@{}}{\textit{Reach the goal, and if you drop the key, pick it up right away}} \\
-  & Existence(\texttt{at\_goal}) & $\mathrm{F}\,\mathit{at\_goal}$ \\
-  & ChainResponse(\texttt{key\_lost}, \texttt{has\_key}) & $\mathrm{G}\,(\mathit{key\_lost} \rightarrow \mathrm{X}\,\mathit{has\_key})$ \\ \addlinespace
-3 & \multicolumn{2}{@{}l@{}}{\textit{Reach the goal, ideally without ever losing the key}} \\
-  & Existence(\texttt{at\_goal}) & $\mathrm{F}\,\mathit{at\_goal}$ \\
-  & Absence(\texttt{key\_lost}), soft & $\neg\,\mathrm{F}\,\mathit{key\_lost}$ \\ \bottomrule
-\end{tabularx}
-\end{table}
-
-\subsection{Contributions}
-FARM contributes the following.
-\begin{itemize}
-    \item A prompt that covers all eight Declare templates and is general to any environment, because the propositions and their meaning come from the environment description.
-    \item Clauses constrained by a schema, so the language model can only choose a template, its propositions and a priority.
-    \item A fork of FL-AT that returns the state of every clause in each product state.
-    \item A reward post-process with hard and soft clauses, a rejecting well, and open promises for machines that never reach a final state.
-    \item A critic loop in which the critic flags clauses and the generator retunes them.
-\end{itemize}
-The labelling functions and the state descriptions then follow ARM-FM, which turns the machine into a LARM.
+Three tasks in the DoorKey environment of ARM-FM run through the chapter. The environment provides four propositions: \texttt{has\_key}, \texttt{door\_open}, \texttt{at\_goal} and \texttt{key\_lost}, the event of dropping the key while the door is still closed.
+\begin{enumerate}
+    \item A sequence: \textit{Pick up the key, then open the door, then reach the goal.}
+    \item A hard rule: \textit{Reach the goal, and if you drop the key, pick it up right away.}
+    \item A soft preference: \textit{Reach the goal, ideally without ever losing the key.}
+\end{enumerate}
+Each step ends by applying itself to the three tasks, and its output is the input of the next step: Step~1 gives the clauses and their formulas, Step~2 the automata, Step~3 their product, Step~4 the Reward Machine and Step~5 the verdict of the critic.
 
 \section{Step 1 · A language model chooses template clauses}
 \label{sec:step1}
-The first step reads the task and the description of the environment and returns a list of clauses. A clause names one of eight templates, the propositions it applies to and a priority, hard or soft. The output is restricted to this form, so nothing else reaches the compiler.
+The first step reads the task and the description of the environment and returns one LTLf formula per clause (Figure~\ref{fig:step1}).
+
+A language model first chooses the clauses. A clause names one of eight templates, the propositions it applies to and a priority, hard or soft. The output is restricted to this form, so nothing else reaches the compiler. The template of each clause then writes its LTLf formula.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[farm, node distance=7mm,
+    field/.style={draw=orange!60!black, fill=orange!40, rounded corners=1pt, align=center, text width=1.9cm, minimum height=4mm, inner sep=1pt}]
+\node[farm text, text width=2.3cm, minimum height=7.5mm] (task) at (0,0.55) {Task};
+\node[farm text, text width=2.3cm, minimum height=7.5mm] (env) at (0,-0.55) {Environment description};
+\node[farm llm, farm step=1.1, text width=2cm] (gen) at (3.3,0) {Language model};
+% one clause: a stacked card titled Clause that holds its three fields
+\node[font=\scriptsize\bfseries] (cltitle) at (6.2,0.66) {Clause};
+\node[field] (f1) at (6.2,0.24) {Template};
+\node[field] (f2) at (6.2,-0.2) {Propositions};
+\node[field] (f3) at (6.2,-0.64) {Hard or soft};
+\begin{scope}[on background layer]
+\node[farm items, text width=, fit=(cltitle) (f1) (f2) (f3), inner sep=3pt] (cl) {};
+\end{scope}
+\node[farm tool, farm step=1.2, text width=2cm, right=of cl] (ibm) {IBM templates};
+\node[farm items, text width=1.8cm, right=of ibm] (ltl) {LTLf formula};
+\draw[farm flow] (task.east) -- (gen.west);
+\draw[farm flow] (env.east) -- (gen.west);
+\draw[farm flow] (gen.east) -- (gen.east -| cl.west);
+\draw[farm flow] (cl) -- (ibm);
+\draw[farm flow] (ibm) -- (ltl);
+\end{tikzpicture}
+\caption[Step 1 of FARM]{Step 1. The language model chooses the clauses, each a template with its propositions and a priority, and the template of each clause writes its LTLf formula. A stack stands for one item per clause.}
+\label{fig:step1}
+\end{figure}
 
 \subsection{IBM nl2ltl}
 IBM's nl2ltl \cite{fuggitti2023nl2ltl} converts a sentence into an LTLf formula. It keeps one class per Declare template \cite{pesic2006declarative}; each class holds the LTLf definition of its template and builds the formula from the propositions given to it. Its default engine asks a GPT model for the template and its arguments. FARM replaces that engine and keeps the template classes (Appendix~\ref{app:implementation}).
@@ -411,9 +506,55 @@ The default prompt of IBM's engine is a few-shot list that allows five of the ei
 \subsection{Hard and soft clauses}
 Each clause carries a priority that the model chooses for that clause alone. The model marks a clause soft only when the task uses explicit preference language such as ``if possible'' or ``ideally''; every other clause is hard. The priority never changes the formula. A hard clause must hold for the task to be completed. A soft clause is a preference: breaking it costs reward but does not prevent finishing (Step~4). IBM's templates have no such notion, since ``never touch the lava'' and ``if possible, never touch the lava'' are the same Absence clause, so the priority has to come from the prompt.
 % What will go here: the wording the prompt uses to tell hard from soft, with the examples.
-\section{Step 2 · MONA turns each clause into a DFA}
+
+\subsection{Task schemas}
+\label{sec:task-schemas}
+Steps 2 to 4 use only the template and the priority of each clause and the place each proposition fills, never what a proposition means. Tasks with the same clauses up to the propositions therefore receive the same machine with the names exchanged, and the clauses with the propositions left open form a task schema. Each running example stands for its schema: a task such as ``gather wood, then stone, then iron'' would have the clauses of example 1 with \texttt{has\_wood}, \texttt{has\_stone} and \texttt{has\_iron}, and the same machine. The priority belongs to the schema, so example 3 with a hard Absence would give a different machine, with a rejecting well. Two tasks of the same shape share a machine only when the generator gives them the same clauses.
+
+\subsection{Running examples: from task to formulas}
+\label{sec:run-step1}
+Table~\ref{tab:running} gives the clauses that the language model chose for each running example and the LTLf formula that the template of each clause wrote. The sequence of example 1 becomes three goals, one Existence for each step, and two Precedence rules that fix their order. Example 2 joins the goal with a ChainResponse rule, the template for ``right away''. In example 3 the word ``ideally'' makes the Absence of a lost key soft, and its formula is the same as that of a hard Absence.
+
+\begin{table}[H]
+\centering
+\caption[Clauses and LTLf formulas of the running examples]{The clauses and LTLf formulas of the running examples after Step~1. All clauses are hard unless marked soft.}
+\label{tab:running}
+\footnotesize
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\textwidth}{@{}l>{\raggedright\arraybackslash}p{5.4cm}>{\raggedright\arraybackslash}X@{}}
+\toprule
+\textbf{\#} & \textbf{Clauses} & \textbf{LTLf} \\ \midrule
+1 & \multicolumn{2}{@{}l@{}}{\textit{Pick up the key, then open the door, then reach the goal}} \\
+  & Existence(\texttt{has\_key}) & $\mathrm{F}\,\texttt{has\_key}$ \\
+  & Precedence(\texttt{has\_key}, \texttt{door\_open}) & $(\neg\texttt{door\_open}\ \mathrm{U}\ \texttt{has\_key}) \lor \mathrm{G}\,\neg\texttt{door\_open}$ \\
+  & Existence(\texttt{door\_open}) & $\mathrm{F}\,\texttt{door\_open}$ \\
+  & Precedence(\texttt{door\_open}, \texttt{at\_goal}) & $(\neg\texttt{at\_goal}\ \mathrm{U}\ \texttt{door\_open}) \lor \mathrm{G}\,\neg\texttt{at\_goal}$ \\
+  & Existence(\texttt{at\_goal}) & $\mathrm{F}\,\texttt{at\_goal}$ \\ \addlinespace
+2 & \multicolumn{2}{@{}l@{}}{\textit{Reach the goal, and if you drop the key, pick it up right away}} \\
+  & Existence(\texttt{at\_goal}) & $\mathrm{F}\,\texttt{at\_goal}$ \\
+  & ChainResponse(\texttt{key\_lost}, \texttt{has\_key}) & $\mathrm{G}\,(\texttt{key\_lost} \rightarrow \mathrm{X}\,\texttt{has\_key})$ \\ \addlinespace
+3 & \multicolumn{2}{@{}l@{}}{\textit{Reach the goal, ideally without ever losing the key}} \\
+  & Existence(\texttt{at\_goal}) & $\mathrm{F}\,\texttt{at\_goal}$ \\
+  & Absence(\texttt{key\_lost}), soft & $\neg\,\mathrm{F}\,\texttt{key\_lost}$ \\ \bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Step 2 · MONA turns each formula into a DFA}
 \label{sec:step2}
-The second step turns every clause into a deterministic finite automaton (DFA) that accepts exactly the traces satisfying it (Section~\ref{sec:sota-ltl}). The IBM template builds the LTLf formula of the clause, FL-AT translates it for MONA, and MONA returns the automaton.
+The second step turns every LTLf formula into a deterministic finite automaton (DFA) that accepts exactly the traces satisfying it (Section~\ref{sec:sota-ltl}). FL-AT translates the formula for MONA, and MONA returns the automaton (Figure~\ref{fig:step2}).
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[farm, node distance=7mm]
+\node[farm items, text width=1.8cm] (ltl) {LTLf formula};
+\node[farm tool, farm step=2, text width=2cm, right=of ltl] (mona) {MONA};
+\node[farm items, text width=1.8cm, right=of mona] (dfa) {DFA};
+\draw[farm flow] (ltl) -- (mona);
+\draw[farm flow] (mona) -- (dfa);
+\end{tikzpicture}
+\caption[Step 2 of FARM]{Step 2. Each LTLf formula becomes one DFA.}
+\label{fig:step2}
+\end{figure}
 
 \subsection{FL-AT and MONA}
 FL-AT, the Formal Language--Automaton Transmogrifier \cite{transmogrifier2020}, writes the LTLf formula as a formula of monadic second-order logic over finite words, the input language of MONA, and reads back the automaton that MONA prints. MONA \cite{henriksen1995mona} is a decision procedure for that logic: to decide a formula it builds the minimal DFA of its models. FARM uses a fork of FL-AT (Appendix~\ref{app:implementation}).
@@ -424,9 +565,64 @@ FL-AT, the Formal Language--Automaton Transmogrifier \cite{transmogrifier2020}, 
 The automaton that MONA returns is minimal for the language of its formula, yet two of its states are redundant for a Reward Machine. Figure~\ref{fig:mona-stages} shows both for the clause Absence(\texttt{key\_lost}). The first is a start state that every input leaves for the same successor (S0 in panel~(a)); the FL-AT fork removes it. The second appears in rule clauses: a ``no step yet'' start that nothing re-enters and that behaves like its idle successor on every input (S1 against S2 in panel~(b)); the post-process of Step~4 merges the two (panel~(c)).
 % What will go here: how the two states arise from the MONA encoding.
 
+\subsection{Running examples: from formulas to DFAs}
+\label{sec:run-step2}
+The three running examples have nine clauses but only four templates, and clauses of the same template give automata of the same shape. Figure~\ref{fig:run-dfas} draws one automaton per template. All three examples share Existence(\texttt{at\_goal}), Absence(\texttt{key\_lost}) comes from example 3, Precedence(\texttt{has\_key}, \texttt{door\_open}) from example 1 and ChainResponse(\texttt{key\_lost}, \texttt{has\_key}) from example 2. The other Existence and Precedence clauses of example 1 differ only in their propositions. In these graphs an arrow without a source marks the initial state and a double circle an accepting state. Each edge is labelled with its guard, where $\neg$ stands for \texttt{!}, $\land$ for \texttt{\&} and $\top$ for any input.
+
+The Existence automaton waits in S1 until \texttt{at\_goal} holds and then stays accepting in S2. Absence accepts in S2 while the key is kept and falls into S3, which no input leaves, at the first loss; it is the automaton of panel~(b) of Figure~\ref{fig:mona-stages}. Precedence accepts in S2 while neither event has happened and in S3 once the key comes first, and opening the door without the key leads to the dead state S4. ChainResponse accepts in S2 while nothing is owed. A lost key moves it to S3, where the key must be back at the next step, and without \texttt{has\_key} it falls into S4. In the three rule automata S1 is the ``no step yet'' start of Section~\ref{sec:redundant}: it moves like S2 but is not accepting.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[b]{0.49\textwidth}
+    \centering
+    \begin{tikzpicture}[farm graph]
+    \input{images/farm/dfa-ex2-c1}
+    \end{tikzpicture}
+    \caption{Existence(\texttt{at\_goal})}
+\end{subfigure}\hfill
+\begin{subfigure}[b]{0.49\textwidth}
+    \centering
+    \begin{tikzpicture}[farm graph]
+    \input{images/farm/dfa-ex3-c2}
+    \end{tikzpicture}
+    \caption{Absence(\texttt{key\_lost})}
+\end{subfigure}
+
+\vspace{4mm}
+\begin{subfigure}[b]{0.49\textwidth}
+    \centering
+    \begin{tikzpicture}[farm graph]
+    \input{images/farm/dfa-ex1-c2}
+    \end{tikzpicture}
+    \caption{Precedence(\texttt{has\_key}, \texttt{door\_open})}
+\end{subfigure}\hfill
+\begin{subfigure}[b]{0.49\textwidth}
+    \centering
+    \begin{tikzpicture}[farm graph]
+    \input{images/farm/dfa-ex2-c2}
+    \end{tikzpicture}
+    \caption{ChainResponse(\texttt{key\_lost}, \texttt{has\_key})}
+\end{subfigure}
+\caption[DFAs of the running examples]{The DFAs of the four templates of the running examples after Step~2, once the FL-AT fork has removed MONA's first start state.}
+\label{fig:run-dfas}
+\end{figure}
+
 \section{Step 3 · FL-AT multiplies the DFAs into one machine}
 \label{sec:step3}
-The third step combines the clause automata into one. FL-AT builds their synchronous product, the construction that Camacho et al.~\cite{camacho2019ltl} use for combined specifications: a product state holds one state of each clause DFA, and every step moves all of them at once. The fork returns that tuple for every product state, so later steps know where each clause stands.
+The third step combines the clause automata into one. FL-AT builds their synchronous product, the construction that Camacho et al.~\cite{camacho2019ltl} use for combined specifications: a product state holds one state of each clause DFA, and every step moves all of them at once. The fork returns that tuple for every product state, so later steps know where each clause stands (Figure~\ref{fig:step3}).
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[farm, node distance=7mm]
+\node[farm items, text width=1.8cm] (dfa) {DFA};
+\node[farm tool, farm step=3, text width=2cm, right=of dfa] (flat) {FL-AT};
+\node[farm rm, text width=2.3cm, right=of flat] (pm) {Product machine};
+\draw[farm flow] (dfa) -- (flat);
+\draw[farm flow] (flat) -- (pm);
+\end{tikzpicture}
+\caption[Step 3 of FARM]{Step 3. The DFAs of all clauses become one product machine.}
+\label{fig:step3}
+\end{figure}
 
 \subsection{The product of the clause DFAs}
 The product has no more states than the product of the sizes of the clause DFAs \cite{camacho2019ltl}. Its transitions carry Boolean conditions over the propositions, one per combination of clause transitions that can fire together.
@@ -440,9 +636,77 @@ FL-AT also assigns rewards. Each product edge pays the reward of every clause wh
 FL-AT derives its accepting states from its own rewards: they are the destinations of the edges that pay the highest reward. FARM discards this marking and recomputes the final states from the hard clauses (Step~4).
 % What will go here: an example where FL-AT's accepting state is not the end of the task.
 
+\subsection{Running examples: from DFAs to the product}
+\label{sec:run-step3}
+FL-AT multiplies the automata of each example. The product of example 3 has five states (Figure~\ref{fig:run-product3}) and that of example 2 seven (Figure~\ref{fig:run-product2}). Example 1 has five clauses, and its product, with 14 states and 42 transitions, is too large to draw legibly. Product states are named p0, p1 and so on, and each edge is labelled \textit{guard / reward} with the reward of FL-AT. Table~\ref{tab:run-product} gives the clause states behind each product state of examples 3 and 2.
+
+\begin{table}[H]
+\centering
+\caption[Product states of running examples 3 and 2]{The product states of examples 3 and 2 after Step~3. The clause states give the state of the Existence(\texttt{at\_goal}) automaton first and that of the second clause after it. The reward is the one that FL-AT pays on every edge into the state.}
+\label{tab:run-product}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{@{}lllll@{}}
+\toprule
+\textbf{Example} & \textbf{State} & \textbf{Clause states} & \textbf{Meaning} & \textbf{Reward} \\ \midrule
+3 & p0 & (S1, S1) & Start & -- \\
+  & p1 & (S1, S2) & No goal yet, key kept & 1 \\
+  & p2 & (S1, S3) & No goal yet, key lost & 0 \\
+  & p3 & (S2, S2) & Goal, key kept & 2 \\
+  & p4 & (S2, S3) & Goal, key lost & 1 \\ \midrule
+2 & p0 & (S1, S1) & Start & -- \\
+  & p1 & (S1, S2) & No goal yet, nothing owed & 1 \\
+  & p2 & (S1, S3) & No goal yet, key owed & 0 \\
+  & p3 & (S2, S2) & Goal, nothing owed & 2 \\
+  & p4 & (S2, S3) & Goal, key owed & 1 \\
+  & p5 & (S2, S4) & Goal, rule broken & 1 \\
+  & p6 & (S1, S4) & No goal yet, rule broken & 0 \\ \bottomrule
+\end{tabular}
+\end{table}
+
+The reward of an edge counts the clause automata that accept after the step, so it depends only on the state the edge enters. In example 3 the agent earns 1 for every idle step in p1 before the goal and 2 for every step it stays in p3 after it. In example 2 it can lose the key after the goal and pick it up again: the cycle from p3 to p4 and back pays 1 and then 2, and nothing stops the agent from repeating it. The state p5, where the hard rule is already broken, still pays 1 per step, because the goal clause keeps accepting. In example 1 every edge pays between 2 and 5, so even reaching the goal first, before the key and the door, which breaks the task, pays 2. FL-AT marks as accepting the destinations of its highest-paying edges: p3 in examples 3 and 2, where both clauses accept, and the state of example 1 where all five do. In all three products p0 moves like p1 and neither is accepting, the trace of the ``no step yet'' starts of the rule automata.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[farm graph]
+\input{images/farm/product-ex3}
+\end{tikzpicture}
+\caption[Product of running example 3]{The product of example 3 after Step~3, with the rewards of FL-AT.}
+\label{fig:run-product3}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[farm graph]
+\input{images/farm/product-ex2}
+\end{tikzpicture}
+\caption[Product of running example 2]{The product of example 2 after Step~3, with the rewards of FL-AT.}
+\label{fig:run-product2}
+\end{figure}
+
 \section{Step 4 · FARM's post-process: hard and soft clauses, and rewards}
 \label{sec:step4}
-The fourth step is specific to FARM and turns the product into a Reward Machine. For every clause, each product state is labelled as satisfied, pending (not yet satisfied but still possible) or violated (no longer satisfiable). The labels are computed exactly, by reachability on the DFA of each clause. Hard clauses prune the machine and decide the final states, soft clauses only change rewards, and the rewards are assigned last.
+The fourth step is specific to FARM and turns the product into a Reward Machine. For every clause, each product state is labelled as satisfied, pending (not yet satisfied but still possible) or violated (no longer satisfiable). The labels are computed exactly, by reachability on the DFA of each clause. Hard clauses prune the machine and decide the final states, soft clauses only change rewards, and the rewards are assigned last (Figure~\ref{fig:step4}).
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[farm, node distance=5mm]
+\node[farm rm, text width=2.3cm] (pm) {Product machine};
+\node[farm tool, text width=2.55cm, right=of pm] (merge) {Merge start state};
+\node[farm tool, text width=2.55cm, right=of merge] (hard) {Apply hard clauses};
+\node[farm tool, text width=2.55cm, right=of hard] (rew) {Assign rewards};
+\node[farm rm, text width=2.3cm, right=of rew] (rm) {Reward Machine};
+\draw[farm flow] (pm) -- (merge);
+\draw[farm flow] (merge) -- (hard);
+\draw[farm flow] (hard) -- (rew);
+\draw[farm flow] (rew) -- (rm);
+\begin{scope}[on background layer]
+    \node[farm group, inner sep=6pt, fit=(merge)(hard)(rew)] (g4) {};
+\end{scope}
+\node[farm number] at (g4.north west) {4};
+\end{tikzpicture}
+\caption[Step 4 of FARM]{Step 4. FARM's post-process turns the product into a Reward Machine.}
+\label{fig:step4}
+\end{figure}
 
 \subsection{Merging MONA's start state}
 \label{sec:start-merge}
@@ -485,6 +749,7 @@ Progress is a difference of one score per state, so the differences cancel aroun
 % Formula: F = \Phi(next) - \Phi(current). Avoid reward farming. Cycles get 0. What will go here: the argument per reward and the Bellman-Ford check.
 
 \subsection{Recurrent soft-rule templates}
+\label{sec:recurrent}
 An LTLf formula gives one verdict per trace, so a soft rule would cost one penalty per episode however often it is broken. For the four templates whose DFA has a violated state (Absence, Precedence, ChainResponse and NotCoExistence), FARM re-arms a soft clause: its violated state takes the edges of the start state, so every new break costs $-0.5$ again. A step that breaks the rule while it is still broken is free, and the rule is armed again on the next step. Existence and ExistenceTwo are excluded, because paying again would invite reward farming.
 % What will go here: the break counts per template and the effect on the rewards. The option can be switched off.
 
@@ -499,9 +764,65 @@ A machine without a final state never ends the episode itself, so it has to judg
 When the environment ends the episode in any other state, the machine charges each open promise: $-1$ per hard promise and $-0.5$ per soft promise, the values \texttt{HARD\_\allowbreak FAILED\_\allowbreak REWARD} and \texttt{SOFT\_\allowbreak FAILED\_\allowbreak REWARD}, counted for each state in \texttt{PENDING\_\allowbreak PROMISES}. The charge is added once, to the reward of the last step, and belongs to no edge of the machine, so no loop can collect it. It replaces the flat $-0.5$ penalty of the time limit, which applies only to machines with a final state.
 % What will go here: the example machine with its accepting and pending lists (Appendix~\ref{app:running}).
 
+\subsection{Running examples: from the product to the Reward Machine}
+\label{sec:run-step4}
+Figures~\ref{fig:ex3-rm}, \ref{fig:ex2-rm} and~\ref{fig:ex1-rm} draw the Reward Machines that Step~4 builds from the three products. All Reward Machine graphs of the thesis, including panel~(c) of Figure~\ref{fig:mona-stages}, follow one convention. States run from left to right in the order of progress. An arrow without a source marks the initial state, a double circle a final or accepting state and a grey circle the rejecting well. Edges are labelled \textit{guard / reward} as in the products. An edge with more than two guards shows only their number and their reward, for instance \textit{4 guards, $-1$}, and the listing has the conditions. Implicit stays are not drawn: when no transition of a state matches the event, the machine stays in the state and pays the default reward.
+
+Example 3 shrinks from five states to three. The start p0 and its idle twin p1 merge into u0, and the goal states p3 and p4 become the final state u2, since the only hard clause holds in both. The key is a soft clause, so no state leads to a well. Losing the key costs $-0.5$ and moves the machine to u1, the former p2. It returns to u0 at the next step without a loss, so each new loss is charged again (Section~\ref{sec:recurrent}). The rewards of FL-AT are gone: idle steps pay nothing, and the goal pays 1.1, or 0.6 when the key is lost in the very step of the goal.
+
+Example 2 shrinks from seven states to five. Again p0 and p1 merge into u0. The state p2, where the key is owed, becomes u1, and p4, the goal reached with the key still owed, becomes u3. Only p3 becomes final, as u2: in p4 the hard rule is still pending and blocks the end of the task. The two states where the rule is broken, p5 and p6, become the rejecting well u4, entered with reward $-1$ when the key is not back at the next step. The farmed cycle of Step~3 disappears, because the final state ends the episode. It pays 1.2 when the goal is reached with the key in hand and 1.1 when the key comes back after the goal.
+
+Example 1 shrinks from 14 states to five. State u1 is reached after the key, u3 after the key and the door, and u4, the final state, after the goal. Every product state that breaks the order of the task becomes the well u2. Opening the door without the key or reaching the goal too early, which FL-AT still rewarded, now costs $-1$. Progress pays 0.1 or 0.2, and the goal pays 1.1 to 1.3: the 1 of the final state plus the progress of the step. Listing~\ref{lst:farm-example1} gives the text of this machine, and Appendix~\ref{app:running} the text of the other two.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[farm graph]
+\input{images/farm/rm-ex3}
+\end{tikzpicture}
+\caption[Reward Machine of running example 3]{The Reward Machine of example 3 after Step~4.}
+\label{fig:ex3-rm}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[farm graph]
+\input{images/farm/rm-ex2}
+\end{tikzpicture}
+\caption[Reward Machine of running example 2]{The Reward Machine of example 2 after Step~4.}
+\label{fig:ex2-rm}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[farm graph]
+\input{images/farm/rm-ex1}
+\end{tikzpicture}
+\caption[Reward Machine of running example 1]{The Reward Machine of example 1 after Step~4.}
+\label{fig:ex1-rm}
+\end{figure}
+
 \section{Step 5 · The critic: review, retries and thinking level}
 \label{sec:step5}
-The fifth step shows a second model, the critic, the task, the clauses and the compiled machine together with the warnings of the compiler. The critic accepts the result or flags the clauses it judges wrong, and on a flag the generator tries again with the comments of the critic. The critic never edits the machine.
+The fifth step shows a second model, the critic, the task, the clauses and the compiled machine together with the warnings of the compiler. The critic accepts the result or flags the clauses it judges wrong, and on a flag the generator tries again with the comments of the critic (Figure~\ref{fig:step5}). The critic never edits the machine.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[farm, node distance=7mm]
+\node[farm text, text width=2.3cm, minimum height=7.5mm] (task) at (0,0.95) {Task};
+\node[farm items, text width=2.3cm] (cl) at (0,0) {Clauses};
+\node[farm rm, text width=2.3cm] (rm) at (0,-0.85) {Reward Machine};
+\node[farm llm, farm step=5, text width=1.6cm] (crit) at (3.4,0) {Critic};
+\node[farm final, text width=2.9cm, anchor=west] (ok) at ($(crit.east)+(18mm,5mm)$) {Final Reward Machine};
+\node[farm text, text width=2.9cm, anchor=west] (back) at ($(crit.east)+(18mm,-5mm)$) {Comments to Step 1};
+\draw[farm flow] (task.east) -- (crit.west);
+\draw[farm flow] (cl.east) -- (crit.west);
+\draw[farm flow] (rm.east) -- (crit.west);
+\draw[farm flow] (crit.east) -- node[above, sloped] {Accepted} (ok.west);
+\draw[farm flow, dashed] (crit.east) -- node[below, sloped] {Rejected} (back.west);
+\end{tikzpicture}
+\caption[Step 5 of FARM]{Step 5. The critic accepts the machine or sends comments back to the generator.}
+\label{fig:step5}
+\end{figure}
 
 \subsection{A review step for the final version}
 Only the choice of clauses is non-deterministic, so a single review at the end covers the whole pipeline.
@@ -530,7 +851,41 @@ Some clauses lead to machine states that the environment can never reach, for ex
 \subsection{Thinking level of the models}
 A single reasoning level applies to the generator and to the critic. The default is none.
 % What will go here: the effect of the reasoning level on the clauses chosen.
+
+\subsection{Running examples: the verdict of the critic}
+\label{sec:run-step5}
+The critic accepted the three machines of Step~4 at the first attempt, each time with the verdict \texttt{NO CHANGES NEEDED}. The generator therefore did not try again, and the machines of Step~4 are the final output of FARM. A second run of each task gave the same machine (Section~\ref{sec:examples-produced}).
+
+\section{The output format}
+\label{sec:output-format}
+FARM writes each machine in the plain-text format of ARM-FM (Listing~\ref{lst:armfm-doorkey}) and extends it. Listing~\ref{lst:farm-example1} shows the machine of the first running example.
+
+\noindent\begin{minipage}{\linewidth}
+\lstinputlisting[style=rm,caption={The Reward Machine FARM generates for the first running example.},label={lst:farm-example1}]{images/farm/rm-ex1.txt}
+\end{minipage}
+
+The format of FARM differs from that of ARM-FM in five points.
+\begin{itemize}
+    \item There are no \texttt{else} self-loops. A state with no matching transition stays where it is and pays the default reward.
+    \item The states with a special role are listed explicitly: \texttt{FINAL\_STATES}, \texttt{REJECTING\_STATES} and \texttt{ACCEPTING\_STATES}.
+    \item A single event expression combines propositions with \texttt{!} and \texttt{\&}, such as \texttt{has\_key \& !door\_open}, instead of a separate predicate such as \texttt{not\_has\_key}.
+    \item \texttt{DEFAULT\_REWARD}, \texttt{HARD\_FAILED\_REWARD} and \texttt{SOFT\_FAILED\_REWARD} fix the reward of a transition without an entry and the charge for a failed promise (Section~\ref{sec:open-promises}).
+    \item \texttt{PENDING\_PROMISES} lists, for each state, the hard and soft obligations still open.
+\end{itemize}
+Appendix~\ref{app:running} lists the machine of a task made only of rules, where the last two points apply.
+
 \section{Details}
+
+\subsection{Contributions}
+FARM adds the following to the pipeline it builds on.
+\begin{itemize}
+    \item A prompt that covers all eight Declare templates and serves any environment, because the propositions and their meaning come from the environment description (Section~\ref{sec:step1}).
+    \item A restricted answer: the language model can only choose a template, its propositions and a priority (Section~\ref{sec:schemas}).
+    \item A fork of FL-AT that returns the state of every clause in each product state (Section~\ref{sec:step3}).
+    \item A post-process with hard and soft clauses, a rejecting well and open promises for machines that never reach a final state (Section~\ref{sec:step4}).
+    \item A critic loop in which the critic flags clauses and the generator retunes them (Section~\ref{sec:step5}).
+\end{itemize}
+The labelling functions and the state descriptions then follow ARM-FM, which turns the machine into a LARM.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                 LIMITATIONS                                 %
@@ -651,7 +1006,7 @@ Unless stated otherwise, generation uses the defaults of the configuration: the 
 
 \section{How the examples were produced}
 \label{sec:examples-produced}
-The four running examples of Appendix~\ref{app:running} were generated on 29 October 2026 with the Antigravity provider (\texttt{agy} 1.4.10). The generator was gemini-3.8-flash-medium and the critic gpt-oss-120b-medium. The effort level is part of the model name, so the reasoning setting stays at none. Each task ran with at most three attempts, and the critic accepted every proposal at the first one. A second run of each task gave an identical Reward Machine.
+The four running examples (Section~\ref{sec:running-examples} and Appendix~\ref{app:running}) were generated on 29 October 2026 with the Antigravity provider (\texttt{agy} 1.4.10). The generator was gemini-3.8-flash-medium and the critic gpt-oss-120b-medium. The effort level is part of the model name, so the reasoning setting stays at none. Each task ran with at most three attempts, and the critic accepted every proposal at the first one. A second run of each task gave an identical Reward Machine.
 
 The code is commit a56bbed of the branch \texttt{feat/\allowbreak rule-only-\allowbreak rewards}, plus a fix to the Antigravity engine that was not yet committed (branch \texttt{fix/\allowbreak antigravity-\allowbreak structured-\allowbreak output}). The fix is needed because \texttt{agy} enforces a JSON schema only through its built-in \texttt{finish} tool, which the agent without tools cannot call. The engine now places the schema in the instructions and validates the reply itself.
 % TODO: replace the mention of the uncommitted fix with its commit once the Antigravity fix is committed.
@@ -665,7 +1020,7 @@ python app/main.py generate-rm \
   --environment examples/arm-fm/minigrid-doorkey/environment.md \
   --task "<task>" --output rm.txt --overwrite
 \end{lstlisting}
-A small driver script that builds the same configuration and only redirects the output folders ran the examples. A script draws the graphs of Appendix~\ref{app:running} from the text of each machine, parsed with the repository's own parser, and panel~(c) of Figure~\ref{fig:mona-stages} uses the same drawing code. The MONA figures of Appendix~\ref{app:mona} need no language model: they come from the compiler run on one fixed clause.
+A small driver script that builds the same configuration and only redirects the output folders ran the examples. A script draws the Reward Machine graphs of Section~\ref{sec:run-step4} and Appendix~\ref{app:running} from the text of each machine, parsed with the repository's own parser, and panel~(c) of Figure~\ref{fig:mona-stages} uses the same drawing code. A second script draws the DFAs and products of Sections~\ref{sec:run-step2} and~\ref{sec:run-step3} from the clauses of the same runs, with MONA and the FL-AT fork and no further call to a language model. The MONA figures of Appendix~\ref{app:mona} need no language model: they come from the compiler run on one fixed clause.
 % The driver, the logs and the regeneration steps are in the plan folder, examples/README.md.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -682,7 +1037,7 @@ A small driver script that builds the same configuration and only redirects the 
 
 \chapter{MONA automata before and after cleaning}
 \label{app:mona}
-Figure~\ref{fig:mona-stages} follows one clause, Absence(\texttt{key\_lost}) with the LTLf formula $\neg\,\mathrm{F}\,\mathit{key\_lost}$, through the two removals of redundant states described in Section~\ref{sec:redundant}. Panel~(a) is the automaton that MONA prints. Its start state S0 moves to S1 on every input. Panel~(b) is the same automaton after the FL-AT fork removes S0. In panel~(c) the post-process has merged the ``no step yet'' start S1 into its idle twin S2, which behaves identically on every input, and has priced the edges. The clause is kept hard in panel~(c), and the machine is the one that the reward layer builds from this clause alone. Panels~(a) and~(b) draw every transition of the automaton, and double circles mark accepting states. Panel~(c) follows the convention of Appendix~\ref{app:running}: the rejecting well u1 is grey and is entered with reward $-1$, and the implicit stay of u0 is not drawn. Running example 3 (Section~\ref{app:ex3}) contains this clause as a soft one, while the figure keeps it hard to show the well, so the machine of that example differs from panel~(c).
+Figure~\ref{fig:mona-stages} follows one clause, Absence(\texttt{key\_lost}) with the LTLf formula $\neg\,\mathrm{F}\,\texttt{key\_lost}$, through the two removals of redundant states described in Section~\ref{sec:redundant}. Panel~(a) is the automaton that MONA prints. Its start state S0 moves to S1 on every input. Panel~(b) is the same automaton after the FL-AT fork removes S0. In panel~(c) the post-process has merged the ``no step yet'' start S1 into its idle twin S2, which behaves identically on every input, and has priced the edges. The clause is kept hard in panel~(c), and the machine is the one that the reward layer builds from this clause alone. Panels~(a) and~(b) draw every transition of the automaton, and double circles mark accepting states. Panel~(c) follows the convention of Section~\ref{sec:run-step4}: the rejecting well u1 is grey and is entered with reward $-1$, and the implicit stay of u0 is not drawn. Running example 3 (Section~\ref{sec:run-step4}) contains this clause as a soft one, while the figure keeps it hard to show the well, so the machine of that example differs from panel~(c).
 
 \begin{figure}[H]
     \centering
@@ -720,7 +1075,9 @@ Figure~\ref{fig:mona-stages} follows one clause, Absence(\texttt{key\_lost}) wit
 
 Listing~\ref{lst:mona-rm} gives the text of the machine in panel~(c). The implicit stay of u0 is not listed, and there are no pending promises, since the only promise is hard and its violation leads to the well.
 
-\lstinputlisting[caption={The Reward Machine of the hard clause Absence(\texttt{key\_lost}).},label={lst:mona-rm}]{images/farm/mona.rm.txt}
+\noindent\begin{minipage}{\linewidth}
+\lstinputlisting[style=rm,caption={The Reward Machine of the hard clause Absence(\texttt{key\_lost}).},label={lst:mona-rm}]{images/farm/mona.rm.txt}
+\end{minipage}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                               RUNNING EXAMPLES                              %
@@ -728,85 +1085,23 @@ Listing~\ref{lst:mona-rm} gives the text of the machine in panel~(c). The implic
 
 \chapter{Running examples}
 \label{app:running}
-\raggedbottom
-% The brief asks for these machines in the ``Formatting examples'' appendix. That appendix is the LaTeX style sample marked for removal, so they sit here to survive its removal; move them if preferred.
-Each section gives the natural-language task, the clauses and LTLf formulas the pipeline produced, the text of the Reward Machine and its graph, for the DoorKey environment. The texts and graphs are the unedited outputs of the runs described in Section~\ref{sec:examples-produced}, and the formulas are written in standard notation. All Reward Machine graphs of the thesis, including panel~(c) of Figure~\ref{fig:mona-stages}, follow one convention. States run from left to right in the order of progress. An arrow without a source marks the initial state, a double circle a final or accepting state and a grey circle the rejecting well. An edge draws all the transitions between two states and is labelled \textit{guard / reward}, where $\neg$ stands for \texttt{!} and $\land$ for \texttt{\&}. An edge with more than two guards shows only their number and their reward, for instance \textit{4 guards, $-1$}, and the listing has the conditions. Implicit stays are not drawn: when no transition of a state matches the event, the machine stays in the state and pays the default reward.
-
-\section{Example 1: a sequence}
-\label{app:ex1}
-\textbf{Task.} Pick up the key, then open the door, then reach the goal.
-
-\noindent{\footnotesize
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{3.3cm}>{\raggedright\arraybackslash}p{4.3cm}l>{\raggedright\arraybackslash}X@{}}
-\toprule
-\textbf{Clause} & \textbf{Template} & \textbf{Priority} & \textbf{LTLf} \\ \midrule
-Pick up the key & Existence(\texttt{has\_key}) & hard & $\mathrm{F}\,\mathit{has\_key}$ \\
-Do not open the door before picking up the key & Precedence(\texttt{has\_key}, \texttt{door\_open}) & hard & $(\neg\mathit{door\_open}\ \mathrm{U}\ \mathit{has\_key}) \lor \mathrm{G}\,\neg\mathit{door\_open}$ \\
-Open the door & Existence(\texttt{door\_open}) & hard & $\mathrm{F}\,\mathit{door\_open}$ \\
-Do not reach the goal before opening the door & Precedence(\texttt{door\_open}, \texttt{at\_goal}) & hard & $(\neg\mathit{at\_goal}\ \mathrm{U}\ \mathit{door\_open}) \lor \mathrm{G}\,\neg\mathit{at\_goal}$ \\
-Reach the goal & Existence(\texttt{at\_goal}) & hard & $\mathrm{F}\,\mathit{at\_goal}$ \\ \bottomrule
-\end{tabularx}}
-
-The machine is Listing~\ref{lst:farm-example1} and its graph Figure~\ref{fig:ex1-rm}. State u1 is reached after the key, u3 after the key and the door, and u4, the final state, after the goal. Any event out of order, such as opening the door without the key or reaching the goal too early, leads to the well u2 with reward $-1$. Progress pays 0.1 or 0.2, and the goal pays 1.1 to 1.3: the 1 of the final state plus the progress of the step.
-
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[>={Latex[length=2mm]}, initial text=, font=\small, every state/.style={minimum size=9mm, inner sep=1pt}]
-\input{images/farm/rm-ex1}
-\end{tikzpicture}
-\caption{The graph of the Reward Machine of example 1.}
-\label{fig:ex1-rm}
-\end{figure}
+This appendix gives the text of the Reward Machines of running examples 2 and 3, whose graphs are in Section~\ref{sec:run-step4}, and example 4 in full, for the DoorKey environment. The machine of example 1 is Listing~\ref{lst:farm-example1}. The texts and graphs are the unedited outputs of the runs described in Section~\ref{sec:examples-produced}, and the graphs follow the convention of Section~\ref{sec:run-step4}.
 
 \section{Example 2: a hard rule}
 \label{app:ex2}
 \textbf{Task.} Reach the goal, and if you drop the key, pick it up right away.
 
-\noindent{\footnotesize
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{3.3cm}>{\raggedright\arraybackslash}p{4.3cm}l>{\raggedright\arraybackslash}X@{}}
-\toprule
-\textbf{Clause} & \textbf{Template} & \textbf{Priority} & \textbf{LTLf} \\ \midrule
-reach the goal & Existence(\texttt{at\_goal}) & hard & $\mathrm{F}\,\mathit{at\_goal}$ \\
-if the key is dropped, pick it up right away & ChainResponse(\texttt{key\_lost}, \texttt{has\_key}) & hard & $\mathrm{G}\,(\mathit{key\_lost} \rightarrow \mathrm{X}\,\mathit{has\_key})$ \\ \bottomrule
-\end{tabularx}}
-
-Listing~\ref{lst:ex2-rm} gives the machine and Figure~\ref{fig:ex2-rm} its graph. State u1 means that the key was dropped and putting it back is pending, and u3 that the goal was reached with that promise still open. The well u4 is entered with reward $-1$ when the key is not back at the next step. The final state u2 pays 1.2 when the goal is reached with the key in hand and 1.1 when the repair comes after the goal.
-
-\lstinputlisting[caption={The Reward Machine of example 2.},label={lst:ex2-rm}]{images/farm/rm-ex2.txt}
-
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[>={Latex[length=2mm]}, initial text=, font=\small, every state/.style={minimum size=9mm, inner sep=1pt}]
-\input{images/farm/rm-ex2}
-\end{tikzpicture}
-\caption{The graph of the Reward Machine of example 2.}
-\label{fig:ex2-rm}
-\end{figure}
+\noindent\begin{minipage}{\linewidth}
+\lstinputlisting[style=rm,caption={The Reward Machine of example 2.},label={lst:ex2-rm}]{images/farm/rm-ex2.txt}
+\end{minipage}
 
 \section{Example 3: a soft preference}
 \label{app:ex3}
 \textbf{Task.} Reach the goal, ideally without ever losing the key.
 
-\noindent{\footnotesize
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{3.3cm}>{\raggedright\arraybackslash}p{4.3cm}l>{\raggedright\arraybackslash}X@{}}
-\toprule
-\textbf{Clause} & \textbf{Template} & \textbf{Priority} & \textbf{LTLf} \\ \midrule
-reach the goal & Existence(\texttt{at\_goal}) & hard & $\mathrm{F}\,\mathit{at\_goal}$ \\
-never lose the key & Absence(\texttt{key\_lost}) & soft & $\neg\,\mathrm{F}\,\mathit{key\_lost}$ \\ \bottomrule
-\end{tabularx}}
-
-Listing~\ref{lst:ex3-rm} gives the machine and Figure~\ref{fig:ex3-rm} its graph. Only the goal is hard, so the machine has no well. Losing the key costs $-0.5$ and moves the machine to u1. It returns to u0 at the next step without a loss, so each new loss is charged again, as Section~\ref{sec:step4} describes for soft rules. The goal pays 1.1, or 0.6 when the loss happens in the very step of the goal.
-
-\lstinputlisting[caption={The Reward Machine of example 3.},label={lst:ex3-rm}]{images/farm/rm-ex3.txt}
-
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[>={Latex[length=2mm]}, initial text=, font=\small, every state/.style={minimum size=9mm, inner sep=1pt}]
-\input{images/farm/rm-ex3}
-\end{tikzpicture}
-\caption{The graph of the Reward Machine of example 3.}
-\label{fig:ex3-rm}
-\end{figure}
+\noindent\begin{minipage}{\linewidth}
+\lstinputlisting[style=rm,caption={The Reward Machine of example 3.},label={lst:ex3-rm}]{images/farm/rm-ex3.txt}
+\end{minipage}
 
 \section{Example 4: a task made only of rules}
 \label{app:ex4}
@@ -816,12 +1111,14 @@ Listing~\ref{lst:ex3-rm} gives the machine and Figure~\ref{fig:ex3-rm} its graph
 \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{3.3cm}>{\raggedright\arraybackslash}p{4.3cm}l>{\raggedright\arraybackslash}X@{}}
 \toprule
 \textbf{Clause} & \textbf{Template} & \textbf{Priority} & \textbf{LTLf} \\ \midrule
-Response(\texttt{key\_lost}, \texttt{has\_key}) & Response(\texttt{key\_lost}, \texttt{has\_key}) & hard & $\mathrm{G}\,(\mathit{key\_lost} \rightarrow \mathrm{F}\,\mathit{has\_key})$ \\ \bottomrule
+Response(\texttt{key\_lost}, \texttt{has\_key}) & Response(\texttt{key\_lost}, \texttt{has\_key}) & hard & $\mathrm{G}\,(\texttt{key\_lost} \rightarrow \mathrm{F}\,\texttt{has\_key})$ \\ \bottomrule
 \end{tabularx}}
 
 The only clause is a rule, so the machine has no goal and no final state (Listing~\ref{lst:ex4-rm} and Figure~\ref{fig:ex4-rm}). State u0 is accepting: nothing is owed there. State u1 owes the key, and \texttt{PENDING\_\allowbreak PROMISES} lists it with one hard promise. If the environment ends the episode in u1, the machine charges $-1$ once, the value \texttt{HARD\_\allowbreak FAILED\_\allowbreak REWARD}. In u0 it charges nothing. Dropping the key costs $-0.1$ and picking it up returns $+0.1$, so the two shaping rewards cancel over the cycle.
 
-\lstinputlisting[caption={The Reward Machine of example 4, a task made only of rules.},label={lst:ex4-rm}]{images/farm/rm-ex4.txt}
+\noindent\begin{minipage}{\linewidth}
+\lstinputlisting[style=rm,caption={The Reward Machine of example 4, a task made only of rules.},label={lst:ex4-rm}]{images/farm/rm-ex4.txt}
+\end{minipage}
 
 \begin{figure}[H]
 \centering
@@ -831,7 +1128,6 @@ The only clause is a rule, so the machine has no goal and no final state (Listin
 \caption{The graph of the Reward Machine of example 4.}
 \label{fig:ex4-rm}
 \end{figure}
-\flushbottom
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                             FORMATTING EXAMPLES                             %
