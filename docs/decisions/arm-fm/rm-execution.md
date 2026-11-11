@@ -27,7 +27,8 @@ without changing how labels, transitions, and rewards are interpreted.
 - Only declared final states accept the task. A machine with no final may declare
   `ACCEPTING_STATES` instead: an episode the environment ends in one of them is accepted
   (`rm_accept`; a success when the run uses `success: rm`), and being there never ends the
-  episode. A declared rejecting state (`REJECTING_STATES`) marks an irreversible violation;
+  episode. A compiled machine with a final carries the judgment lines but lists no accepting
+  state (every other state has a hard clause open), so its success still needs the final. A declared rejecting state (`REJECTING_STATES`) marks an irreversible violation;
   RMs without that line (such as ARM-FM paper RMs) have none.
   States remember earlier events; a false proposition now does not erase recorded progress.
   The one exception is a broken soft rule when recurrent soft rules are on: its state takes the
@@ -80,8 +81,9 @@ without changing how labels, transitions, and rewards are interpreted.
 - Graph fallback edges must not mutate the input machine, serialized output, or
   execution semantics. An explicit `else` destination and reward must remain intact.
 - The end judgment applies once, only on an episode end the RM did not cause, and only to RMs
-  whose text has `PENDING_PROMISES`. RMs without it, such as machines with a final state and
-  imported author bundles, keep the flat -0.5 at the time limit and get no end judgment.
+  whose text has `PENDING_PROMISES`: every compiled machine, with or without a final state (a
+  goal is a hard promise). RMs without it, such as imported author bundles, keep the flat -0.5 at
+  the time limit and get no end judgment.
 - The compiler never removes states or transitions on environment facts. The critic judges every
   clause against the environment file (`## Constraints`, the truth table, what the agent can and
   cannot do) and rejects a clause that restates an order the environment guarantees or that rests on
@@ -159,3 +161,13 @@ without expanding the machine or adding a guard-coverage calculation.
 - 2026-10-27: The trainers keep their time-limit bootstrap and the end judgment is added on top
   ("keep it but add ours"); a machine with no final is accepted when the environment ends it in
   an accepting state (user answers to the plan critique).
+- 2026-11-11: The end judgment now covers machines with a final state too: a goal is a hard
+  promise, so an episode the environment ends with the goal open is charged for it (-1) with the
+  other open items, instead of the flat -0.5. Such a machine lists no accepting state; success
+  still needs the final. Author bundles keep the flat -0.5. Reward progress became a per-clause
+  to-do count ([reward layer](../../COMPILER_REWARD_DESIGN.md)) (user decision).
+- 2026-11-11: An edge into the rejecting well pays its -1 plus the end charge of the state it
+  leaves, the same counts `PENDING_PROMISES` holds, so breaking a rule always costs more than
+  timing out in that state. This solves the disclosed corner where idling with two hard promises
+  open (-2) cost more than a hard break (-1). The number is in the edge's reward, so the runtime
+  does not change and the well adds no charge at the end (user decision).

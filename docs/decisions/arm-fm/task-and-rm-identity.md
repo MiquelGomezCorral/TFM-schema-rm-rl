@@ -41,8 +41,8 @@ tasks, while keeping the generator and critic responsibilities stable.
   hold together (no final is reachable), but it does not check soft preferences against the hard
   part: a preference that every way of finishing must break is charged at every new break when
   recurrent soft rules are on, and the task's wording is trusted not to ask for that. With n
-  forced breaks, finishing pays 1 - 0.5n plus progress: about a timeout's -0.5 at n = 3, and no
-  more than the -1 rejecting state from n = 4-5.
+  forced breaks, finishing pays 1 - 0.5n plus progress: about a timeout's -1 (the goal still open)
+  at n = 4, and no more than the rejecting state's -2 (-1 plus the open goal) from n = 6-7.
 - In compiler mode, one critic reviews the compiled candidate after RM construction: it receives
   the environment, task, validated clauses, and the compiled RM with its final and rejecting
   states and compile warnings. It returns a strict acceptance decision and nonempty feedback,
@@ -70,7 +70,7 @@ tasks, while keeping the generator and critic responsibilities stable.
   [RM execution](rm-execution.md). Rule-only tasks are valid output: they get progress toward
   the states with no pending clause and the end judgment of [RM execution](rm-execution.md).
   A soft clause is warned as having no reward effect when no edge pays it a break or finish term; in
-  a machine with no final, a progress edge where it starts or stops waiting also counts. That is
+  a progress edge where it starts or stops waiting also counts. That is
   valid output. Generic worked examples illustrate
   acceptance and concrete rejection without declaring propositions for the submitted environment.
 - A correct candidate is accepted without optional changes. Rejection identifies a
@@ -123,9 +123,9 @@ tasks, while keeping the generator and critic responsibilities stable.
   sections. Generated headers are `REWARD_MACHINE:`, `STATES:`, `INITIAL_STATE:`,
   `FINAL_STATES:` (zero or one state; empty for rule-only tasks), `REJECTING_STATES:`
   (the one rejecting well, only when present), and `DEFAULT_REWARD: 0`. `STATES` includes all
-  states, including accepting and rejecting states. A machine with no final state also gets
-  `ACCEPTING_STATES:` (the states with no pending clause; a broken soft clause, already paid,
-  counts as accepted) before `DEFAULT_REWARD`,
+  states, including accepting and rejecting states. Every compiled machine also gets
+  `ACCEPTING_STATES:` (the states with no pending clause, empty in a machine with a final state; a
+  broken soft clause, already paid, counts as accepted) before `DEFAULT_REWARD`,
   `HARD_FAILED_REWARD:` and `SOFT_FAILED_REWARD:` after it (from `Configuration`, -1 and -0.5,
   editable in the file), and a last `PENDING_PROMISES:` section after `REWARD_FUNCTION`, one row
   per state with open promises (`u2: hard 1, soft 1`). The compiler derives them from the clause
@@ -294,3 +294,10 @@ through their inputs and prompts, while both challenge the same generator.
   `PENDING_PROMISES`). Machines with a final are unchanged (user decisions).
 - 2026-10-27: `ACCEPTING_STATES` = no pending clause: a broken soft rule already paid and counts
   as accepted, a broken hard rule is the rejecting well (user answer to the plan critique).
+- 2026-11-11: Every compiled machine, with or without a final, carries the end-judgment lines, and
+  progress is a per-clause to-do count. A machine with a final lists no accepting state, so its
+  `ACCEPTING_STATES:` line is empty. This reverses "Machines with a final are unchanged" of
+  2026-10-26 (user decision; see [RM execution](rm-execution.md)).
+- 2026-11-11: An edge into the rejecting well pays -1 plus the end charge of the state it leaves,
+  so a break is always worse than timing out there (user decision; see
+  [RM execution](rm-execution.md)).
