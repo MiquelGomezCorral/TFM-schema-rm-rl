@@ -231,3 +231,23 @@ entry's README says how to rerun it. The end judgment is a second step on the sa
 `RewardMachineEnvironment.step` (`app/src/arm_fm/runtime.py`) and the success flag in
 `RewardMachineObservation` (`app/src/arm_fm/environments.py`). The end judgment is commit `29cf79f` on
 `feat/rule-only-rewards`.
+
+### Rule-only rewards: a penalty the agent can earn back (`rule-only-rewards/`), 2026-11-11
+
+**What it shows.** The result page of the rule-only rewards work, opened by the idea behind it. A rule
+that waits for an event ("Whenever a window breaks, fix it") costs -0.1 on the step the event happens,
+even when the agent did nothing; fixing it pays the +0.1 back, and an episode that ends with the
+promise open is charged -1 (hard) or -0.5 (soft). Seen on the graph, the states with an open promise
+are states to run away from, and the only free way out is doing what the rule asks. The rest of the
+page is the result: progress toward the states with no open rule (Slice 1), the end judgment (Slice 2),
+the seven final live tests, five examples and a generated bundle, and what was disclosed and left open.
+
+**Evidence.** `check/window_check.py` measures the window task on the real code (totals 0 when fixed,
+-1.1 hard and -0.6 soft when left open). The final live tests ran on `a56bbed`: L1.1 to L1.4 (20 machines
+as simulated, 42/42 goal machines unchanged, no positive cycle in 71, 3/3 CLI runs), L2.1 (54/54 format
+checks), L2.2 (24/24 runtime checks, the 15-case last-step table), L2.3 (generate, train, test on a
+rerun after a critic reply that was not JSON; replay 33/33). No run measures learning.
+
+**Files, rerun, code.** In `rule-only-rewards/README.md`: the page, 15 RM graphs, the reports in
+`evidence/close/`, the window check and how to rerun it, and the commits
+on `feat/rule-only-rewards`.
