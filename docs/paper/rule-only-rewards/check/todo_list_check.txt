@@ -1,0 +1,246 @@
+
+ex3: Whenever the box falls off the shelf, put it back. Preferably pick up the key at some point.
+  hard Response(box_fell, box_on_shelf) = (G(box_fell->(Fbox_on_shelf)))
+  soft Existence(has_key) = (Fhas_key)
+REWARD_MACHINE:
+STATES: u0, u1, u2, u3
+INITIAL_STATE: u0
+FINAL_STATES:
+ACCEPTING_STATES: u1
+DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
+TRANSITION_FUNCTION:
+(u0, !box_fell&has_key) -> u1
+(u0, box_fell&!box_on_shelf&!has_key) -> u2
+(u0, box_fell&!box_on_shelf&has_key) -> u3
+(u0, box_fell&box_on_shelf&has_key) -> u1
+(u1, box_fell&!box_on_shelf) -> u3
+(u2, !box_on_shelf&has_key) -> u3
+(u2, box_on_shelf&!has_key) -> u0
+(u2, box_on_shelf&has_key) -> u1
+(u3, box_on_shelf) -> u1
+REWARD_FUNCTION:
+(u0, !box_fell&has_key, u1) -> 0.1
+(u0, box_fell&!box_on_shelf&!has_key, u2) -> -0.1
+(u0, box_fell&box_on_shelf&has_key, u1) -> 0.1
+(u1, box_fell&!box_on_shelf, u3) -> -0.1
+(u2, !box_on_shelf&has_key, u3) -> 0.1
+(u2, box_on_shelf&!has_key, u0) -> 0.1
+(u2, box_on_shelf&has_key, u1) -> 0.2
+(u3, box_on_shelf, u1) -> 0.1
+PENDING_PROMISES:
+u0: hard 0, soft 1
+u2: hard 1, soft 1
+u3: hard 1, soft 0
+
+  u0 -> u1  !box_fell&has_key                                              old   0.2  new   0.1
+  u0 -> u1  box_fell&box_on_shelf&has_key                                  old   0.2  new   0.1
+  u0 -> u2  box_fell&!box_on_shelf&!has_key                                old     0  new  -0.1
+  u0 -> u3  box_fell&!box_on_shelf&has_key                                 old   0.1  new     0
+  u1 -> u3  box_fell&!box_on_shelf                                         old  -0.1  new  -0.1
+  u2 -> u0  box_on_shelf&!has_key                                          old     0  new   0.1
+  u2 -> u1  box_on_shelf&has_key                                           old   0.2  new   0.2
+  u2 -> u3  !box_on_shelf&has_key                                          old   0.1  new   0.1
+  u3 -> u1  box_on_shelf                                                   old   0.1  new   0.1
+  event loop u0 <-> u2: [-0.1] there, [0.1] back
+  event loop u1 <-> u3: [-0.1] there, [0.1] back
+
+ex4: When the alarm rings, switch it off at the very next step. Preferably, if the power ever goes out, run the generator.
+  hard ChainResponse(alarm_rings, alarm_off) = (G(alarm_rings->(Xalarm_off)))
+  soft RespondedExistence(power_cut, generator_on) = ((Fpower_cut)->(Fgenerator_on))
+REWARD_MACHINE:
+STATES: u0, u1, u2, u3, u4, u5, u6
+INITIAL_STATE: u0
+FINAL_STATES:
+REJECTING_STATES: u6
+ACCEPTING_STATES: u0, u2
+DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
+TRANSITION_FUNCTION:
+(u0, !alarm_rings&!generator_on&power_cut) -> u1
+(u0, !alarm_rings&generator_on) -> u2
+(u0, alarm_rings&!generator_on&!power_cut) -> u3
+(u0, alarm_rings&!generator_on&power_cut) -> u4
+(u0, alarm_rings&generator_on) -> u5
+(u1, !alarm_rings&generator_on) -> u2
+(u1, alarm_rings&!generator_on) -> u4
+(u1, alarm_rings&generator_on) -> u5
+(u2, alarm_rings) -> u5
+(u3, !alarm_off&!generator_on&!power_cut) -> u6
+(u3, !alarm_off&!generator_on&power_cut) -> u6
+(u3, !alarm_off&generator_on) -> u6
+(u3, alarm_off&!alarm_rings&!generator_on&!power_cut) -> u0
+(u3, alarm_off&!alarm_rings&!generator_on&power_cut) -> u1
+(u3, alarm_off&!alarm_rings&generator_on) -> u2
+(u3, alarm_off&alarm_rings&!generator_on&power_cut) -> u4
+(u3, alarm_off&alarm_rings&generator_on) -> u5
+(u4, !alarm_off&!generator_on) -> u6
+(u4, !alarm_off&generator_on) -> u6
+(u4, alarm_off&!alarm_rings&!generator_on) -> u1
+(u4, alarm_off&!alarm_rings&generator_on) -> u2
+(u4, alarm_off&alarm_rings&generator_on) -> u5
+(u5, !alarm_off) -> u6
+(u5, alarm_off&!alarm_rings) -> u2
+REWARD_FUNCTION:
+(u0, !alarm_rings&!generator_on&power_cut, u1) -> -0.1
+(u0, alarm_rings&!generator_on&!power_cut, u3) -> -0.1
+(u0, alarm_rings&!generator_on&power_cut, u4) -> -0.2
+(u0, alarm_rings&generator_on, u5) -> -0.1
+(u1, !alarm_rings&generator_on, u2) -> 0.1
+(u1, alarm_rings&!generator_on, u4) -> -0.1
+(u2, alarm_rings, u5) -> -0.1
+(u3, !alarm_off&!generator_on&!power_cut, u6) -> -2
+(u3, !alarm_off&!generator_on&power_cut, u6) -> -2
+(u3, !alarm_off&generator_on, u6) -> -2
+(u3, alarm_off&!alarm_rings&!generator_on&!power_cut, u0) -> 0.1
+(u3, alarm_off&!alarm_rings&generator_on, u2) -> 0.1
+(u3, alarm_off&alarm_rings&!generator_on&power_cut, u4) -> -0.1
+(u4, !alarm_off&!generator_on, u6) -> -2.5
+(u4, !alarm_off&generator_on, u6) -> -2.5
+(u4, alarm_off&!alarm_rings&!generator_on, u1) -> 0.1
+(u4, alarm_off&!alarm_rings&generator_on, u2) -> 0.2
+(u4, alarm_off&alarm_rings&generator_on, u5) -> 0.1
+(u5, !alarm_off, u6) -> -2
+(u5, alarm_off&!alarm_rings, u2) -> 0.1
+PENDING_PROMISES:
+u1: hard 0, soft 1
+u3: hard 1, soft 0
+u4: hard 1, soft 1
+u5: hard 1, soft 0
+
+  u0 -> u1  !alarm_rings&!generator_on&power_cut                           old  -0.2  new  -0.1
+  u0 -> u2  !alarm_rings&generator_on                                      old     0  new     0
+  u0 -> u3  alarm_rings&!generator_on&!power_cut                           old  -0.3  new  -0.1
+  u0 -> u4  alarm_rings&!generator_on&power_cut                            old  -0.2  new  -0.2
+  u0 -> u5  alarm_rings&generator_on                                       old  -0.1  new  -0.1
+  u1 -> u2  !alarm_rings&generator_on                                      old   0.2  new   0.1
+  u1 -> u4  alarm_rings&!generator_on                                      old     0  new  -0.1
+  u1 -> u5  alarm_rings&generator_on                                       old   0.1  new     0
+  u2 -> u5  alarm_rings                                                    old  -0.1  new  -0.1
+  u3 -> u0  alarm_off&!alarm_rings&!generator_on&!power_cut                old   0.3  new   0.1
+  u3 -> u1  alarm_off&!alarm_rings&!generator_on&power_cut                 old   0.1  new     0
+  u3 -> u2  alarm_off&!alarm_rings&generator_on                            old   0.3  new   0.1
+  u3 -> u4  alarm_off&alarm_rings&!generator_on&power_cut                  old   0.1  new  -0.1
+  u3 -> u5  alarm_off&alarm_rings&generator_on                             old   0.2  new     0
+  u3 -> u6  !alarm_off&!generator_on&!power_cut                            old    -1  new    -2
+  u3 -> u6  !alarm_off&!generator_on&power_cut                             old    -1  new    -2
+  u3 -> u6  !alarm_off&generator_on                                        old    -1  new    -2
+  u4 -> u1  alarm_off&!alarm_rings&!generator_on                           old     0  new   0.1
+  u4 -> u2  alarm_off&!alarm_rings&generator_on                            old   0.2  new   0.2
+  u4 -> u5  alarm_off&alarm_rings&generator_on                             old   0.1  new   0.1
+  u4 -> u6  !alarm_off&!generator_on                                       old    -1  new  -2.5
+  u4 -> u6  !alarm_off&generator_on                                        old    -1  new  -2.5
+  u5 -> u2  alarm_off&!alarm_rings                                         old   0.1  new   0.1
+  u5 -> u6  !alarm_off                                                     old    -1  new    -2
+  event loop u0 <-> u3: [-0.1] there, [0.1] back
+  event loop u1 <-> u4: [-0.1] there, [0.1] back
+  event loop u2 <-> u5: [-0.1] there, [0.1] back
+
+ex5: Open the door. Whenever the box falls off the shelf, preferably put it back.
+  hard Existence(door_open) = (Fdoor_open)
+  soft Response(box_fell, box_on_shelf) = (G(box_fell->(Fbox_on_shelf)))
+REWARD_MACHINE:
+STATES: u0, u1, u2
+INITIAL_STATE: u0
+FINAL_STATES: u1
+ACCEPTING_STATES:
+DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
+TRANSITION_FUNCTION:
+(u0, !box_fell&door_open) -> u1
+(u0, box_fell&!box_on_shelf&!door_open) -> u2
+(u0, box_fell&!box_on_shelf&door_open) -> u1
+(u0, box_fell&box_on_shelf&door_open) -> u1
+(u2, !box_on_shelf&door_open) -> u1
+(u2, box_on_shelf&!door_open) -> u0
+(u2, box_on_shelf&door_open) -> u1
+REWARD_FUNCTION:
+(u0, !box_fell&door_open, u1) -> 1.1
+(u0, box_fell&!box_on_shelf&!door_open, u2) -> -0.1
+(u0, box_fell&!box_on_shelf&door_open, u1) -> 0.6
+(u0, box_fell&box_on_shelf&door_open, u1) -> 1.1
+(u2, !box_on_shelf&door_open, u1) -> 0.7
+(u2, box_on_shelf&!door_open, u0) -> 0.1
+(u2, box_on_shelf&door_open, u1) -> 1.2
+PENDING_PROMISES:
+u0: hard 1, soft 0
+u2: hard 1, soft 1
+
+  u0 -> u1  !box_fell&door_open                                            old   1.1  new   1.1
+  u0 -> u1  box_fell&!box_on_shelf&door_open                               old   0.6  new   0.6
+  u0 -> u1  box_fell&box_on_shelf&door_open                                old   1.1  new   1.1
+  u0 -> u2  box_fell&!box_on_shelf&!door_open                              old     0  new  -0.1
+  u2 -> u0  box_on_shelf&!door_open                                        old     0  new   0.1
+  u2 -> u1  !box_on_shelf&door_open                                        old   0.6  new   0.7
+  u2 -> u1  box_on_shelf&door_open                                         old   1.1  new   1.2
+  event loop u0 <-> u2: [-0.1] there, [0.1] back
+
+thesis-ex2: Reach the goal. If the key is dropped, pick it up right away.
+  hard Existence(at_goal) = (Fat_goal)
+  hard ChainResponse(key_lost, has_key) = (G(key_lost->(Xhas_key)))
+REWARD_MACHINE:
+STATES: u0, u1, u2, u3, u4
+INITIAL_STATE: u0
+FINAL_STATES: u2
+REJECTING_STATES: u4
+ACCEPTING_STATES:
+DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
+TRANSITION_FUNCTION:
+(u0, !at_goal&key_lost) -> u1
+(u0, at_goal&!key_lost) -> u2
+(u0, at_goal&key_lost) -> u3
+(u1, !at_goal&!has_key) -> u4
+(u1, !at_goal&has_key&!key_lost) -> u0
+(u1, at_goal&!has_key) -> u4
+(u1, at_goal&has_key&!key_lost) -> u2
+(u1, at_goal&has_key&key_lost) -> u3
+(u3, !has_key) -> u4
+(u3, has_key&!key_lost) -> u2
+REWARD_FUNCTION:
+(u0, !at_goal&key_lost, u1) -> -0.1
+(u0, at_goal&!key_lost, u2) -> 1.1
+(u1, !at_goal&!has_key, u4) -> -3
+(u1, !at_goal&has_key&!key_lost, u0) -> 0.1
+(u1, at_goal&!has_key, u4) -> -3
+(u1, at_goal&has_key&!key_lost, u2) -> 1.2
+(u1, at_goal&has_key&key_lost, u3) -> 0.1
+(u3, !has_key, u4) -> -2
+(u3, has_key&!key_lost, u2) -> 1.1
+PENDING_PROMISES:
+u0: hard 1, soft 0
+u1: hard 2, soft 0
+u3: hard 1, soft 0
+
+  u0 -> u1  !at_goal&key_lost                                              old     0  new  -0.1
+  u0 -> u2  at_goal&!key_lost                                              old   1.2  new   1.1
+  u0 -> u3  at_goal&key_lost                                               old   0.1  new     0
+  u1 -> u0  !at_goal&has_key&!key_lost                                     old     0  new   0.1
+  u1 -> u2  at_goal&has_key&!key_lost                                      old   1.2  new   1.2
+  u1 -> u3  at_goal&has_key&key_lost                                       old   0.1  new   0.1
+  u1 -> u4  !at_goal&!has_key                                              old    -1  new    -3
+  u1 -> u4  at_goal&!has_key                                               old    -1  new    -3
+  u3 -> u2  has_key&!key_lost                                              old   1.1  new   1.1
+  u3 -> u4  !has_key                                                       old    -1  new    -2
+  event loop u0 <-> u1: [-0.1] there, [0.1] back
+
+ex5 at the time limit (step rewards: end judgment, flat -0.5, old machine's total)
+  '-'                                [-1.0] | [-0.5] | old total -0.5
+  'box_fell -'                       [-0.1, -1.5] | [-0.1, -0.5] | old total -0.5
+  'box_fell box_on_shelf -'          [-0.1, 0.1, -1.0] | [-0.1, 0.1, -0.5] | old total -0.5
+  'door_open'                        [1.1] | [1.1] | old total 1.1
+  'box_fell door_open'               [-0.1, 0.7] | [-0.1, 0.7] | old total 0.6
+  'box_fell box_on_shelf+door_open'  [-0.1, 1.2] | [-0.1, 1.2] | old total 1.1
+
+thesis-ex2 at the time limit (step rewards: new machine | old machine)
+  '-'                      [-1.0] | [-0.5]
+  'key_lost'               [-2.1] | [-0.5]
+  'key_lost -'             [-0.1, -3.0] | [0.0, -1.0]
+  'at_goal+key_lost'       [-1.0] | [-0.4]
+  'at_goal+key_lost -'     [0.0, -2.0] | [0.1, -1.0]
+
+PASS: every edge matches its table; every loop nets to 0
