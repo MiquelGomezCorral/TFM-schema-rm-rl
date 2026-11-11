@@ -66,13 +66,19 @@ class RewardMachineFormatTests(unittest.TestCase):
 STATES: u0, u1, u2
 INITIAL_STATE: u0
 FINAL_STATES: u2
+ACCEPTING_STATES:
 DEFAULT_REWARD: 0
+HARD_FAILED_REWARD: -1
+SOFT_FAILED_REWARD: -0.5
 TRANSITION_FUNCTION:
 (u0, done) -> u1
 (u1, done) -> u2
 REWARD_FUNCTION:
 (u0, done, u1) -> 0.1
 (u1, done, u2) -> 1.1
+PENDING_PROMISES:
+u0: hard 1, soft 0
+u1: hard 1, soft 0
 """
         self.assertEqual(result.text, expected)
         self.assertEqual(serialize_reward_machine(parse_reward_machine(result.text)), expected)

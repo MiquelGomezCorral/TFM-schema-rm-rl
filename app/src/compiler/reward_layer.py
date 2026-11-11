@@ -63,6 +63,7 @@ class _Product:
     alphabet: set[str]
     edges: list[_Edge]
     labels: dict[str, tuple[ClauseState, ...]]  # per product state, one label per clause
+    open_steps: dict[str, int]  # per product state, the steps all its clauses still need
 
 
 @dataclass(frozen=True)
@@ -85,8 +86,9 @@ def build_reward_machine(
     ``soft[i]`` marks clause ``i`` soft; the others are hard. With ``recurrent_soft_penalty`` a
     soft rule's violated state takes the start state's edges, so each new break pays again
     instead of once per episode. Without a hard goal clause the machine has no final
-    state (a rule-only task), progress aims at the states where no clause is pending and the
-    machine carries an end judgment.
+    state (a rule-only task) and progress aims at the states where no clause is pending. Every
+    machine carries an end judgment for the promises still open where the environment ends
+    the episode.
     Raises ``ValueError`` on a non-total DFA, conflicting clauses, or a positive reward cycle.
     """
     if len(dfas) != len(soft):
@@ -216,6 +218,36 @@ def _rearm_violated(dfa: dict, by_state: dict[str, ClauseState]) -> dict:
     return rearmed
 
 
+def _steps_to_accept(dfa: dict) -> dict[str, int]:
+    """The longest path from each DFA state to an accepting one; states that reach none are left out.
+
+    Accepting states absorb: their outgoing edges are left out, so a rule that waits for an answer
+    (``Response``) still has one. Each cycle is collapsed to one node, so no loop can be farmed.
+    """
+    accepting = set(dfa["accepting_states"])
+    graph = _graph(dfa["states"], [edge for edge in _dfa_edges(dfa) if edge[0] not in accepting])
+    dag = nx.condensation(graph.subgraph(_reaching(graph, accepting)))
+    steps: dict[int, int] = {}
+    for component in reversed(list(nx.topological_sort(dag))):
+        if accepting.isdisjoint(dag.nodes[component]["members"]):
+            steps[component] = 1 + max(steps[child] for child in dag.successors(component))
+        else:
+            steps[component] = 0
+    return {state: steps[component] for state, component in dag.graph["mapping"].items()}
+
+
+def _open_steps(dfa: dict, by_state: dict[str, ClauseState]) -> dict[str, int]:
+    """The steps each state of the clause DFA still needs; a violated state counts 0.
+
+    A broken soft rule was paid when it broke, and a broken hard rule ends in the well.
+    """
+    steps = _steps_to_accept(dfa)
+    return {
+        state: 0 if by_state[state] is ClauseState.VIOLATED else steps[state]
+        for state in dfa["states"]
+    }
+
+
 def _clause_product(dfas: Sequence[dict], rearm: Sequence[bool]) -> _Product:
     # Labels come from the original DFAs: the re-armed state would read as pending, and its
     # break would never be paid.
@@ -225,6 +257,10 @@ def _clause_product(dfas: Sequence[dict], rearm: Sequence[bool]) -> _Product:
         _rearm_violated(dfa, by_state) if rearm_clause else deepcopy(dfa)
         for dfa, by_state, rearm_clause in zip(dfas, clause_labels, rearm, strict=True)
     ]
+    # Steps are measured on the DFAs the product uses, before FL-AT touches them.
+    clause_steps = [
+        _open_steps(used, by_state) for used, by_state in zip(copies, clause_labels, strict=True)
+    ]
     machine = automatas_to_rm(copies, [1] * len(dfas))
     labels = {
         state: tuple(
@@ -233,11 +269,18 @@ def _clause_product(dfas: Sequence[dict], rearm: Sequence[bool]) -> _Product:
         )
         for state, clause_states in machine["state_tuples"].items()
     }
+    open_steps = {
+        state: sum(
+            steps[clause_state]
+            for steps, clause_state in zip(clause_steps, clause_states, strict=True)
+        )
+        for state, clause_states in machine["state_tuples"].items()
+    }
     edges = [
         _Edge(source, guard, destination)
         for (source, guard), (destination, _) in machine["transitions"].items()
     ]
-    return _Product(machine["initial_state"], machine["alphabet"], edges, labels)
+    return _Product(machine["initial_state"], machine["alphabet"], edges, labels, open_steps)
 
 
 # ======================================================================================
@@ -332,9 +375,10 @@ def _price_edges(
 ) -> tuple[list[tuple[_Edge, float]], set[int]]:
     """Reward each edge from its destination's clause labels; also return the soft clauses paid.
 
-    With no final, progress pays a soft clause where the clause starts or stops waiting. That is
-    a proxy, approximate both ways: it can call a clause paid that changes nothing, or inert when
-    it changes rewards.
+    An edge into the well pays the well reward plus the end charge of the state it leaves, so a
+    break always costs more than timing out there. Progress pays a soft clause where the clause
+    starts or stops waiting. That is a proxy, approximate both ways: it can call a clause paid
+    that changes nothing, or inert when it changes rewards.
     """
     labels = product.labels
     progress = _progress(edges, product, finals)
@@ -342,7 +386,11 @@ def _price_edges(
     priced = []
     for edge in edges:
         if edge.destination == _WELL:
-            priced.append((edge, Configuration.WELL_REWARD))
+            hard, soft = _open_promises(labels[edge.source], soft_clauses)
+            charge = (
+                hard * Configuration.HARD_FAILED_REWARD + soft * Configuration.SOFT_FAILED_REWARD
+            )
+            priced.append((edge, round(Configuration.WELL_REWARD + charge, 9)))
             continue
 
         finishing = edge.destination in finals
@@ -353,7 +401,7 @@ def _price_edges(
             before, after = labels[edge.source][clause], labels[edge.destination][clause]
             term = _soft_term(before, after, finishing)
             waits = (before is ClauseState.PENDING) != (after is ClauseState.PENDING)
-            if term or (waits and not finals and progress[edge]):
+            if term or (waits and progress[edge]):
                 paying.add(clause)
                 reward += term
         priced.append((edge, round(reward, 9)))
@@ -370,33 +418,24 @@ def _soft_term(before: ClauseState, after: ClauseState, finishing: bool) -> floa
 
 
 def _progress(edges: Sequence[_Edge], product: _Product, finals: set[str]) -> dict[_Edge, float]:
-    """Potential-based shaping: pay per step closer to a target along the longest path.
+    """Potential-based shaping: pay per step a clause gets closer to done, charge per step back.
 
-    The targets are the finals. A task without one aims at the states where no clause is
-    pending. Targets absorb: their outgoing edges are left out of the distance, so a rule that
-    waits for an answer (``Response``) still has one. Each cycle is collapsed to one node, so
-    edges inside a cycle pay nothing and no cycle can be farmed. Edges into the well, and into a
-    state that reaches no target, pay no progress.
+    Each clause counts the longest path its own DFA still has to an accepting state (see
+    ``_steps_to_accept``); a state owes the sum over its clauses, and finals owe nothing. The
+    potential difference sums to 0 around any loop, so nothing can be farmed. Edges into the
+    well, and into a state that reaches no target, pay no progress. The targets are the finals;
+    a task without one aims at the states where no clause is pending.
     """
     inner = [edge for edge in edges if edge.destination != _WELL]
     labels = product.labels
     targets = finals or {
         state for state, states in labels.items() if ClauseState.PENDING not in states
     }
-    graph = _graph(labels, [edge for edge in inner if edge.source not in targets])
-    reachable = _reaching(graph, targets)
-    dag = nx.condensation(graph.subgraph(reachable))
-    components = dag.graph["mapping"]
-    steps: dict[int, int] = {}
-    for component in reversed(list(nx.topological_sort(dag))):
-        if targets.isdisjoint(dag.nodes[component]["members"]):
-            steps[component] = 1 + max(steps[child] for child in dag.successors(component))
-        else:
-            steps[component] = 0
-    remaining = {state: steps[component] for state, component in components.items()}
+    reachable = _reaching(_graph(labels, inner), targets)
+    owed = {state: 0 if state in finals else steps for state, steps in product.open_steps.items()}
 
     return {
-        edge: Configuration.PROGRESS_REWARD * (remaining[edge.source] - remaining[edge.destination])
+        edge: Configuration.PROGRESS_REWARD * (owed[edge.source] - owed[edge.destination])
         if edge.destination in reachable
         else 0.0
         for edge in inner
@@ -432,7 +471,7 @@ def _structure(
 ) -> RewardMachineStructure:
     """Merge the finals into one node, number the states breadth first, drop implicit loops.
 
-    A machine with no final also gets its end judgment, read from the numbered states.
+    The machine also gets its end judgment, read from the numbered states.
     """
     merged = [
         (
@@ -467,8 +506,15 @@ def _structure(
         final_state=numbers.get(_FINAL),
         rejecting_states=(numbers[_WELL],) if _WELL in numbers else (),
         transitions=tuple(transitions),
-        judgment=None if finals else _end_judgment(numbers, product.labels, soft_clauses),
+        judgment=_end_judgment(numbers, product.labels, soft_clauses),
     )
+
+
+def _open_promises(states: tuple[ClauseState, ...], soft_clauses: Sequence[int]) -> tuple[int, int]:
+    """The hard and soft clauses still pending in one product state."""
+    open_clauses = [clause for clause, label in enumerate(states) if label is ClauseState.PENDING]
+    soft = sum(clause in soft_clauses for clause in open_clauses)
+    return len(open_clauses) - soft, soft
 
 
 def _end_judgment(
@@ -479,19 +525,17 @@ def _end_judgment(
     """Split the numbered states into accepting ones and ones with promises still open.
 
     A state is accepting when no clause is pending. A soft rule broken for good was paid when it
-    broke, so it counts as kept; the well is rejecting and in neither list.
+    broke, so it counts as kept; the well and the final are in neither list. In a machine with
+    a final every other state has a hard clause open (the goal or a hard rule), so none accepts.
     """
     accepting: list[int] = []
     pending: list[tuple[int, int, int]] = []
     for state, number in numbers.items():
-        if state == _WELL:
+        if state in {_WELL, _FINAL}:
             continue
-        open_clauses = [
-            clause for clause, label in enumerate(labels[state]) if label is ClauseState.PENDING
-        ]
-        soft = sum(clause in soft_clauses for clause in open_clauses)
-        if open_clauses:
-            pending.append((number, len(open_clauses) - soft, soft))
+        hard, soft = _open_promises(labels[state], soft_clauses)
+        if hard or soft:
+            pending.append((number, hard, soft))
         else:
             accepting.append(number)
     return EndJudgment(

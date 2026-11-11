@@ -30,8 +30,8 @@ Every claim is marked with how it was checked:
 
 Out of scope for this redesign: labeling functions, RM state descriptions and embeddings, and
 the RM text format, except one new optional `REJECTING_STATES:` line, `FINAL_STATES:` being
-allowed to be empty, and the end-judgment lines of a machine with no final state (see "The end
-judgment"). Other pipeline steps own the rest.
+allowed to be empty, and the end-judgment lines (see "The end judgment"). Other pipeline steps own
+the rest.
 
 ## Why this shape
 
@@ -133,26 +133,39 @@ judgment"). Other pipeline steps own the rest.
   shaping + task completion +1 + soft penalties. The clause 0.1 and the progress term reward the
   same thing.
 - **[decision] Progress formula:** every edge adds `Phi(next) - Phi(current)`, with
-  `Phi(u) = -k * (longest remaining steps from u to a final state)`, `k = 0.1`, and `Phi = 0` at
-  final states. Moving forward pays, staying pays 0, going back costs the same amount, and any
-  cycle sums to exactly 0, so loops cannot be farmed. Source: Ng, Harada & Russell 1999. With the
+  `Phi(u) = -k * sum over clauses i of remaining_i(u)`, `k = 0.1`, and `Phi = 0` at final states.
+  `remaining_i(u)` is the longest path, in steps, from clause i's own DFA state to one of its
+  accepting states (user, 2026-11-11). Think of each state as a to-do list: every goal and every
+  rule is an item that counts the steps it still needs. A step done pays +0.1, a new item or a step
+  back costs -0.1, in tasks with and without a goal. Moving forward pays, staying pays 0, going
+  back costs the same amount, and any cycle sums to exactly 0, so loops cannot be farmed. Source:
+  Ng, Harada & Russell 1999. With the
   learner's discount in the formula (`gamma * Phi(next) - Phi(current)`), self-loops pay a tiny
   `(1 - gamma)` amount instead of 0. We use the undiscounted difference while the learner uses
   `gamma = 0.99`: an accepted approximation, since a cycle can then net a small, bounded
   positive shaping `(1 - gamma) * (Phi(v) - Phi(u))`; it cannot be farmed without limit.
-- **[decision] Longest path, not shortest,** for the shortcut reason above, and because the
-  environment may never produce the shortcut. For RMs with cycles, compute it on the graph with
-  each cycle collapsed to one node; edges inside a cycle get 0.
-- **[decision] With no final state, progress aims at the states where no clause is pending.** A
-  rule-only task has no final, so the target is every product state where each clause is satisfied
-  (accepting) or violated, and none is waiting for something to happen. The rest of the formula is
-  the same: `Phi(u) = -k * (longest remaining steps to a target)`, `Phi = 0` at a target, loops
-  collapsed to one node. Targets absorb: their outgoing edges are left out when the distance is
-  measured, so a rule that is satisfied again and then opens again does not push the score away
-  from it. A state from which no target can be reached scores 0, and an edge into it pays no
-  progress, like an edge into a well: otherwise a step into a dead end would pay for getting
-  nowhere. Wells still pay no progress. A machine with a final is unchanged. The simulation, the
-  numbers and the dead-end witness: [rule-only progress](paper/rule-only-progress/README.md).
+- **[decision] Longest path, not shortest, and per clause,** for the shortcut reason above, and
+  because the environment may never produce the shortcut. Each clause is measured on the DFA the
+  product uses (for a soft rule, the re-armed one). Its accepting states absorb: their outgoing
+  edges are left out, so a rule that is satisfied again and then opens again does not push the
+  score away from it, and a rule that waits for an answer (`Response`) still has a distance. Each
+  cycle of that DFA is collapsed to one node, so its states score alike. A violated clause counts
+  0: a broken soft rule was already paid by its -0.5, and a broken hard rule is the well. A
+  clause's own break-and-repair loop passes through its accepting state, so the collapse does not
+  touch it. The product is never collapsed, so a loop between two states that both owe something
+  pays -x one way and +x the other; the old longest path of the whole product paid such a loop 0,
+  and priced the same event differently depending on what else was pending. The sum around any
+  loop is still 0, so nothing can be farmed.
+- **[decision] With no final state, progress needs no other target.** A rule-only task has no
+  final. A product state where each clause is satisfied (accepting) or violated, and none is
+  waiting for something to happen, owes 0 in every clause, so it sits at `Phi = 0` without a
+  special case. A state from which no such state (a final, in a goal task) can be reached, and
+  the edge into it, pay no progress, like an edge into a well: otherwise a step into a dead end
+  would pay for getting nowhere. Wells still pay no progress. A machine with a final pays the same
+  per-clause progress (it used to be the longest path of the product to the final), and a soft
+  clause that starts or stops waiting counts as paid there too. The simulation of the earlier
+  rule, the numbers and the dead-end witness: [rule-only progress](paper/rule-only-progress/README.md);
+  the new rule on three examples: [rule-only rewards](paper/rule-only-rewards/README.md).
 - **[run + decision] The duplicate start is dropped, so an idle first step pays 0.** MONA gives
   each rule clause a "no step yet" start state that is left on the first step and never re-entered.
   On every input it goes where the state after an idle step goes, so the product carried one extra
@@ -163,19 +176,21 @@ judgment"). Other pipeline steps own the rest.
   19 of the 25 T2.1 RMs (every task with a rule clause) lost exactly that state, with every reward
   and walk total unchanged (`samples/start_merge_check.py`, 25/25). This replaced an earlier fix
   that only gave the start its successor's progress score.
-- **[decision] No infinities.** Wells get no progress score, only a fixed finite penalty
-  (Ng's theorem also needs a bounded score). Some papers use -infinity for rejecting states; we
-  do not need it.
+- **[decision] No infinities.** An edge into a well gets no progress score, only a finite charge:
+  the well's -1 plus the end charge of the state the edge leaves (user, 2026-11-11; see "The end
+  judgment"). Ng's theorem also needs a bounded score. Some papers use -infinity for rejecting
+  states; we do not need it.
 
 ### Why no loop gains reward, and how we check it
 
 Two things keep no loop above 0: how the rewards are built, and one check on the finished RM.
 
 - **[code] By construction.** Progress is a difference of one score per state, so around any loop
-  the differences cancel. States on the same loop share one score (the loop is collapsed to one
-  node before scoring), so edges inside a loop pay 0 progress. The other rewards cannot repeat
-  for gain: `+1` and the soft finish penalty are paid only on edges into the final, the `-1` only
-  on edges into the well, and both are absorbing. A soft break costs -0.5 and nothing pays it
+  the differences cancel. A loop that goes up one way comes down the same amount the other way
+  (the cycles inside one clause's DFA are collapsed, so those states share a score and pay 0
+  between them). The other rewards cannot repeat
+  for gain: `+1` and the soft finish penalty are paid only on edges into the final, the well's
+  charge (-1 plus the open promises) only on edges into the well, and both are absorbing. A soft break costs -0.5 and nothing pays it
   back, so a loop through a re-armed soft rule (see "Recurrent soft rules") loses reward on
   every lap. With the switch off a broken clause stays broken (its DFA cannot leave a violated
   state), so the break is paid once. Dropping the duplicate start removes a state and its edges
@@ -219,8 +234,8 @@ it is used in `app/src/compiler/reward_layer.py`, and the algorithm behind it:
 |---|---|---|
 | `nx.descendants` | prune states the start cannot reach (pass 5) | breadth-first search |
 | `nx.ancestors` (in `_reaching`) | find states that can still reach a final or a clause's accepting states (passes 1 and 4) | breadth-first search on the reversed edges |
-| `nx.condensation` | collapse every loop into one node before scoring progress (`_progress`) | strongly connected components: Tarjan's algorithm with Nuutila's changes (Tarjan 1972; Nuutila & Soisalon-Soininen 1994) |
-| `nx.topological_sort` | visit the collapsed graph from the finals backwards to get each state's longest remaining path | topological order (Manber 1989); the longest path itself is a short loop of ours: `steps = 0` at a final, else `1 + max(steps of the successors)` |
+| `nx.condensation` | collapse every loop of one clause's DFA into one node before measuring what the clause still owes (`_steps_to_accept`) | strongly connected components: Tarjan's algorithm with Nuutila's changes (Tarjan 1972; Nuutila & Soisalon-Soininen 1994) |
+| `nx.topological_sort` | visit that collapsed DFA from its accepting states backwards to get each state's longest remaining path | topological order (Manber 1989); the longest path itself is a short loop of ours: `steps = 0` at an accepting state, else `1 + max(steps of the successors)` |
 
 The positive-loop check is our own Bellman-Ford (Bellman 1958), about ten lines, run on
 the finished RM.
@@ -242,15 +257,17 @@ the finished RM.
   blocks finishing until it is fixed; it never ends the episode early.
 - **[decision] Soft clauses never affect the final condition.** If the agent touches lava under
   a soft rule, it still has to open the door to finish. Final = every hard goal clause done and
-  every hard rule clause satisfied. Soft clauses only change the reward on the finishing edge
-  (-0.5 for a soft clause still pending: a soft goal, or an open obligation such as
-  `ChainResponse`'s) or on the edge where they break.
-- **[decision] A final state judges on its last edge; with none, the end is judged where the
-  environment ends the episode.** Reaching a final state ends the episode, so the rule is judged on
-  that last edge. A task with no final state (rule-only) ends on the environment or the time limit,
-  and the RM then charges each promise still open in its state (see "The end judgment"). This
-  reverses the earlier "no end-of-episode check in the RM", which left such a run with the flat
-  time-limit penalty and nothing else.
+  every hard rule clause satisfied. Soft clauses change the reward on the finishing edge (-0.5 for
+  a soft clause still pending: a soft goal, or an open obligation such as `ChainResponse`'s), on
+  the edge where they break, on an edge where one more step of a soft clause is done or undone
+  (the per-clause progress, +0.1 or -0.1), and when the environment ends the episode with the
+  clause still open (the end judgment, -0.5 per open soft clause).
+- **[decision] A final state judges on its last edge; an end the environment forces is judged where
+  it happens.** Reaching a final state ends the episode, so the rule is judged on that last edge.
+  An episode the environment ends first (the time limit, or a termination) is charged for each
+  promise still open in the RM state, in every compiled machine, with or without a goal (see "The
+  end judgment"). This reverses the earlier "no end-of-episode check in the RM", which left such a
+  run with the flat time-limit penalty and nothing else.
 - **[decision] States are classified per clause, from each clause's own DFA** (through `sdict`),
   not from the merged RM's "can still reach the goal", which mixes hard and soft violations.
 - **[decision] Regressions exist only if the task or environment states them.** "Drop the key"
@@ -307,10 +324,11 @@ the finished RM.
   broken is free, and the rule is armed again on the next step. `Absence(x)` on `x x x` charges 1,
   on `x - x x` charges 2; `Precedence(x, y)` on `y y` charges 1. The accepted `ChainResponse`
   result `x x -` = 1 is one instance of this.
-- **[run] Progress is re-scored.** The re-arm joins the clean and the broken state into one
-  strongly connected component, so `_progress` scores the merged component and pays 0 inside it.
-  The break step is therefore -0.5 plus that step's progress, which is zero inside the merged
-  component. With a hard `Existence(at_goal)` and a soft `Absence(key_lost)`:
+- **[run] Progress is re-scored.** A violated clause counts 0 and the re-armed rule's clean state
+  is accepting, so the rule owes 0 before and after a break and the break step pays -0.5 plus no
+  progress for that rule. (Before 2026-11-11 the re-arm joined the clean and the broken product
+  state into one loop, and `_progress` paid 0 inside the merged loop.) With a hard
+  `Existence(at_goal)` and a soft `Absence(key_lost)`:
 
   | Case | Before | Off | On |
   |---|---|---|---|
@@ -319,6 +337,9 @@ the finished RM.
   | Break on the finishing step | 0.7 | 0.7 | 0.6 |
 
   "Before" is the compiler without this change; "Off" differs from it only by the removed +0.25.
+  The table predates the per-clause progress of 2026-11-11, after which the Off column reads like
+  the On column (break -0.5, finish 1.1 and 0.6): the old longest path of the product paid
+  progress on the break step, the per-clause count does not.
   The gap between a clean and a one-break finish stays 0.5. Against the off position a clean
   finish can lose 0.1 (`Absence`, `ChainResponse`) or 0.2 (`NotCoExistence`) of progress.
 - **[run] The product can grow with several soft rules.** The re-arm adds edges between states
@@ -326,8 +347,8 @@ the finished RM.
   the 12 pairs of the four templates grew, and all four with a goal went from 11 to 13 states.
 - **[decision] Forced breaks.** Tasks are assumed free of contradictions (above), so a soft rule
   that every way of finishing must break is not checked. With n forced breaks, finishing pays
-  1 - 0.5n plus progress: about a timeout's -0.5 at n = 3, and no more than the -1 well from
-  n = 4-5.
+  1 - 0.5n plus progress: about a timeout's -1 (the goal still open) at n = 4, and no more than
+  the well's -2 (-1 plus the open goal) from n = 6-7.
 - **[decision] A soft clause already violated at the start pays nothing,** as before: it is inert,
   and the compile warning names it.
 
@@ -394,50 +415,75 @@ having conflicting clauses.
   task with no hard goal, soft clauses never reach a finishing edge, so the soft finish penalty
   never applies. What a soft clause can still pay is its break penalty (at every new break when
   recurrent soft rules are on, once otherwise) and the progress step where it starts or stops
-  waiting. A soft clause that pays neither on any edge is inert and named in the warning. With a
-  final state only the break and the finish count, as before. With none, the progress step is
-  judged by a proxy (the clause's waiting flips on an edge that pays progress), approximate both
-  ways: it can call a clause paid that changes nothing, or inert when it changes rewards.
+  waiting. A soft clause that pays neither on any edge is inert and named in the warning. The
+  progress step is judged by a proxy (the clause's waiting flips on an edge that pays progress),
+  approximate both ways: it can call a clause paid that changes nothing, or inert when it changes
+  rewards. A machine with a final used to count only the break and the finish; since 2026-11-11 it
+  counts the progress step too, like a machine with no final.
 
 ### The end judgment
 
-- **[decision] A machine with no final state judges an episode the environment ends.** On a step
-  where the environment terminates or truncates the episode and the RM did not (no final and no
-  well entered), the reward adds `hard x HARD_FAILED_REWARD + soft x SOFT_FAILED_REWARD`, with the
+- **[decision] A compiled machine judges an episode the environment ends.** On a step where the
+  environment terminates or truncates the episode and the RM did not (no final and no well
+  entered), the reward adds `hard x HARD_FAILED_REWARD + soft x SOFT_FAILED_REWARD`, with the
   counts of the RM state after that step's update (`RewardMachineEnvironment.step`). It is paid
   once, since the episode ends there, and never when the RM ended it. It replaces the flat -0.5
   time-limit penalty; `info["rm_reward"]` includes it. The user's framing: the machine "accepts" or
   "rejects" the string of propositions the environment generated, so the end judgment is the link
-  between the environment and the language side of the RM.
+  between the environment and the language side of the RM. Until 2026-11-11 only a machine with no
+  final state was judged this way; a machine with a final kept the flat -0.5.
+- **[decision] A goal is a hard promise (user, 2026-11-11).** In a task with a goal, an episode the
+  environment ends while the goal is still open is charged for it like any other open hard item:
+  -1 for the goal and each hard rule still open, -0.5 for each soft one. `Open the door. Whenever
+  the box falls off the shelf, preferably put it back.` charges -1 at the time limit in the start
+  state (the goal) and -1.5 in the state where the box has fallen (the goal and the soft
+  `Response`), instead of the flat -0.5 in both. The final state still ends the episode as before,
+  so the charge is paid only when the environment ends the episode first. The check:
+  `docs/paper/rule-only-rewards/check/todo_list_check.py`.
 - **[decision] The RM text carries the judgment.** The compiler writes `ACCEPTING_STATES` (the
   states where no clause is pending), the two values `HARD_FAILED_REWARD: -1` and
   `SOFT_FAILED_REWARD: -0.5`, and last `PENDING_PROMISES`, one row `uN: hard H, soft S` per state
-  that is neither accepting nor the well. It computes them from the product labels after the states
-  are numbered (`_end_judgment` in `reward_layer.py`), never by hand and with no clause names. A
-  soft rule broken for good was paid when it broke and counts as accepted; a hard rule broken for
-  good is the well, which rejects, ends the episode on its own, and is in neither list. A machine
-  with a final state, and an imported author bundle, gets none of these lines and keeps its text,
-  rewards, flat -0.5, bootstrap and success rule.
+  that is neither accepting, final nor the well. It computes them from the product labels after the
+  states are numbered (`_end_judgment` in `reward_layer.py`), never by hand and with no clause
+  names. A soft rule broken for good was paid when it broke and counts as accepted; a hard rule
+  broken for good is the well, which rejects, ends the episode on its own, and is in neither list.
+  In a machine with a final state every other state has a hard clause open (the goal, or a hard
+  rule that waits), so none of them accepts: `ACCEPTING_STATES:` is written empty, like
+  `FINAL_STATES:` in a rule-only machine. An imported author bundle has none of these lines and
+  keeps its text, rewards, flat -0.5, bootstrap and success rule.
 - **[decision] The parser stays lenient on the old format and strict on the new lines.** A text
   without the new lines parses as before. A text without the two values takes the
   `Configuration` defaults (`HARD_FAILED_REWARD`, `SOFT_FAILED_REWARD`). A state that is both
-  accepting and pending, a non-final non-rejecting state in neither list, or a row for an unknown
-  state is rejected. `PENDING_PROMISES` must be the last section. Serialize, parse, serialize is
-  byte-identical on both public paths (the paper text and the numeric structure). The two values
-  are the only part meant to be edited.
+  accepting and pending, a final or rejecting state that is listed, a state that is neither final,
+  rejecting, accepting nor pending, or a row for an unknown state is rejected. `PENDING_PROMISES`
+  must be the last section. Serialize, parse, serialize is byte-identical on both public paths (the
+  paper text and the numeric structure). The two values are the only part meant to be edited.
 - **[decision] Success of a rule-only run.** `rm_accept` is true on the last step of an episode the
   environment ended in an accepting state, and `is_success` (`success: rm`) is true whether the
   episode terminated or was truncated (user, 2026-10-27). A machine with a final keeps its rule:
-  success needs the final.
+  success needs the final, since it has no accepting state (user, 2026-11-11).
 - **[decision] The trainers do not change.** PPO and DQN keep their time-limit bootstrap and receive
   the charge as part of the step reward ("keep it but add ours": user, 2026-10-27).
 - **[decision] No loop gains reward.** The charge is paid once, at the end of an episode, outside
   any edge, so `_has_positive_cycle` and the cycle argument above are untouched and a loop cannot
   farm it.
-- **[decision, kept] Idling with two hard promises open costs more than breaking a hard rule on the
-  last step.** Two open hard promises charge -2; breaking a hard rule on that step costs the well,
-  -1, since the RM then ends the episode and the end is not charged again. The plan review found
-  it; it is disclosed here and not changed ([rule-only progress](paper/rule-only-progress/README.md)).
+- **[decision] An edge into the well also charges what is still open (user, 2026-11-11).** The
+  edge pays the well's -1 plus the end charge of the state it leaves, `hard x HARD_FAILED_REWARD +
+  soft x SOFT_FAILED_REWARD` with that state's `PENDING_PROMISES` counts (`_price_edges` in
+  `reward_layer.py`). The user's words: the arrows into the wells "do get the today's point plus,
+  or in this case minus, the same reward penalization that the agent would get by finishing the
+  environment time limit on that state." A source state with nothing open keeps -1. The edge still
+  pays no progress, and the episode ends in the well with no further charge, so the runtime needs
+  no change: the number is in the edge's reward. Breaking a rule is now always strictly worse than
+  timing out in the same state. With three hard items open, a break used to cost -1 against -3
+  for idling to the time limit; now it costs -4. The check:
+  `docs/paper/rule-only-rewards/check/todo_list_check.py`.
+- **[decision, solved] Idling with two hard promises open used to cost more than breaking a hard
+  rule on the last step.** Two open hard promises charge -2 at the time limit, and breaking a hard
+  rule on that step cost only the well's -1, since the RM then ends the episode and the end is not
+  charged again. The plan review found it and it was first disclosed and kept
+  ([rule-only progress](paper/rule-only-progress/README.md)). The well charge above solves it: the
+  same break now costs -1 plus the same -2.
 
 ### FL-AT change
 

@@ -142,9 +142,9 @@ class RewardMachineEnvironment:
 
     The episode ends when the environment ends or, with ``terminate_on_rm``, the RM enters a
     final or rejecting state. A step that hits the time limit without terminating adds the
-    time-limit penalty to the RM reward. A machine with an end judgment takes the place of that
-    penalty: on the step where the environment ends the episode and the RM did not, it adds the
-    failed reward of every promise open in the RM state. ``info`` carries the raw ``env_reward``
+    time-limit penalty to the RM reward. A machine with an end judgment (every compiled machine)
+    takes the place of that penalty: on the step where the environment ends the episode and the
+    RM did not, it adds the failed reward of every promise open in the RM state. ``info`` carries the raw ``env_reward``
     and the ``rm_reward``; the returned reward is the RM reward (``reward_source`` ``rm``) or
     env + RM (``both``).
     """

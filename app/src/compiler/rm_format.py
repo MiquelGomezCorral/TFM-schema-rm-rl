@@ -59,8 +59,10 @@ class RuntimeTransition:
 class PaperRewardMachine:
     """A paper-style RM with optional, possibly multiple final states and rejecting states.
 
-    Both kinds end an episode. A final state accepts the task, or, with an ``EndJudgment``, so does
-    an episode the environment ends in an accepting state. Paper RMs declare no rejecting state.
+    Both kinds end an episode. A final state accepts the task. With an ``EndJudgment``, an episode
+    the environment ends elsewhere pays the failed rewards of the promises open there, and one
+    ended in an accepting state (a machine with no final has them) counts as accepted. Paper RMs
+    declare no rejecting state.
     """
 
     states: tuple[str, ...]
@@ -112,25 +114,26 @@ def _check_judgment(
     rejecting: tuple[str, ...],
     judgment: EndJudgment | None,
 ) -> None:
-    """Every state but the rejecting ones is accepting or has promises open, never both."""
+    """Every state but the final and rejecting ones is accepting or has promises open, never both."""
     if judgment is None:
         return
-    if finals:
-        raise RuntimeValidationError("Only a Reward Machine with no final state has a judgment")
     accepting = set(judgment.accepting)
     pending = {state for state, _, _ in judgment.pending}
     listed = accepting | pending
+    ended = set(finals) | set(rejecting)
     if listed - set(states):
         raise RuntimeValidationError(
             f"ACCEPTING_STATES or PENDING_PROMISES names an unknown state: {sorted(listed - set(states))[0]}"
         )
-    if listed & set(rejecting):
-        raise RuntimeValidationError("A rejecting state cannot be accepting or pending")
+    if listed & ended:
+        raise RuntimeValidationError("A final or rejecting state cannot be accepting or pending")
     if accepting & pending:
         raise RuntimeValidationError(
             f"State {sorted(accepting & pending)[0]} is both accepting and pending"
         )
-    if unlisted := set(states) - set(rejecting) - listed:
+    if finals and accepting:
+        raise RuntimeValidationError("A machine with a final state has no accepting states")
+    if unlisted := set(states) - ended - listed:
         raise RuntimeValidationError(
             f"State {sorted(unlisted)[0]} is in neither ACCEPTING_STATES nor PENDING_PROMISES"
         )

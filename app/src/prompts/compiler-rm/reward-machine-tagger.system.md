@@ -63,8 +63,8 @@ The final compiled machine, expressed as text containing:
 - `REWARD_FUNCTION`: rows shaped as
   (source, condition, destination) -> reward
 - `ACCEPTING_STATES`, `HARD_FAILED_REWARD`, `SOFT_FAILED_REWARD`, `PENDING_PROMISES`:
-  optional lines, only in a machine with no final state. They set the charge when the
-  environment ends the episode; they are not transitions and not something to describe.
+  optional lines. They set the charge when the environment ends the episode; they are not
+  transitions and not something to describe.
 
 Conditions use proposition identifiers, with `!` for NOT, `&` for AND,
 `|` for OR, and parentheses for grouping.

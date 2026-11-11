@@ -20,11 +20,12 @@ class Transition:
 
 @dataclass(frozen=True)
 class EndJudgment:
-    """How a machine with no final state judges an episode the environment ends.
+    """How a machine judges an episode the environment ends before a final or rejecting state.
 
     ``accepting`` lists the states where no promise is open; a soft rule broken for good was paid
     when it broke and counts as kept. ``pending`` holds ``(state, hard, soft)``, the open promises
-    of every other state except the rejecting well. Each open promise pays its failed reward.
+    of every other state except the final and the rejecting well. Each open promise pays its
+    failed reward. A goal is a hard promise, so a machine with a final has no accepting state.
     States are numbers in a ``RewardMachineStructure`` and names in a ``PaperRewardMachine``.
     """
 
@@ -45,8 +46,8 @@ class EndJudgment:
 class RewardMachineStructure:
     """A numeric Reward Machine with at most one success final state.
 
-    A rule-only machine (no hard goal) has no final state: ``final_state`` is ``None`` and
-    ``judgment`` says how an episode the environment ends is judged.
+    A rule-only machine (no hard goal) has no final state: ``final_state`` is ``None``.
+    ``judgment`` says how an episode the environment ends before the final state is judged.
     """
 
     states: tuple[int, ...]

@@ -301,7 +301,8 @@ semicolon files must be regenerated to use the new compiler import format.
 
 The reward layer computes every reward from the clause DFAs
 (`docs/COMPILER_REWARD_DESIGN.md`). Progress shaping pays `0.1` per step closer to the goal and
-finishing adds `+1.00`. A hard violation enters the rejecting sink (`-1.00`). A soft clause costs
+finishing adds `+1.00`. A hard violation enters the rejecting sink (`-1.00` plus what the time
+limit would charge in the state it leaves). A soft clause costs
 `-0.5` when it breaks (at every new break with recurrent soft rules on, once with them off), and
 `-0.5` more if a soft clause is still pending at the finish (a soft goal, or an open obligation
 such as `ChainResponse`'s); keeping it earns nothing. A machine with a loop whose rewards add up
@@ -323,7 +324,7 @@ reward: `rm` (default) the RM reward only, `both` environment + RM reward, `env`
 each step evaluates the labeling, makes one RM transition, and feeds the Q-network the embedding
 of the current RM state. The episode ends when the environment ends it, when the RM enters a
 declared final or rejecting state, or at the time limit, which adds -0.5 to the RM reward for an RM
-without `PENDING_PROMISES`; an RM with `PENDING_PROMISES` (a rule-only task) instead charges its open promises at
+without `PENDING_PROMISES`; an RM with `PENDING_PROMISES` (every compiled RM) instead charges its open promises at
 every environment-caused end, see `docs/decisions/arm-fm/rm-execution.md`.
 `labeling_bundle` can take `labeling.py` from another bundle with the same propositions.
 RM configs need their local bundle under `outputs/bundles/`, which is gitignored, and bundle
@@ -441,7 +442,7 @@ decisions and sources: `docs/COMPILER_REWARD_DESIGN.md`.
 |---|---|---|
 | IBM `nl2ltl` | All 8 DECLARE templates (`Existence`, `ExistenceTwo`, `Absence`, `RespondedExistence`, `Response`, `Precedence`, `ChainResponse`, `NotCoExistence`), built from its template classes, and their `to_ltlf()` formulas. | Its GPT and Rasa engines and filters: this project has its own schema-constrained engine and critic. Its grounding helper: `ground_notcoexistence` builds `NotCoExistence(b, b)`. PPLTL is unused because FL-AT receives LTLf. |
 | FL-AT | The LTLf lexer, parser, translation to MONA logic, MONA process invocation, DFA output parser (`flat_tool.compile_dfa()`), and the synchronous product of clause DFAs (`automatas_to_rm()`, plus the fork's `state_tuples`). | PDDL3, PLTL, and regular-expression inputs; FL-AT's old CLI, its rewards and accepting set (they repeat rewards every accepting step), and its RM serializer. |
-| `schema-rm-rl` | Environment parsing, LLM request validation, the bounded critic, LTLf serialization, the reward layer (per-clause satisfied/pending/violated labels, hard wells, pruning, longest-path progress shaping, soft penalties, and the re-arming of a broken soft rule when recurrent soft rules are on), and RM serialization. | It does not invent formal automaton topology; MONA and FL-AT build the DFAs and their product. |
+| `schema-rm-rl` | Environment parsing, LLM request validation, the bounded critic, LTLf serialization, the reward layer (per-clause satisfied/pending/violated labels, hard wells, pruning, per-clause longest-path progress shaping, soft penalties, and the re-arming of a broken soft rule when recurrent soft rules are on), and RM serialization. | It does not invent formal automaton topology; MONA and FL-AT build the DFAs and their product. |
 
 Every pattern uses IBM's own formula. Hard and soft never change a formula: soft clauses change
 rewards (a penalty at every new break, or once with `--no-recurrent-soft-penalty`, and a penalty
