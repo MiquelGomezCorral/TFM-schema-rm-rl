@@ -175,7 +175,8 @@ class Configuration:
     PROVIDER_RETRIES: ClassVar[int] = 10
     PROVIDER_RETRY_WAIT_S: ClassVar[float] = 1.0
     MAX_TASK_CLAUSES: ClassVar[int] = 25
-    # Paid per step closer to the final state, measured on the longest remaining path.
+    # Paid per step a clause gets closer to done, and charged per step back or new step owed;
+    # each clause counts the longest remaining path of its own DFA.
     PROGRESS_REWARD: ClassVar[float] = 0.1
     TASK_COMPLETION_REWARD: ClassVar[float] = 1.0
     WELL_REWARD: ClassVar[float] = -1.0
@@ -184,6 +185,11 @@ class Configuration:
     SOFT_PENDING_AT_FINISH_REWARD: ClassVar[float] = -0.5
     # Added to the RM reward on the step where the time limit ends an episode the RM did not.
     TIME_LIMIT_PENALTY: ClassVar[float] = -0.5
+    # A compiled machine is judged where the environment ends an episode before its final state:
+    # each hard and soft promise still open pays one of these, instead of TIME_LIMIT_PENALTY. A
+    # goal is a hard promise.
+    HARD_FAILED_REWARD: ClassVar[float] = -1.0
+    SOFT_FAILED_REWARD: ClassVar[float] = -0.5
 
     # ============================== Runtime options ==============================
 

@@ -1,0 +1,1340 @@
+{
+  "eyebrow": "Paper evidence · branch feat/rule-only-rewards · 2026-10-27",
+  "title": "Rule-only rewards: result",
+  "subtitle": "Tasks made only of rules now get a reward signal. All seven final live tests pass. L2.3 needed one approved rerun: its first run was blocked at labeling.",
+  "sections": [
+    {
+      "id": "idea",
+      "title": "The idea: a penalty the agent can earn back",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "Some rules wait for an event. Take “Whenever a window breaks, fix it.” The agent did nothing wrong when the window broke; it just happened. But from that step the rule is waiting, and the Reward Machine says so at once: the step where the window breaks costs −0.1.\n\nThe agent can earn those points back. Fixing the window pays +0.1, so a window that broke and was fixed totals 0, the same as a window that never broke. If the episode ends with the window still broken, the machine charges the open promise: −1 for a hard rule (“fix it”), −0.5 for a soft one (“preferably fix it”).\n\nSo the penalty tells the agent that something needs a reaction, and the reaction is the one the user asked for. The same holds when the agent starts the wait itself, for example by dropping the key: the −0.1 comes back when it picks the key up. Only leaving the promise open costs anything in the end."
+        },
+        {
+          "type": "gallery",
+          "width": 490,
+          "items": [
+            {
+              "src": "graphs/window-hard.html",
+              "height": 360,
+              "caption": "“Whenever a window breaks, fix it.” LTLf: hard `Response(window_broken, window_fixed)`: `(G(window_broken->(Fwindow_fixed)))`. The break costs −0.1 (u0 → u1), the fix pays +0.1 (u1 → u0). Ending in u1 charges −1; ending in u0 charges nothing.",
+              "alt": "Two-state Reward Machine: u0 to u1 on window_broken, back on window_fixed.",
+              "details": {
+                "title": "RM text",
+                "code": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES:\nACCEPTING_STATES: u0\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, window_broken&!window_fixed) -> u1\n(u1, window_fixed) -> u0\nREWARD_FUNCTION:\n(u0, window_broken&!window_fixed, u1) -> -0.1\n(u1, window_fixed, u0) -> 0.1\nPENDING_PROMISES:\nu1: hard 1, soft 0"
+              }
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "heading": "What the window costs, measured on the real code",
+          "columns": [
+            "Episode",
+            "Step rewards (hard)",
+            "Total, hard",
+            "Total, soft",
+            "Before the end judgment"
+          ],
+          "rows": [
+            [
+              "Window breaks, agent fixes it",
+              "−0.1, +0.1",
+              "0",
+              "0",
+              "−0.5"
+            ],
+            [
+              "Window breaks, fixed three steps later",
+              "−0.1, 0, 0, +0.1",
+              "0",
+              "0",
+              "−0.5"
+            ],
+            [
+              "Nothing happens",
+              "0, 0",
+              "0",
+              "0",
+              "−0.5"
+            ],
+            [
+              "Window breaks, never fixed",
+              "−0.1, 0, −1",
+              "−1.1",
+              "−0.6",
+              "−0.6"
+            ]
+          ]
+        },
+        {
+          "type": "inset",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "**How the numbers arise.** Progress is a potential: −0.1 times the longest path to a state with no pending clause. The step into u1 lowers it by 0.1, the step back raises it by 0.1. When the environment ends the episode (time limit or the game) and the machine did not, the last step adds `hard × HARD_FAILED_REWARD + soft × SOFT_FAILED_REWARD` for the state it ends in. Before this change every rule-only episode lost the flat −0.5 at the time limit, kept rule or not. The table comes from `check/window_check.py` (output in `check/window_check.txt`): the time limit falls after the last step, through the real `RewardMachineEnvironment`."
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "heading": "The same idea on the graph: states to run away from",
+          "text": "Some states hold an open promise (`PENDING_PROMISES`). Ending the episode in one of them costs −1 per hard and −0.5 per soft promise; ending in the others (`ACCEPTING_STATES`) costs nothing. So the agent wants to leave the waiting states before the episode ends.\n\nThe only free way out is the edge that does what the rule asks: fix the window, put the box back, switch the alarm off. The other ways out pay too: a broken hard rule falls into the well (−1 plus what the state still owed, and the episode ends), a broken soft rule pays −0.5 at once. Running away from the waiting states and doing the task or the preference are the same thing."
+        },
+        {
+          "type": "callout",
+          "tone": "warn",
+          "title": "What this page does not show",
+          "text": "- These are rewards on scripted episodes through the real runtime. No run here measures that an agent learns to react: L2.3 trained a smoke budget and evaluated one episode.\n- A late fix costs nothing apart from discounting: fixing 50 steps late loses about 0.04 at γ = 0.99 (computed, not measured). Only the end charge prices leaving the promise open.\n- With two hard promises open at the end, the charge was −2, more than breaking a hard rule on the last step (−1). The next section solves it: a break from that state now costs −3, the well's −1 plus the same −2 (thesis example 2, from u1)."
+        }
+      ]
+    },
+    {
+      "id": "fix",
+      "title": "Found in review: loops that paid nothing, and the fix",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "The user reviewed the Slice 2 examples and found events that cost nothing, with a repair that paid nothing. The box falls off the shelf and nothing is lost; the box goes back and nothing is earned. The alarm task had three alarm loops that paid −0.3/+0.3, −0.1/+0.1 and 0.\n\n**Why.** Progress scored each state by its longest path to a target. To keep an agent from farming a loop, every loop was squashed into one point that pays nothing. A break-and-repair loop between two states that both still owe something is such a loop, so it paid 0. The same longest path also priced one event differently depending on what else was pending."
+        },
+        {
+          "type": "text",
+          "text": "**The fix, in the user's words.** “Getting closer to finishing a task or a rule pays; stepping back from it, or getting a new thing to do, costs.” Think of each state as a to-do list:"
+        },
+        {
+          "type": "list",
+          "items": [
+            "**Progress.** Each goal and each rule is an item. A state scores −0.1 for each step its items still need. A step toward finishing pays +0.1; a step back, or a new item, costs −0.1. Tasks with and without a goal work the same way.",
+            "**End of the episode.** When the environment ends it, every open item is charged: −1 if hard, −0.5 if soft. A goal is a hard item, so goal tasks are judged this way too. Before, they paid a flat −0.5.",
+            "**The well.** An edge into the well (where a broken hard rule ends the episode) pays −1 plus what timing out in the state it leaves would cost. Breaking a rule is therefore always worse than running out of time."
+          ]
+        },
+        {
+          "type": "inset",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "**How the numbers arise.** Each clause counts the steps its own automaton still needs to reach acceptance; a broken soft rule counts 0, because its −0.5 was paid when it broke. A state's score is −0.1 times the sum, and an edge pays the difference between the scores of its two ends. So any loop totals 0 and nothing can be farmed. In the box-and-key task, u0 (key owed) scores −0.1 and u2 (box and key owed) −0.2: the fall from u0 to u2 pays −0.1, and putting the box back pays +0.1.\n\nAn edge into the well pays no progress, only its charge: `WELL_REWARD + hard × HARD_FAILED_REWARD + soft × SOFT_FAILED_REWARD` of the state it leaves, the same counts `PENDING_PROMISES` writes. The user's words on the well: “the arrows that point to the reaction wells do get the today's point plus, or in this case minus, the same reward penalization that the agent would get by ... finishing the environment time limit on that state.” The runtime needed no change.\n\nThe tables come from `check/todo_list_check.py` (output in `check/todo_list_check.txt`). It compiles the four tasks with the real code, asserts every edge and every loop, plays the time limit through `RewardMachineEnvironment`, and writes the new RM texts to `rm/`."
+            }
+          ]
+        },
+        {
+          "type": "stats",
+          "items": [
+            {
+              "value": "7 of 7",
+              "label": "event loops pay −x one way and +x back (4 examples)",
+              "tone": "ok"
+            },
+            {
+              "value": "0",
+              "label": "positive reward loops in 71 machines checked",
+              "tone": "ok"
+            },
+            {
+              "value": "19 of 20",
+              "label": "one-rule machines keep their rewards; the hard ChainResponse changes at its well edge",
+              "tone": "ok"
+            },
+            {
+              "value": "28 of 42",
+              "label": "goal machines change rewards; every one has a rule clause",
+              "tone": "info"
+            }
+          ]
+        },
+        {
+          "type": "gallery",
+          "heading": "Before and after, with task, LTLf and RM text",
+          "width": 490,
+          "groups": [
+            {
+              "title": "1 · The alarm",
+              "note": "Illustrative task. The one the user cared about most: three alarm loops paid −0.3/+0.3, −0.1/+0.1 and 0.",
+              "items": [
+                {
+                  "src": "graphs/s2-ex4.html",
+                  "height": 640,
+                  "alt": "Alarm machine before",
+                  "caption": "**Before** (Slice 2) · “When the alarm rings, switch it off at the very next step. Preferably, if the power ever goes out, run the generator.” LTLf: hard `(G(alarm_rings->(Xalarm_off)))`, soft `((Fpower_cut)->(Fgenerator_on))`. The same alarm loop pays −0.3/+0.3 (u0↔u3), −0.1/+0.1 (u2↔u5) and 0/0 (u1↔u4). Every edge into the well (u6) pays −1.",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u6\nACCEPTING_STATES: u0, u2\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, !alarm_rings&!generator_on&power_cut) -> u1\n(u0, !alarm_rings&generator_on) -> u2\n(u0, alarm_rings&!generator_on&!power_cut) -> u3\n(u0, alarm_rings&!generator_on&power_cut) -> u4\n(u0, alarm_rings&generator_on) -> u5\n(u1, !alarm_rings&generator_on) -> u2\n(u1, alarm_rings&!generator_on) -> u4\n(u1, alarm_rings&generator_on) -> u5\n(u2, alarm_rings) -> u5\n(u3, !alarm_off&!generator_on&!power_cut) -> u6\n(u3, !alarm_off&!generator_on&power_cut) -> u6\n(u3, !alarm_off&generator_on) -> u6\n(u3, alarm_off&!alarm_rings&!generator_on&!power_cut) -> u0\n(u3, alarm_off&!alarm_rings&!generator_on&power_cut) -> u1\n(u3, alarm_off&!alarm_rings&generator_on) -> u2\n(u3, alarm_off&alarm_rings&!generator_on&power_cut) -> u4\n(u3, alarm_off&alarm_rings&generator_on) -> u5\n(u4, !alarm_off&!generator_on) -> u6\n(u4, !alarm_off&generator_on) -> u6\n(u4, alarm_off&!alarm_rings&!generator_on) -> u1\n(u4, alarm_off&!alarm_rings&generator_on) -> u2\n(u4, alarm_off&alarm_rings&generator_on) -> u5\n(u5, !alarm_off) -> u6\n(u5, alarm_off&!alarm_rings) -> u2\nREWARD_FUNCTION:\n(u0, !alarm_rings&!generator_on&power_cut, u1) -> -0.2\n(u0, alarm_rings&!generator_on&!power_cut, u3) -> -0.3\n(u0, alarm_rings&!generator_on&power_cut, u4) -> -0.2\n(u0, alarm_rings&generator_on, u5) -> -0.1\n(u1, !alarm_rings&generator_on, u2) -> 0.2\n(u1, alarm_rings&generator_on, u5) -> 0.1\n(u2, alarm_rings, u5) -> -0.1\n(u3, !alarm_off&!generator_on&!power_cut, u6) -> -1\n(u3, !alarm_off&!generator_on&power_cut, u6) -> -1\n(u3, !alarm_off&generator_on, u6) -> -1\n(u3, alarm_off&!alarm_rings&!generator_on&!power_cut, u0) -> 0.3\n(u3, alarm_off&!alarm_rings&!generator_on&power_cut, u1) -> 0.1\n(u3, alarm_off&!alarm_rings&generator_on, u2) -> 0.3\n(u3, alarm_off&alarm_rings&!generator_on&power_cut, u4) -> 0.1\n(u3, alarm_off&alarm_rings&generator_on, u5) -> 0.2\n(u4, !alarm_off&!generator_on, u6) -> -1\n(u4, !alarm_off&generator_on, u6) -> -1\n(u4, alarm_off&!alarm_rings&generator_on, u2) -> 0.2\n(u4, alarm_off&alarm_rings&generator_on, u5) -> 0.1\n(u5, !alarm_off, u6) -> -1\n(u5, alarm_off&!alarm_rings, u2) -> 0.1\nPENDING_PROMISES:\nu1: hard 0, soft 1\nu3: hard 1, soft 0\nu4: hard 1, soft 1\nu5: hard 1, soft 0"
+                  }
+                },
+                {
+                  "src": "graphs/s3-ex4.html",
+                  "height": 640,
+                  "alt": "Alarm machine after",
+                  "caption": "**After** (Slice 3) · “When the alarm rings, switch it off at the very next step. Preferably, if the power ever goes out, run the generator.” LTLf: hard `(G(alarm_rings->(Xalarm_off)))`, soft `((Fpower_cut)->(Fgenerator_on))`. All three alarm loops pay −0.1 when the alarm rings and +0.1 when it is switched off. Edges into the well pay −1 plus what the state still owed: −2 from u3, −2.5 from u4, −2 from u5.",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u6\nACCEPTING_STATES: u0, u2\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, !alarm_rings&!generator_on&power_cut) -> u1\n(u0, !alarm_rings&generator_on) -> u2\n(u0, alarm_rings&!generator_on&!power_cut) -> u3\n(u0, alarm_rings&!generator_on&power_cut) -> u4\n(u0, alarm_rings&generator_on) -> u5\n(u1, !alarm_rings&generator_on) -> u2\n(u1, alarm_rings&!generator_on) -> u4\n(u1, alarm_rings&generator_on) -> u5\n(u2, alarm_rings) -> u5\n(u3, !alarm_off&!generator_on&!power_cut) -> u6\n(u3, !alarm_off&!generator_on&power_cut) -> u6\n(u3, !alarm_off&generator_on) -> u6\n(u3, alarm_off&!alarm_rings&!generator_on&!power_cut) -> u0\n(u3, alarm_off&!alarm_rings&!generator_on&power_cut) -> u1\n(u3, alarm_off&!alarm_rings&generator_on) -> u2\n(u3, alarm_off&alarm_rings&!generator_on&power_cut) -> u4\n(u3, alarm_off&alarm_rings&generator_on) -> u5\n(u4, !alarm_off&!generator_on) -> u6\n(u4, !alarm_off&generator_on) -> u6\n(u4, alarm_off&!alarm_rings&!generator_on) -> u1\n(u4, alarm_off&!alarm_rings&generator_on) -> u2\n(u4, alarm_off&alarm_rings&generator_on) -> u5\n(u5, !alarm_off) -> u6\n(u5, alarm_off&!alarm_rings) -> u2\nREWARD_FUNCTION:\n(u0, !alarm_rings&!generator_on&power_cut, u1) -> -0.1\n(u0, alarm_rings&!generator_on&!power_cut, u3) -> -0.1\n(u0, alarm_rings&!generator_on&power_cut, u4) -> -0.2\n(u0, alarm_rings&generator_on, u5) -> -0.1\n(u1, !alarm_rings&generator_on, u2) -> 0.1\n(u1, alarm_rings&!generator_on, u4) -> -0.1\n(u2, alarm_rings, u5) -> -0.1\n(u3, !alarm_off&!generator_on&!power_cut, u6) -> -2\n(u3, !alarm_off&!generator_on&power_cut, u6) -> -2\n(u3, !alarm_off&generator_on, u6) -> -2\n(u3, alarm_off&!alarm_rings&!generator_on&!power_cut, u0) -> 0.1\n(u3, alarm_off&!alarm_rings&generator_on, u2) -> 0.1\n(u3, alarm_off&alarm_rings&!generator_on&power_cut, u4) -> -0.1\n(u4, !alarm_off&!generator_on, u6) -> -2.5\n(u4, !alarm_off&generator_on, u6) -> -2.5\n(u4, alarm_off&!alarm_rings&!generator_on, u1) -> 0.1\n(u4, alarm_off&!alarm_rings&generator_on, u2) -> 0.2\n(u4, alarm_off&alarm_rings&generator_on, u5) -> 0.1\n(u5, !alarm_off, u6) -> -2\n(u5, alarm_off&!alarm_rings, u2) -> 0.1\nPENDING_PROMISES:\nu1: hard 0, soft 1\nu3: hard 1, soft 0\nu4: hard 1, soft 1\nu5: hard 1, soft 0"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "heading": "The alarm: the edges that matter",
+          "columns": [
+            "Edge",
+            "Before",
+            "After"
+          ],
+          "rows": [
+            [
+              "u0 → u3 · alarm rings",
+              "−0.3",
+              "−0.1"
+            ],
+            [
+              "u3 → u0 · switched off",
+              "+0.3",
+              "+0.1"
+            ],
+            [
+              "u2 → u5 · alarm rings (generator already on)",
+              "−0.1",
+              "−0.1"
+            ],
+            [
+              "u5 → u2 · switched off",
+              "+0.1",
+              "+0.1"
+            ],
+            [
+              "u1 → u4 · alarm rings (power cut, generator still owed)",
+              "0",
+              "−0.1"
+            ],
+            [
+              "u4 → u1 · switched off",
+              "0",
+              "+0.1"
+            ],
+            [
+              "u3 → u4 · switched off, rings again, power cut",
+              "+0.1",
+              "−0.1"
+            ],
+            [
+              "u3 → u6 · well (hard rule broken; 1 hard open)",
+              "−1",
+              "−2"
+            ],
+            [
+              "u4 → u6 · well (1 hard and 1 soft open)",
+              "−1",
+              "−2.5"
+            ],
+            [
+              "u5 → u6 · well (1 hard open)",
+              "−1",
+              "−2"
+            ]
+          ]
+        },
+        {
+          "type": "gallery",
+          "width": 490,
+          "groups": [
+            {
+              "title": "2 · The thesis example",
+              "note": "Thesis example 2: a goal and a rule, both hard.",
+              "items": [
+                {
+                  "src": "graphs/thesis-ex2-before.html",
+                  "height": 580,
+                  "alt": "Thesis example 2 before",
+                  "caption": "**Before** (Slice 2) · “Reach the goal. If the key is dropped, pick it up right away.” LTLf: hard `(Fat_goal)`, hard `(G(key_lost->(Xhas_key)))`. Dropping the key (u0→u1) costs nothing and picking it up (u1→u0) pays nothing. A break pays −1 from every state (u1→u4, u3→u4).",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u2\nREJECTING_STATES: u4\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&key_lost) -> u1\n(u0, at_goal&!key_lost) -> u2\n(u0, at_goal&key_lost) -> u3\n(u1, !at_goal&!has_key) -> u4\n(u1, !at_goal&has_key&!key_lost) -> u0\n(u1, at_goal&!has_key) -> u4\n(u1, at_goal&has_key&!key_lost) -> u2\n(u1, at_goal&has_key&key_lost) -> u3\n(u3, !has_key) -> u4\n(u3, has_key&!key_lost) -> u2\nREWARD_FUNCTION:\n(u0, at_goal&!key_lost, u2) -> 1.2\n(u0, at_goal&key_lost, u3) -> 0.1\n(u1, !at_goal&!has_key, u4) -> -1\n(u1, at_goal&!has_key, u4) -> -1\n(u1, at_goal&has_key&!key_lost, u2) -> 1.2\n(u1, at_goal&has_key&key_lost, u3) -> 0.1\n(u3, !has_key, u4) -> -1\n(u3, has_key&!key_lost, u2) -> 1.1"
+                  }
+                },
+                {
+                  "src": "graphs/thesis-ex2-after.html",
+                  "height": 580,
+                  "alt": "Thesis example 2 after",
+                  "caption": "**After** (Slice 3) · “Reach the goal. If the key is dropped, pick it up right away.” LTLf: hard `(Fat_goal)`, hard `(G(key_lost->(Xhas_key)))`. Dropping the key costs 0.1 (u0→u1) and picking it up pays it back. Edges into the well pay −1 plus what is open: −3 from u1 (two hard items open), −2 from u3 (one).",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u2\nREJECTING_STATES: u4\nACCEPTING_STATES:\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, !at_goal&key_lost) -> u1\n(u0, at_goal&!key_lost) -> u2\n(u0, at_goal&key_lost) -> u3\n(u1, !at_goal&!has_key) -> u4\n(u1, !at_goal&has_key&!key_lost) -> u0\n(u1, at_goal&!has_key) -> u4\n(u1, at_goal&has_key&!key_lost) -> u2\n(u1, at_goal&has_key&key_lost) -> u3\n(u3, !has_key) -> u4\n(u3, has_key&!key_lost) -> u2\nREWARD_FUNCTION:\n(u0, !at_goal&key_lost, u1) -> -0.1\n(u0, at_goal&!key_lost, u2) -> 1.1\n(u1, !at_goal&!has_key, u4) -> -3\n(u1, !at_goal&has_key&!key_lost, u0) -> 0.1\n(u1, at_goal&!has_key, u4) -> -3\n(u1, at_goal&has_key&!key_lost, u2) -> 1.2\n(u1, at_goal&has_key&key_lost, u3) -> 0.1\n(u3, !has_key, u4) -> -2\n(u3, has_key&!key_lost, u2) -> 1.1\nPENDING_PROMISES:\nu0: hard 1, soft 0\nu1: hard 2, soft 0\nu3: hard 1, soft 0"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "heading": "The thesis example: the edges that matter",
+          "columns": [
+            "Edge",
+            "Before",
+            "After"
+          ],
+          "rows": [
+            [
+              "u0 → u1 · key dropped",
+              "0",
+              "−0.1"
+            ],
+            [
+              "u1 → u0 · key picked up",
+              "0",
+              "+0.1"
+            ],
+            [
+              "u1 → u4 · well (2 hard open)",
+              "−1",
+              "−3"
+            ],
+            [
+              "u3 → u4 · well (1 hard open)",
+              "−1",
+              "−2"
+            ]
+          ]
+        },
+        {
+          "type": "table",
+          "heading": "The thesis example at the time limit: step rewards",
+          "columns": [
+            "Episode",
+            "Before",
+            "After"
+          ],
+          "rows": [
+            [
+              "Idle from the start until the time limit",
+              "−0.5",
+              "−1"
+            ],
+            [
+              "Key dropped, then the time limit (in u1)",
+              "−0.5",
+              "−2.1"
+            ],
+            [
+              "Key dropped, then a break (from u1)",
+              "0, −1",
+              "−0.1, −3"
+            ],
+            [
+              "Goal reached and key dropped in one step, then the time limit (in u3)",
+              "−0.4",
+              "−1"
+            ],
+            [
+              "Goal reached and key dropped in one step, then a break (from u3)",
+              "+0.1, −1",
+              "0, −2"
+            ]
+          ]
+        },
+        {
+          "type": "text",
+          "text": "From u1 the time limit charges −2 (two hard items open; the drop before it cost −0.1) and a break costs −3, the well's −1 plus the same −2. Before, the time limit paid the flat −0.5 and a break paid −1. From u3 it is −1 against −2."
+        },
+        {
+          "type": "gallery",
+          "width": 490,
+          "groups": [
+            {
+              "title": "3 · The box and the key",
+              "note": "Illustrative task. A rule-only task: a hard rule and a soft preference, no goal.",
+              "items": [
+                {
+                  "src": "graphs/s2-ex3.html",
+                  "height": 664,
+                  "alt": "Box and key machine before",
+                  "caption": "**Before** (Slice 2) · “Whenever the box falls off the shelf, put it back. Preferably pick up the key at some point.” LTLf: hard `(G(box_fell->(Fbox_on_shelf)))`, soft `(Fhas_key)`. The box falling with no key held (u0↔u2) pays 0 both ways, while the same fall with the key held (u1↔u3) pays −0.1/+0.1.",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES:\nACCEPTING_STATES: u1\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, !box_fell&has_key) -> u1\n(u0, box_fell&!box_on_shelf&!has_key) -> u2\n(u0, box_fell&!box_on_shelf&has_key) -> u3\n(u0, box_fell&box_on_shelf&has_key) -> u1\n(u1, box_fell&!box_on_shelf) -> u3\n(u2, !box_on_shelf&has_key) -> u3\n(u2, box_on_shelf&!has_key) -> u0\n(u2, box_on_shelf&has_key) -> u1\n(u3, box_on_shelf) -> u1\nREWARD_FUNCTION:\n(u0, !box_fell&has_key, u1) -> 0.2\n(u0, box_fell&!box_on_shelf&has_key, u3) -> 0.1\n(u0, box_fell&box_on_shelf&has_key, u1) -> 0.2\n(u1, box_fell&!box_on_shelf, u3) -> -0.1\n(u2, !box_on_shelf&has_key, u3) -> 0.1\n(u2, box_on_shelf&has_key, u1) -> 0.2\n(u3, box_on_shelf, u1) -> 0.1\nPENDING_PROMISES:\nu0: hard 0, soft 1\nu2: hard 1, soft 1\nu3: hard 1, soft 0"
+                  }
+                },
+                {
+                  "src": "graphs/s3-ex3.html",
+                  "height": 664,
+                  "alt": "Box and key machine after",
+                  "caption": "**After** (Slice 3) · “Whenever the box falls off the shelf, put it back. Preferably pick up the key at some point.” LTLf: hard `(G(box_fell->(Fbox_on_shelf)))`, soft `(Fhas_key)`. Both falls cost −0.1 and both repairs pay +0.1. The key alone is one step, so it pays 0.1 (was 0.2).",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES:\nACCEPTING_STATES: u1\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, !box_fell&has_key) -> u1\n(u0, box_fell&!box_on_shelf&!has_key) -> u2\n(u0, box_fell&!box_on_shelf&has_key) -> u3\n(u0, box_fell&box_on_shelf&has_key) -> u1\n(u1, box_fell&!box_on_shelf) -> u3\n(u2, !box_on_shelf&has_key) -> u3\n(u2, box_on_shelf&!has_key) -> u0\n(u2, box_on_shelf&has_key) -> u1\n(u3, box_on_shelf) -> u1\nREWARD_FUNCTION:\n(u0, !box_fell&has_key, u1) -> 0.1\n(u0, box_fell&!box_on_shelf&!has_key, u2) -> -0.1\n(u0, box_fell&box_on_shelf&has_key, u1) -> 0.1\n(u1, box_fell&!box_on_shelf, u3) -> -0.1\n(u2, !box_on_shelf&has_key, u3) -> 0.1\n(u2, box_on_shelf&!has_key, u0) -> 0.1\n(u2, box_on_shelf&has_key, u1) -> 0.2\n(u3, box_on_shelf, u1) -> 0.1\nPENDING_PROMISES:\nu0: hard 0, soft 1\nu2: hard 1, soft 1\nu3: hard 1, soft 0"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "heading": "The box and the key: the edges that matter",
+          "columns": [
+            "Edge",
+            "Before",
+            "After"
+          ],
+          "rows": [
+            [
+              "u0 → u2 · box falls, no key",
+              "0",
+              "−0.1"
+            ],
+            [
+              "u2 → u0 · box back, no key",
+              "0",
+              "+0.1"
+            ],
+            [
+              "u1 → u3 · box falls, key held",
+              "−0.1",
+              "−0.1"
+            ],
+            [
+              "u3 → u1 · box back",
+              "+0.1",
+              "+0.1"
+            ],
+            [
+              "u0 → u1 · key picked up",
+              "+0.2",
+              "+0.1"
+            ],
+            [
+              "u0 → u3 · box falls and key in one step",
+              "+0.1",
+              "0"
+            ]
+          ]
+        },
+        {
+          "type": "gallery",
+          "width": 490,
+          "groups": [
+            {
+              "title": "4 · The door and the box",
+              "note": "Illustrative task. A goal task: u1 is final.",
+              "items": [
+                {
+                  "src": "graphs/s2-ex5.html",
+                  "height": 544,
+                  "alt": "Door and box machine before",
+                  "caption": "**Before** (Slice 2) · “Open the door. Whenever the box falls off the shelf, preferably put it back.” LTLf: hard `(Fdoor_open)`, soft `(G(box_fell->(Fbox_on_shelf)))`. The box falling and going back (u0↔u2) pays 0 both ways. The soft rule is priced only on the last step (0.6 or 1.1), and the time limit pays a flat −0.5.",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !box_fell&door_open) -> u1\n(u0, box_fell&!box_on_shelf&!door_open) -> u2\n(u0, box_fell&!box_on_shelf&door_open) -> u1\n(u0, box_fell&box_on_shelf&door_open) -> u1\n(u2, !box_on_shelf&door_open) -> u1\n(u2, box_on_shelf&!door_open) -> u0\n(u2, box_on_shelf&door_open) -> u1\nREWARD_FUNCTION:\n(u0, !box_fell&door_open, u1) -> 1.1\n(u0, box_fell&!box_on_shelf&door_open, u1) -> 0.6\n(u0, box_fell&box_on_shelf&door_open, u1) -> 1.1\n(u2, !box_on_shelf&door_open, u1) -> 0.6\n(u2, box_on_shelf&door_open, u1) -> 1.1"
+                  }
+                },
+                {
+                  "src": "graphs/s3-ex5.html",
+                  "height": 544,
+                  "alt": "Door and box machine after",
+                  "caption": "**After** (Slice 3) · “Open the door. Whenever the box falls off the shelf, preferably put it back.” LTLf: hard `(Fdoor_open)`, soft `(G(box_fell->(Fbox_on_shelf)))`. The fall costs −0.1 and putting the box back pays +0.1. Falling and then finishing still totals 0.6 (box down) or 1.1 (box back). At the time limit the open items are charged: −1 in u0, −1.5 in u2.",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: u1\nACCEPTING_STATES:\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, !box_fell&door_open) -> u1\n(u0, box_fell&!box_on_shelf&!door_open) -> u2\n(u0, box_fell&!box_on_shelf&door_open) -> u1\n(u0, box_fell&box_on_shelf&door_open) -> u1\n(u2, !box_on_shelf&door_open) -> u1\n(u2, box_on_shelf&!door_open) -> u0\n(u2, box_on_shelf&door_open) -> u1\nREWARD_FUNCTION:\n(u0, !box_fell&door_open, u1) -> 1.1\n(u0, box_fell&!box_on_shelf&!door_open, u2) -> -0.1\n(u0, box_fell&!box_on_shelf&door_open, u1) -> 0.6\n(u0, box_fell&box_on_shelf&door_open, u1) -> 1.1\n(u2, !box_on_shelf&door_open, u1) -> 0.7\n(u2, box_on_shelf&!door_open, u0) -> 0.1\n(u2, box_on_shelf&door_open, u1) -> 1.2\nPENDING_PROMISES:\nu0: hard 1, soft 0\nu2: hard 1, soft 1"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "heading": "The door and the box: the edges that matter",
+          "columns": [
+            "Edge",
+            "Before",
+            "After"
+          ],
+          "rows": [
+            [
+              "u0 → u2 · box falls",
+              "0",
+              "−0.1"
+            ],
+            [
+              "u2 → u0 · box back",
+              "0",
+              "+0.1"
+            ],
+            [
+              "u2 → u1 · door, box still down",
+              "0.6",
+              "0.7"
+            ],
+            [
+              "u2 → u1 · door and box back",
+              "1.1",
+              "1.2"
+            ],
+            [
+              "Box falls, then door: total",
+              "0.6",
+              "0.6"
+            ],
+            [
+              "Box falls, goes back, then door: total",
+              "1.1",
+              "1.1"
+            ],
+            [
+              "Time limit in u0 (door owed)",
+              "−0.5",
+              "−1"
+            ],
+            [
+              "Time limit in u2 (door and box owed)",
+              "−0.5",
+              "−1.5"
+            ]
+          ]
+        },
+        {
+          "type": "callout",
+          "tone": "warn",
+          "title": "What this does not show",
+          "text": "- No learning run measures the effect. These are rewards on machines compiled with the real code and on scripted episodes.\n- Reward numbers are not comparable with runs trained before the change. Success rates are.\n- A goal machine is now charged whenever the environment ends the episode outside a final state, by termination as well as by the time limit. Before, only the time limit paid the flat −0.5.\n- Two committed checks of the earlier entry, `rule-only-progress/check/end_judgment_check.py` and `real_code_check.py`, now fail on purpose: they record the older code.\n- The “forced breaks” thresholds in the design doc are derived, not measured.\n- The live tests further down ran on the earlier commit and were not rerun. A rebuild of the same 65 machines gives the counts above: all 42 goal machines now carry the judgment lines, and 28 of them change rewards."
+        }
+      ]
+    },
+    {
+      "id": "what",
+      "title": "What changed",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "Before, a task with rules only, like “Whenever you drop the key, pick it up again”, had no goal, so its Reward Machine had no final state and paid almost nothing. Every episode ended at the time limit with the same −0.5, kept rules or not.\n\nNow the machine helps in two ways.\n\n- **Slice 1, progress.** The machine pays +0.1 for each step toward a state where no rule is waiting, and −0.1 for each step away.\n- **Slice 2, end judgment.** When the environment ends the episode, the machine judges the promises still open and charges −1 per hard rule and −0.5 per soft rule. Both values sit in the RM text and can be edited. `ACCEPTING_STATES` is the success rule: an episode that ends where no promise is open counts as a success."
+        },
+        {
+          "type": "stats",
+          "items": [
+            {
+              "value": "7 of 7",
+              "label": "final live tests passed (L2.3 on a rerun)",
+              "tone": "ok"
+            },
+            {
+              "value": "1",
+              "label": "first L2.3 run blocked: critic reply was not JSON",
+              "tone": "warn"
+            },
+            {
+              "value": "42 of 42",
+              "label": "goal machines byte-identical to before",
+              "tone": "ok"
+            },
+            {
+              "value": "0",
+              "label": "machines with a positive reward loop (71 checked)",
+              "tone": "ok"
+            }
+          ]
+        },
+        {
+          "type": "callout",
+          "tone": "info",
+          "title": "What did not change",
+          "text": "Machines with a final state and hand-written author bundles keep their text, rewards, flat −0.5 and success rule. PPO and DQN are untouched; the charge is part of the step reward they already receive."
+        }
+      ],
+      "intro": "Slices 1 and 2 as they stood at `a56bbed`. Slice 3, in the section above, later changed goal machines and the well, so “What did not change” and the “42 of 42” count describe that commit."
+    },
+    {
+      "id": "tests",
+      "title": "Final live tests",
+      "intro": "Run by test agents on the final commit (`a56bbed`, the episode-end decision record) of `feat/rule-only-rewards`. They only read the code and wrote evidence. Paths are inside this folder.",
+      "blocks": [
+        {
+          "type": "table",
+          "columns": [
+            "Test",
+            "Result",
+            "What was seen",
+            "Evidence"
+          ],
+          "rows": [
+            [
+              "**L1.1** Simulation equals the real code",
+              {
+                "icon": "circle-check",
+                "text": "Pass",
+                "tone": "ok"
+              },
+              "The real code, with no patch, builds all 20 one-rule machines. Each equals its simulated text once Slice 2's extra lines are set aside; 9 differ from the old code. The edge a critic flagged, into a state that reaches no target, pays 0.",
+              "`evidence/close/L11/report.md`"
+            ],
+            [
+              "**L1.2** Goal machines untouched",
+              {
+                "icon": "circle-check",
+                "text": "Pass",
+                "tone": "ok"
+              },
+              "42 of 42 machines with a final state are byte-identical to before. The 23 without one all changed: they now carry the end-judgment lines.",
+              "`evidence/close/L12L13/report.md`"
+            ],
+            [
+              "**L1.3** No reward loop",
+              {
+                "icon": "circle-check",
+                "text": "Pass",
+                "tone": "ok"
+              },
+              "71 machines, none with a positive reward cycle. The +0.1 control loop is detected, so the check works.",
+              "`evidence/close/L12L13/report.md`"
+            ],
+            [
+              "**L1.4** Your task, real CLI",
+              {
+                "icon": "circle-check",
+                "text": "Pass",
+                "tone": "ok"
+              },
+              "3 of 3 runs: hard `Response(key_lost, has_key)`, drop −0.1, pick-up +0.1, no final state, no inert warning, the new lines present.",
+              "`evidence/close/L14/report.md`"
+            ],
+            [
+              "**L2.1** RM text format",
+              {
+                "icon": "circle-check",
+                "text": "Pass",
+                "tone": "ok"
+              },
+              "54 of 54 checks. Examples match their expected text byte for byte, all round trips are byte-identical, the parser rejects the bad texts and accepts author bundles and texts without the value lines.",
+              "`evidence/close/L21/report.md`"
+            ],
+            [
+              "**L2.2** End judgment in the runtime",
+              {
+                "icon": "circle-check",
+                "text": "Pass",
+                "tone": "ok"
+              },
+              "24 of 24 checks on scripted DoorKey episodes. The last step pays its edge plus the charge; goal tasks and the author bundle keep the flat −0.5. Case 15 prints no reward line, so it rests on its accept flags.",
+              "`evidence/close/L22/report.md`"
+            ],
+            [
+              "**L2.3** first run",
+              {
+                "icon": "circle-alert",
+                "text": "Blocked",
+                "tone": "warn",
+                "title": "Stopped at generation; see the row"
+              },
+              "Blocked at labeling: the critic's reply (`glm-5.3-flash`) was not JSON after 3 rounds. The RM was built and accepted. No bundle, so no training or test. Kept as context for the rerun.",
+              "`evidence/close/L23/report.md`"
+            ],
+            [
+              "**L2.3** Generate, train, test",
+              {
+                "icon": "circle-check",
+                "text": "Pass (rerun)",
+                "tone": "ok",
+                "title": "One approved rerun passed all 6 steps"
+              },
+              "First run blocked at labeling (critic reply not JSON); one approved rerun passed all 6 steps, replay 33/33. The machine has no final state, `ACCEPTING_STATES: u0` and `PENDING_PROMISES: u1: hard 1, soft 0`; test success and accept rates 1.0 on one episode (a smoke budget, not a learning claim).",
+              "`evidence/close/L23-rerun/report.md` · failed run `evidence/close/L23/report.md`"
+            ]
+          ]
+        },
+        {
+          "type": "callout",
+          "tone": "warn",
+          "title": "Why the first L2.3 run failed",
+          "text": "The labeling step asks a second model, the critic, to check the generated labeling code. In the first run the critic's last reply was not JSON, so the parser stopped the step and nothing was saved. The bad text was not kept, so we cannot read it. In the rerun the same critic returned clean JSON on its first try. So the fault is not constant; whether it comes and goes is not settled.\n\nEvidence: `evidence/close/L23-rerun/report.md`, sections “Failed run” and “Cause”. Proven and unproven are listed below."
+        },
+        {
+          "type": "details",
+          "items": [
+            {
+              "title": "Proven and unproven",
+              "icon": "bug",
+              "text": "**Proven**\n\n- The last of 3 labeling rounds ended in `parse_critic` with a reply that was not empty and did not start with JSON (the error says character 0). It is not a JSON cut off by a token limit.\n- The critic ran at reasoning `low`. The provider rejected `none` with a 400, the engine resent `low` and kept it, and the labeling critic is the same engine instance.\n- In the rerun the labeling critic at `low` returned clean pretty-printed JSON on round 1 (585 characters, no fence). Both critic calls at `low` were clean, in one run.\n\n**Unproven**\n\n- The bad text itself: a fence, prose or reasoning text. Finish reason and length were not recorded.\n- What rounds 1 and 2 were: AST failures, critic rejections, or the same parse failure.\n- Whether it is intermittent or depends on the generated code in the critic prompt. One rerun cannot tell."
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "heading": "What the last step pays (L2.2)",
+          "columns": [
+            "Episode",
+            "Last step pays",
+            "Success"
+          ],
+          "rows": [
+            [
+              "Hard promise open at the time limit (case 1)",
+              "−1",
+              "no"
+            ],
+            [
+              "Soft promise open (case 2)",
+              "−0.5",
+              "no"
+            ],
+            [
+              "Two soft promises open (case 3)",
+              "−1",
+              "no"
+            ],
+            [
+              "Promise kept, then idle to the limit (case 4)",
+              "0",
+              "yes"
+            ],
+            [
+              "Environment ends the game with a promise open (case 5)",
+              "−1",
+              "no"
+            ],
+            [
+              "`HARD_FAILED_REWARD: -2` edited in (case 6)",
+              "−2",
+              "no"
+            ],
+            [
+              "Goal task idling (case 7), author bundle idling (case 8)",
+              "−0.5, as today",
+              "no"
+            ],
+            [
+              "Promise kept on the last step (case 9)",
+              "+0.1, no charge",
+              "yes"
+            ],
+            [
+              "New trigger on the last step (case 10)",
+              "−1.1 (−0.1 edge, −1 charge)",
+              "no"
+            ],
+            [
+              "Hard rule broken on the last step (case 11)",
+              "−1, no charge: the machine ended it",
+              "no"
+            ],
+            [
+              "Soft rule broken, episode ends there (case 12a)",
+              "−0.4, no charge: the break was already paid",
+              "yes"
+            ],
+            [
+              "Soft trigger open at the end (case 12c)",
+              "−0.6 (−0.1 edge, −0.5 charge)",
+              "no"
+            ],
+            [
+              "Two hard promises open (case 13a)",
+              "−2",
+              "no"
+            ],
+            [
+              "Hard Absence broken on the last step (case 13b)",
+              "−1",
+              "no"
+            ],
+            [
+              "Hard rule alone, never broken (case 14)",
+              "0, no flat −0.5",
+              "yes"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "slice1",
+      "title": "Slice 1 · Progress toward states with no open rule",
+      "intro": "A rule-only machine has no goal to walk toward. Now it treats the states where no rule is waiting as the target and pays a little for each step closer. “Before” is the code at `e0a054a`. 9 of the 20 one-rule machines changed; the 11 others never leave a rule waiting or have a goal.",
+      "blocks": [
+        {
+          "type": "gallery",
+          "heading": "Before and after, with task, LTLf and RM text",
+          "width": 490,
+          "groups": [
+            {
+              "title": "“Whenever you drop the key, pick it up again”",
+              "note": "**Your own task (L1.4).** LTLf `(G(key_lost->(Fhas_key)))`: a hard `Response(key_lost, has_key)`. Three real `generate-rm` runs on DoorKey gave the same machine text every time; only the model's wording of the clause changed. The “after” card is the final code, so it also carries Slice 2's lines.",
+              "items": [
+                {
+                  "src": "graphs/l14-before.html",
+                  "height": 424,
+                  "alt": "L1.4 machine before",
+                  "caption": "**Before** (`e0a054a`, 1 run) · 2 states · no edge pays anything. Dropping the key costs nothing and picking it up pays nothing.",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !has_key&key_lost) -> u1\n(u1, has_key) -> u0\nREWARD_FUNCTION:"
+                  }
+                },
+                {
+                  "src": "graphs/l14-after.html",
+                  "height": 424,
+                  "alt": "L1.4 machine after",
+                  "caption": "**After** (final code, run 1 of 3) · 2 states · edge rewards -0.1, 0.1. Dropping the key costs 0.1; picking it up pays it back.",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES:\nACCEPTING_STATES: u0\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, !has_key&key_lost) -> u1\n(u1, has_key) -> u0\nREWARD_FUNCTION:\n(u0, !has_key&key_lost, u1) -> -0.1\n(u1, has_key, u0) -> 0.1\nPENDING_PROMISES:\nu1: hard 1, soft 0"
+                  }
+                }
+              ]
+            },
+            {
+              "title": "“Pick up the key if you can.”",
+              "note": "Illustrative task, written for the paper entry. LTLf `(Fhas_key)`. Soft Existence: the clause is pending until the key is taken: +0.1 when it is. The “after” cards are shown without the Slice 2 end-judgment lines; those are added on top (see Slice 2).",
+              "items": [
+                {
+                  "src": "graphs/ex-soft-before.html",
+                  "height": 424,
+                  "alt": "Soft Existence before",
+                  "caption": "**Before** (`e0a054a`) · 2 states · no edge pays anything",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, has_key) -> u1\nREWARD_FUNCTION:"
+                  }
+                },
+                {
+                  "src": "graphs/ex-soft-after.html",
+                  "height": 424,
+                  "alt": "Soft Existence after Slice 1",
+                  "caption": "**After Slice 1** · 2 states · edge rewards 0.1",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, has_key) -> u1\nREWARD_FUNCTION:\n(u0, has_key, u1) -> 0.1"
+                  }
+                }
+              ]
+            },
+            {
+              "title": "“If the power ever goes out, the generator must run at some point in the episode (before or after the cut).”",
+              "note": "Illustrative task, written for the paper entry. LTLf `((Fpower_cut)->(Fgenerator_on))`. Hard RespondedExistence: a power cut leaves it pending until the generator runs: -0.1 on the cut, +0.1 when the generator starts. The “after” cards are shown without the Slice 2 end-judgment lines; those are added on top (see Slice 2).",
+              "items": [
+                {
+                  "src": "graphs/re-hard-before.html",
+                  "height": 544,
+                  "alt": "Hard RespondedExistence before",
+                  "caption": "**Before** (`e0a054a`) · 3 states · no edge pays anything",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !generator_on&power_cut) -> u1\n(u0, generator_on) -> u2\n(u1, generator_on) -> u2\nREWARD_FUNCTION:"
+                  }
+                },
+                {
+                  "src": "graphs/re-hard-after.html",
+                  "height": 544,
+                  "alt": "Hard RespondedExistence after Slice 1",
+                  "caption": "**After Slice 1** · 3 states · edge rewards -0.1, 0.1",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !generator_on&power_cut) -> u1\n(u0, generator_on) -> u2\n(u1, generator_on) -> u2\nREWARD_FUNCTION:\n(u0, !generator_on&power_cut, u1) -> -0.1\n(u1, generator_on, u2) -> 0.1"
+                  }
+                }
+              ]
+            },
+            {
+              "title": "“When the alarm rings, switch it off at the very next step.”",
+              "note": "Illustrative task, written for the paper entry. LTLf `(G(alarm_rings->(Xalarm_off)))`. Hard ChainResponse: a ringing alarm leaves it pending for one step: -0.1 when it rings, +0.1 when it is off. The “after” cards are shown without the Slice 2 end-judgment lines; those are added on top (see Slice 2).",
+              "items": [
+                {
+                  "src": "graphs/cr-hard-before.html",
+                  "height": 424,
+                  "alt": "Hard ChainResponse before",
+                  "caption": "**Before** (`e0a054a`) · 3 states · edge rewards -1",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, alarm_rings) -> u1\n(u1, !alarm_off) -> u2\n(u1, alarm_off&!alarm_rings) -> u0\nREWARD_FUNCTION:\n(u1, !alarm_off, u2) -> -1"
+                  }
+                },
+                {
+                  "src": "graphs/cr-hard-after.html",
+                  "height": 424,
+                  "alt": "Hard ChainResponse after Slice 1",
+                  "caption": "**After Slice 1** · 3 states · edge rewards -1, -0.1, 0.1",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, alarm_rings) -> u1\n(u1, !alarm_off) -> u2\n(u1, alarm_off&!alarm_rings) -> u0\nREWARD_FUNCTION:\n(u0, alarm_rings, u1) -> -0.1\n(u1, !alarm_off, u2) -> -1\n(u1, alarm_off&!alarm_rings, u0) -> 0.1"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "details",
+          "items": [
+            {
+              "title": "How the progress is measured",
+              "icon": "sliders-horizontal",
+              "text": "Targets are the states where no clause is pending. Distance is measured without the targets' outgoing edges and the well edges, with the longest-path formula and k = 0.1. An edge into a state that reaches no target pays no progress. Soft clauses that progress pays are not reported as inert. Commits: progress `d4df200`, cleanup `633c3cd`, paper labels `a5ba449`. Full simulation: `docs/paper/rule-only-progress/`."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "slice2",
+      "title": "Slice 2 · Judging the open promises at the end",
+      "intro": "When the environment ends an episode (the time limit or the game itself) and the machine did not, the machine adds `hard × HARD_FAILED_REWARD + soft × SOFT_FAILED_REWARD` for the promises still open, in place of the flat −0.5. The compiler writes `ACCEPTING_STATES`, the two values and `PENDING_PROMISES` into the RM text. A soft rule broken for good was already paid when it broke, so it counts as accepted. The rewards shown here are from before Slice 3; the section “Found in review: loops that paid nothing, and the fix” shows the new ones.",
+      "blocks": [
+        {
+          "type": "gallery",
+          "heading": "The five examples and the generated bundle",
+          "width": 490,
+          "groups": [
+            {
+              "title": "“Whenever the box falls off the shelf, put it back.”",
+              "note": "Illustrative task. LTLf: hard `Response(box_fell, box_on_shelf)`: `(G(box_fell->(Fbox_on_shelf)))`.",
+              "items": [
+                {
+                  "src": "graphs/s2-ex1.html",
+                  "height": 424,
+                  "alt": "Slice 2 example 1",
+                  "caption": "2 states · edge rewards -0.1, 0.1. Accepting: u0. Open promise: u1 (1 hard). Ending in u1 charges −1; ending in u0 charges nothing.",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES:\nACCEPTING_STATES: u0\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, box_fell&!box_on_shelf) -> u1\n(u1, box_on_shelf) -> u0\nREWARD_FUNCTION:\n(u0, box_fell&!box_on_shelf, u1) -> -0.1\n(u1, box_on_shelf, u0) -> 0.1\nPENDING_PROMISES:\nu1: hard 1, soft 0"
+                  }
+                }
+              ]
+            },
+            {
+              "title": "“Whenever the box falls off the shelf, preferably put it back.”",
+              "note": "Illustrative task. LTLf: soft `Response(box_fell, box_on_shelf)`: `(G(box_fell->(Fbox_on_shelf)))`.",
+              "items": [
+                {
+                  "src": "graphs/s2-ex2.html",
+                  "height": 424,
+                  "alt": "Slice 2 example 2",
+                  "caption": "2 states · edge rewards -0.1, 0.1. The same machine with a soft promise. Ending in u1 charges −0.5.",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES:\nACCEPTING_STATES: u0\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, box_fell&!box_on_shelf) -> u1\n(u1, box_on_shelf) -> u0\nREWARD_FUNCTION:\n(u0, box_fell&!box_on_shelf, u1) -> -0.1\n(u1, box_on_shelf, u0) -> 0.1\nPENDING_PROMISES:\nu1: hard 0, soft 1"
+                  }
+                }
+              ]
+            },
+            {
+              "title": "“Whenever the box falls off the shelf, put it back. Preferably pick up the key at some point.”",
+              "note": "Illustrative task. LTLf: hard `Response(box_fell, box_on_shelf)`: `(G(box_fell->(Fbox_on_shelf)))`; soft `Existence(has_key)`: `(Fhas_key)`.",
+              "items": [
+                {
+                  "src": "graphs/s2-ex3.html",
+                  "height": 664,
+                  "alt": "Slice 2 example 3",
+                  "caption": "4 states · edge rewards -0.1, 0.1, 0.2. Accepting: u1 only. u0 owes the soft key, u3 owes the hard rule, u2 owes both. The end charge is −0.5 in u0, −1 in u3 and −1.5 in u2.",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES:\nACCEPTING_STATES: u1\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, !box_fell&has_key) -> u1\n(u0, box_fell&!box_on_shelf&!has_key) -> u2\n(u0, box_fell&!box_on_shelf&has_key) -> u3\n(u0, box_fell&box_on_shelf&has_key) -> u1\n(u1, box_fell&!box_on_shelf) -> u3\n(u2, !box_on_shelf&has_key) -> u3\n(u2, box_on_shelf&!has_key) -> u0\n(u2, box_on_shelf&has_key) -> u1\n(u3, box_on_shelf) -> u1\nREWARD_FUNCTION:\n(u0, !box_fell&has_key, u1) -> 0.2\n(u0, box_fell&!box_on_shelf&has_key, u3) -> 0.1\n(u0, box_fell&box_on_shelf&has_key, u1) -> 0.2\n(u1, box_fell&!box_on_shelf, u3) -> -0.1\n(u2, !box_on_shelf&has_key, u3) -> 0.1\n(u2, box_on_shelf&has_key, u1) -> 0.2\n(u3, box_on_shelf, u1) -> 0.1\nPENDING_PROMISES:\nu0: hard 0, soft 1\nu2: hard 1, soft 1\nu3: hard 1, soft 0"
+                  }
+                }
+              ]
+            },
+            {
+              "title": "“When the alarm rings, switch it off at the very next step. Preferably, if the power ever goes out, run the generator.”",
+              "note": "Illustrative task. LTLf: hard `ChainResponse(alarm_rings, alarm_off)`: `(G(alarm_rings->(Xalarm_off)))`; soft `RespondedExistence(power_cut, generator_on)`: `((Fpower_cut)->(Fgenerator_on))`.",
+              "items": [
+                {
+                  "src": "graphs/s2-ex4.html",
+                  "height": 760,
+                  "alt": "Slice 2 example 4",
+                  "caption": "7 states · edge rewards -1, -0.3, -0.2, -0.1, 0.1, 0.2, 0.3. u6 is the well: a broken hard rule ends the episode with −1 and no extra charge. Accepting: u0 and u2. Open: u1 (soft), u3 and u5 (hard), u4 (both).",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u6\nACCEPTING_STATES: u0, u2\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, !alarm_rings&!generator_on&power_cut) -> u1\n(u0, !alarm_rings&generator_on) -> u2\n(u0, alarm_rings&!generator_on&!power_cut) -> u3\n(u0, alarm_rings&!generator_on&power_cut) -> u4\n(u0, alarm_rings&generator_on) -> u5\n(u1, !alarm_rings&generator_on) -> u2\n(u1, alarm_rings&!generator_on) -> u4\n(u1, alarm_rings&generator_on) -> u5\n(u2, alarm_rings) -> u5\n(u3, !alarm_off&!generator_on&!power_cut) -> u6\n(u3, !alarm_off&!generator_on&power_cut) -> u6\n(u3, !alarm_off&generator_on) -> u6\n(u3, alarm_off&!alarm_rings&!generator_on&!power_cut) -> u0\n(u3, alarm_off&!alarm_rings&!generator_on&power_cut) -> u1\n(u3, alarm_off&!alarm_rings&generator_on) -> u2\n(u3, alarm_off&alarm_rings&!generator_on&power_cut) -> u4\n(u3, alarm_off&alarm_rings&generator_on) -> u5\n(u4, !alarm_off&!generator_on) -> u6\n(u4, !alarm_off&generator_on) -> u6\n(u4, alarm_off&!alarm_rings&!generator_on) -> u1\n(u4, alarm_off&!alarm_rings&generator_on) -> u2\n(u4, alarm_off&alarm_rings&generator_on) -> u5\n(u5, !alarm_off) -> u6\n(u5, alarm_off&!alarm_rings) -> u2\nREWARD_FUNCTION:\n(u0, !alarm_rings&!generator_on&power_cut, u1) -> -0.2\n(u0, alarm_rings&!generator_on&!power_cut, u3) -> -0.3\n(u0, alarm_rings&!generator_on&power_cut, u4) -> -0.2\n(u0, alarm_rings&generator_on, u5) -> -0.1\n(u1, !alarm_rings&generator_on, u2) -> 0.2\n(u1, alarm_rings&generator_on, u5) -> 0.1\n(u2, alarm_rings, u5) -> -0.1\n(u3, !alarm_off&!generator_on&!power_cut, u6) -> -1\n(u3, !alarm_off&!generator_on&power_cut, u6) -> -1\n(u3, !alarm_off&generator_on, u6) -> -1\n(u3, alarm_off&!alarm_rings&!generator_on&!power_cut, u0) -> 0.3\n(u3, alarm_off&!alarm_rings&!generator_on&power_cut, u1) -> 0.1\n(u3, alarm_off&!alarm_rings&generator_on, u2) -> 0.3\n(u3, alarm_off&alarm_rings&!generator_on&power_cut, u4) -> 0.1\n(u3, alarm_off&alarm_rings&generator_on, u5) -> 0.2\n(u4, !alarm_off&!generator_on, u6) -> -1\n(u4, !alarm_off&generator_on, u6) -> -1\n(u4, alarm_off&!alarm_rings&generator_on, u2) -> 0.2\n(u4, alarm_off&alarm_rings&generator_on, u5) -> 0.1\n(u5, !alarm_off, u6) -> -1\n(u5, alarm_off&!alarm_rings, u2) -> 0.1\nPENDING_PROMISES:\nu1: hard 0, soft 1\nu3: hard 1, soft 0\nu4: hard 1, soft 1\nu5: hard 1, soft 0"
+                  }
+                }
+              ]
+            },
+            {
+              "title": "“Open the door. Whenever the box falls off the shelf, preferably put it back.”",
+              "note": "Illustrative task. LTLf: hard `Existence(door_open)`: `(Fdoor_open)`; soft `Response(box_fell, box_on_shelf)`: `(G(box_fell->(Fbox_on_shelf)))`.",
+              "items": [
+                {
+                  "src": "graphs/s2-ex5.html",
+                  "height": 544,
+                  "alt": "Slice 2 example 5",
+                  "caption": "3 states · edge rewards 0.6, 1.1. A hard goal gives a final state (u1), so none of the new lines appear. Rewards and the flat −0.5 time-limit penalty stay as before.",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !box_fell&door_open) -> u1\n(u0, box_fell&!box_on_shelf&!door_open) -> u2\n(u0, box_fell&!box_on_shelf&door_open) -> u1\n(u0, box_fell&box_on_shelf&door_open) -> u1\n(u2, !box_on_shelf&door_open) -> u1\n(u2, box_on_shelf&!door_open) -> u0\n(u2, box_on_shelf&door_open) -> u1\nREWARD_FUNCTION:\n(u0, !box_fell&door_open, u1) -> 1.1\n(u0, box_fell&!box_on_shelf&door_open, u1) -> 0.6\n(u0, box_fell&box_on_shelf&door_open, u1) -> 1.1\n(u2, !box_on_shelf&door_open, u1) -> 0.6\n(u2, box_on_shelf&door_open, u1) -> 1.1"
+                  }
+                }
+              ]
+            },
+            {
+              "title": "“Whenever you drop the key, pick it up again” (L2.3 generated bundle)",
+              "note": "**Your task through the full flow (L2.3 rerun, final commit).** LTLf `(G(key_lost->(Fhas_key)))`. `generate-larm` wrote this `reward_machine.txt` into a bundle; the bundle trained and evaluated without errors. Round 2's bundle (the code before the cleanup commits) has the identical text.",
+              "items": [
+                {
+                  "src": "graphs/l23-bundle.html",
+                  "height": 424,
+                  "alt": "L2.3 generated bundle",
+                  "caption": "2 states · edge rewards -0.1, 0.1. Replay of 31 evaluated episodes: on every one the last step paid its edge plus the charge of its last state (33 of 33 checks). 16 episodes ended with the promise open and were charged −1.",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES:\nACCEPTING_STATES: u0\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, !has_key&key_lost) -> u1\n(u1, has_key) -> u0\nREWARD_FUNCTION:\n(u0, !has_key&key_lost, u1) -> -0.1\n(u1, has_key, u0) -> 0.1\nPENDING_PROMISES:\nu1: hard 1, soft 0"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "details",
+          "items": [
+            {
+              "title": "Where the code lives",
+              "icon": "file-code",
+              "text": "`rm_format.py` (parser and printer), `reward_layer.py` (accepting set and counts), `config.py` (the two defaults), `runtime.py` (the charge), `environments.py` (`rm_accept`, `is_success`). Commits: end judgment `29cf79f`, tidy-up `0a933c1`, decision record `a56bbed`."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "findings",
+      "title": "Review and cleanup findings",
+      "intro": "Every review and cleanup round, what it found and what became of it.",
+      "collapsed": true,
+      "blocks": [
+        {
+          "type": "details",
+          "items": [
+            {
+              "title": "Slice 1",
+              "icon": "list-checks",
+              "blocks": [
+                {
+                  "type": "table",
+                  "columns": [
+                    "Finding",
+                    "What was done"
+                  ],
+                  "rows": [
+                    [
+                      "Plan critique: progress could be paid into a region that reaches no target",
+                      "Fixed in Slice 1: an edge into such a state pays no progress, like the well."
+                    ],
+                    [
+                      "Review 1 (P2): the inert-warning proxy also ran on goal machines and changed their warnings",
+                      "Fixed: it now applies only when there is no final state."
+                    ],
+                    [
+                      "Review 1 (P3): decision records described Slice 2 as current",
+                      "Routed to the main agent and fixed there."
+                    ],
+                    [
+                      "First checkpoint blocked: ruff errors in the paper scripts, and the end-of-file hook trimmed `rm-texts.txt`",
+                      "Paper scripts fixed, reference texts end with one newline, parsers made block-position-proof."
+                    ],
+                    [
+                      "Cleanup 1: 6 findings, e.g. `_progress` could reuse the reachability helper, a dead default, a needless parameter",
+                      "All 6 applied. The `_progress` reuse was proven byte-identical on 65 + 992 + 5,980 machines; review 3 compared old and new `_progress` on 60,000 random graphs: identical."
+                    ],
+                    [
+                      "Cleanup 2: 3 findings (two stale prose labels, one redundant check)",
+                      "Applied; commit names added to the paper entry."
+                    ],
+                    [
+                      "Review 4 (P3, out of scope): `docs/paper/README.md:161` still said “not committed”",
+                      "Folded into Slice 2's paper step."
+                    ],
+                    [
+                      "Cleanup 3",
+                      "Lean already; Slice 1 closed."
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "title": "Slice 2",
+              "icon": "list-checks",
+              "blocks": [
+                {
+                  "type": "table",
+                  "columns": [
+                    "Finding",
+                    "What was done"
+                  ],
+                  "rows": [
+                    [
+                      "Review 1 (P2): an end-judgment header without `PENDING_PROMISES` switched judgment on",
+                      "The parser now rejects a partial judgment."
+                    ],
+                    [
+                      "Review 1 (P1 for one reviewer, predates the diff): multi-task PPO, same-step reset lost the success flag",
+                      "Fixed in 3 lines (`environments.py`); new L2.2 case 15."
+                    ],
+                    [
+                      "Review 1 (P2): the critic, tagger and labeling prompts lacked the new lines",
+                      "One sentence added to each of the 3 compiler-rm prompts."
+                    ],
+                    [
+                      "Review 1 (P3): reward values parsed in two places; stale −0.5 claims in `README.md` and `docs/EXPERIMENTS.md`",
+                      "Parser reuse applied; docs now say “for an RM without `PENDING_PROMISES`”."
+                    ],
+                    [
+                      "Review 1: first L2.3 blocked by a stale ignored `embeddings.json` (test setup, not a product finding)",
+                      "Test command now passes `--overwrite`; L2.3 passed in round 2."
+                    ],
+                    [
+                      "Cleanup 1: 5 findings from the coordinator, 2 from the second reviewer (overlapping)",
+                      "4 applied (checker simplified, stale docstrings, two stale labels, design-doc bullet). 1 rejected: each paper entry keeps its own copy of the check so it opens on its own."
+                    ],
+                    [
+                      "Review 3 (P2): a comment in `real_code_check.py`",
+                      "Fixed by the manager, one line. A P3 about `rm_format.py:63` (“Paper RMs declare no rejecting state”) predates Slice 2 and was not changed."
+                    ],
+                    [
+                      "Cleanup 2, both reviewers",
+                      "Lean already."
+                    ]
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "disclosed",
+      "title": "Disclosed, not changed",
+      "blocks": [
+        {
+          "type": "cards",
+          "items": [
+            {
+              "title": "PPO keeps its time-limit bootstrap",
+              "icon": "triangle-alert",
+              "status": "Kept",
+              "text": "When a time limit cuts an episode, PPO and DQN still add their estimate of the future to the last reward. The end charge is part of that last reward, so the estimate is added on top of it. You chose this: keep it simple, add on top, do not change the algorithm.",
+              "inset": "Not touched: `ppo.py` and DQN's `store_transition`. It goes in the paper note too."
+            },
+            {
+              "title": "Breaking a hard rule can cost less than idling",
+              "icon": "scale",
+              "status": "Solved by Slice 3",
+              "text": "**Solved by Slice 3.** An edge into the well now pays −1 plus what is still open, so from the same state a break costs −3 against the time limit's −2 (thesis example 2, from u1).\n\nHow it stood: with two hard promises open, idling to the end cost −2. Breaking a hard rule on the last step cost −1, because the machine then ends the episode and charges nothing more. So in that corner the cheaper move was to break a rule.",
+              "inset": "Seen in L2.2 cases 13a to 13c, and in the paper entry's check (idling −2.1, breaking a hard Absence −1.1). Plan decision 7 documented it in `docs/COMPILER_REWARD_DESIGN.md` and left it unchanged."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "followups",
+      "title": "Open follow-ups",
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            "**Time left in the observation.** The agent does not see how many steps remain, so the end charge arrives without warning (Pardo et al. 2018). Out of scope for this branch.",
+            "**Keep the raw critic reply when it fails to parse.** Today only the error text is kept, so a bad reply cannot be inspected."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "appendix-alarm",
+      "title": "Appendix: the alarm machine, step by step",
+      "intro": "A candidate for the thesis appendix (the user decides with the paper agent). The thesis keeps “Reach the goal. If the key is dropped, pick it up right away.” as its before and after. This machine is worth a full reading because it has every case at once: three loops on the same event, a well, and steps where two or three things happen together.",
+      "blocks": [
+        {
+          "type": "callout",
+          "tone": "info",
+          "title": "The claim this example backs",
+          "text": "The user's claim: with our method, the transitions encode everything that happens in the environment, cover every case, and give a consistent, reliable reward. The reward tells the agent what is good and what is wrong, what it must do, how it should react, and in which order to finish the task while following the rules. A claim like this cannot sit flat in the text without a real example; this machine is that example.\n\nWhat the machine shows, each point checked by `check/todo_list_check.py`:\n- the same event costs the same wherever it happens: the alarm ringing costs −0.1 in u0, u1 and u2;\n- fixing it pays the cost back, so every loop nets to 0 and the agent cannot farm reward;\n- events that happen at once add up: switching the alarm off as the power goes out pays 0;\n- breaking the hard rule always costs more than running out of time in the same state.\n\nWhat it does not show: that an agent learns better with these rewards (no learning run measures it), or that every task's machine behaves like this one. The broader check found no loop that pays in any of the 65 compiled machines of the corpus."
+        },
+        {
+          "type": "gallery",
+          "width": 680,
+          "items": [
+            {
+              "src": "graphs/s3-ex4.html",
+              "height": 640,
+              "caption": "**After** (Slice 3) · “When the alarm rings, switch it off at the very next step. Preferably, if the power ever goes out, run the generator.” LTLf: hard `(G(alarm_rings->(Xalarm_off)))`, soft `((Fpower_cut)->(Fgenerator_on))`. All three alarm loops pay −0.1 when the alarm rings and +0.1 when it is switched off. Edges into the well pay −1 plus what the state still owed: −2 from u3, −2.5 from u4, −2 from u5.",
+              "alt": "Seven-state Reward Machine of the alarm task after Slice 3.",
+              "details": {
+                "title": "RM text",
+                "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u6\nACCEPTING_STATES: u0, u2\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, !alarm_rings&!generator_on&power_cut) -> u1\n(u0, !alarm_rings&generator_on) -> u2\n(u0, alarm_rings&!generator_on&!power_cut) -> u3\n(u0, alarm_rings&!generator_on&power_cut) -> u4\n(u0, alarm_rings&generator_on) -> u5\n(u1, !alarm_rings&generator_on) -> u2\n(u1, alarm_rings&!generator_on) -> u4\n(u1, alarm_rings&generator_on) -> u5\n(u2, alarm_rings) -> u5\n(u3, !alarm_off&!generator_on&!power_cut) -> u6\n(u3, !alarm_off&!generator_on&power_cut) -> u6\n(u3, !alarm_off&generator_on) -> u6\n(u3, alarm_off&!alarm_rings&!generator_on&!power_cut) -> u0\n(u3, alarm_off&!alarm_rings&!generator_on&power_cut) -> u1\n(u3, alarm_off&!alarm_rings&generator_on) -> u2\n(u3, alarm_off&alarm_rings&!generator_on&power_cut) -> u4\n(u3, alarm_off&alarm_rings&generator_on) -> u5\n(u4, !alarm_off&!generator_on) -> u6\n(u4, !alarm_off&generator_on) -> u6\n(u4, alarm_off&!alarm_rings&!generator_on) -> u1\n(u4, alarm_off&!alarm_rings&generator_on) -> u2\n(u4, alarm_off&alarm_rings&generator_on) -> u5\n(u5, !alarm_off) -> u6\n(u5, alarm_off&!alarm_rings) -> u2\nREWARD_FUNCTION:\n(u0, !alarm_rings&!generator_on&power_cut, u1) -> -0.1\n(u0, alarm_rings&!generator_on&!power_cut, u3) -> -0.1\n(u0, alarm_rings&!generator_on&power_cut, u4) -> -0.2\n(u0, alarm_rings&generator_on, u5) -> -0.1\n(u1, !alarm_rings&generator_on, u2) -> 0.1\n(u1, alarm_rings&!generator_on, u4) -> -0.1\n(u2, alarm_rings, u5) -> -0.1\n(u3, !alarm_off&!generator_on&!power_cut, u6) -> -2\n(u3, !alarm_off&!generator_on&power_cut, u6) -> -2\n(u3, !alarm_off&generator_on, u6) -> -2\n(u3, alarm_off&!alarm_rings&!generator_on&!power_cut, u0) -> 0.1\n(u3, alarm_off&!alarm_rings&generator_on, u2) -> 0.1\n(u3, alarm_off&alarm_rings&!generator_on&power_cut, u4) -> -0.1\n(u4, !alarm_off&!generator_on, u6) -> -2.5\n(u4, !alarm_off&generator_on, u6) -> -2.5\n(u4, alarm_off&!alarm_rings&!generator_on, u1) -> 0.1\n(u4, alarm_off&!alarm_rings&generator_on, u2) -> 0.2\n(u4, alarm_off&alarm_rings&generator_on, u5) -> 0.1\n(u5, !alarm_off, u6) -> -2\n(u5, alarm_off&!alarm_rings, u2) -> 0.1\nPENDING_PROMISES:\nu1: hard 0, soft 1\nu3: hard 1, soft 0\nu4: hard 1, soft 1\nu5: hard 1, soft 0"
+              }
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "heading": "Each state as a to-do list",
+          "columns": [
+            "State",
+            "To-do list",
+            "Score",
+            "Charged if the episode ends here"
+          ],
+          "rows": [
+            [
+              "u0",
+              "nothing",
+              "0",
+              "0"
+            ],
+            [
+              "u1",
+              "run the generator (soft)",
+              "−0.1",
+              "−0.5"
+            ],
+            [
+              "u2",
+              "nothing (the generator ran)",
+              "0",
+              "0"
+            ],
+            [
+              "u3",
+              "switch the alarm off (hard)",
+              "−0.1",
+              "−1"
+            ],
+            [
+              "u4",
+              "switch the alarm off, run the generator",
+              "−0.2",
+              "−1.5"
+            ],
+            [
+              "u5",
+              "switch the alarm off (the generator ran)",
+              "−0.1",
+              "−1"
+            ],
+            [
+              "u6",
+              "the well: a hard rule broke",
+              "",
+              "ends the episode"
+            ]
+          ]
+        },
+        {
+          "type": "text",
+          "text": "A step pays the change in the score: +0.1 for each item crossed off, −0.1 for each item added. The alarm ringing always adds “switch it off”; switching it off always crosses it off. So the three alarm loops (u0 ↔ u3, u2 ↔ u5, u1 ↔ u4) all pay −0.1 and +0.1."
+        },
+        {
+          "type": "table",
+          "heading": "Steps where several things happen at once",
+          "columns": [
+            "Step",
+            "What happens",
+            "List change",
+            "Before",
+            "After"
+          ],
+          "rows": [
+            [
+              "u3 → u1",
+              "alarm off, power goes out",
+              "−1 item, +1 item",
+              "+0.1",
+              "0"
+            ],
+            [
+              "u3 → u4",
+              "alarm off, rings again, power goes out",
+              "−1 item, +2 items",
+              "+0.1",
+              "−0.1"
+            ],
+            [
+              "u3 → u5",
+              "alarm off, rings again, generator on",
+              "−1 item, +1 item",
+              "+0.2",
+              "0"
+            ],
+            [
+              "u3 → u2",
+              "alarm off, generator on",
+              "−1 item",
+              "+0.3",
+              "+0.1"
+            ],
+            [
+              "u1 → u5",
+              "alarm rings, generator on",
+              "−1 item, +1 item",
+              "+0.1",
+              "0"
+            ],
+            [
+              "u0 → u4",
+              "alarm rings, power goes out",
+              "+2 items",
+              "−0.2",
+              "−0.2"
+            ],
+            [
+              "u4 → u2",
+              "alarm off, generator on",
+              "−2 items",
+              "+0.2",
+              "+0.2"
+            ],
+            [
+              "u4 → u5",
+              "alarm off, rings again, generator on",
+              "−2 items, +1 item",
+              "+0.1",
+              "+0.1"
+            ]
+          ]
+        },
+        {
+          "type": "table",
+          "heading": "Breaking the hard rule: the arrows into the well",
+          "columns": [
+            "From",
+            "Open there",
+            "Timing out there",
+            "Break, before",
+            "Break, after"
+          ],
+          "rows": [
+            [
+              "u3",
+              "switch the alarm off",
+              "−1",
+              "−1",
+              "−2"
+            ],
+            [
+              "u4",
+              "switch the alarm off, run the generator",
+              "−1.5",
+              "−1",
+              "−2.5"
+            ],
+            [
+              "u5",
+              "switch the alarm off",
+              "−1",
+              "−1",
+              "−2"
+            ]
+          ]
+        },
+        {
+          "type": "text",
+          "text": "Each arrow into the well pays −1 for the break plus what timing out in the state it leaves would cost, so not switching the alarm off is always worse than letting the time run out. All values come from `rm/s3-ex4.txt` (written by `check/todo_list_check.py`); before, from `rm/s2-ex4.txt`."
+        }
+      ]
+    }
+  ]
+}

@@ -102,7 +102,8 @@ def _warnings(proposal: Proposal, layer: RewardLayerResult) -> tuple[str, ...]:
     if not layer.hard_goal:
         warnings.append(
             "Rule-only task: no hard goal clause, so the machine has no final state; "
-            "episodes end on a well, the environment's end, or the time limit"
+            "progress is paid toward the states where no clause is pending, and episodes end "
+            "on a well, the environment's end, or the time limit"
         )
     for index in layer.inert_soft_clauses:
         clause = proposal.clauses[index]
