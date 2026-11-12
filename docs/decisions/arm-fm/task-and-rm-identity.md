@@ -181,7 +181,7 @@ tasks, while keeping the generator and critic responsibilities stable.
 - Antigravity requests use the selected `schema-rm-provider` agent, must not bypass tool
   permissions, and must reject any tool or subagent execution. AGY's advertised tool list
   is not treated as execution because primary sessions always expose the CLI registry.
-- A reconstruction target in `examples/arm-fm/*/tasks.md` is the input for one task;
+- A reconstruction target in `experiments/dev/arm-fm/*/tasks.md` is the input for one task;
   its atomic probes are diagnostic inputs, not an implicit batch to merge.
 
 ## Rationale and tradeoffs

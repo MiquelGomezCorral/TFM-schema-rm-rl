@@ -8,13 +8,20 @@ import dotenv
 from maikol_utils.other_utils import args_to_dataclass
 
 from scripts import (
+    OFF_CHOICES,
+    ablate_rm,
+    aggregate_suite,
     embed_larm,
     evaluate_larm,
     generate_larm,
     generate_rm,
     import_paper_bundle,
     render_rm,
+    replay_traces,
+    rm_facts,
+    run_suite,
     test_rl,
+    trace_bank,
     train_rl,
 )
 from src.config import REASONING_LEVELS, Configuration
@@ -46,6 +53,13 @@ def cmd_embed_larm(args: argparse.Namespace) -> None:
     embed_larm(CONFIG)
 
 
+def cmd_ablate_rm(args: argparse.Namespace) -> None:
+    """Rebuild a compiler bundle's Reward Machine with one reward part switched off."""
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    if not ablate_rm(CONFIG, args.off, args.destination):
+        sys.exit(1)
+
+
 def cmd_import_paper_bundle(args: argparse.Namespace) -> None:
     """Import the authors' released artifacts for one environment as a bundle."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
@@ -67,7 +81,35 @@ def cmd_train_rl(args: argparse.Namespace) -> None:
 def cmd_test_rl(args: argparse.Namespace) -> None:
     """Test finished runs on unseen maps and render GIFs."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
-    test_rl(CONFIG, args.gifs)
+    test_rl(CONFIG, args.gifs, args.judge)
+
+
+def cmd_trace_bank(args: argparse.Namespace) -> None:
+    """Run every card plan in the real env and check the judge's verdicts."""
+    trace_bank(args.tasks, args.output, args.only, args.seed)
+
+
+def cmd_replay_traces(args: argparse.Namespace) -> None:
+    """Replay a trace bank through generated bundles and check each machine."""
+    replay_traces(args.traces, args.bundles, args.output)
+
+
+def cmd_rm_facts(args: argparse.Namespace) -> None:
+    """Write the machine, clause and generation facts of generated bundles."""
+    rm_facts(args.bundles, args.tasks, args.replay, args.output)
+
+
+def cmd_run_suite(args: argparse.Namespace) -> None:
+    """Train every run of a benchmark suite, skipping finished ones."""
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    if not run_suite(CONFIG):
+        sys.exit(1)
+
+
+def cmd_aggregate_suite(args: argparse.Namespace) -> None:
+    """Collect a benchmark suite's runs into results tables."""
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    aggregate_suite(CONFIG)
 
 
 # ======================================================================================
@@ -297,6 +339,36 @@ if __name__ == "__main__":
     embed_parser.set_defaults(func=cmd_embed_larm)
 
     # ======================================================================================
+    #                                       ablate-rm
+    # ======================================================================================
+    ablate_parser = subparsers.add_parser(
+        "ablate-rm",
+        help="Rebuild a compiler bundle's Reward Machine with one reward part switched off",
+    )
+    ablate_parser.add_argument(
+        "--bundle",
+        required=True,
+        type=Path,
+        help="Source bundle made by generate-larm --mode compiler; it must store its clauses",
+    )
+    ablate_parser.add_argument(
+        "--off",
+        required=True,
+        choices=OFF_CHOICES,
+        help="Reward part that pays 0 in the copy; none rebuilds the source unchanged",
+    )
+    ablate_parser.add_argument(
+        "--output",
+        dest="destination",
+        required=True,
+        type=Path,
+        metavar="DIR",
+        help="Bundle folder to write",
+    )
+    ablate_parser.add_argument("--overwrite", action="store_true")
+    ablate_parser.set_defaults(func=cmd_ablate_rm)
+
+    # ======================================================================================
     #                                   import-paper-bundle
     # ======================================================================================
     import_parser = subparsers.add_parser(
@@ -379,7 +451,119 @@ if __name__ == "__main__":
     test_parser.add_argument(
         "--gifs", type=int, default=0, metavar="N", help="Test episodes to render as GIFs"
     )
+    test_parser.add_argument(
+        "--judge",
+        type=Path,
+        default=None,
+        metavar="CARD",
+        help="Task card (card.json) to judge the test episodes with: writes agent-traces/ep<k>.json "
+        "and judge.json in each run folder",
+    )
     test_parser.set_defaults(func=cmd_test_rl)
+
+    # ======================================================================================
+    #                                       trace-bank
+    # ======================================================================================
+    bank_parser = subparsers.add_parser(
+        "trace-bank", help="Run every card plan in the real env, write traces, check the judge"
+    )
+    bank_parser.add_argument("--tasks", required=True, type=Path, help="Card file (tasks.json)")
+    bank_parser.add_argument("--output", required=True, type=Path, help="Folder for the traces")
+    bank_parser.add_argument("--only", nargs="+", metavar="ID", help="Run only these card ids")
+    bank_parser.set_defaults(func=cmd_trace_bank)
+
+    # ======================================================================================
+    #                                      replay-traces
+    # ======================================================================================
+    replay_parser = subparsers.add_parser(
+        "replay-traces", help="Replay a trace bank through generated bundles and check each machine"
+    )
+    replay_parser.add_argument("--traces", required=True, type=Path, help="trace-bank output")
+    replay_parser.add_argument(
+        "--bundles", required=True, type=Path, help="Folder <arm>/<card-id>[~p<k>]/ of bundles"
+    )
+    replay_parser.add_argument("--output", required=True, type=Path, help="Folder for the replay")
+    replay_parser.set_defaults(func=cmd_replay_traces)
+
+    # ======================================================================================
+    #                                        rm-facts
+    # ======================================================================================
+    facts_parser = subparsers.add_parser(
+        "rm-facts", help="Write the machine, clause and generation facts of bundles"
+    )
+    facts_parser.add_argument(
+        "--bundles", required=True, type=Path, help="Folder <arm>/<card-id>[~p<k>]/ of bundles"
+    )
+    facts_parser.add_argument("--tasks", type=Path, default=None, help="Card file (clause check)")
+    facts_parser.add_argument(
+        "--replay", type=Path, default=None, help="replay-summary.json (paraphrase agreement)"
+    )
+    facts_parser.add_argument("--output", required=True, type=Path, help="JSON file to write")
+    facts_parser.set_defaults(func=cmd_rm_facts)
+
+    # ======================================================================================
+    #                                       run-suite
+    # ======================================================================================
+    run_suite_parser = subparsers.add_parser(
+        "run-suite", help="Train every run of a benchmark runs.yaml, skipping finished runs"
+    )
+    run_suite_parser.add_argument("--suite", required=True, type=Path, help="A runs.yaml")
+    run_suite_parser.add_argument(
+        "--parallel",
+        dest="suite_parallel",
+        type=int,
+        default=Configuration.suite_parallel,
+        metavar="N",
+        help="Most runs at once (default: %(default)s)",
+    )
+    run_suite_parser.add_argument(
+        "--max-ram-gb",
+        dest="suite_max_ram_gb",
+        type=float,
+        default=Configuration.suite_max_ram_gb,
+        metavar="GB",
+        help="Budget for the running runs' RAM estimates; a run waits when it would not fit "
+        "(default: only the free RAM limits)",
+    )
+    run_suite_parser.add_argument(
+        "--time-box-min",
+        dest="suite_time_box_min",
+        type=float,
+        default=Configuration.suite_time_box_min,
+        metavar="M",
+        help="Stop a run after this many minutes and mark it timed-out "
+        "(default: the runs.yaml value, else none)",
+    )
+    run_suite_parser.add_argument(
+        "--retry-timed-out",
+        dest="suite_retry_timed_out",
+        action="store_true",
+        help="Restart timed-out runs from zero (default: they are skipped)",
+    )
+    run_suite_parser.add_argument(
+        "--dry-run",
+        dest="suite_dry_run",
+        action="store_true",
+        help="List the runs and what would happen to each; start and write nothing",
+    )
+    run_suite_parser.set_defaults(func=cmd_run_suite)
+
+    # ======================================================================================
+    #                                    aggregate-suite
+    # ======================================================================================
+    aggregate_parser = subparsers.add_parser(
+        "aggregate-suite", help="Collect a benchmark suite's runs into results.csv, .json and .md"
+    )
+    aggregate_parser.add_argument("--suite", required=True, type=Path, help="A runs.yaml")
+    aggregate_parser.add_argument(
+        "--output",
+        dest="suite_output",
+        required=True,
+        type=Path,
+        metavar="DIR",
+        help="Folder for results.csv, results.json and results.md",
+    )
+    aggregate_parser.set_defaults(func=cmd_aggregate_suite)
 
     # ======================================================================================
     #                                       CALL
