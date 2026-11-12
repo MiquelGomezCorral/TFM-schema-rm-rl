@@ -15,6 +15,8 @@ import inspect
 from collections.abc import Callable, Iterator
 from typing import Any
 
+from minigrid.core.constants import OBJECT_TO_IDX
+
 
 class NoReferenceLabelerError(LookupError):
     """No reference labeler exists for an environment."""
@@ -144,14 +146,10 @@ class KeyCorridor(ReferenceLabeler):
         key = _carrying(env, "key")
         agent_x, agent_y = env.agent_pos
 
-        # == Seen from the agent's 7x7 view box (MiniGrid's get_view_exts) ==
-        box_x = agent_x + (0, -3, -6, -3)[env.agent_dir]
-        box_y = agent_y + (-3, 0, -3, -6)[env.agent_dir]
-        key_seen = any(
-            cell.type == "key" and cell.color == color
-            for x, y, cell in _cells(env)
-            if box_x <= x <= box_x + 6 and box_y <= y <= box_y + 6
-        )
+        # == Seen in the agent's 7x7 view: walls and closed doors hide what lies behind them ==
+        # The level holds one key, so any key in the view is the matching one. Reading the view
+        # through gen_obs() is what a generated labeling can do too (runtime._READ_METHODS).
+        key_seen = bool((env.gen_obs()["image"][:, :, 0] == OBJECT_TO_IDX["key"]).any())
 
         # == The locked door's room is the 6x6 block to the right of its cell ==
         in_room = (

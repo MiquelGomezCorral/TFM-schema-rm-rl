@@ -64,6 +64,8 @@ class Card:
     also_ok: tuple[tuple[Clause, ...], ...] = ()
     env_reward_matches: bool = False
     train: bool = False
+    # Indices into ``expect`` of clauses the world already guarantees (optional extras in scoring).
+    forced: tuple[int, ...] = ()
     solve: tuple[Mapping[str, Any], ...] = ()
     wrong: tuple[Mapping[str, Any], ...] = ()
     event_seeds: tuple[int, ...] = ()
@@ -107,6 +109,7 @@ class Card:
                 ),
                 env_reward_matches=bool(data.get("env_reward_matches", False)),
                 train=bool(data.get("train", False)),
+                forced=tuple(data.get("forced") or ()),
                 solve=tuple(plans.get("solve") or ()),
                 wrong=tuple(plans.get("wrong") or ()),
                 event_seeds=tuple(data.get("event_seeds") or ()),
@@ -236,6 +239,9 @@ def check_card(
         problems += [
             f"proposition {name!r} is not in the env file" for name in sorted(used - set(declared))
         ]
+
+    if not all(isinstance(i, int) and 0 <= i < len(card.expect) for i in card.forced):
+        problems.append("'forced' must list indices into expect")
 
     # == Plans ==
     problems += _plan_problems("solve", card.solve)

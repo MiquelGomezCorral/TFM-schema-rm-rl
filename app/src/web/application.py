@@ -268,9 +268,7 @@ def _register_start_callback(app: Dash, controller: RunController) -> None:
             return "Every task row must contain text."
         if attempts not in Configuration.ATTEMPT_LIMITS:
             limits = Configuration.ATTEMPT_LIMITS
-            return (
-                f"Enter a whole number from {limits.start} to {limits.stop - 1} critic rejections."
-            )
+            return f"Enter a whole number of attempts from {limits.start} to {limits.stop - 1}."
         if reasoning not in REASONING_LEVELS:
             return "Choose a reasoning level."
         submitted_name = (output_filename or "").strip()

@@ -82,11 +82,13 @@ tasks, while keeping the generator and critic responsibilities stable.
   Prompt feedback begins with `NO CHANGES NEEDED` or `CHANGES REQUIRED`. These are
   prompt instructions, not an additional execution-evidence gate or automated override
   of a critic's verdict.
-- In compiler mode, each task has at most `--attempts` generator attempts (default 3, at most
-  10, also a web UI field). Only a critic rejection uses one: a provider failure (connection
-  error, exhausted 400 repeats, timeout) or a content failure (invalid proposal, incompatible
-  clauses, malformed tagger output) reruns the same attempt and reports a warning, bounded by a
-  fixed fuse of uncounted reruns. The critic may be disabled; disabling it prints a warning and
+- Each task has at most `--attempts` Reward Machine attempts (default 3, at most 10, also a web UI
+  field), in compiler mode and in `arm-fm` mode alike. Every new candidate uses one: an accepted
+  one, a critic rejection, and an invalid one (invalid proposal, incompatible clauses, malformed
+  critic output; in `arm-fm` also an unparseable machine). A provider failure (connection error,
+  rate limit, timeout, server error, exhausted 400 repeats) uses none: the same attempt runs again
+  with a warning, at most `Configuration.OUTAGE_RETRIES` (10) reruns in a row, and then the run
+  ends as a provider error. The critic may be disabled; disabling it prints a warning and
   accepts the compiler's first result. Enabled critics use the configured provider and critic
   model.
 - The creator assumes the task is feasible in its environment; there is no refusal field.
@@ -239,7 +241,9 @@ through their inputs and prompts, while both challenge the same generator.
   share schema and runtime validation in
   `app/src/engines/structured.py`.
 - Bounded refinement, strict critic schemas, and atomic batch output are implemented in
-  `app/scripts/generate_rm.py` and `app/src/engines/generic_engine.py`.
+  `app/scripts/generate_rm.py` and `app/src/engines/generic_engine.py`; the `arm-fm` loop counts
+  attempts the same way in `app/src/arm_fm/generation.py`, and
+  `Configuration.OUTAGE_RETRIES` bounds the provider reruns in both.
 - Compiler description-list validation belongs to `app/src/engines/structured.py`;
   request context, stage ordering, and bounded retries belong to the shared engine
   and compiler orchestration. Focused engine and orchestration checks enforce these
@@ -308,3 +312,8 @@ through their inputs and prompts, while both challenge the same generator.
 - 2026-11-12: Ablation runs only may leave a soft violation free (`soft_break` or `soft_pending` off),
   keep an ablated copy trainable without a critic verdict, and make one description-rewrite call when the
   recurrent soft penalty is off. Non-ablation runs keep the rules as written (user).
+- 2026-11-12: Every new Reward Machine candidate uses one of the `--attempts` in both pipelines
+  (accepted, rejected or invalid); a provider outage uses none and ends the run as a provider error
+  after 10 reruns in a row. This replaces FARM's free reruns of invalid candidates from 2026-10-14
+  (up to 110 candidates per task at the limit of 10) and stops `arm-fm` from spending attempts on
+  outages (user, card fix round 2).

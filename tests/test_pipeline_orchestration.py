@@ -181,6 +181,23 @@ class OrchestrationTests(unittest.TestCase):
         self.assertTrue(self.execute())
         self.saved.assert_called_once()
 
+    def test_generator_that_never_answers_draws_no_candidate(self):
+        self.engine.proposals = [RetryableEngineError("generator unavailable")] * 20
+        run_stats = []
+        CONFIG = Configuration(environment="demo.md", tasks=["finish"], output="out.rm")
+        with (
+            patch(
+                "scripts.generate_rm.setup_environment_and_engines",
+                return_value=(ENV, self.engine, self.critic),
+            ),
+            patch(
+                "src.utils.generation_pipeline.derive_output_paths", return_value=(Path("out.rm"),)
+            ),
+        ):
+            self.assertFalse(generate_rm(CONFIG, run_stats=run_stats, write_outputs=False))
+        self.assertEqual(len(self.engine.histories), Configuration.OUTAGE_RETRIES + 1)
+        self.assertEqual(run_stats[0]["attempts"], 0)
+
     def test_critic_provider_failure_reruns_the_attempt_without_history(self):
         self.critic.verdicts = [
             RetryableEngineError("critic unavailable"),
@@ -229,7 +246,7 @@ class OrchestrationTests(unittest.TestCase):
         self.assertIn("fix rm", self.engine.histories[1])
         self.assertIn('"source": "critic"', self.engine.histories[1])
 
-    def test_only_a_critic_rejection_uses_an_attempt_and_other_failures_warn(self):
+    def test_candidates_use_attempts_and_provider_outages_do_not(self):
         self.engine.proposals = [
             RetryableEngineError("provider down"),
             RetryableEngineError("timeout"),
@@ -243,10 +260,12 @@ class OrchestrationTests(unittest.TestCase):
         )
 
         self.assertTrue(accepted)
-        self.assertTrue(any("attempt 2/3 accepted" in message for message in messages))
+        # The malformed proposal and the critic rejection each use an attempt; the two
+        # provider outages before them use none.
+        self.assertTrue(any("attempt 3/3 accepted" in message for message in messages))
         self.assertEqual(len(warnings), 3)
         self.assertIn("provider failed: provider down, attempt 1/3 kept", warnings[0])
-        self.assertIn("proposal invalid: malformed, attempt 1/3 kept", warnings[2])
+        self.assertIn("proposal invalid: malformed, attempt 1/3 used", warnings[2])
         history = json.loads(self.engine.histories[-1])
         self.assertEqual([item["source"] for item in history], ["generator", "critic"])
 

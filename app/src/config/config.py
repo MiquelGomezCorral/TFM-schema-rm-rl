@@ -164,10 +164,12 @@ class Configuration:
     #                                   REWARD MACHINE
     # ======================================================================================
 
-    # Each candidate gets this many tagging requests. Only a critic rejection uses one of
-    # ``attempts``; a provider or content failure reruns the attempt, at most this many times.
+    # Each candidate gets this many tagging requests. Every new Reward Machine candidate uses one
+    # of ``attempts`` in both pipelines: an accepted one, a critic rejection and an invalid one
+    # (content failure). A provider outage uses none: the round runs again, this many times in a
+    # row at most, and then the run ends as a provider error.
     TAGGING_ATTEMPTS: ClassVar[int] = 3
-    UNCOUNTED_RETRIES: ClassVar[int] = 10
+    OUTAGE_RETRIES: ClassVar[int] = 10
     ATTEMPT_LIMITS: ClassVar[range] = range(1, 11)
     # The provider sometimes answers HTTP 400 at random; the same call is repeated this many
     # times, this far apart, before it counts as a failure. Repeats use no proposal attempt.

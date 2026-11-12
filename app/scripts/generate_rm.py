@@ -134,8 +134,8 @@ def _run_pipeline(
     progress("Generation completed successfully.")
 
 
-class _RerunError(Exception):
-    """One attempt failed on a provider or content error; the same attempt runs again."""
+class _ProviderOutageError(Exception):
+    """One attempt failed on a provider error; the same attempt runs again."""
 
 
 class _Pipeline:
@@ -144,7 +144,8 @@ class _Pipeline:
     def __init__(self, CONFIG: Configuration, progress: Progress) -> None:
         self.CONFIG = CONFIG
         self.progress = progress
-        self.reruns = 0  # provider or content failures rerun inside the current task
+        self.reruns = 0  # provider outages rerun inside the current task
+        self.rejections = 0  # critic rejections inside the current task
         # One entry per task that ran: its request records, stage counts and wall time.
         self.run_stats: list[dict[str, Any]] = []
         self.environment, self.generator_engine, self.critic_engine = setup_environment_and_engines(
@@ -161,25 +162,27 @@ class _Pipeline:
     def run_task(self, task_index: int, task: str) -> CompilationResult:
         """Return the accepted result for one task, or raise after the last critic rejection.
 
-        Only a critic rejection uses up an attempt; a provider or content failure reruns the
-        same attempt (see ``_run_attempt``). The task's run record joins ``run_stats`` whether
-        it is accepted or fails, so a failed task's requests are still counted.
+        Every new candidate uses up an attempt: a critic rejection and an invalid candidate
+        (content failure) both do. A provider outage reruns the same attempt without using it up
+        (see ``_run_attempt``). The task's run record joins ``run_stats`` whether it is accepted
+        or fails, so a failed task's requests are still counted; its ``attempts`` are the ones
+        that ended in a verdict, so a provider that never answers leaves 0.
         """
         attempts = self.CONFIG.attempts
         history: list[dict[str, object]] = []
         engines = (self.generator_engine, self.critic_engine)
         clear_call_records(*engines)
         started = time.monotonic()
-        self.reruns = 0
-        attempt = rejections = 0
+        self.reruns = self.rejections = 0
+        settled = 0  # attempts that ended in a verdict; one cut short by an error counts none
         try:
             for attempt in range(1, attempts + 1):
                 self.progress.begin_attempt(task_index, attempt, attempts)
                 compiled = self._run_attempt(task_index, task, history)
+                settled = attempt
                 if compiled is not None:
                     self.progress(f"Task {task_index + 1}: attempt {attempt}/{attempts} accepted.")
                     return compiled
-                rejections += 1
 
             last_failure = history[-1]
             raise RetryableEngineError(
@@ -190,8 +193,8 @@ class _Pipeline:
             self.run_stats.append(
                 {
                     "calls": call_records(*engines),
-                    "attempts": attempt,
-                    "critic_interventions": rejections,
+                    "attempts": settled,
+                    "critic_interventions": self.rejections,
                     "retries": self.reruns,
                     "wall_time_s": round(time.monotonic() - started, 1),
                 }
@@ -200,17 +203,17 @@ class _Pipeline:
     def _run_attempt(
         self, task_index: int, task: str, history: list[dict[str, object]]
     ) -> CompilationResult | None:
-        """Rerun one attempt until the critic answers; ``None`` means it rejected the candidate.
+        """Rerun one attempt through provider outages; ``None`` means the candidate was refused.
 
-        This is the safety fuse: after ``UNCOUNTED_RETRIES`` reruns the run fails with the last
-        error, the only way out besides the critic's verdict.
+        A refused candidate is a critic rejection or an invalid candidate. After
+        ``OUTAGE_RETRIES`` reruns in a row the run fails with the last provider error.
         """
-        reruns = self.CONFIG.UNCOUNTED_RETRIES
+        reruns = self.CONFIG.OUTAGE_RETRIES
         for tries in range(reruns + 1):
             self.progress.check_cancelled()
             try:
                 return self._attempt(task, history)
-            except _RerunError as failure:
+            except _ProviderOutageError as failure:
                 if tries < reruns:  # the last failure is followed by no rerun
                     self.reruns += 1
                 last_error = failure
@@ -220,10 +223,10 @@ class _Pipeline:
         )
 
     def _attempt(self, task: str, history: list[dict[str, object]]) -> CompilationResult | None:
-        """Run every stage once; ``None`` means the critic rejected the candidate.
+        """Run every stage once; ``None`` means the candidate was rejected or invalid.
 
         Raises:
-            _RerunError: A provider or content failure; the attempt number is kept.
+            _ProviderOutageError: A provider error; the attempt number is kept.
         """
         proposal_text: str | None = None
         compiled: CompilationResult | None = None
@@ -239,9 +242,12 @@ class _Pipeline:
             compiled = self._generate_labeling(task, compiled)
             return self._embed_states(compiled)
 
-        except (RetryableEngineError, ValueError) as error:
+        except RetryableEngineError as error:
             record_attempt_failure(self.progress, history, proposal_text, compiled, error)
-            raise _RerunError(str(error)) from error
+            raise _ProviderOutageError(str(error)) from error
+        except ValueError as error:  # an invalid candidate uses up the attempt
+            record_attempt_failure(self.progress, history, proposal_text, compiled, error)
+            return None
         except ImmediateEngineError as error:
             self.progress.fail(str(error))
             raise
@@ -352,6 +358,7 @@ class _Pipeline:
         if critic.accepted:
             self.progress.complete(StepState.COMPLETED)
         else:
+            self.rejections += 1
             self.progress.complete(StepState.FAILED, critic.feedback)
             append_history(history, proposal_text, compiled, PipelineStep.CRITIC, critic.feedback)
 

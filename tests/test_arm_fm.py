@@ -39,6 +39,7 @@ from src.compiler import (
 )
 from src.compiler.reward_machine import RewardMachineStructure, Transition
 from src.config import Configuration
+from src.engines import ImmediateEngineError, RetryableEngineError
 from src.models import EnvironmentDescription
 
 DEMO_MARKDOWN = (
@@ -456,6 +457,47 @@ REWARD_FUNCTION:
         self.assertEqual(len(result.bundle.raw_responses), 3)
         self.assertTrue(result.bundle.manifest.generation["first_attempt"])
         self.assertFalse(result.bundle.manifest.generation["refined"])
+
+    def test_provider_outage_reruns_without_an_attempt_and_ends_as_a_provider_error(self):
+        environment = EnvironmentDescription.from_markdown(DEMO_MARKDOWN, source="demo.md")
+        requests = []
+
+        def down(system, user, **kwargs):
+            requests.append(kwargs.get("stage"))
+            raise RetryableEngineError("Connection error.")
+
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(RetryableEngineError):
+                generate_baseline_bundle(
+                    "finish",
+                    environment,
+                    SimpleNamespace(request_text=down),
+                    Configuration(bundle=directory, attempts=3),
+                )
+            loaded = ArtifactBundle.load(directory)
+        # One try and OUTAGE_RETRIES reruns, far past the 3 attempts; none is recorded.
+        self.assertEqual(len(requests), Configuration.OUTAGE_RETRIES + 1)
+        self.assertEqual(loaded.attempts, [])
+
+    def test_immediate_engine_error_ends_the_run_at_once(self):
+        environment = EnvironmentDescription.from_markdown(DEMO_MARKDOWN, source="demo.md")
+        requests = []
+
+        def refused(system, user, **kwargs):
+            requests.append(kwargs.get("stage"))
+            raise ImmediateEngineError("Error code: 401")
+
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(ImmediateEngineError):
+                generate_baseline_bundle(
+                    "finish",
+                    environment,
+                    SimpleNamespace(request_text=refused),
+                    Configuration(bundle=directory, attempts=3),
+                )
+            loaded = ArtifactBundle.load(directory)
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(loaded.attempts, [])
 
     def test_compiler_failure_persists_accepted_rm(self):
         environment = EnvironmentDescription.from_markdown(DEMO_MARKDOWN, source="demo.md")

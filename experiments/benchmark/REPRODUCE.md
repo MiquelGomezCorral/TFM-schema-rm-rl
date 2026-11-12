@@ -47,8 +47,9 @@ completes are skipped by that suite's later call:
 - Per card, one `generate-larm --mode compiler` (FARM) or `--mode arm-fm --arm-fm-critic` (ARM-FM)
   child process; bundle folder `<dir>/<card-id>/`, paraphrase k at `<card-id>~p<k>`.
 - Both arms get the same counted Reward Machine budget: `--attempts 10` (`RM_ATTEMPTS` in
-  `app/scripts/generate_suite.py`; FARM's free reruns differ, see "Stamp and per-call records"
-  below). FARM counts critic rejections; ARM-FM counts generate-and-critic rounds. ARM-FM
+  `app/scripts/generate_suite.py`). In both, every new candidate counts (accepted, rejected by the
+  critic, or invalid); a provider outage counts nothing and reruns the round, 10 times in a row at
+  most (`Configuration.OUTAGE_RETRIES`), then the card ends as a provider error. ARM-FM
   labeling and state descriptions keep their three tries and FARM's tagging keeps its own limit.
   A bundle records the limit in `effective_settings.max_attempts` (the Reward Machine stage's,
   in both arms).
@@ -104,14 +105,13 @@ out and nothing under `app/` changed (the dirty check covers `app/`).
 `{stage, role, model_requested, model_reported}`; `model_reported` is the model named in the
 provider's reply and `null` when the provider names none. A model that refuses reasoning `none`
 gets it again as `low`: that is two requests, and the refused one has `model_reported` `null`.
-The arms count differently, so their `attempts` and `retries` are not comparable numbers: FARM
-`attempts` are proposals (a critic rejection starts the next one) and `retries` are reruns after
-provider or content failures, one for each failure that another try followed (11 failed tries in a
-row make 10 retries); ARM-FM `attempts` are loop rounds and `retries` the rounds that failed.
-Both arms stop at the same counted Reward Machine limit (`effective_settings.max_attempts`, 10 in
-the benchmark); what one attempt counts still differs as described. FARM also reruns a failed
-attempt for free on provider or content failures (up to 10 reruns per attempt); ARM-FM counts
-every failed round against its limit.
+`attempts` count the same in both arms: every new Reward Machine candidate (accepted, rejected by
+the critic, or invalid) is one, up to the same limit (`effective_settings.max_attempts`, 10 in the
+benchmark). `retries` still differ, so do not compare them: FARM `retries` are reruns after provider
+outages and failed tagging requests (11 failed tries in a row make 10 retries and end the run as a
+provider error); ARM-FM `retries` are the rounds that failed on their content, and its provider
+outages are rerun the same bounded way without a record. A provider that never answers leaves
+`attempts` 0 in both arms.
 
 ### Cross-critic
 

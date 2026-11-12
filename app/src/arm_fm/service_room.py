@@ -242,9 +242,11 @@ def scripted_policy(env, ignore: Iterable[str] = ()) -> int:
     """Next action of a player that reacts to the events and then walks to the exit.
 
     It replans on the live grid each call. In order: when the siren rings go toggle the switch;
-    when the box is required and lies on the floor pick it up; then go to the exit. A step is
-    skipped when its target cannot be faced (a fallen box may block the cell in front of the
-    switch, the access cell (1, 5): picking the box up clears it).
+    when the box is required and lies on the floor pick it up; while it holds the box with a
+    fall still to come it waits in place (the box then lands in the free cell in front and the
+    next move picks it up, which a walk past a wall could not guarantee); then go to the exit. A
+    step is skipped when its target cannot be faced (a fallen box may block the cell in front of
+    the switch, the access cell (1, 5): picking the box up clears it).
 
     Args:
         env: The service room, wrapped or not.
@@ -264,6 +266,8 @@ def scripted_policy(env, ignore: Iterable[str] = ()) -> int:
         approach = _plan(base, _faces(target))
         if approach is not None:
             return int(approach[0] if approach else interaction)
+    if _fall_pending(base, ignore):
+        return int(Actions.done)
     approach = _plan(base, lambda x, y, _d: (x, y) == EXIT_POS)
     if not approach:
         raise RuntimeError("the exit cannot be reached")
@@ -283,6 +287,17 @@ def _reactions(base: ServiceRoomEnv, ignore: set[str]) -> list[tuple[tuple[int, 
     ):
         reactions += [(cell, Actions.pickup) for cell in cells_of_type(base, "box")]
     return reactions
+
+
+def _fall_pending(base: ServiceRoomEnv, ignore: set[str]) -> bool:
+    """True while the agent carries the required box and a planned fall has not come yet."""
+    falls = base.event_counts["fall"]
+    return (
+        "holding_box" in base.require
+        and "box_fall" not in ignore
+        and base.carrying is not None
+        and falls["fired"] + falls["skipped"] < falls["planned"]
+    )
 
 
 def cells_of_type(base: ServiceRoomEnv, kind: str) -> list[tuple[int, int]]:
