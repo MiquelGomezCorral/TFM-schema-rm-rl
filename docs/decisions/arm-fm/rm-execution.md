@@ -82,8 +82,9 @@ without changing how labels, transitions, and rewards are interpreted.
   execution semantics. An explicit `else` destination and reward must remain intact.
 - The end judgment applies once, only on an episode end the RM did not cause, and only to RMs
   whose text has `PENDING_PROMISES`: every compiled machine, with or without a final state (a
-  goal is a hard promise). RMs without it, such as imported author bundles, keep the flat -0.5 at
-  the time limit and get no end judgment.
+  goal is a hard promise). RMs without it, such as imported author bundles and fresh ARM-FM machines, pay the run's
+  `time_limit_penalty` at the time limit (default -0.5, the reproduction value; the [thesis
+  benchmark](../benchmark/thesis-benchmark.md) sets 0) and get no end judgment.
 - The compiler never removes states or transitions on environment facts. The critic judges every
   clause against the environment file (`## Constraints`, the truth table, what the agent can and
   cannot do) and rejects a clause that restates an order the environment guarantees or that rests on
@@ -171,3 +172,6 @@ without expanding the machine or adding a guard-coverage calculation.
   timing out in that state. This solves the disclosed corner where idling with two hard promises
   open (-2) cost more than a hard break (-1). The number is in the edge's reward, so the runtime
   does not change and the well adds no charge at the end (user decision).
+- 2026-11-12: The flat -0.5 at the time limit becomes the run setting `time_limit_penalty`
+  (default -0.5, so reproduction runs keep it); the thesis benchmark sets 0 for ARM-FM machines,
+  as the ARM-FM paper pays nothing there. FARM's end judgment is unchanged (user decision).

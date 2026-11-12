@@ -39,7 +39,7 @@ def render_reward_machine(text: str) -> str:
     return render_elements_svg(reward_machine_to_elements(_parse_structure(text)))
 
 
-def render_file(source: Path, output: Path, *, html: bool = False) -> list[Path]:
+def render_file(source: Path, output: Path, *, html: bool = Configuration.html) -> list[Path]:
     """Render every Reward Machine in a text file and return the written paths.
 
     ``output`` is one ``.svg`` file for a single machine, otherwise a directory. With
@@ -83,7 +83,8 @@ def _split_machines(text: str) -> list[str]:
             blocks.append("\n".join(current))
 
     for raw in text.splitlines():
-        if raw.strip() == "" or raw.lstrip().startswith(("---", "#")):
+        # A Markdown code fence ends a block like a blank line: it never belongs to the machine.
+        if raw.strip() == "" or raw.lstrip().startswith(("---", "#", "```")):
             flush()
             current.clear()
             continue

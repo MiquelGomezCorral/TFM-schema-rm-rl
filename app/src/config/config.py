@@ -183,11 +183,9 @@ class Configuration:
     # Soft clauses: paid when one breaks, and on the finishing edge when one is still pending.
     SOFT_BREAK_REWARD: ClassVar[float] = -0.5
     SOFT_PENDING_AT_FINISH_REWARD: ClassVar[float] = -0.5
-    # Added to the RM reward on the step where the time limit ends an episode the RM did not.
-    TIME_LIMIT_PENALTY: ClassVar[float] = -0.5
     # A compiled machine is judged where the environment ends an episode before its final state:
-    # each hard and soft promise still open pays one of these, instead of TIME_LIMIT_PENALTY. A
-    # goal is a hard promise.
+    # each hard and soft promise still open pays one of these, instead of ``time_limit_penalty``.
+    # A goal is a hard promise.
     HARD_FAILED_REWARD: ClassVar[float] = -1.0
     SOFT_FAILED_REWARD: ClassVar[float] = -0.5
 
@@ -259,6 +257,9 @@ class Configuration:
     # The learner's reward: ``rm`` the RM reward alone, ``both`` environment + RM reward, ``env``
     # the plain environment with no RM. The flag is run-wide.
     reward_source: str = "rm"
+    # Added to the RM reward on the step where the time limit ends an episode the RM did not (0 or
+    # negative). A machine with an end judgment pays that judgment instead.
+    time_limit_penalty: float = -0.5
     env_kwargs: dict = field(default_factory=dict)  # keyword arguments of gym.make
     algorithm: str = "dqn"
     # Which rule counts an episode as a success: the environment's own (``env``) or RM
@@ -280,11 +281,15 @@ class Configuration:
     exploration_fraction: float = 0.35
     learning_starts: int = 80_000
     train_frequency: int = 4
+    # Double DQN: the online network picks the next action, the target network values it.
+    double_q: bool = False
 
     eval_frequency: int = 10_000
     eval_episodes: int = 10
     final_eval_episodes: int = 100
     eval_epsilon: float = 0.0
+    # PPO evaluation plays the policy's most likely action instead of sampling one.
+    eval_greedy: bool = False
     eval_seed_base: int = 1_000_000
     success_threshold: float = 0.9
     cuda: bool = True
@@ -411,6 +416,11 @@ class Configuration:
             )
         if self.reward_source == "env" and self.success == "rm":
             raise ValueError("success: rm needs a Reward Machine; reward_source: env has none")
+        if not _is_finite_number(self.time_limit_penalty) or self.time_limit_penalty > 0:
+            raise ValueError(
+                "time_limit_penalty must be a finite number, 0 or negative: "
+                f"{self.time_limit_penalty}"
+            )
         _check_env_kwargs(self.env_kwargs, "env_kwargs")
 
         if not isinstance(self.task_bundles, list):
