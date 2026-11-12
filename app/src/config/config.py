@@ -234,6 +234,15 @@ class Configuration:
     paper_sources: Path | None = None  # generate-larm --mode paper: its paper-sources.json
     draws: int = 3  # generate-larm --mode paper: independent generations
 
+    # ============================ Suite runs (run-suite) ============================
+    suite: Path | None = None  # a benchmark runs.yaml
+    suite_output: Path | None = None  # aggregate-suite: folder for results.csv, results.json
+    suite_parallel: int = 1  # most train-rl children at once
+    suite_max_ram_gb: float | None = None  # None: only the free RAM limits new runs
+    suite_time_box_min: float | None = None  # None: the runs.yaml value, else no time box
+    suite_retry_timed_out: bool = False
+    suite_dry_run: bool = False  # list what would run; start nothing, write nothing
+
     # ============================== Training (train-rl) ==============================
     # A YAML run config overrides these; defaults follow ARM-FM Table 5.
 
@@ -388,6 +397,8 @@ class Configuration:
         self.reference = _optional_path(self.reference)
         self.paper_sources = _optional_path(self.paper_sources)
         self.steps_report = _optional_path(self.steps_report)
+        self.suite = _optional_path(self.suite)
+        self.suite_output = _optional_path(self.suite_output)
         self.trace_dir = _optional_path(self.trace_dir)
         self.manifests = [Path(path) for path in self.manifests]
         self.svg_dir = Path(self.svg_dir) if self.svg_dir is not None else self.OUTPUT_PATH / "svgs"
