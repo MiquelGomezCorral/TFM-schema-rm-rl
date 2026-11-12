@@ -38,7 +38,12 @@ from src.compiler import (
     reward_layer,
     serialize_reward_machine,
 )
-from src.compiler.reward_layer import ClauseState, _clause_labels, build_reward_machine
+from src.compiler.reward_layer import (
+    ClauseState,
+    RewardSwitches,
+    _clause_labels,
+    build_reward_machine,
+)
 from src.config import Configuration, PriorityLevel
 from src.engines.structured import SUPPORTED_TEMPLATES, ProposalSelection
 from src.utils import dfa_text
@@ -148,7 +153,9 @@ def build_captured(dfas: list[dict], soft: list[bool], recurrent: bool):
 
     reward_layer._clause_product, reward_layer._structure = wrapped_product, wrapped_structure
     try:
-        result = build_reward_machine(copy.deepcopy(dfas), soft, recurrent_soft_penalty=recurrent)
+        result = build_reward_machine(
+            copy.deepcopy(dfas), soft, RewardSwitches(recurrent_soft_penalty=recurrent)
+        )
     finally:
         reward_layer._clause_product, reward_layer._structure = clause_product, structure
     return result, captured
