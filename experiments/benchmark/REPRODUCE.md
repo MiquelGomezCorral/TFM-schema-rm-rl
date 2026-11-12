@@ -57,7 +57,11 @@ completes are skipped by that suite's later call:
   skipped on a rerun, so start a new output folder when the limit changes. The bundle's
   `effective_settings.max_attempts` shows the limit it ran with.
 - Beside each folder: `<card-id>.status.json` (`status`, `reason`, `calls`, `wall_time_s`, `log`) and
-  `<card-id>.log`.
+  `<card-id>.log`. `repair-labeling` finishes a repaired ARM-FM bundle whose generation stopped at
+  labeling (descriptions, embeddings): its status turns `complete` and gains `generation_status`,
+  `generation_reason` and `labeling_repaired_by`; count generation successes from
+  `generation_status` when it is there (`evaluate-larm` does: a finished bundle stays a generation
+  failure there).
 - Embeddings run afterwards, one bundle at a time, with `embed-larm --embedding-server`.
 - Caps: `--parallel` (default 10), `--max-calls` and `--deadline-min` stop launching new cards;
   cards already running finish, so the call count can pass the cap by up to `--parallel` cards.

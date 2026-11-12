@@ -285,26 +285,9 @@ class _Generation:
         )
 
     def generate_descriptions(self) -> None:
-        candidate = ""
-        for attempt in range(1, MAX_ATTEMPTS + 1):
-            try:
-                candidate = _request_text(
-                    self.engine,
-                    "description_generator",
-                    environment=self.environment.markdown,
-                    task=self.task,
-                    candidate=serialize_paper_reward_machine(self.machine),
-                    states=", ".join(self.machine.states),
-                )
-                descriptions = _parse_descriptions(candidate, self.machine.states)
-                self.attempts.append(StageAttempt("descriptions", attempt, "accepted", candidate))
-                self.descriptions = descriptions
-                return
-            except Exception as error:
-                self.attempts.append(
-                    StageAttempt("descriptions", attempt, "failed", candidate, error=str(error))
-                )
-        raise RuntimeError("State-description generation was not accepted within three attempts")
+        self.descriptions = request_state_descriptions(
+            self.engine, self.environment.markdown, self.task, self.machine, self.attempts
+        )
 
     def bundle(self) -> ArtifactBundle:
         manifest = BundleManifest(
@@ -350,6 +333,39 @@ class _Generation:
             raw_responses=[_raw_response(item) for item in self.attempts]
             + call_records(self.engine, self.critic_engine),
         )
+
+
+def request_state_descriptions(
+    engine: object,
+    environment_markdown: str,
+    task: str,
+    machine: PaperRewardMachine,
+    attempts: list[StageAttempt],
+) -> dict[str, str]:
+    """Ask for one description per state of ``machine``; every try is appended to ``attempts``.
+
+    Raises:
+        RuntimeError: When no reply is accepted within ``MAX_ATTEMPTS`` tries.
+    """
+    candidate = ""
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            candidate = _request_text(
+                engine,
+                "description_generator",
+                environment=environment_markdown,
+                task=task,
+                candidate=serialize_paper_reward_machine(machine),
+                states=", ".join(machine.states),
+            )
+            descriptions = _parse_descriptions(candidate, machine.states)
+            attempts.append(StageAttempt("descriptions", attempt, "accepted", candidate))
+            return descriptions
+        except Exception as error:
+            attempts.append(
+                StageAttempt("descriptions", attempt, "failed", candidate, error=str(error))
+            )
+    raise RuntimeError("State-description generation was not accepted within three attempts")
 
 
 def call_records(*engines: object) -> list[dict[str, str | None]]:
