@@ -5,12 +5,16 @@ three arms (no RM, ARM-FM, FARM). Four MiniGrid cards, one per environment:
 
 | Card | Environment |
 | --- | --- |
-| `base-doorkey` | DoorKey 8x8, fixed layout |
+| `base-doorkey` | DoorKey 8x8 |
 | `base-unlock-pickup` | UnlockPickup |
 | `base-blocked-unlock-pickup` | BlockedUnlockPickup |
 | `base-key-corridor` | KeyCorridor S6R3 |
 
 All four are trained. The cards stay `draft` until the author approves them.
+
+Layouts: training resets draw new procedural layouts (`layout: procedural`). Evaluation keeps the fixed
+seeds `eval_seed_base + i`, the same for every run and arm. `layout_seed: 1` stays on the card only for
+the scripted plans, the trace records and the card checks; the trainer ignores it.
 
 ## Contents
 

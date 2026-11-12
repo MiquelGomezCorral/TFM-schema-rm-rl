@@ -40,4 +40,10 @@ none. A FARM versus ARM-FM difference therefore mixes the pipelines' design with
 each one gets. Options for the user: keep the prompts as they are and state the asymmetry in the
 paper, give ARM-FM matching examples, or remove the FARM examples for a control run.
 
-decision: pending
+## Answer (user, 2026-11-12)
+
+Both pipelines keep their own prompts. ARM-FM runs as its authors ran it, without worked examples.
+FARM keeps its examples. The paper states the asymmetry. No control run (neither matching examples
+for ARM-FM nor FARM without its examples).
+
+decision: both pipelines keep their own prompts; ARM-FM without worked examples, FARM with its examples; the paper states the asymmetry; no control run (user, 2026-11-12)

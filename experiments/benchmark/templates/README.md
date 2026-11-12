@@ -12,6 +12,15 @@ generated and checked but not trained. The 16 trained cards also carry three ext
 task, to see whether different phrasings give the same machine. The cards stay `draft` until the
 author approves them.
 
+Layouts: training resets draw new procedural layouts (`layout: procedural`). Evaluation keeps the fixed
+seeds `eval_seed_base + i`, the same for every run and arm. `layout_seed: 1` stays on the card only for
+the scripted plans, the trace records and the card checks; the trainer ignores it. The service-room
+cards keep their fixed room and draw new event timings.
+
+Key-drop rules: `key_lost` means dropping the key while the door is still closed. The k=1 Absence and
+NotCoExistence key cards run on BlockedUnlockPickup, where a key-first run must drop the key to move the
+ball; the k=3 cards moved to UnlockPickup and DoorKey (D10 card revision).
+
 ## Contents
 
 - `tasks.json`: the cards.

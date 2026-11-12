@@ -15,6 +15,15 @@ to events in the small service room. Six cards, all trained:
 Each card also carries three extra wordings of the task. The cards stay `draft` until the author
 approves them.
 
+Layouts: training resets draw new procedural layouts (`layout: procedural`). Evaluation keeps the fixed
+seeds `eval_seed_base + i`, the same for every run and arm. `layout_seed: 1` stays on the card only for
+the scripted plans, the trace records and the card checks; the trainer ignores it. The service-room
+cards keep their fixed room and draw new event timings.
+
+Key-drop rules: `key_lost` means dropping the key while the door is still closed. `cx-rules-only` and
+`cx-goal-one-rule` run on BlockedUnlockPickup, like `cx-goal-many-rules`, where a key-first run must
+drop the key to move the ball (D10 card revision).
+
 ## Contents
 
 - `tasks.json`: the cards.
