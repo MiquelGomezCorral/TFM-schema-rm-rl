@@ -12,7 +12,7 @@ Addition to `environment.md`; read both. Facts live there; this file says where 
 
 ## Truth conditions in code
 
-`prev` is `env.episode_memory["previous_valuation"]`. `K` and `D` stand for the `has_door_key` and `door_open` expressions. There is one door, so a scan by type finds it; `(dx, dy)` is its cell. The ball starts at `(dx - 1, dy)` [code: blockedunlockpickup.py:_gen_grid].
+`prev` is `env.episode_memory["previous_valuation"]`, empty at the first step: read an entry only after `"name" in prev` (the sandbox refuses `prev.get`). `K` and `D` stand for the `has_door_key` and `door_open` expressions. There is one door, so a scan by type finds it; `(dx, dy)` is its cell. The ball starts at `(dx - 1, dy)` [code: blockedunlockpickup.py:_gen_grid].
 
 | id | expression |
 |---|---|
@@ -20,7 +20,7 @@ Addition to `environment.md`; read both. Facts live there; this file says where 
 | `has_door_key` | `env.carrying is not None and env.carrying.type == "key" and any(c is not None and c.type == "door" and c.color == env.carrying.color for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)])` |
 | `door_open` | `any(c is not None and c.type == "door" and c.is_open for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)])` |
 | `target_picked_up` | `env.carrying is not None and env.carrying.type == "box" and env.mission == f"pick up the {env.carrying.color} box"` |
-| `key_lost` | `prev["has_door_key"] and not K and not D` (event: previous step against the current state) |
+| `key_lost` | `("has_door_key" in prev and prev["has_door_key"]) and not K and not D` (event: previous step against the current state) |
 
 ## Evidence
 

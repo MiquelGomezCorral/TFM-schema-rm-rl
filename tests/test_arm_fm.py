@@ -510,7 +510,7 @@ REWARD_FUNCTION:
         labeling = "```python\ndef done(env):\n    return True\n```"
         outage = RetryableEngineError("Connection error.")
 
-        def run(responses):
+        def run(responses, **settings):
             queue = iter(responses)
             requests = []
 
@@ -522,7 +522,9 @@ REWARD_FUNCTION:
                 return response
 
             engine = SimpleNamespace(request_text=request_text)
-            result = generate_baseline_bundle("finish", environment, engine, Configuration())
+            result = generate_baseline_bundle(
+                "finish", environment, engine, Configuration(**settings)
+            )
             return result, requests
 
         for failures in ((outage, outage), ("not json", '{"accepted":true}')):
@@ -536,8 +538,15 @@ REWARD_FUNCTION:
                 )
                 self.assertEqual(len(requests), 7)  # one machine, three critic requests, the rest
 
-        with self.assertRaisesRegex(CriticUnavailableError, "Connection error"):
-            run([machine, *[outage] * (Configuration.OUTAGE_RETRIES + 1)])
+        for failures, error, message in (
+            ([outage] * (Configuration.OUTAGE_RETRIES + 1), CriticUnavailableError, "Connection"),
+            ([ImmediateEngineError("critic authentication failed")], ImmediateEngineError, "auth"),
+        ):
+            with self.subTest(error=error.__name__), tempfile.TemporaryDirectory() as directory:
+                with self.assertRaisesRegex(error, message):
+                    run([machine, *failures], bundle=directory)
+                stamp = ArtifactBundle.load(directory).manifest.provenance["stamp"]
+                self.assertEqual(stamp["attempts"], 1)  # the candidate keeps its attempt
 
     def test_compiler_failure_persists_accepted_rm(self):
         environment = EnvironmentDescription.from_markdown(DEMO_MARKDOWN, source="demo.md")

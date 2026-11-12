@@ -604,7 +604,7 @@ def _step_attempts(
     value: object,
     locked: bool | None,
 ) -> tuple[object, bool, bool]:
-    """Move the rejection limit one step and keep both buttons inside its bounds.
+    """Move the attempt limit one step and keep both buttons inside its bounds.
 
     A click on a button moves the value; a typed or pasted value is kept untouched, so only
     the two ``disabled`` flags are recomputed and the pair never freezes.

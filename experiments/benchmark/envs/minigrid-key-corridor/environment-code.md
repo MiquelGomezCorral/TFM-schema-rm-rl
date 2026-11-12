@@ -13,14 +13,14 @@ Addition to `environment.md`; read both. Facts live there; this file says where 
 
 ## Truth conditions in code
 
-Shorthand: `prev` is `env.episode_memory["previous_valuation"]`. `(ax, ay)` is `env.agent_pos`, `d` is `env.agent_dir`. `L` is the color of the door whose `is_locked` is true. `scan` is `for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)]`.
+Shorthand: `prev` is `env.episode_memory["previous_valuation"]`, empty at the first step: read an entry only after `"name" in prev` (the sandbox refuses `prev.get`). `(ax, ay)` is `env.agent_pos`, `d` is `env.agent_dir`. `L` is the color of the door whose `is_locked` is true. `scan` is `for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)]`.
 
 | id | expression |
 |---|---|
-| `key_found` | `prev["key_found"] or any(cell[0] == 5 for col in env.gen_obs()["image"] for cell in col)`: the agent's 7x7 view, where cells hidden by a wall or a closed door are 0 (unseen), empty cells 1, and object index 5 is `key` [code: minigrid_env.py:gen_obs, grid.py:process_vis]. The level holds one key, so any key in the view is the matching one. The same cells as `env.agent_sees(kx, ky)` for the key cell `(kx, ky)` |
+| `key_found` | `("key_found" in prev and prev["key_found"]) or any(cell[0] == 5 for col in env.gen_obs()["image"] for cell in col)`: the agent's 7x7 view, where cells hidden by a wall or a closed door are 0 (unseen), empty cells 1, and object index 5 is `key` [code: minigrid_env.py:gen_obs, grid.py:process_vis]. The level holds one key, so any key in the view is the matching one. The same cells as `env.agent_sees(kx, ky)` for the key cell `(kx, ky)` |
 | `has_matching_key` | `env.carrying is not None and env.carrying.type == "key" and env.carrying.color == L` |
 | `target_door_open` | `is_open` of the locked door, found by `scan` as the door with `is_locked` true |
-| `target_room_entered` | `prev["target_room_entered"] or (dx <= ax <= dx + 5 and 5 * (dy // 5) <= ay <= 5 * (dy // 5) + 5)`, where `(dx, dy)` is the locked door cell (the room's 6x6 block, door cell included) |
+| `target_room_entered` | `("target_room_entered" in prev and prev["target_room_entered"]) or (dx <= ax <= dx + 5 and 5 * (dy // 5) <= ay <= 5 * (dy // 5) + 5)`, where `(dx, dy)` is the locked door cell (the room's 6x6 block, door cell included) |
 | `target_picked_up` | `env.carrying is not None and env.carrying.type == "ball" and env.mission == f"pick up the {env.carrying.color} ball"` |
 
 Caution: unlocking clears `is_locked` and sets `is_open` [code: world_object.py:Door.toggle], so `L` and the locked door cell cannot be found by `is_locked` once the door has been unlocked. Labeling code finds the locked door at the first labels, before any step can unlock it, and keeps its color and cell for the episode (the benchmark reference labeler does so in `app/src/benchmark/reference_labels.py`, `KeyCorridor`).

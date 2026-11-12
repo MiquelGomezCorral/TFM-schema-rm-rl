@@ -862,7 +862,7 @@ def output_controls() -> html.Aside:
                                 className=f"critic-options {CHECKLIST_CLASS}",
                             ),
                             _field(
-                                "Critic rejections allowed",
+                                "Attempts per task",
                                 html.Div(
                                     [
                                         html.Button(
@@ -872,8 +872,8 @@ def output_controls() -> html.Aside:
                                             className=(
                                                 f"{STEPPER_BUTTON_CLASS} border-r border-border-strong"
                                             ),
-                                            title="Allow one fewer rejection",
-                                            **{"aria-label": "Allow one fewer rejection"},
+                                            title="Allow one fewer attempt",
+                                            **{"aria-label": "Allow one fewer attempt"},
                                         ),
                                         dcc.Input(
                                             id="attempts",
@@ -894,13 +894,18 @@ def output_controls() -> html.Aside:
                                             className=(
                                                 f"{STEPPER_BUTTON_CLASS} border-l border-border-strong"
                                             ),
-                                            title="Allow one more rejection",
-                                            **{"aria-label": "Allow one more rejection"},
+                                            title="Allow one more attempt",
+                                            **{"aria-label": "Allow one more attempt"},
                                         ),
                                     ],
                                     className=STEPPER_CLASS,
                                     role="group",
-                                    **{"aria-label": "Critic rejections allowed"},
+                                    title=(
+                                        "Every new candidate counts: accepted, rejected by the "
+                                        "critic or invalid. A provider outage or a failed critic "
+                                        "request is repeated without counting."
+                                    ),
+                                    **{"aria-label": "Attempts per task"},
                                 ),
                                 label_class=FIELD_LABEL_MUTED_CLASS,
                             ),

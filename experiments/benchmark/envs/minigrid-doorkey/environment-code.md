@@ -12,14 +12,14 @@ Addition to `environment.md`; read both. Facts live there; this file says where 
 
 ## Truth conditions in code
 
-`prev` is `env.episode_memory["previous_valuation"]`. `H` and `D` stand for the `has_key` and `door_open` expressions. There is one door, so a scan by type finds it.
+`prev` is `env.episode_memory["previous_valuation"]`, empty at the first step: read an entry only after `"name" in prev` (the sandbox refuses `prev.get`). `H` and `D` stand for the `has_key` and `door_open` expressions. There is one door, so a scan by type finds it.
 
 | id | expression |
 |---|---|
 | `has_key` | `env.carrying is not None and env.carrying.type == "key" and env.carrying.color == "yellow"` |
 | `door_open` | `any(c is not None and c.type == "door" and c.is_open for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)])` |
 | `at_goal` | `any(c is not None and c.type == "goal" for c in [env.grid.get(*env.agent_pos)])` |
-| `key_lost` | `prev["has_key"] and not H and not D` (event: previous step against the current state) |
+| `key_lost` | `("has_key" in prev and prev["has_key"]) and not H and not D` (event: previous step against the current state) |
 
 ## Evidence
 

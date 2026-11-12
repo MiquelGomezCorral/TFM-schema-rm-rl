@@ -147,6 +147,7 @@ class _Pipeline:
         self.progress = progress
         self.reruns = 0  # provider outages rerun inside the current task
         self.rejections = 0  # critic rejections inside the current task
+        self.generated = False  # the generator returned a candidate for the current attempt
         # One entry per task that ran: its request records, stage counts and wall time.
         self.run_stats: list[dict[str, Any]] = []
         self.environment, self.generator_engine, self.critic_engine = setup_environment_and_engines(
@@ -167,7 +168,8 @@ class _Pipeline:
         (content failure) both do. A provider outage reruns the same attempt without using it up
         (see ``_run_attempt``). The task's run record joins ``run_stats`` whether it is accepted
         or fails, so a failed task's requests are still counted; its ``attempts`` are the ones
-        that ended in a verdict, so a provider that never answers leaves 0.
+        whose candidate the generator returned, whatever a later stage did to it, so a provider
+        that never answers leaves 0.
         """
         attempts = self.CONFIG.attempts
         history: list[dict[str, object]] = []
@@ -175,12 +177,15 @@ class _Pipeline:
         clear_call_records(*engines)
         started = time.monotonic()
         self.reruns = self.rejections = 0
-        settled = 0  # attempts that ended in a verdict; one cut short by an error counts none
+        counted = 0
         try:
             for attempt in range(1, attempts + 1):
                 self.progress.begin_attempt(task_index, attempt, attempts)
-                compiled = self._run_attempt(task_index, task, history)
-                settled = attempt
+                self.generated = False
+                try:
+                    compiled = self._run_attempt(task_index, task, history)
+                finally:
+                    counted += self.generated
                 if compiled is not None:
                     self.progress(f"Task {task_index + 1}: attempt {attempt}/{attempts} accepted.")
                     return compiled
@@ -194,7 +199,7 @@ class _Pipeline:
             self.run_stats.append(
                 {
                     "calls": call_records(*engines),
-                    "attempts": settled,
+                    "attempts": counted,
                     "critic_interventions": self.rejections,
                     "retries": self.reruns,
                     "wall_time_s": round(time.monotonic() - started, 1),
@@ -247,6 +252,7 @@ class _Pipeline:
             record_attempt_failure(self.progress, history, proposal_text, compiled, error)
             raise _ProviderOutageError(str(error)) from error
         except ValueError as error:  # an invalid candidate uses up the attempt
+            self.generated = True  # also a proposal the generator returned but could not use
             record_attempt_failure(self.progress, history, proposal_text, compiled, error)
             return None
         except ImmediateEngineError as error:
@@ -268,6 +274,7 @@ class _Pipeline:
 
         history_text = structure_history_text(history)
         selections = self.generator_engine.propose_task(task, history=history_text)
+        self.generated = True
         proposal_text = clauses_json(selections)
 
         self.progress.artifact("Validated proposal", proposal_text)

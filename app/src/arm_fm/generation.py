@@ -172,9 +172,11 @@ class _Generation:
         Every round is an attempt: accepted, rejected by the critic or failed on its content, as
         in the compiler path. A provider outage (``RetryableEngineError``) runs the round again
         without using one; after ``Configuration.OUTAGE_RETRIES`` reruns in a row the run ends
-        with that error. An ``ImmediateEngineError`` (authentication, bad request) ends the run at
-        once, as in the compiler path. ``self.attempts`` holds every round, also when an error
-        leaves.
+        with that error. An ``ImmediateEngineError`` (authentication, bad request, or an exhausted
+        critic, ``CriticUnavailableError``) ends the run at once, as in the compiler path; when the
+        generator had already returned the round's candidate, it keeps its attempt as a failed
+        round, and when the generator itself failed it uses none. ``self.attempts`` holds every
+        round, also when an error leaves.
         """
         if not self.task.strip():
             raise ValueError("Task must be nonempty")
@@ -182,6 +184,7 @@ class _Generation:
 
         attempt, outages = 1, 0
         while attempt <= self.rm_attempts:
+            generated = False  # the generator returned a candidate in this round
             try:
                 candidate = _request_text(
                     self.engine,
@@ -191,6 +194,7 @@ class _Generation:
                     api=self.labeling_api,
                     history="\n\n".join(rm_history),
                 )
+                generated = True
                 self.machine_text = _extract_artifact(candidate)
                 self.machine = parse_paper_reward_machine(
                     self.machine_text,
@@ -231,16 +235,22 @@ class _Generation:
                         f"{Configuration.OUTAGE_RETRIES} reruns in a row. Last error: {error}"
                     ) from error
                 continue
-            except ImmediateEngineError:
-                raise  # includes CriticUnavailableError: no new candidate for a critic outage
+            except ImmediateEngineError as error:
+                # A candidate that exists keeps its attempt, also when the critic fails for good
+                # (exhausted repeats, authentication); the generator's own failure uses none.
+                if generated:
+                    self._record_failed_round(attempt, error)
+                raise
             except Exception as error:
-                self.attempts.append(
-                    StageAttempt(
-                        "reward_machine", attempt, "failed", self.machine_text, error=str(error)
-                    )
-                )
+                self._record_failed_round(attempt, error)
                 rm_history.append(str(error))
             attempt, outages = attempt + 1, 0
+
+    def _record_failed_round(self, attempt: int, error: Exception) -> None:
+        """Record the current candidate's round as failed with ``error``."""
+        self.attempts.append(
+            StageAttempt("reward_machine", attempt, "failed", self.machine_text, error=str(error))
+        )
 
     def require_accepted_reward_machine(self) -> None:
         accepted = self.machine is not None and any(

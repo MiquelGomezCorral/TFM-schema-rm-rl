@@ -157,7 +157,7 @@ class OrchestrationTests(unittest.TestCase):
         self.critic.verdicts = []
         self.saved = Mock()
 
-    def execute(self, tasks=("finish",), *, hooks=None, compiled=None, **flags):
+    def execute(self, tasks=("finish",), *, hooks=None, compiled=None, run_stats=None, **flags):
         CONFIG = Configuration(environment="demo.md", tasks=list(tasks), output="out.rm", **flags)
         with (
             patch(
@@ -175,7 +175,7 @@ class OrchestrationTests(unittest.TestCase):
                 return_value=compiled or result(),
             ),
         ):
-            return generate_rm(CONFIG, hooks)
+            return generate_rm(CONFIG, hooks, run_stats=run_stats)
 
     def test_first_attempt_acceptance(self):
         self.critic.verdicts = [CriticResult(True, "ok")]
@@ -217,12 +217,15 @@ class OrchestrationTests(unittest.TestCase):
         self.critic.verdicts = [RetryableEngineError("Connection error.")] * (
             Configuration.OUTAGE_RETRIES + 1
         )
-        failures = []
+        failures, run_stats = [], []
 
-        self.assertFalse(self.execute(hooks=GenerationHooks(failure=failures.append)))
+        self.assertFalse(
+            self.execute(hooks=GenerationHooks(failure=failures.append), run_stats=run_stats)
+        )
 
         self.assertEqual(self.engine.histories, ["None."])
         self.assertEqual(len(self.critic.candidates), Configuration.OUTAGE_RETRIES + 1)
+        self.assertEqual(run_stats[0]["attempts"], 1)  # the candidate keeps its attempt
         self.assertIn("Critic failed", failures[0])
         self.assertIn("Connection error.", failures[0])
 
