@@ -154,7 +154,7 @@ class RewardMachineEnvironment:
         environment: object,
         runtime: RewardMachineRuntime,
         labeling: Mapping[str, Callable[[object], bool]] | str,
-        reward_source: str = "rm",
+        reward_source: str = Configuration.reward_source,
         terminate_on_rm: bool = True,
     ) -> None:
         self.environment = environment
@@ -201,6 +201,7 @@ class RewardMachineEnvironment:
         else:
             observation, reward, terminated, info = result
             truncated = False
+        info = {**(info or {}), "env_terminated": bool(terminated)}
         valuation = self.runtime.evaluate_labeling(self.environment, self.labeling)
         rm_step = self.runtime.step(valuation)
         env_ended = bool(terminated) or truncated

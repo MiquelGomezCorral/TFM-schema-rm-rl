@@ -1,5 +1,6 @@
 """Command implementations."""
 
+from .benchmark_traces import replay_traces, rm_facts, trace_bank
 from .embed_larm import embed_larm
 from .evaluate_larm import evaluate_larm
 from .generate_larm import generate_larm

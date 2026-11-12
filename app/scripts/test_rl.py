@@ -9,6 +9,13 @@ Usage:
 ``gifs/<i>.gif``. Episode ``i`` resets with seed ``--seed-base + i``; training uses the run seed
 and validation ``eval_seed_base``, so these maps are unseen. A fixed-layout run has one layout,
 so it is tested on its layout seed instead, and ``test.json`` says so.
+
+With ``--judge card.json`` the test episodes are also saved as agent trace records
+(``agent-traces/ep<k>.json``, reference labels included) and judged on the card's clauses into
+``judge.json``. The card is checked first (its env, its propositions), before any test work. An
+RM run's episode ends when the machine stops; the record then has ``rm_stopped`` set and keeps
+the env's own ``terminated`` and ``truncated``. A run without ``judge.json`` is "not evaluated"
+by the judge.
 """
 
 import json
@@ -18,6 +25,7 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, fields
 from pathlib import Path
+from statistics import fmean
 from typing import Any
 
 import gymnasium as gym
@@ -33,10 +41,22 @@ from src.arm_fm.dqn import (
     select_action,
 )
 from src.arm_fm.dqn import evaluate as evaluate_dqn
-from src.arm_fm.environments import RunEnvironment
+from src.arm_fm.environments import RunEnvironment, make_environment
 from src.arm_fm.ppo import evaluate as evaluate_ppo
 from src.arm_fm.ppo import evaluation_resets as evaluation_resets_ppo
 from src.arm_fm.ppo import load_ppo_agent
+from src.benchmark import (
+    RM_RETURN_DEFINITION,
+    CardError,
+    NoReferenceLabelerError,
+    Rollout,
+    card_header,
+    judge_trace,
+    labeler_for,
+    load_card,
+    make_record,
+    write_json,
+)
 from src.config import Configuration
 
 CPU = torch.device("cpu")  # training may hold the GPU
@@ -50,6 +70,18 @@ FIXED_LAYOUT_NOTES = {
     "ppo": "fixed layout: the test seeds do not change the map, so this is not an unseen-map test",
 }
 FRAME_MS, LAST_FRAME_MS = 180, 2000
+# The per-episode judge fields ``judge.json`` averages.
+JUDGE_MEANS = (
+    "judged_success",
+    "env_success",
+    "hard_breaks",
+    "soft_breaks",
+    "hard_open",
+    "soft_open",
+    "env_return",
+    "rm_return",
+    "length",
+)
 # A long episode keeps its first steps, a thinning sample of the middle, and its last steps.
 HEAD_FRAMES, MIDDLE_FRAMES, TAIL_FRAMES = 40, 14, 6
 
@@ -59,17 +91,23 @@ HEAD_FRAMES, MIDDLE_FRAMES, TAIL_FRAMES = 40, 14, 6
 # ======================================================================================
 
 
-def test_rl(CONFIG: Configuration, gifs: int) -> None:
+def test_rl(CONFIG: Configuration, gifs: int, judge: Path | None = None) -> None:
     """Test the runs named by ``CONFIG.exp_name`` and write each run's ``test.json``.
 
     ``CONFIG.final_eval_episodes`` is the number of test episodes and ``CONFIG.eval_seed_base``
-    the first test seed. ``gifs`` is how many of those episodes are also rendered as GIFs.
+    the first test seed. ``gifs`` is how many of those episodes are also rendered as GIFs. With
+    ``judge`` (a card file) the episodes are also saved as agent traces and judged.
 
     Raises:
         ValueError: If no finished run matches ``CONFIG.exp_name``.
+        SystemExit: If ``judge`` is not one card that fits the run's env and labels; the check
+            runs before any test work, so nothing is written.
     """
     for directory in _run_directories(CONFIG):
-        row = _test_run(CONFIG, directory, gifs)
+        try:
+            row = _test_run(CONFIG, directory, gifs, judge)
+        except (CardError, NoReferenceLabelerError) as error:
+            raise SystemExit(f"error: {error}") from error
         print(f"{directory.parent.name}/{directory.name}: test exit_rate {row['exit_rate']:.2f}")
 
 
@@ -93,25 +131,34 @@ def _run_directories(CONFIG: Configuration) -> list[Path]:
 class Policy:
     """A trained policy and how its learner evaluates it.
 
-    ``evaluate(count)`` is the learner's own evaluation row, ``resets(count)`` the ``reset``
-    arguments of its test episodes, and ``act(observation)`` one action as evaluation picks it.
+    ``evaluate(count)`` is the learner's own evaluation row and ``resets(count)`` the ``reset``
+    arguments of its test episodes. ``new_act()`` starts a fresh action stream, seeded with the
+    run seed as the learner's evaluation seeds its own, and returns ``act(observation)``, one
+    action as evaluation picks it. Each recorder takes its own stream, so one cannot change the
+    other's actions.
     """
 
     evaluate: Callable[[int], dict[str, object]]
     resets: Callable[[int], list[dict[str, object]]]
-    act: Callable[[Any], int]
+    new_act: Callable[[], Callable[[Any], int]]
 
 
-def _test_run(CONFIG: Configuration, directory: Path, gifs: int) -> dict[str, object]:
+def _test_run(
+    CONFIG: Configuration, directory: Path, gifs: int, judge: Path | None
+) -> dict[str, object]:
     saved = yaml.safe_load((directory / "config.yaml").read_text(encoding="utf-8"))
     config = _run_config(saved, CONFIG.eval_seed_base)
     run = make_run_environment(config)
     try:
         policy = _load_policy(config, run, directory)
+        # Built first: a card that does not fit the run fails before any test work.
+        judge_recorder = JudgeRecorder(config, run, policy, judge) if judge is not None else None
         row = policy.evaluate(CONFIG.final_eval_episodes)
         recorder = GifRecorder(config, run, policy, run_method(saved))
         # A fixed layout evaluates fewer episodes than asked: GIFs replay evaluated ones only.
         records = recorder.write(directory, min(gifs, row["episodes"]))
+        if judge_recorder is not None:
+            judge_recorder.write(directory, CONFIG.final_eval_episodes)
     finally:
         run.env.close()
 
@@ -146,22 +193,30 @@ def _run_config(saved: dict[str, Any], seed_base: int) -> Configuration:
 def _load_policy(config: Configuration, run: RunEnvironment, directory: Path) -> Policy:
     if config.algorithm == "ppo":
         agent = load_ppo_agent(directory / "agent.pt", run, CPU)
-        generator = torch.Generator().manual_seed(config.seed)
+
+        def new_ppo_act() -> Callable[[Any], int]:
+            generator = torch.Generator().manual_seed(config.seed)
+            return lambda observation: agent.act(observation, generator)
+
         return Policy(
             evaluate=lambda count: evaluate_ppo(config, run, agent, count),
             resets=lambda count: evaluation_resets_ppo(config, count),
-            act=lambda observation: agent.act(observation, generator),
+            new_act=new_ppo_act,
         )
 
     q_network = QNetwork(run.make_encoder(), run.env.observation_space, int(run.env.action_space.n))
     q_network.load_state_dict(torch.load(directory / "q_network.pt", map_location=CPU))
-    rng = random.Random(config.seed)
+
+    def new_dqn_act() -> Callable[[Any], int]:
+        rng = random.Random(config.seed)
+        return lambda observation: select_action(
+            q_network, observation, config.eval_epsilon, run.env.action_space, rng
+        )
+
     return Policy(
         evaluate=lambda count: evaluate_dqn(config, run, q_network, count),
         resets=lambda count: evaluation_resets(config, run, count),
-        act=lambda observation: select_action(
-            q_network, observation, config.eval_epsilon, run.env.action_space, rng
-        ),
+        new_act=new_dqn_act,
     )
 
 
@@ -211,6 +266,7 @@ class GifRecorder:
         self.run = run
         self.policy = policy
         self.method = method
+        self.act = policy.new_act()
 
     def write(self, directory: Path, count: int) -> list[dict[str, object]]:
         """Save test episodes 0..count-1 to ``<directory>/gifs/<i>.gif`` and describe each one."""
@@ -233,9 +289,7 @@ class GifRecorder:
 
         steps, solved, done = 0, False, False
         while not done:
-            observation, reward, terminated, truncated, info = env.step(
-                self.policy.act(observation)
-            )
+            observation, reward, terminated, truncated, info = env.step(self.act(observation))
             steps += 1
             solved = self.run.is_success(terminated, info.get("env_reward", reward))
             done = terminated or truncated
@@ -264,6 +318,129 @@ class GifRecorder:
         for number, text in enumerate(lines):
             draw.text((6, 4 + LINE_HEIGHT * number), text, fill="black", font=FONT)
         return canvas
+
+
+# ======================================================================================
+#                                        JUDGE
+# ======================================================================================
+
+
+class JudgeRecorder:
+    """Replay a run's test episodes, save each as an agent trace record and judge it on a card.
+
+    An episode is the test episode as the run plays it: with an RM it ends when the machine
+    stops. The record keeps the env's own flags and sets ``rm_stopped`` for a machine stop.
+
+    Raises:
+        CardError: If the card is unreadable or breaks the card contract, is for another env or
+            other env kwargs than the run, judges a proposition the reference labeler does not
+            emit (the judge would read it as always false), or the run has several tasks.
+        NoReferenceLabelerError: If the card's env has no reference labeler.
+    """
+
+    def __init__(
+        self, config: Configuration, run: RunEnvironment, policy: Policy, card_path: Path
+    ) -> None:
+        self.config = config
+        self.run = run
+        self.policy = policy
+        self.suite, self.card = load_card(card_path)
+        if config.task_bundles:
+            raise CardError(
+                f"{card_path}: the judge needs a single-task run: one card judges one task"
+            )
+        gym_id = self.card.env.get("gym_id")
+        if gym_id != config.gym_id:
+            raise CardError(
+                f"{card_path}: the card is for {gym_id!r}, the run plays {config.gym_id!r}"
+            )
+        card_kwargs = self.card.env.get("env_kwargs") or {}
+        if card_kwargs != config.env_kwargs:  # layout seeds are not compared: tests use their own
+            raise CardError(
+                f"{card_path}: the card's env_kwargs {card_kwargs} differ from the run's "
+                f"{config.env_kwargs}"
+            )
+        # A throwaway env: resetting the run's env here would shift the draws of its evaluation.
+        probe = make_environment(gym_id, **card_kwargs)
+        try:
+            probe.reset(seed=config.eval_seed_base)
+            self.labeler = labeler_for(gym_id, probe)
+            emitted = set(self.labeler.labels(probe.unwrapped))
+        finally:
+            probe.close()
+        unknown = {name for clause in self.card.expect for name in clause[1]} - emitted
+        if unknown:
+            raise CardError(f"{card_path}: the reference labeler emits no {sorted(unknown)}")
+
+    def write(self, directory: Path, count: int) -> dict[str, Any]:
+        """Save the episodes to ``<directory>/agent-traces/ep<k>.json``, verdicts to ``judge.json``."""
+        episodes = []
+        act = self.policy.new_act()
+        # Epsilon-random actions draw from the action space, which evaluation leaves unseeded.
+        self.run.env.action_space.seed(self.config.seed)
+        for index, reset in enumerate(self.policy.resets(count)[:count]):
+            rollout, rm_return = self._rollout(act, reset)
+            record = make_record(self.suite, self.card, "agent", "agent", rollout)
+            name = f"agent-traces/ep{index}.json"
+            write_json(directory / name, record.to_dict())
+            verdict = judge_trace(self.card.expect, rollout.labels).to_dict()
+            episodes.append(
+                {
+                    "file": name,
+                    "reset_seed": rollout.reset_seed,
+                    "judged_success": verdict.pop("success"),
+                    **verdict,
+                    "env_success": record.env_success,
+                    "env_return": sum(rollout.env_rewards),
+                    "rm_return": rm_return,
+                    "length": len(rollout.actions),
+                }
+            )
+        summary = {
+            **card_header(self.card),
+            "suite": self.suite,
+            "rm_bundle": str(self.config.bundle) if self.config.bundle else None,
+            "episodes": len(episodes),
+            "rm_return_definition": RM_RETURN_DEFINITION,
+            **{f"mean_{name}": _mean(episodes, name) for name in JUDGE_MEANS},
+            "per_episode": episodes,
+        }
+        write_json(directory / "judge.json", summary, indent=2)
+        return summary
+
+    def _rollout(
+        self, act: Callable[[Any], int], reset: dict[str, object]
+    ) -> tuple[Rollout, float | None]:
+        """One test episode with the reference labels after every step and the RM return."""
+        env = self.run.env
+        base = env.unwrapped
+        self.labeler.reset()
+        observation, reset_info = env.reset(**reset)
+        # An env that draws its own episode seed (the service room) reports it as ``event_seed``.
+        rollout = Rollout(reset_seed=int((reset_info or {}).get("event_seed", reset["seed"])))
+        rm_return, done = None, False
+        while not done:
+            action = act(observation)
+            observation, reward, terminated, truncated, info = env.step(action)
+            env_reward = float(info.get("env_reward", reward))
+            rollout.actions.append(int(action))
+            rollout.labels.append(self.labeler.labels(base))
+            rollout.env_rewards.append(env_reward)
+            if "rm_reward" in info:
+                rm_return = (rm_return or 0.0) + float(info["rm_reward"])
+            # The RM wrapper folds the machine's stop into ``terminated`` and reports the env's own
+            # flag as ``env_terminated``; without a wrapper the two are the same.
+            rollout.terminated = bool(info.get("env_terminated", terminated))
+            rollout.truncated = bool(truncated)
+            rollout.rm_stopped = bool(terminated) and not rollout.terminated
+            done = bool(terminated) or bool(truncated)
+        return rollout, rm_return
+
+
+def _mean(episodes: list[dict[str, Any]], name: str) -> float | None:
+    """The mean of ``name`` over the episodes that have it (``rm_return`` is null without an RM)."""
+    values = [float(episode[name]) for episode in episodes if episode[name] is not None]
+    return fmean(values) if values else None
 
 
 def _status(step: int, info: dict[str, Any]) -> str:

@@ -14,7 +14,10 @@ from scripts import (
     generate_rm,
     import_paper_bundle,
     render_rm,
+    replay_traces,
+    rm_facts,
     test_rl,
+    trace_bank,
     train_rl,
 )
 from src.config import REASONING_LEVELS, Configuration
@@ -67,7 +70,22 @@ def cmd_train_rl(args: argparse.Namespace) -> None:
 def cmd_test_rl(args: argparse.Namespace) -> None:
     """Test finished runs on unseen maps and render GIFs."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
-    test_rl(CONFIG, args.gifs)
+    test_rl(CONFIG, args.gifs, args.judge)
+
+
+def cmd_trace_bank(args: argparse.Namespace) -> None:
+    """Run every card plan in the real env and check the judge's verdicts."""
+    trace_bank(args.tasks, args.output, args.only, args.seed)
+
+
+def cmd_replay_traces(args: argparse.Namespace) -> None:
+    """Replay a trace bank through generated bundles and check each machine."""
+    replay_traces(args.traces, args.bundles, args.output)
+
+
+def cmd_rm_facts(args: argparse.Namespace) -> None:
+    """Write the machine, clause and generation facts of generated bundles."""
+    rm_facts(args.bundles, args.tasks, args.replay, args.output)
 
 
 # ======================================================================================
@@ -379,7 +397,55 @@ if __name__ == "__main__":
     test_parser.add_argument(
         "--gifs", type=int, default=0, metavar="N", help="Test episodes to render as GIFs"
     )
+    test_parser.add_argument(
+        "--judge",
+        type=Path,
+        default=None,
+        metavar="CARD",
+        help="Task card (card.json) to judge the test episodes with: writes agent-traces/ep<k>.json "
+        "and judge.json in each run folder",
+    )
     test_parser.set_defaults(func=cmd_test_rl)
+
+    # ======================================================================================
+    #                                       trace-bank
+    # ======================================================================================
+    bank_parser = subparsers.add_parser(
+        "trace-bank", help="Run every card plan in the real env, write traces, check the judge"
+    )
+    bank_parser.add_argument("--tasks", required=True, type=Path, help="Card file (tasks.json)")
+    bank_parser.add_argument("--output", required=True, type=Path, help="Folder for the traces")
+    bank_parser.add_argument("--only", nargs="+", metavar="ID", help="Run only these card ids")
+    bank_parser.set_defaults(func=cmd_trace_bank)
+
+    # ======================================================================================
+    #                                      replay-traces
+    # ======================================================================================
+    replay_parser = subparsers.add_parser(
+        "replay-traces", help="Replay a trace bank through generated bundles and check each machine"
+    )
+    replay_parser.add_argument("--traces", required=True, type=Path, help="trace-bank output")
+    replay_parser.add_argument(
+        "--bundles", required=True, type=Path, help="Folder <arm>/<card-id>[~p<k>]/ of bundles"
+    )
+    replay_parser.add_argument("--output", required=True, type=Path, help="Folder for the replay")
+    replay_parser.set_defaults(func=cmd_replay_traces)
+
+    # ======================================================================================
+    #                                        rm-facts
+    # ======================================================================================
+    facts_parser = subparsers.add_parser(
+        "rm-facts", help="Write the machine, clause and generation facts of bundles"
+    )
+    facts_parser.add_argument(
+        "--bundles", required=True, type=Path, help="Folder <arm>/<card-id>[~p<k>]/ of bundles"
+    )
+    facts_parser.add_argument("--tasks", type=Path, default=None, help="Card file (clause check)")
+    facts_parser.add_argument(
+        "--replay", type=Path, default=None, help="replay-summary.json (paraphrase agreement)"
+    )
+    facts_parser.add_argument("--output", required=True, type=Path, help="JSON file to write")
+    facts_parser.set_defaults(func=cmd_rm_facts)
 
     # ======================================================================================
     #                                       CALL
