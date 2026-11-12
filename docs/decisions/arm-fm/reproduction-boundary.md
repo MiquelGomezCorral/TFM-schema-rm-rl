@@ -52,8 +52,10 @@ semantic rather than byte-for-byte.
 - The environment Markdown owns the allowed proposition vocabulary. Propositions describe
   observable state conditions or explicitly documented progress events; raw actions are
   not RM events.
-- The current compiler supports `Existence`, `ExistenceTwo`, and `Precedence` clauses,
-  then deterministically composes their reachable conjunction product.
+- The current compiler supports all eight DECLARE templates of IBM `nl2ltl` (`Existence`,
+  `ExistenceTwo`, `Absence`, `Response`, `Precedence`, `ChainResponse`, `RespondedExistence`,
+  `NotCoExistence`; `app/src/engines/structured.py`), then deterministically composes their
+  reachable conjunction product.
 - Reconstruction targets should be submitted as one composite task. Atomic probes are
   useful for checking individual stages but are not a replacement for the composite
   target.
@@ -79,7 +81,9 @@ semantic rather than byte-for-byte.
 - Paper-RM training in the compiler comparison reuses the compiler bundle's labeling and the shared local embedding
   endpoint, so comparisons isolate RM generation.
 - Baseline bundles are generated with one model for every role (the existing baseline path),
-  recorded in the manifest.
+  recorded in the manifest. The [thesis benchmark](../benchmark/thesis-benchmark.md)'s fresh
+  ARM-FM bundles instead take FARM's generator and critic pair through the explicit
+  `arm_fm_critic` opt-in; without the opt-in this rule holds.
 - Finish generation before training or evaluation. Load saved labeling functions once per
   environment and execute them in the same Python process, with isolated episode-local
   memory; Docker and a separate labeling execution backend are not required.
@@ -188,3 +192,6 @@ specifics out of the learner so new environments need no loop changes.
 - 2026-10-12: Paper-reproduction runs use RM-only reward by default and end on declared RM finals
   (user decisions); imported author bundles declare no final, because an inferred final can come
   before the environment goal (UnlockToUnlock, KeyCorridorS6R3).
+- 2026-11-12: The template list names all eight templates the compiler accepts. Reproduction
+  bundles keep one model for every role; the thesis benchmark's ARM-FM arm opts into FARM's
+  generator and critic pair (user decision).
