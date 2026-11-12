@@ -1,0 +1,351 @@
+{
+  "suite": "complex",
+  "schema": 1,
+  "cards": [
+    {
+      "id": "cx-sequence",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-key-corridor/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-KeyCorridorS6R3-v0",
+        "env_kwargs": {},
+        "layout": "fixed",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Find the key, pick it up, open the locked door, go into the room, and then pick up the ball.",
+      "goal": true,
+      "template": null,
+      "status": "draft",
+      "expect": [
+        ["Precedence", ["key_found", "has_matching_key"], "hard"],
+        ["Precedence", ["has_matching_key", "target_door_open"], "hard"],
+        ["Precedence", ["target_door_open", "target_room_entered"], "hard"],
+        ["Precedence", ["target_room_entered", "target_picked_up"], "hard"],
+        ["Existence", ["target_picked_up"], "hard"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": true,
+      "train": true,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door:locked"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "ball"}
+        ],
+        "wrong": [
+          {
+            "breaks": [4],
+            "why": "Takes the key and opens the locked door, then waits outside.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door:locked"},
+              {"do": "wait", "n": 1000}
+            ]
+          },
+          {
+            "breaks": [4],
+            "why": "Takes the key, then waits: the locked door is never opened.",
+            "steps": [{"do": "pickup", "obj": "key"}, {"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [
+        "First find the key and pick it up. Then open the locked door, enter the room, and pick up the ball.",
+        "Locate the key and take it, unlock and open the door, step into the room, and finish by picking up the ball.",
+        "Find the key, take it, open the locked door, walk into the room behind it, and pick up the ball."
+      ],
+      "notes": "Five ordered steps (long sequence). Every order is forced by the env, so only the last step can fail."
+    },
+    {
+      "id": "cx-rules-only",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-doorkey/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-DoorKey-8x8-v0",
+        "env_kwargs": {},
+        "layout": "fixed",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Stay off the goal. Try not to lose the key before the door is open, and if you pick up the key, try to open the door afterwards.",
+      "goal": false,
+      "template": null,
+      "status": "draft",
+      "expect": [
+        ["Absence", ["at_goal"], "hard"],
+        ["Absence", ["key_lost"], "soft"],
+        ["Response", ["has_key", "door_open"], "soft"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "pickup", "obj": "key"}, {"do": "toggle", "obj": "door"}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Takes the key and opens the door, then walks onto the goal.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "goto", "obj": "goal"}
+            ]
+          },
+          {
+            "breaks": [1],
+            "why": "Drops the key before the door is open, picks it up again and opens the door.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"}
+            ]
+          },
+          {
+            "breaks": [2],
+            "why": "Takes the key, then waits: the door is never opened.",
+            "steps": [{"do": "pickup", "obj": "key"}, {"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [
+        "Never step on the goal. Try not to drop the key before the door is open, and after you take the key, try to open the door.",
+        "Keep away from the goal. If you pick up the key, try to open the door later, and try not to lose it before the door is open.",
+        "Do not go to the goal. Try to open the door after taking the key, and try not to drop the key before the door is open."
+      ],
+      "notes": "Rules only, no goal: one hard ban and two soft rules."
+    },
+    {
+      "id": "cx-goal-one-rule",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-UnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "fixed",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Open the door and then pick up the box in the other room, and try not to lose the key before the door is open.",
+      "goal": true,
+      "template": null,
+      "status": "draft",
+      "expect": [
+        ["Precedence", ["door_open", "target_picked_up"], "hard"],
+        ["Existence", ["target_picked_up"], "hard"],
+        ["Absence", ["key_lost"], "soft"]
+      ],
+      "also_ok": [
+        [
+          ["Response", ["door_open", "target_picked_up"], "hard"],
+          ["Existence", ["door_open"], "hard"],
+          ["Absence", ["key_lost"], "soft"]
+        ]
+      ],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "box"}
+        ],
+        "wrong": [
+          {
+            "breaks": [2],
+            "why": "Drops the key before the door is open, picks it up again, then finishes.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "box"}
+            ]
+          },
+          {
+            "breaks": [1],
+            "why": "Keeps the key and opens the door, then waits and never picks up the box.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [
+        "Pick up the box in the other room after opening the door, and try not to drop the key before the door is open.",
+        "Try not to lose the key before the door is open. Open the door, then pick up the box in the other room.",
+        "Open the door, then take the box from the other room; try not to drop the key before the door is open."
+      ],
+      "notes": "Goal of two steps plus one soft rule; the soft rule is not in the env reward."
+    },
+    {
+      "id": "cx-goal-many-rules",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-blocked-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-BlockedUnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "fixed",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Move the ball away from the door before you take the key. Try not to drop the key before the door is open, and once you hold the key, try to open the door. Then pick up the box in the other room.",
+      "goal": true,
+      "template": null,
+      "status": "draft",
+      "expect": [
+        ["Precedence", ["blocker_moved", "has_door_key"], "hard"],
+        ["Absence", ["key_lost"], "soft"],
+        ["Response", ["has_door_key", "door_open"], "soft"],
+        ["Precedence", ["door_open", "target_picked_up"], "hard"],
+        ["Existence", ["target_picked_up"], "hard"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "ball"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "box"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0, 1],
+            "why": "Takes the key first and has to drop it with the door closed, then finishes.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "ball"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "box"}
+            ]
+          },
+          {
+            "breaks": [1],
+            "why": "Moves the ball first, but drops the key once with the door closed, then finishes.",
+            "steps": [
+              {"do": "pickup", "obj": "ball"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "box"}
+            ]
+          },
+          {
+            "breaks": [2, 4],
+            "why": "Moves the ball and takes the key, then waits: the door is never opened.",
+            "steps": [
+              {"do": "pickup", "obj": "ball"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [
+        "Before taking the key, move the ball away from the door. Try to open the door once you hold the key, and try not to drop the key before the door is open. Finally, pick up the box in the other room.",
+        "Take the key only after the ball is out of the way. Try not to lose the key before the door is open, and try to open the door after taking the key. Then get the box from the other room.",
+        "First clear the ball from the door and only then take the key. Once you have the key, try to open the door, and try not to drop it before the door is open. After that, pick up the box in the other room."
+      ],
+      "notes": "One hard rule, two soft rules and a two-step goal."
+    },
+    {
+      "id": "cx-siren",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": true, "box": false, "require": ["siren_silent"], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Go to the exit, and whenever the siren rings, turn it off.",
+      "goal": true,
+      "template": null,
+      "status": "draft",
+      "expect": [
+        ["Response", ["siren_ringing", "switch_toggled"], "hard"],
+        ["Existence", ["at_exit"], "hard"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": true,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Ignores the siren and walks to the exit with it still ringing.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["siren"]}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [
+        "Reach the exit. Each time the siren rings, switch it off.",
+        "Every time the siren rings, turn it off with the switch, and get to the exit.",
+        "Make your way to the exit, and silence the siren every time it rings."
+      ],
+      "notes": "Event room, siren rule. The env reward needs the siren silent at the exit. Plan unverified until S3 merge."
+    },
+    {
+      "id": "cx-box",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": false, "box": true, "require": ["holding_box"], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Go to the exit, and whenever the box falls, pick it up again.",
+      "goal": true,
+      "template": null,
+      "status": "draft",
+      "expect": [["Response", ["box_fell", "holding_box"], "hard"], ["Existence", ["at_exit"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Does not react to the fall and walks to the exit without the box.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [
+        "Reach the exit. Each time the box falls, pick it up again.",
+        "Every time the box falls, pick it up again, and get to the exit.",
+        "Make your way to the exit, and pick the box up again every time it falls."
+      ],
+      "notes": "Event room, box rule. The task does not require taking the box, but the env reward at the exit needs it; judged success is the metric here. Plan unverified until S3 merge."
+    }
+  ]
+}
