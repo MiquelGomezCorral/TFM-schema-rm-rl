@@ -44,7 +44,7 @@ from src.arm_fm.dqn import evaluate as evaluate_dqn
 from src.arm_fm.environments import RunEnvironment, make_environment
 from src.arm_fm.ppo import evaluate as evaluate_ppo
 from src.arm_fm.ppo import evaluation_resets as evaluation_resets_ppo
-from src.arm_fm.ppo import load_ppo_agent
+from src.arm_fm.ppo import fixed_layout, load_ppo_agent
 from src.benchmark import (
     RM_RETURN_DEFINITION,
     CardError,
@@ -173,7 +173,8 @@ def _test_run(
         **row,
         "gifs": records,
     }
-    if config.layout == "fixed":
+    fixed = fixed_layout(config) if config.algorithm == "ppo" else config.layout == "fixed"
+    if fixed:
         test["settings"]["note"] = FIXED_LAYOUT_NOTES[config.algorithm]
     (directory / "test.json").write_text(json.dumps(test, indent=2) + "\n", encoding="utf-8")
     return row
@@ -196,11 +197,13 @@ def _load_policy(config: Configuration, run: RunEnvironment, directory: Path) ->
 
         def new_ppo_act() -> Callable[[Any], int]:
             generator = torch.Generator().manual_seed(config.seed)
-            return lambda observation: agent.act(observation, generator)
+            return lambda observation: agent.act(
+                observation, generator, deterministic=config.eval_greedy
+            )
 
         return Policy(
             evaluate=lambda count: evaluate_ppo(config, run, agent, count),
-            resets=lambda count: evaluation_resets_ppo(config, count),
+            resets=lambda count: evaluation_resets_ppo(config, run, count),
             new_act=new_ppo_act,
         )
 

@@ -8,6 +8,7 @@ import dotenv
 from maikol_utils.other_utils import args_to_dataclass
 
 from scripts import (
+    aggregate_suite,
     embed_larm,
     evaluate_larm,
     generate_larm,
@@ -16,6 +17,7 @@ from scripts import (
     render_rm,
     replay_traces,
     rm_facts,
+    run_suite,
     test_rl,
     trace_bank,
     train_rl,
@@ -86,6 +88,19 @@ def cmd_replay_traces(args: argparse.Namespace) -> None:
 def cmd_rm_facts(args: argparse.Namespace) -> None:
     """Write the machine, clause and generation facts of generated bundles."""
     rm_facts(args.bundles, args.tasks, args.replay, args.output)
+
+
+def cmd_run_suite(args: argparse.Namespace) -> None:
+    """Train every run of a benchmark suite, skipping finished ones."""
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    if not run_suite(CONFIG):
+        sys.exit(1)
+
+
+def cmd_aggregate_suite(args: argparse.Namespace) -> None:
+    """Collect a benchmark suite's runs into results tables."""
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    aggregate_suite(CONFIG)
 
 
 # ======================================================================================
@@ -446,6 +461,70 @@ if __name__ == "__main__":
     )
     facts_parser.add_argument("--output", required=True, type=Path, help="JSON file to write")
     facts_parser.set_defaults(func=cmd_rm_facts)
+
+    # ======================================================================================
+    #                                       run-suite
+    # ======================================================================================
+    run_suite_parser = subparsers.add_parser(
+        "run-suite", help="Train every run of a benchmark runs.yaml, skipping finished runs"
+    )
+    run_suite_parser.add_argument("--suite", required=True, type=Path, help="A runs.yaml")
+    run_suite_parser.add_argument(
+        "--parallel",
+        dest="suite_parallel",
+        type=int,
+        default=Configuration.suite_parallel,
+        metavar="N",
+        help="Most runs at once (default: %(default)s)",
+    )
+    run_suite_parser.add_argument(
+        "--max-ram-gb",
+        dest="suite_max_ram_gb",
+        type=float,
+        default=Configuration.suite_max_ram_gb,
+        metavar="GB",
+        help="Budget for the running runs' RAM estimates; a run waits when it would not fit "
+        "(default: only the free RAM limits)",
+    )
+    run_suite_parser.add_argument(
+        "--time-box-min",
+        dest="suite_time_box_min",
+        type=float,
+        default=Configuration.suite_time_box_min,
+        metavar="M",
+        help="Stop a run after this many minutes and mark it timed-out "
+        "(default: the runs.yaml value, else none)",
+    )
+    run_suite_parser.add_argument(
+        "--retry-timed-out",
+        dest="suite_retry_timed_out",
+        action="store_true",
+        help="Restart timed-out runs from zero (default: they are skipped)",
+    )
+    run_suite_parser.add_argument(
+        "--dry-run",
+        dest="suite_dry_run",
+        action="store_true",
+        help="List the runs and what would happen to each; start and write nothing",
+    )
+    run_suite_parser.set_defaults(func=cmd_run_suite)
+
+    # ======================================================================================
+    #                                    aggregate-suite
+    # ======================================================================================
+    aggregate_parser = subparsers.add_parser(
+        "aggregate-suite", help="Collect a benchmark suite's runs into results.csv, .json and .md"
+    )
+    aggregate_parser.add_argument("--suite", required=True, type=Path, help="A runs.yaml")
+    aggregate_parser.add_argument(
+        "--output",
+        dest="suite_output",
+        required=True,
+        type=Path,
+        metavar="DIR",
+        help="Folder for results.csv, results.json and results.md",
+    )
+    aggregate_parser.set_defaults(func=cmd_aggregate_suite)
 
     # ======================================================================================
     #                                       CALL
