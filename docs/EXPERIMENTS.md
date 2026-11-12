@@ -26,7 +26,7 @@ python app/main.py --<command> --<parameters>
 
 | Step | Command | Reads | Writes |
 | --- | --- | --- | --- |
-| 1. Describe the environment | (you write it) | — | `examples/arm-fm/<env>/environment.md`, `environment-code.md`, `tasks.md` |
+| 1. Describe the environment | (you write it) | — | `experiments/dev/arm-fm/<env>/environment.md`, `environment-code.md`, `tasks.md` |
 | 2. Compiler bundle | `generate-larm --mode compiler` | `environment.md` + `environment-code.md`, task text | `outputs/bundles/<Env>-<n>/` |
 | 3. Paper bundle | `generate-larm --mode arm-fm` + `embed-larm` | `environment.md` + `environment-code.md`, task text | `outputs/bundles/<Env>-paper-<n>/` |
 | 4. Check the bundles | `render-rm`, a real-environment probe | bundle | SVGs, probe output |
@@ -61,7 +61,7 @@ a registered Gymnasium id of a supported family needs an adapter in `app/src/arm
 
 ## 1. Describe the environment
 
-Create two files in `examples/arm-fm/<env>/`. `environment.md` holds the facts and nothing about the
+Create two files in `experiments/dev/arm-fm/<env>/`. `environment.md` holds the facts and nothing about the
 implementation; it is the only thing the clause generator and the critic know about the environment, so it must
 say everything they need to write a correct Reward Machine. `environment-code.md` holds all implementation:
 the `## Labeling API`, sources, truth conditions in code, evidence and links. The steps that write code load
@@ -169,15 +169,15 @@ colour, which is wrong in most layouts; the door is found by its position. Descr
 
 `tasks.json` holds the same texts for scripted runs.
 
-The best models to copy are `examples/arm-fm/babyai-chosen-mission/environment.md` (objects, events,
-corners), `examples/arm-fm/minigrid-key-corridor/environment-code.md` (a standard MiniGrid `## Labeling API`) and
-`examples/arm-fm/craftium-diamond/environment.md` (inventory and milestones).
+The best models to copy are `experiments/dev/arm-fm/babyai-chosen-mission/environment.md` (objects, events,
+corners), `experiments/dev/arm-fm/minigrid-key-corridor/environment-code.md` (a standard MiniGrid `## Labeling API`) and
+`experiments/dev/arm-fm/craftium-diamond/environment.md` (inventory and milestones).
 
 ## 2. Generate the compiler bundle (compiler RM + labeling + descriptions + embeddings)
 
 ```bash
 python app/main.py generate-larm --mode compiler \
-  --environment examples/arm-fm/<env>/environment.md \
+  --environment experiments/dev/arm-fm/<env>/environment.md \
   --task "<task text>" \
   --bundle outputs/bundles/<Env>-1 \
   --embeddings
@@ -191,7 +191,7 @@ then accepted unchecked).
 To look at a compiler RM alone, without a bundle, use `generate-rm` (it also draws SVGs):
 
 ```bash
-python app/main.py generate-rm --environment examples/arm-fm/<env>/environment.md \
+python app/main.py generate-rm --environment experiments/dev/arm-fm/<env>/environment.md \
   --task "<task text>" --output <name> --svg
 ```
 
@@ -199,7 +199,7 @@ python app/main.py generate-rm --environment examples/arm-fm/<env>/environment.m
 
 ```bash
 python app/main.py generate-larm --mode arm-fm \
-  --environment examples/arm-fm/<env>/environment.md \
+  --environment experiments/dev/arm-fm/<env>/environment.md \
   --task "<task text>" \
   --bundle outputs/bundles/<Env>-paper-1 \
   --model deepseek-v4.1-flash
@@ -429,7 +429,7 @@ it that way: the states that cannot be left are recorded only as our inference i
 before the environment goal (UnlockToUnlock, KeyCorridorS6R3). The `ours` bundles go to `outputs/bundles/paper-ours-<Env>`.
 
 **Generate the `ours` bundles**, one per environment (all DoorKey sizes share one). The paper profile reads the
-authors' prompts from the clone at run time, as named by `examples/arm-fm/<env>/paper-sources.json`, and runs the
+authors' prompts from the clone at run time, as named by `experiments/dev/arm-fm/<env>/paper-sources.json`, and runs the
 authors' loop: a generator and a critic talk for at most 3 rounds (the critic ends with "NO CHANGES NEEDED" or
 "CHANGES REQUIRED"), first for the Reward Machine, then for the labeling functions. The generator names the events
 itself, and the state descriptions use our own prompt because the authors' is unreleased. The generator is
@@ -441,7 +441,7 @@ for pair in minigrid-doorkey:DoorKey babyai-unlock-to-unlock:UnlockToUnlock \
             minigrid-blocked-unlock-pickup:BlockedUnlockPickup minigrid-key-corridor:KeyCorridorS6R3; do
   dir=${pair%%:*}; env=${pair##*:}
   python app/main.py generate-larm --mode paper --reference ~/src/llms-rm-rl \
-    --paper-sources examples/arm-fm/$dir/paper-sources.json --bundle outputs/bundles/paper-ours-$env
+    --paper-sources experiments/dev/arm-fm/$dir/paper-sources.json --bundle outputs/bundles/paper-ours-$env
   python app/main.py embed-larm --bundle outputs/bundles/paper-ours-$env --embedding-server
 done
 ```
@@ -498,7 +498,7 @@ Runs land in `outputs/runs/paper-<setting>-<agent>/seed<N>-<UTC>-<pid>/`; `test-
 
 **Read the result** in the `PAPER COMPARISON` section of `notebooks/rl_results.ipynb`. It maps every run to a setting
 (`gym_id` and `layout`) and an agent (`reward_source` and the bundle provenance), then compares it with
-`examples/arm-fm/paper-dqn-targets.json`, the paper's values read by eye from the figures. Its first cell states the
+`experiments/dev/arm-fm/paper-dqn-targets.json`, the paper's values read by eye from the figures. Its first cell states the
 rule: the outcome (`solved`, `partial`, `failed`) must match the paper's; the speed is the ratio of the RM crossing to the
 `sparse` crossing, not absolute steps, because the paper's curves rise before Table 5's learning start; the greedy test
 length is judged only where the paper solves. It lists every seed and gives one verdict per setting and agent
@@ -533,7 +533,7 @@ unreachable-state counter) is in `.git/agent-memory/paper-staging/environment-co
 
 An ablation, not run yet: take the upgraded environment files and remove one section at a time (the example
 trace, the constraints, the can/cannot list, the proposition semantics table), run the benchmark tasks
-(`examples/benchmark/`) three times per variant at the same reasoning level, and compare clause accuracy,
+(`experiments/dev/benchmark/`) three times per variant at the same reasoning level, and compare clause accuracy,
 critic rejections and the unreachable-state count of the compiled machines. It measures what the models miss
 when the environment is described poorly, which is the case for most environments found in the wild.
 
