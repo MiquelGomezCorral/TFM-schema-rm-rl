@@ -36,10 +36,8 @@ from typing import IO
 
 import yaml
 
-from src.benchmark.traces import ablation_settings
+from src.benchmark.traces import NO_PART, ablation_settings, read_json
 from src.config import Configuration
-
-from .ablate_rm import NO_PART
 
 ROOT = Configuration.WORKSPACE_PATH
 RUNS_PATH = Configuration.OUTPUT_PATH / "runs"
@@ -205,14 +203,6 @@ def expand_runs(spec: dict) -> list[Run]:
 # ======================================================================================
 #                                      RUN STATUS
 # ======================================================================================
-
-
-def read_json(path: Path) -> dict:
-    """The JSON object in ``path``, or ``{}`` when the file is absent or cut mid-write."""
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
 
 
 def write_atomic(path: Path, text: str) -> None:

@@ -18,7 +18,7 @@ from src.arm_fm.artifacts import ArtifactBundle
 
 from .cards import Card, card_header, load_cards
 from .declare_judge import ClauseError, as_clause
-from .traces import BundleRef, find_bundles, load_machine_bundle, read_manifest, write_json
+from .traces import BundleRef, find_bundles, load_machine_bundle, read_json, write_json
 
 STAMP_FIELDS = ("attempts", "critic_interventions", "retries", "wall_time_s")
 FARM = "farm"
@@ -49,8 +49,7 @@ def write_rm_facts(
 
 def _manifest_stamp(ref: BundleRef) -> dict[str, Any] | None:
     """The manifest's provenance stamp, read apart from the machine so a failed bundle keeps it."""
-    provenance = read_manifest(ref.path).get("provenance")
-    return provenance.get("stamp") if isinstance(provenance, dict) else None
+    return (read_json(ref.path / "manifest.json").get("provenance") or {}).get("stamp")
 
 
 def _bundle_facts(ref: BundleRef, card: Card | None) -> dict[str, Any]:

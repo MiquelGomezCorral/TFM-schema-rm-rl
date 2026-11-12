@@ -6,7 +6,7 @@ Usage:
 One row per run of the suite (``run_suite.expand_runs``), with the run's status, then a
 per-card table that sets the arms side by side. Judged success, hard and soft breaks and open
 at end are the episode means in the run's ``judge.json`` (``test-rl --judge``); open at end is
-the hard and the soft clauses still open, added. A run without one shows "not evaluated". Env
+the hard and soft clauses still open, added together. A run without one shows "not evaluated". Env
 success, returns and episode length come from the last ``eval.csv`` row.
 An optional ``replay_summary:`` in the runs.yaml names a ``replay-traces`` summary JSON with a
 ``machine_check`` per bundle, keyed by the bundle path under the suite's ``bundles:`` folder
@@ -21,18 +21,10 @@ import json
 from collections import Counter
 from pathlib import Path
 
+from src.benchmark.traces import read_json
 from src.config import Configuration
 
-from .run_suite import (
-    FINISHED,
-    ROOT,
-    TIMED_OUT,
-    Run,
-    expand_runs,
-    load_suite,
-    read_json,
-    run_state,
-)
+from .run_suite import FINISHED, ROOT, TIMED_OUT, Run, expand_runs, load_suite, run_state
 
 ASYMMETRY = (
     "Time-limit asymmetry: FARM machines charge open items at any end; "

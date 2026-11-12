@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 from scripts.aggregate_suite import judge_columns
-from scripts.test_rl import judge_means
+from scripts.test_rl import JUDGE_MEANS, judge_means
 
 
 class JudgeColumnsTest(unittest.TestCase):
@@ -17,9 +17,9 @@ class JudgeColumnsTest(unittest.TestCase):
         # Two fake episodes; hard and soft break means differ (1.0 vs 3.0), so a column read from
         # the other break key gives another number.
         judged = ("judged_success", "hard_breaks", "soft_breaks", "hard_open", "soft_open")
-        others = {"env_success": 0, "env_return": 0.0, "rm_return": None, "length": 10}
+        filler = {**dict.fromkeys(JUDGE_MEANS, 0), "rm_return": None}  # null without an RM
         episodes = [
-            {**dict(zip(judged, values, strict=True)), **others}
+            {**filler, **dict(zip(judged, values, strict=True))}
             for values in ((1, 0, 6, 1, 0), (0, 2, 0, 0, 3))
         ]
 

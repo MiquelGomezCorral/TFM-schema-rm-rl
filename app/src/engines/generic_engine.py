@@ -206,9 +206,10 @@ class GenericEngine:
                     "role": "critic" if stage.endswith("critic") else "generator",
                     "model_requested": self.model,
                 }
-                # A refused send got no reply, so it names no model.
-                for reported in [None] * self.resends + [self.reported_model]:
-                    self.calls.append({**sent, "model_reported": reported})
+                # A refused send got no reply, so it names no model; the last record is the reply's.
+                for _ in range(self.resends):
+                    self.calls.append({**sent, "model_reported": None})
+                self.calls.append({**sent, "model_reported": self.reported_model})
 
     def _check_stopped(self) -> None:
         """Abort the retry loop instead of retrying again once the run was stopped."""

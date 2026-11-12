@@ -143,6 +143,15 @@ def write_json(path: Path, value: object, indent: int | None = None) -> Path:
     return path
 
 
+def read_json(path: Path) -> dict[str, Any]:
+    """The JSON object in ``path``, or ``{}`` when it is absent, cut mid-write or not an object."""
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
 def load_bank(folder: Path) -> tuple[dict[str, Card], list[TraceRecord]]:
     """The cards and plan traces a ``trace-bank`` run lists in its ``summary.json``.
 
@@ -300,23 +309,13 @@ def _plan_problems(
 # ======================================================================================
 
 
-def read_manifest(folder: Path) -> dict[str, Any]:
-    """The raw ``manifest.json`` of a bundle folder, or ``{}`` when absent or cut mid-write.
-
-    For readers that must work on a bundle ``load_bundle`` rejects, such as a failed one.
-    """
-    try:
-        manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return manifest if isinstance(manifest, dict) else {}
+NO_PART = "none"  # the ``ablate-rm --off`` value of the control that switches nothing off
 
 
 def ablation_settings(folder: Path) -> dict[str, Any]:
     """The ``ablate-rm`` settings in the manifest (``off``, ``no_op``); ``{}`` for other bundles."""
-    settings = read_manifest(folder).get("effective_settings")
-    ablation = settings.get("ablation") if isinstance(settings, dict) else None
-    return ablation if isinstance(ablation, dict) else {}
+    manifest = read_json(folder / "manifest.json")
+    return (manifest.get("effective_settings") or {}).get("ablation") or {}
 
 
 @dataclass(frozen=True)
@@ -330,7 +329,7 @@ class BundleRef:
     arm: str
     name: str
     path: Path
-    ablation: bool = False
+    ablation: bool
 
     @property
     def card_id(self) -> str:
@@ -356,7 +355,10 @@ class Replay:
 
 
 def find_bundles(folder: Path) -> list[BundleRef]:
-    """The bundle folders (symlinks included) one level below each arm folder."""
+    """The bundle folders (symlinks included) one level below each arm folder.
+
+    An ablation's ``<card-id>/off-<switch>`` layout counts too: its first folder is a card folder.
+    """
     return [
         BundleRef(arm.name, bundle.name, bundle, ablation=bool(ablation_settings(bundle)))
         for arm in sorted(Path(folder).iterdir())

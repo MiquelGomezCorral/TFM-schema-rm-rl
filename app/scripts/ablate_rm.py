@@ -10,6 +10,7 @@ from pathlib import Path
 
 from src.arm_fm import ArtifactBundle, BundleValidationError, load_bundle
 from src.arm_fm.generation import pair_state_descriptions
+from src.benchmark.traces import NO_PART
 from src.compiler import (
     ClauseProposal,
     CompilationResult,
@@ -28,7 +29,6 @@ from src.utils import get_engine, ltlf_of, preflight_paths, print_warning
 from .embed_larm import embed_larm
 from .generate_rm import tag_states
 
-NO_PART = "none"
 # Command-line name -> the RewardSwitches field it switches off.
 OFF_PARTS = {item.name.removeprefix("reward_"): item.name for item in fields(RewardSwitches)}
 OFF_CHOICES = (NO_PART, *OFF_PARTS)
