@@ -4,7 +4,7 @@ import unittest
 
 from src.arm_fm.runtime import RewardMachineRuntime
 from src.compiler import parse_paper_reward_machine, serialize_reward_machine
-from src.compiler.reward_layer import build_reward_machine
+from src.compiler.reward_layer import RewardSwitches, build_reward_machine
 
 # F goal: unsatisfied until `goal` is seen, then it stays satisfied.
 GOAL = {
@@ -67,11 +67,9 @@ RESPONSE = {
 }
 
 
-def rewards_of(clauses, soft, propositions, steps, recurrent_soft_penalty=True):
+def rewards_of(clauses, soft, propositions, steps, **switches):
     """Run one episode of true-proposition sets through the compiled, serialized machine."""
-    machine = build_reward_machine(
-        clauses, soft, recurrent_soft_penalty=recurrent_soft_penalty
-    ).reward_machine
+    machine = build_reward_machine(clauses, soft, RewardSwitches(**switches)).reward_machine
     text = serialize_reward_machine(machine)
     runtime = RewardMachineRuntime(parse_paper_reward_machine(text, propositions=propositions))
     return [runtime.step({name: name in step for name in propositions}).reward for step in steps]
@@ -126,6 +124,30 @@ class RewardLayerTests(unittest.TestCase):
         self.assertEqual(rewards_of(*get_key, [{"goal"}]), [0.7])
         self.assertEqual(rewards_of(*get_key, [{"goal", "key"}]), [1.2])
         self.assertEqual(rewards_of(*get_key, [{"key"}, {"goal"}]), [0.1, 1.1])
+
+    def test_each_reward_switch_drops_only_its_own_term_and_completion_stays(self):
+        lava = ((GOAL, NO_LAVA), (False, False), ("goal", "lava"))
+        soft_lava = ((GOAL, NO_LAVA), (False, True), ("goal", "lava"))
+        soft_key = ((GOAL, KEY), (False, True), ("goal", "key"))
+        # A hard no-lava rule with the goal still open and soft: the lava edge pays the well (-1)
+        # plus the soft end charge (-0.5), so each part left alone shows a different value.
+        open_goal = ((GOAL, NO_LAVA), (True, False), ("goal", "lava"))
+        # Defaults pay [1.1], [-1.5], [-0.5, 1.1], [0.7], [-1.5].
+        rows = (
+            ("reward_progress", ((GOAL,), (False,), ("goal",)), [{"goal"}], [1.0]),
+            ("reward_well", open_goal, [{"lava"}], [-0.5]),
+            ("reward_soft_break", soft_lava, [{"lava"}, {"goal"}], [0.0, 1.1]),
+            ("reward_soft_pending", soft_key, [{"goal"}], [1.2]),
+            ("reward_end_judgment", open_goal, [{"lava"}], [-1.0]),
+        )
+        for switch, setup, steps, expected in rows:
+            with self.subTest(switch):
+                self.assertEqual(rewards_of(*setup, steps, **{switch: False}), expected)
+
+        well_off = build_reward_machine(*lava[:2], RewardSwitches(reward_well=False))
+        judgment_off = build_reward_machine(*lava[:2], RewardSwitches(reward_end_judgment=False))
+        self.assertTrue(well_off.reward_machine.rejecting_states)
+        self.assertIsNone(judgment_off.reward_machine.judgment)
 
     def test_a_soft_rule_pays_every_new_break_with_the_recurrent_penalty_and_once_without(self):
         never_lava = ((NO_LAVA,), (True,), ("lava",))

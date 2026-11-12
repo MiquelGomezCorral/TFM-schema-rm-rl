@@ -204,6 +204,15 @@ class Configuration:
     critic: bool = True
     # A soft rule's -0.5 is paid at every new break (on) or once per episode (off).
     recurrent_soft_penalty: bool = True
+    # Reward switches for the ablation: off, a term pays 0 (completion is never switched off).
+    # Progress; the well's -1 (the well stays a rejecting sink); a soft rule's break; a soft rule
+    # still pending at the finish; the end judgment (open items charged where the environment ends
+    # the episode, also on the edges into the well).
+    reward_progress: bool = True
+    reward_well: bool = True
+    reward_soft_break: bool = True
+    reward_soft_pending: bool = True
+    reward_end_judgment: bool = True
     reasoning: str = "none"
     attempts: int = 3
     labeling: bool = False

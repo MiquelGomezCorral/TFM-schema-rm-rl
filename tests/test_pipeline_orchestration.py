@@ -14,7 +14,7 @@ from nl2ltl.declare.declare import Existence
 from pylogics.syntax.ltl import Atomic
 
 from scripts.generate_rm import EMBEDDING_INSTRUCTION, generate_rm
-from src.compiler import CompilationResult, Proposal
+from src.compiler import CompilationResult, Proposal, RewardSwitches
 from src.compiler.reward_machine import RewardMachineStructure
 from src.config import Configuration, PriorityLevel
 from src.engines import (
@@ -709,8 +709,10 @@ class OrchestrationTests(unittest.TestCase):
                 labeling=True,
                 generator_model="generator-model",
                 critic_model="critic-model",
+                reward_well=False,
             )
             CONFIG.OUTPUT_PATH = root
+            build = Mock(return_value=result())
             patches = (
                 patch(
                     "scripts.generate_rm.setup_environment_and_engines",
@@ -721,7 +723,7 @@ class OrchestrationTests(unittest.TestCase):
                 ),
                 patch("src.utils.generation_pipeline.save_results", self.saved),
                 patch("scripts.generate_rm.compile_dfas", return_value=()),
-                patch("scripts.generate_rm.build_compilation_result", return_value=result()),
+                patch("scripts.generate_rm.build_compilation_result", build),
             )
             completion = []
             with patches[0], patches[1], patches[2], patches[3], patches[4]:
@@ -757,9 +759,15 @@ class OrchestrationTests(unittest.TestCase):
                     "mode": "compiler",
                     "generator_model": "generator-model",
                     "critic_model": "critic-model",
+                    "reward_progress": True,
+                    "reward_well": False,
+                    "reward_soft_break": True,
+                    "reward_soft_pending": True,
+                    "reward_end_judgment": True,
                     "recurrent_soft_penalty": True,
                 },
             )
+            self.assertEqual(build.call_args.args[3], RewardSwitches.from_config(CONFIG))
             self.critic.verdicts = [CriticResult(True, "ok")]
             self.saved.reset_mock()
             with (

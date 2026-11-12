@@ -1,5 +1,6 @@
 """Command implementations."""
 
+from .ablate_rm import OFF_CHOICES, ablate_rm
 from .aggregate_suite import aggregate_suite
 from .embed_larm import embed_larm
 from .evaluate_larm import evaluate_larm
