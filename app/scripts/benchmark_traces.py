@@ -18,6 +18,7 @@ from typing import Any
 
 from src import benchmark
 from src.benchmark import CardError
+from src.benchmark.rm_facts import STAMP_FIELDS
 
 
 def trace_bank(tasks: Path, output: Path, only: list[str] | None, seed: int) -> None:
@@ -111,8 +112,5 @@ def _print_problems(problems: dict[str, list[str]]) -> None:
 
 
 def _generation_line(row: dict[str, Any]) -> str:
-    counts = ", ".join(
-        f"{name} {row[name]['total']} (n={row[name]['n']})"
-        for name in ("attempts", "critic_interventions", "retries", "wall_time_s")
-    )
+    counts = ", ".join(f"{name} {row[name]['total']} (n={row[name]['n']})" for name in STAMP_FIELDS)
     return f"{row['bundles']} bundles, {row['stamped']} stamped ({row['provisional']} provisional); {counts}"

@@ -1,9 +1,9 @@
 """Reference labelers: the truth of every proposition, computed straight from the environment.
 
 They are the yardstick of the judge and belong to neither pipeline. The four MiniGrid labelers
-follow the truth conditions in each env's ``environment-code.md`` (``examples/arm-fm/
-minigrid-*/``). Any other env, such as the event room, supplies ``reference_labels(env)`` beside
-its own class and is found through that class's module.
+follow the truth conditions in each env's ``environment-code.md``
+(``experiments/dev/arm-fm/minigrid-*/``). Any other env, such as the event room, supplies
+``reference_labels(env)`` beside its own class and is found through that class's module.
 
 A labeler exposes ``reset()`` (forget the episode) and ``labels(env)`` (the labels after the
 step just taken). The four MiniGrid labelers remember the previous labels, so event propositions

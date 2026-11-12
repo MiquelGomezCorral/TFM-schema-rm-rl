@@ -71,9 +71,15 @@ class Card:
     notes: str = ""
 
     @property
+    def all_clauses(self) -> list[Clause]:
+        """Every clause the card names: the expected ones and those of each ``also_ok`` option."""
+        return [*self.expect, *(clause for option in self.also_ok for clause in option)]
+
+    @property
     def uses_chain_response(self) -> bool:
-        clauses = [*self.expect, *(clause for option in self.also_ok for clause in option)]
-        return self.template == "ChainResponse" or any(c[0] == "ChainResponse" for c in clauses)
+        return self.template == "ChainResponse" or any(
+            clause[0] == "ChainResponse" for clause in self.all_clauses
+        )
 
     def reset_seeds(self, run_seed: int) -> list[int]:
         """Seeds the plans run on: the event seeds, else the layout seed (else ``run_seed``)."""
@@ -226,7 +232,7 @@ def check_card(
             problems.append(f"forbidden wording {match.group(0)!r} in {text!r}")
     declared = _declared_propositions(card, root, propositions, problems)
     if declared is not None:
-        used = {name for clause in _all_clauses(card) for name in clause[1]}
+        used = {name for clause in card.all_clauses for name in clause[1]}
         problems += [
             f"proposition {name!r} is not in the env file" for name in sorted(used - set(declared))
         ]
@@ -244,10 +250,6 @@ def check_card(
         ):
             problems.append(f"wrong-{index}: 'breaks' must list indices into expect")
     return problems
-
-
-def _all_clauses(card: Card) -> list[Clause]:
-    return [*card.expect, *(clause for option in card.also_ok for clause in option)]
 
 
 def _declared_propositions(
@@ -272,20 +274,26 @@ def _plan_problems(name: str, steps: Any) -> list[str]:
     problems = []
     for index, step in enumerate(steps):
         kind = step.get("do") if isinstance(step, Mapping) else None
-        if kind not in PLAN_STEPS:
+        if not isinstance(kind, str) or kind not in PLAN_STEPS:
             problems.append(f"{name}[{index}]: unknown step {step!r}")
         elif missing := [key for key in PLAN_STEPS[kind] if key not in step]:
             problems.append(f"{name}[{index}]: {kind} needs {', '.join(missing)}")
-        elif bad := _bad_field(step):
+        elif bad := _bad_field(kind, step):
             problems.append(f"{name}[{index}]: {kind} {bad}")
     return problems
 
 
-def _bad_field(step: Mapping[str, Any]) -> str | None:
-    """What is wrong with the type of a step's ``obj`` or ``n``, if anything."""
-    if "obj" in step and not isinstance(step["obj"], str):
+def _bad_field(kind: str, step: Mapping[str, Any]) -> str | None:
+    """What is wrong with the type of a field the step ``kind`` uses, if anything."""
+    if kind in ("pickup", "toggle", "goto") and not isinstance(step["obj"], str):
         return "obj must be a string"
-    count = step.get("n")
-    if "n" in step and (isinstance(count, bool) or not isinstance(count, int) or count < 0):
-        return "n must be an integer of 0 or more"
+    if kind == "wait":
+        count = step["n"]
+        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            return "n must be an integer of 0 or more"
+    ignore = step.get("ignore", ())
+    if kind == "policy" and not (
+        isinstance(ignore, list | tuple) and all(isinstance(name, str) for name in ignore)
+    ):
+        return "ignore must be a list of strings"
     return None

@@ -89,7 +89,7 @@ class TemplateVerdicts(unittest.TestCase):
                     self.assertEqual(verdict(template, a, b), (status, step))
 
 
-class Judgment(unittest.TestCase):
+class TraceJudging(unittest.TestCase):
     CLAUSES = (
         as_clause(["Existence", ["goal"], "hard"]),
         as_clause(["Absence", ["bad"], "soft"]),

@@ -26,7 +26,7 @@ from src.arm_fm.runtime import RewardMachineEnvironment, RewardMachineRuntime
 from src.compiler.rm_format import PaperRewardMachine
 
 from .cards import Card, CardError, CardFile, card_header, select_cards
-from .declare_judge import HARD, Judgment, as_clause, judge_trace
+from .declare_judge import HARD, HOLDS, Judgment, as_clause, judge_trace
 from .plans import PlanError, Rollout, run_plan
 from .reference_labels import NoReferenceLabelerError, labeler_for
 
@@ -316,6 +316,10 @@ class BundleRef:
     def key(self) -> str:
         return f"{self.arm}/{self.name}"
 
+    @property
+    def rm_path(self) -> Path:
+        return self.path / "reward_machine.txt"
+
 
 @dataclass
 class Replay:
@@ -336,6 +340,17 @@ def find_bundles(folder: Path) -> list[BundleRef]:
         for bundle in sorted(arm.iterdir())
         if (bundle / "manifest.json").is_file()
     ]
+
+
+def load_machine_bundle(ref: BundleRef) -> ArtifactBundle | str:
+    """The bundle of ``ref`` when it loads and holds a Reward Machine, else why it cannot be used."""
+    try:
+        bundle = load_bundle(ref.path)
+    except Exception as error:  # a bundle on disk can fail to load in any way; that is its result
+        return f"{type(error).__name__}: {error}"
+    if bundle.reward_machine is None:
+        return "the bundle has no reward machine"
+    return bundle
 
 
 def world_agreement(record: TraceRecord) -> dict[str, Any]:
@@ -444,7 +459,7 @@ def check_row(
     soft_steps = [
         len(record.actions) if verdict.step is None else verdict.step
         for verdict in judgment.verdicts
-        if verdict.status != "holds" and verdict.clause[2] != HARD
+        if verdict.status != HOLDS and verdict.clause[2] != HARD
     ]
     first_soft = min(soft_steps, default=None)
     if replay.error:
@@ -551,13 +566,10 @@ def _replay_bundle(
     ref: BundleRef, card: Card, records: Sequence[TraceRecord], output: Path
 ) -> tuple[dict[str, Any], dict[str, list[float]]]:
     """Replay one card's traces through one bundle: its result and cumulative rewards per trace."""
-    try:
-        bundle = load_bundle(ref.path)
-    except Exception as error:  # a bundle on disk can fail to load in any way; that is its result
-        return {"error": f"{type(error).__name__}: {error}"}, {}
+    bundle = load_machine_bundle(ref)
+    if isinstance(bundle, str):
+        return {"error": bundle}, {}
     machine = bundle.reward_machine
-    if machine is None:
-        return {"error": "the bundle has no reward machine"}, {}
 
     pairs, rows, curves = [], [], {}
     for record in records:
@@ -573,7 +585,7 @@ def _replay_bundle(
     return {
         "arm": ref.arm,
         "card_id": ref.card_id,
-        "rm_path": str(ref.path / "reward_machine.txt"),
+        "rm_path": str(ref.rm_path),
         "propositions": list(machine.propositions),
         "machine_check": machine_check(rows),
         "label_agreement": label_agreement(pairs, machine.propositions),

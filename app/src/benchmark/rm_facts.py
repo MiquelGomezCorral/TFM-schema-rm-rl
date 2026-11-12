@@ -14,11 +14,11 @@ from pathlib import Path
 from statistics import fmean
 from typing import Any
 
-from src.arm_fm.artifacts import ArtifactBundle, load_bundle
+from src.arm_fm.artifacts import ArtifactBundle
 
 from .cards import Card, card_header, load_cards
 from .declare_judge import ClauseError, as_clause
-from .traces import BundleRef, find_bundles, write_json
+from .traces import BundleRef, find_bundles, load_machine_bundle, write_json
 
 STAMP_FIELDS = ("attempts", "critic_interventions", "retries", "wall_time_s")
 FARM = "farm"
@@ -49,15 +49,12 @@ def write_rm_facts(
 
 def _bundle_facts(ref: BundleRef, card: Card | None) -> dict[str, Any]:
     facts: dict[str, Any] = {"arm": ref.arm, "card_id": ref.card_id}
-    try:
-        bundle = load_bundle(ref.path)
-    except Exception as error:  # a bundle on disk can fail to load in any way; that is its result
-        return {**facts, "error": f"{type(error).__name__}: {error}"}
-    if bundle.reward_machine is None:
-        return {**facts, "error": "the bundle has no reward machine"}
+    bundle = load_machine_bundle(ref)
+    if isinstance(bundle, str):
+        return {**facts, "error": bundle}
     stored = _normalized(bundle.manifest.generation.get("clauses"))
     facts |= {
-        "rm_path": str(ref.path / "reward_machine.txt"),
+        "rm_path": str(ref.rm_path),
         **machine_facts(bundle),
         "stamp": bundle.manifest.provenance.get("stamp"),
         "stored_clauses": stored,

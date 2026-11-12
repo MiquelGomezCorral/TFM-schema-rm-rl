@@ -337,7 +337,7 @@ class JudgeRecorder:
     Raises:
         CardError: If the card is unreadable or breaks the card contract, is for another env or
             other env kwargs than the run, judges a proposition the reference labeler does not
-            emit (the judge would read it as always false), or the run has several tasks.
+            emit (the judge would read it as always false), or the run sets ``task_bundles``.
         NoReferenceLabelerError: If the card's env has no reference labeler.
     """
 
@@ -350,7 +350,7 @@ class JudgeRecorder:
         self.suite, self.card = load_card(card_path)
         if config.task_bundles:
             raise CardError(
-                f"{card_path}: the judge needs a single-task run: one card judges one task"
+                f"{card_path}: the judge does not take a task_bundles run: one card judges one task"
             )
         gym_id = self.card.env.get("gym_id")
         if gym_id != config.gym_id:
@@ -375,7 +375,7 @@ class JudgeRecorder:
         if unknown:
             raise CardError(f"{card_path}: the reference labeler emits no {sorted(unknown)}")
 
-    def write(self, directory: Path, count: int) -> dict[str, Any]:
+    def write(self, directory: Path, count: int) -> None:
         """Save the episodes to ``<directory>/agent-traces/ep<k>.json``, verdicts to ``judge.json``."""
         episodes = []
         act = self.policy.new_act()
@@ -409,7 +409,6 @@ class JudgeRecorder:
             "per_episode": episodes,
         }
         write_json(directory / "judge.json", summary, indent=2)
-        return summary
 
     def _rollout(
         self, act: Callable[[Any], int], reset: dict[str, object]
