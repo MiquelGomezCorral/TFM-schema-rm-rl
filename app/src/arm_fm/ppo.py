@@ -47,7 +47,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from gymnasium import spaces
+from gymnasium import Env, Wrapper, spaces
 from gymnasium.vector import AutoresetMode, SyncVectorEnv
 from stable_baselines3.common.utils import set_random_seed
 from torch import Tensor, nn, optim
@@ -59,8 +59,10 @@ from .dqn import (
     EpisodeTracker,
     RunRecorder,
     evaluation_row,
+    layout_seed,
     rm_embedding_branch,
 )
+from .dqn import evaluation_resets as task_evaluation_resets
 from .environments import RunEnvironment, make_run_environment
 
 TRAIN_COLUMNS = (
@@ -97,9 +99,10 @@ def train_ppo(CONFIG: Configuration) -> Path:
     """Train one PPO run and write its run folder under ``outputs/runs/<exp_name>/``.
 
     Runs ``ceil(total_timesteps / (ppo_num_envs * ppo_num_steps))`` iterations, so the budget is
-    never cut short. ``layout`` and ``layout_seed`` are not used: evaluation episode ``i`` resets
-    its env with ``eval_seed_base + i``. The final evaluation scores the final policy and is the
-    last ``eval.csv`` row.
+    never cut short. A MiniGrid run with ``layout: fixed`` resets every episode, evaluation and
+    autoreset included, on the layout seed (``layout_seed``, else the run seed); otherwise
+    evaluation episode ``i`` resets its env with ``eval_seed_base + i``. The final evaluation
+    scores the final policy and is the last ``eval.csv`` row.
 
     Returns:
         Path: The run folder.
@@ -118,17 +121,39 @@ def train_ppo(CONFIG: Configuration) -> Path:
         runs = [_open_run(CONFIG, cleanup) for _ in range(CONFIG.ppo_num_envs)]
         eval_run = _open_run(CONFIG, cleanup)
         envs = SyncVectorEnv(
-            [partial(getattr, run, "env") for run in runs], autoreset_mode=AutoresetMode.SAME_STEP
+            [partial(_training_env, CONFIG, run) for run in runs],
+            autoreset_mode=AutoresetMode.SAME_STEP,
         )
         directory = _run(CONFIG, runs, eval_run, envs, device)
     print(f"run folder {directory}")
     return directory
 
 
+class FixedLayoutReset(Wrapper):
+    """Reset on one seed every time, so the vector env's seedless autoresets keep the layout."""
+
+    def __init__(self, env: Env, seed: int) -> None:
+        super().__init__(env)
+        self.layout_seed = seed
+
+    def reset(self, **kwargs):
+        return self.env.reset(**{**kwargs, "seed": self.layout_seed})
+
+
+def fixed_layout(CONFIG: Configuration) -> bool:
+    """Whether PPO resets on the layout seed: ``layout: fixed`` on MiniGrid (Craftium has none)."""
+    return CONFIG.layout == "fixed" and CONFIG.env_family == "minigrid"
+
+
 def _open_run(CONFIG: Configuration, cleanup: ExitStack) -> RunEnvironment:
     run = make_run_environment(CONFIG)
     cleanup.callback(run.env.close)
     return run
+
+
+def _training_env(CONFIG: Configuration, run: RunEnvironment) -> Env:
+    # Evaluation passes its own seeds, so only the vector env's training envs need the wrapper.
+    return FixedLayoutReset(run.env, layout_seed(CONFIG)) if fixed_layout(CONFIG) else run.env
 
 
 def _run(
@@ -661,30 +686,48 @@ def _train(
 def evaluate(
     CONFIG: Configuration, run: RunEnvironment, agent: PPOAgent, episode_count: int
 ) -> dict[str, object]:
-    """Roll out ``episode_count`` policy-sampling episodes and return one ``eval.csv`` row.
+    """Roll out ``episode_count`` evaluation episodes and return one ``eval.csv`` row.
 
-    Episode ``i`` resets with seed ``eval_seed_base + i``. Sampling draws come from a fresh
-    generator seeded with the run seed, never from the training streams.
+    The policy samples its actions, or with ``eval_greedy`` plays its most likely one. Sampling
+    draws come from a fresh generator seeded with the run seed, never from the training streams.
+    Resets follow ``evaluation_resets``.
     """
     generator = torch.Generator().manual_seed(CONFIG.seed)
-    resets = evaluation_resets(CONFIG, episode_count)
-    episodes = [_evaluation_episode(run, agent, reset["seed"], generator) for reset in resets]
+    resets = evaluation_resets(CONFIG, run, episode_count)
+    episodes = [
+        _evaluation_episode(run, agent, reset, generator, CONFIG.eval_greedy) for reset in resets
+    ]
     return evaluation_row(episodes)
 
 
-def evaluation_resets(CONFIG: Configuration, episode_count: int) -> list[dict[str, object]]:
-    """The ``reset`` arguments of the evaluation episodes: episode ``i`` seeds ``eval_seed_base + i``."""
+def evaluation_resets(
+    CONFIG: Configuration, run: RunEnvironment, episode_count: int
+) -> list[dict[str, object]]:
+    """The ``reset`` arguments of the evaluation episodes: their seed, and their task if any.
+
+    A fixed MiniGrid layout resets every episode on the layout seed. A greedy policy repeats the
+    same episode there, so it runs DQN's one episode per task (one without tasks); a sampling
+    policy runs ``episode_count``. Otherwise episode ``i`` seeds ``eval_seed_base + i``.
+    """
+    if fixed_layout(CONFIG):
+        if CONFIG.eval_greedy:
+            return task_evaluation_resets(CONFIG, run, episode_count)
+        return [{"seed": layout_seed(CONFIG)} for _ in range(episode_count)]
     return [{"seed": CONFIG.eval_seed_base + index} for index in range(episode_count)]
 
 
 def _evaluation_episode(
-    run: RunEnvironment, agent: PPOAgent, seed: int, generator: torch.Generator
+    run: RunEnvironment,
+    agent: PPOAgent,
+    reset: dict[str, object],
+    generator: torch.Generator,
+    greedy: bool,
 ) -> EpisodeTracker:
-    episode = EpisodeTracker(seed=seed)
-    observation, _ = run.env.reset(seed=seed)
+    episode = EpisodeTracker(seed=reset["seed"])
+    observation, _ = run.env.reset(**reset)
     done = False
     while not done:
-        step = run.env.step(agent.act(observation, generator))
+        step = run.env.step(agent.act(observation, generator, deterministic=greedy))
         episode.record(step, run.is_success)
         observation, _, terminated, truncated, _ = step
         done = terminated or truncated

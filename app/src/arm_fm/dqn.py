@@ -89,6 +89,7 @@ RUN_SETTINGS = (
     "layout",
     "layout_seed",
     "reward_source",
+    "time_limit_penalty",
     "bundle",
     "labeling_bundle",
     "env_kwargs",
@@ -107,10 +108,12 @@ RUN_SETTINGS = (
     "exploration_fraction",
     "learning_starts",
     "train_frequency",
+    "double_q",
     "eval_frequency",
     "eval_episodes",
     "final_eval_episodes",
     "eval_epsilon",
+    "eval_greedy",
     "eval_seed_base",
     "success_threshold",
     "cuda",
@@ -422,7 +425,13 @@ class DQNLearner:
     def _gradient_step(self, CONFIG: Configuration) -> tuple[float, float] | None:
         data = self.buffer.sample(CONFIG.batch_size)
         with torch.no_grad():
-            target_max, _ = self.target_network(data.next_observations).max(dim=1)
+            target_values = self.target_network(data.next_observations)
+            if CONFIG.double_q:
+                # Double DQN: the online network picks the action, the target network values it.
+                best = self.q_network(data.next_observations).argmax(dim=1, keepdim=True)
+                target_max = target_values.gather(1, best).squeeze(1)
+            else:
+                target_max, _ = target_values.max(dim=1)
             td_target = data.rewards.flatten() + CONFIG.gamma * target_max * (
                 1 - data.dones.flatten()
             )
@@ -490,14 +499,14 @@ def _train(
             recorder.write_evaluation(env_steps, row, CONFIG.success_threshold)
 
 
-def _layout_seed(CONFIG: Configuration) -> int:
+def layout_seed(CONFIG: Configuration) -> int:
     return CONFIG.seed if CONFIG.layout_seed is None else CONFIG.layout_seed
 
 
 def _training_reset_seeds(CONFIG: Configuration) -> Iterator[int | None]:
     """Fixed: every reset uses the layout seed. Procedural: seed only the first reset."""
     if CONFIG.layout == "fixed":
-        return itertools.repeat(_layout_seed(CONFIG))
+        return itertools.repeat(layout_seed(CONFIG))
     return itertools.chain([CONFIG.seed], itertools.repeat(None))
 
 
@@ -570,7 +579,7 @@ def evaluation_resets(
     """The ``reset`` arguments of every evaluation episode: its seed, and its task if any."""
     task_count = len(run.env.runs) if isinstance(run.env, MultiTaskEnvironment) else 0
     if CONFIG.layout == "fixed":
-        seeds = [_layout_seed(CONFIG)] * max(task_count, 1)
+        seeds = [layout_seed(CONFIG)] * max(task_count, 1)
     else:
         seeds = [CONFIG.eval_seed_base + index for index in range(episode_count)]
     if not task_count:
@@ -660,7 +669,7 @@ class RunRecorder:
         recorder = cls(CONFIG.OUTPUT_PATH / "runs" / CONFIG.exp_name / name, train_columns)
         recorder.success_modes = _success_modes(CONFIG)
         settings = {field: _plain(getattr(CONFIG, field)) for field in RUN_SETTINGS}
-        settings["layout_seed"] = _layout_seed(CONFIG)
+        settings["layout_seed"] = layout_seed(CONFIG)
         settings["device"] = str(device)
         settings["git_head"] = _git_head()
         (recorder.directory / "config.yaml").write_text(
