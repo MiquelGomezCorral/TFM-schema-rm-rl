@@ -83,7 +83,9 @@ def make_run_environment(CONFIG: Configuration) -> RunEnvironment:
     if rm_inputs is None:
         return run
     try:
-        env = RewardMachineObservation(run.env, *rm_inputs, CONFIG.reward_source)
+        env = RewardMachineObservation(
+            run.env, *rm_inputs, CONFIG.reward_source, CONFIG.time_limit_penalty
+        )
     except Exception:
         run.env.close()
         raise
@@ -209,12 +211,14 @@ class RewardMachineObservation(gym.Wrapper):
         bundle: ArtifactBundle,
         labeling: Mapping[str, Callable[[object], bool]],
         reward_source: str,
+        time_limit_penalty: float,
     ) -> None:
         super().__init__(env)
         machine = bundle.reward_machine
         self.reward_machine = RewardMachineEnvironment(
             env, RewardMachineRuntime(machine), labeling, reward_source=reward_source
         )
+        self.reward_machine.time_limit_penalty = time_limit_penalty
         self.final_states = frozenset(machine.final_states)
         self.judged = machine.judgment is not None
         self.accepting_states = frozenset(machine.judgment.accepting if self.judged else ())

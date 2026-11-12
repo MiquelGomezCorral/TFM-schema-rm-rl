@@ -69,7 +69,7 @@ _DEFAULT_ENVIRONMENT_NAME = "environment.md"
 _ENVIRONMENT_STEM = "environment"
 _UNSAFE_OUTPUT_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 _ENVIRONMENT_TITLE = re.compile(r"^#\s+(\S.*)$", re.MULTILINE)
-# A tasks manifest (examples/arm-fm/*/tasks.json) names the environment, points at its
+# A tasks manifest (experiments/dev/arm-fm/*/tasks.json) names the environment, points at its
 # Markdown relative to the repository root, and lists the tasks to compile.
 _MANIFEST_FIELDS = ("env", "env_description", "tasks")
 _REPO_ROOT = Path(__file__).resolve().parents[3]

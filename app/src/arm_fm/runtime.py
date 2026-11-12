@@ -147,14 +147,19 @@ class RewardMachineEnvironment:
     RM did not, it adds the failed reward of every promise open in the RM state. ``info`` carries the raw ``env_reward``
     and the ``rm_reward``; the returned reward is the RM reward (``reward_source`` ``rm``) or
     env + RM (``both``).
+
+    ``time_limit_penalty`` defaults to the configuration's; a run sets its own on the instance
+    (``RewardMachineObservation`` does), since the constructor is at the argument limit.
     """
+
+    time_limit_penalty: float = Configuration.time_limit_penalty
 
     def __init__(
         self,
         environment: object,
         runtime: RewardMachineRuntime,
         labeling: Mapping[str, Callable[[object], bool]] | str,
-        reward_source: str = "rm",
+        reward_source: str = Configuration.reward_source,
         terminate_on_rm: bool = True,
     ) -> None:
         self.environment = environment
@@ -209,7 +214,7 @@ class RewardMachineEnvironment:
         rm_reward = rm_step.reward
         if self.judgment is None:
             if truncated and not terminated:
-                rm_reward += Configuration.TIME_LIMIT_PENALTY
+                rm_reward += self.time_limit_penalty
         elif env_ended and not rm_ended:
             rm_reward += self.judgment.end_charge(rm_step.destination)
         self.execution_evidence.append(
