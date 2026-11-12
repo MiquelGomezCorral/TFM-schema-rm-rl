@@ -126,8 +126,10 @@ class RewardMachineRuntime:
         labeling: Mapping[str, Callable[[object], bool]],
     ) -> dict[str, bool]:
         """Compute every proposition once from the live environment and remember the valuation."""
-        previous = self.episode_memory.get("previous_valuation", {})
-        snapshot = MappingProxyType(dict(previous) if isinstance(previous, Mapping) else {})
+        # First step of an episode: every proposition counts as false, so `prev[p]` never raises.
+        first_step = dict.fromkeys(self.machine.propositions, False)
+        previous = self.episode_memory.get("previous_valuation", first_step)
+        snapshot = MappingProxyType(dict(previous) if isinstance(previous, Mapping) else first_step)
         context = _LabelingContext(
             env,
             MappingProxyType({**self.episode_memory, "previous_valuation": snapshot}),

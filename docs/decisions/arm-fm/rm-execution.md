@@ -27,7 +27,8 @@ without changing how labels, transitions, and rewards are interpreted.
   the fallback applies only when no ordinary guard matches.
 - Expect disjoint ordinary guards. If several match, select the first stored transition
   and emit a warning. An `else` row applies only when no ordinary guard matches.
-- Reset the RM and episode-local labeling memory on environment reset.
+- Reset the RM and episode-local labeling memory on environment reset. The previous valuation at the
+  first step of every episode holds every proposition as false, in both pipelines.
 - Only declared final states accept the task. A machine with no final may declare
   `ACCEPTING_STATES` instead: an episode the environment ends in one of them is accepted
   (`rm_accept`; a success when the run uses `success: rm`), and being there never ends the

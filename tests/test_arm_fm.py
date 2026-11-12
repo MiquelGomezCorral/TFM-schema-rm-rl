@@ -129,6 +129,23 @@ class ArmFMRuntimeTests(unittest.TestCase):
         runtime.reset()
         self.assertEqual(runtime.episode_memory, {})
 
+    def test_first_step_previous_valuation_holds_every_proposition_false(self):
+        rm = PaperRewardMachine(("u0",), "u0", (), (), ("current", "event"))
+        runtime = RewardMachineRuntime(rm)
+        read = []
+        labeling = {
+            name: lambda env, name=name: (
+                read.append(env.episode_memory["previous_valuation"][name]) or True
+            )
+            for name in rm.propositions
+        }
+        runtime.evaluate_labeling(SimpleNamespace(), labeling)
+        runtime.evaluate_labeling(SimpleNamespace(), labeling)
+        runtime.reset()
+        runtime.evaluate_labeling(SimpleNamespace(), labeling)
+        # step 1, step 2 (sees step 1's True), then step 1 again after the reset
+        self.assertEqual(read, [False, False, True, True, False, False])
+
     def test_labeling_failure_does_not_replace_previous_valuation(self):
         rm = PaperRewardMachine(("u0",), "u0", (), (), ("value",))
         runtime = RewardMachineRuntime(rm)
