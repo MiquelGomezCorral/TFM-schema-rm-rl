@@ -1,0 +1,51 @@
+# 50k-step smoke of every PPO diagnostic variant, both arms, both cards, seed 1: checks that each
+# starts, learns nothing in particular, and writes the new logs (rm_path in episodes.csv,
+# sampled_* in eval.csv, ent_coef and epsilon in train.csv). Not a result.
+# Run: experiments/benchmark/scripts/train.sh tuning/ppo-diagnostic/smoke --parallel 4 --max-ram-gb 10
+suite: ppo-diag-smoke
+tasks: experiments/benchmark/tuning/ppo-diagnostic/tasks.json
+bundles: experiments/benchmark/pilot/bundles
+learner: s07
+compare_learners: [s07, s07-tuned, tuned-epsilon, tuned-entropy]
+s07-values: &s07-values # not a learner
+  ppo_learning_rate: 1.0e-3
+  ppo_num_envs: 16
+  ppo_num_steps: 256
+  ppo_num_minibatches: 16
+  ppo_update_epochs: 10
+  ppo_clip_coef: 0.1
+  ppo_clip_vloss: true
+  ppo_ent_coef: 0.01
+s07-tuned: &s07-tuned # not a learner
+  <<: *s07-values
+  ppo_clip_coef: 0.2
+  ppo_clip_vloss: false
+learners:
+  s07:
+    config: &config experiments/benchmark/configs/ppo.yaml
+    ram_gb: &ram 2.4
+    overrides: *s07-values
+  s07-tuned:
+    config: *config
+    ram_gb: *ram
+    overrides: *s07-tuned
+  tuned-epsilon:
+    config: *config
+    ram_gb: *ram
+    overrides:
+      <<: *s07-tuned
+      ppo_epsilon_start: 0.3
+      ppo_epsilon_decay_steps: 200000
+  tuned-entropy:
+    config: *config
+    ram_gb: *ram
+    overrides:
+      <<: *s07-tuned
+      ppo_ent_coef_start: 0.05
+      ppo_ent_decay_steps: 300000
+arms: [farm, no-rm]
+seeds: [1]
+total_timesteps: 50000
+time_box_min: 20
+only: [base-unlock-pickup, base-doorkey]
+variants: []

@@ -1,0 +1,39 @@
+# Phase 2 of s07x-p1 (same learners): seeds 3 and 21. Its suite name has a suffix because it can
+# run beside s07x-p3, and a suite name takes one driver lock at a time.
+# Settings and why: plans/testing-program-20261111/slices/ppo-diagnostic/settings.md.
+# Run: setsid nohup experiments/benchmark/scripts/train.sh tuning/ppo-diagnostic/s07x-p2 --parallel 2 --max-ram-gb 7.5
+suite: ppo-diag-s07x-b
+tasks: experiments/benchmark/tuning/ppo-diagnostic/tasks.json
+bundles: experiments/benchmark/pilot/bundles
+learner: s07-epsilon
+compare_learners: [s07-epsilon, s07-entropy]
+s07: &s07 # not a learner: the values the two variants start from
+  ppo_learning_rate: 1.0e-3
+  ppo_num_envs: 16
+  ppo_num_steps: 256
+  ppo_num_minibatches: 16
+  ppo_update_epochs: 10
+  ppo_clip_coef: 0.1
+  ppo_clip_vloss: true
+  ppo_ent_coef: 0.01
+learners:
+  s07-epsilon:
+    config: &config experiments/benchmark/configs/ppo.yaml
+    ram_gb: &ram 2.4
+    overrides:
+      <<: *s07
+      ppo_epsilon_start: 0.3
+      ppo_epsilon_decay_steps: 200000
+  s07-entropy:
+    config: *config
+    ram_gb: *ram
+    overrides:
+      <<: *s07
+      ppo_ent_coef_start: 0.05
+      ppo_ent_decay_steps: 300000
+arms: [farm]
+seeds: [3, 21]
+total_timesteps: 1500000
+time_box_min: 120
+only: [base-unlock-pickup]
+variants: []
