@@ -21,7 +21,7 @@ from pathlib import Path
 import p2_sim as sim
 
 from src.compiler import compile_dfas, materialize_proposal, serialize_reward_machine
-from src.compiler.reward_layer import build_reward_machine
+from src.compiler.reward_layer import RewardSwitches, build_reward_machine
 from src.config import PriorityLevel
 
 HERE = Path(__file__).resolve().parent
@@ -51,7 +51,7 @@ def compile_real(pattern: str, props: list[str], priority: str):
     soft = [clause.priority is PriorityLevel.SOFT for clause in proposal.clauses]
     texts = {}
     for recurrent in (False, True):
-        layer = build_reward_machine(dfas, soft, recurrent_soft_penalty=recurrent)
+        layer = build_reward_machine(dfas, soft, RewardSwitches(recurrent_soft_penalty=recurrent))
         texts[recurrent] = serialize_reward_machine(replace(layer.reward_machine, judgment=None))
     return (
         [(True, texts[True])]

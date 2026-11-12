@@ -34,6 +34,18 @@ thing whichever arm produced it.
   machines get 0 at the time limit, as in the ARM-FM paper. Every results table and page says so.
 - **Cross-critic.** Each pipeline's critic also judges the other pipeline's machines. The two
   directions are reported apart, never pooled, each with a note on what its critic could see.
+- **Attempts.** Both pipelines get up to 10 reward-machine generation attempts, the first included.
+  Labeling, descriptions and FARM tagging keep their own limits.
+- **Prompts.** Each pipeline keeps its own prompts. ARM-FM runs as its authors ran it, without worked
+  examples; FARM keeps its examples as part of the method. The paper states the asymmetry and any gain
+  from the examples is a result to show. No control run.
+- **Layouts.** Training uses procedural layouts. Evaluation uses a fixed set of eval seeds per
+  environment, the same for every run and arm.
+- **Paraphrases.** The claim is clause identity: the same clauses give the same machine and so the same
+  training. The paraphrase suite only generates.
+- **Card misses.** A pipeline's miss on a card counts as its failure only when the coordinator and an
+  adversarial agent that has not seen the pipeline's output agree the card's expected result is right.
+  Otherwise the card is flagged "review later" and is not counted.
 - **Spending gate.** Full suites wait until the user records the prompt-example budget decision in
   `experiments/benchmark/prompt-budget.md`.
 - **Provenance.** Every bundle carries a stamp: commit, dirty flag, models, and counts taken from
@@ -48,7 +60,8 @@ thing whichever arm produced it.
 
 - RM arms never train on the environment reward, and the no-RM arm never uses an RM.
 - The judge never reads a pipeline's labeling or RM and never calls `nl2ltl`.
-- A pipeline failure stays "no data": no arm gets a human fix or retries the others do not get.
+- A pipeline failure stays "no data": no arm gets a human fix or retries the others do not get; both
+  get the same attempt limit (up to 10).
 - Both pipelines receive the same card wording, environment file, generator and critic.
 - A results table without the time-limit asymmetry line, or with pooled cross-critic numbers, is wrong.
 - With every reward switch at its default, compiled RM text is byte-identical to the text from
@@ -79,3 +92,8 @@ and a restart is easier to trust.
 
 - 2026-11-12: Created for the thesis testing program (user decisions at gate 1 and the plan
   critique of workflow run `testing-plan-2026-11`).
+- 2026-11-12: Result-page answers (user): both pipelines get up to 10 generation attempts; each keeps
+  its own prompts and the paper states the asymmetry; procedural training layouts with fixed eval seeds;
+  paraphrases claim clause identity and only generate; a card miss counts only when its expected result
+  is confirmed. The progress-ablation control and the -0.5 sensitivity run are dropped (no record
+  listed them as planned).

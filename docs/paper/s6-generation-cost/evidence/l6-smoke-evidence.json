@@ -1,0 +1,209 @@
+[
+  {
+    "arm": "farm",
+    "card": "smoke-doorkey-base",
+    "nl_task": "Use the key to open the door, then reach the goal.",
+    "ltl_clauses": [
+      "has_key happens at some point",
+      "door_open happens at some point",
+      "door_open does not happen before has_key",
+      "at_goal happens at some point",
+      "at_goal does not happen before door_open"
+    ],
+    "ltl_note": null,
+    "rm_text": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u4\nREJECTING_STATES: u2\nACCEPTING_STATES:\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, !at_goal&!door_open&has_key) -> u1\n(u0, !at_goal&door_open&!has_key) -> u2\n(u0, !at_goal&door_open&has_key) -> u3\n(u0, at_goal&!door_open&!has_key) -> u2\n(u0, at_goal&!door_open&has_key) -> u2\n(u0, at_goal&door_open&!has_key) -> u2\n(u0, at_goal&door_open&has_key) -> u4\n(u1, !at_goal&door_open) -> u3\n(u1, at_goal&!door_open) -> u2\n(u1, at_goal&door_open) -> u4\n(u3, at_goal) -> u4\nREWARD_FUNCTION:\n(u0, !at_goal&!door_open&has_key, u1) -> 0.1\n(u0, !at_goal&door_open&!has_key, u2) -> -4\n(u0, !at_goal&door_open&has_key, u3) -> 0.2\n(u0, at_goal&!door_open&!has_key, u2) -> -4\n(u0, at_goal&!door_open&has_key, u2) -> -4\n(u0, at_goal&door_open&!has_key, u2) -> -4\n(u0, at_goal&door_open&has_key, u4) -> 1.3\n(u1, !at_goal&door_open, u3) -> 0.1\n(u1, at_goal&!door_open, u2) -> -3\n(u1, at_goal&door_open, u4) -> 1.2\n(u3, at_goal, u4) -> 1.1\nPENDING_PROMISES:\nu0: hard 3, soft 0\nu1: hard 2, soft 0\nu3: hard 1, soft 0\n",
+    "status": {
+      "status": "complete",
+      "calls": 7,
+      "wall_time_s": 2.8
+    },
+    "stamp": {
+      "attempts": 2,
+      "commit": "e0246f89b01a6c9942c5a353da63ae183e383fb2",
+      "critic_interventions": 1,
+      "critic_model": "glm-5.3-flash",
+      "dirty": false,
+      "generator_model": "deepseek-v4.1-flash",
+      "provisional": true,
+      "reasoning": "none",
+      "retries": 0,
+      "wall_time_s": 24.3
+    },
+    "cross_critic": {
+      "direction": "arm-fm",
+      "critic_model": "glm-5.3-flash",
+      "verdict": "rejected",
+      "flag": "RM is not sound for DoorKey. 1) Impossible/harmful rejection transitions: u0->u2 is taken when door_open&!has_key, but door_open cannot become true before has_key (toggle without key does nothing), so that label is unreachable, and the related -4 penalty invites spurious credit shaping. Similarly u0->u2 on at_goal&door_open&has_key (u4, +1.3) is fine, but u0 also lacks a self-loop covering the overwhelmingly frequent event (no has_key, no door_open, not at goal): with no matching transition and no else/self-loop, the machine has no defined transition for (u0, !at_goal&!door_open&!has_key) \u2014 the very first state of every episode. Uncovered event labels must fall to an explicit self-loop (per-state else), else the RM is partial and undefined at episode start. 2) u1 likewise misses the event !at_goal&!door_open (agent carrying key, door still shut, still navigating) \u2014 its most common label \u2014 again undefined; only u2 rejection... which shouldn't exist. 3) REJECTING_STATES u2 conflates no meaningful failure: nothing in DoorKey is a hard failure; dropping the key while the door is closed (key_lost) is a recoverable setback, not failure. Rejecting on at_goal&!door_open is actually unreachable (goal requires the door open). 4) key_lost is never handled: the event can fire (94/300 episodes) and the RM has no transitions or regressions keyed to it, ignoring the drop/pickup dynamics entirely. 5) Rewards are not dense and are mis-scaled: a positive reward at u0 for has_key is acceptable, but total shaping (0.1+0.1) plus terminal bonuses (1.1\u20131.3) exceeds the environment's success magnitude (\u22641) \u2014 reward safety violated; HARD_FAILED_REWARD -4 per step is unbounded over long horizons. 6) u2 listed in REJECTING_STATES but FINAL_STATES only names u4 while ACCEPTING_STATES is empty \u2014 accept set must be declared. 7) PENDING_PROMISES are listed but no promise/target transitions are shown to justify the counts, and no transition to u2 from u3 exists even though the agent could in principle... (at least the at_goal event is covered from u3). Fix: add per-state else self-loops, remove the -4 rejection path, cover key_lost explicitly, keep cumulative reward \u22641, and declare accepting states properly.",
+      "information_note": "ARM-FM's critic saw the environment facts and labeling code, the task and the machine text only; it did not see the clauses or the compiler warnings that FARM's critic reads."
+    }
+  },
+  {
+    "arm": "farm",
+    "card": "smoke-doorkey-response",
+    "nl_task": "Whenever you hold the key, open the door afterwards, and reach the goal.",
+    "ltl_clauses": [
+      "Whenever the agent holds the key, open the door afterwards.",
+      "Reach the goal."
+    ],
+    "ltl_note": null,
+    "rm_text": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u2\nACCEPTING_STATES:\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, !at_goal&!door_open&has_key) -> u1\n(u0, at_goal&!door_open&!has_key) -> u2\n(u0, at_goal&!door_open&has_key) -> u3\n(u0, at_goal&door_open) -> u2\n(u1, !at_goal&door_open) -> u0\n(u1, at_goal&!door_open) -> u3\n(u1, at_goal&door_open) -> u2\n(u3, door_open) -> u2\nREWARD_FUNCTION:\n(u0, !at_goal&!door_open&has_key, u1) -> -0.1\n(u0, at_goal&!door_open&!has_key, u2) -> 1.1\n(u0, at_goal&door_open, u2) -> 1.1\n(u1, !at_goal&door_open, u0) -> 0.1\n(u1, at_goal&!door_open, u3) -> 0.1\n(u1, at_goal&door_open, u2) -> 1.2\n(u3, door_open, u2) -> 1.1\nPENDING_PROMISES:\nu0: hard 1, soft 0\nu1: hard 2, soft 0\nu3: hard 1, soft 0\n",
+    "status": {
+      "status": "complete",
+      "calls": 5,
+      "wall_time_s": 21.3
+    },
+    "stamp": {
+      "attempts": 1,
+      "commit": "e0246f89b01a6c9942c5a353da63ae183e383fb2",
+      "critic_interventions": 0,
+      "critic_model": "glm-5.3-flash",
+      "dirty": false,
+      "generator_model": "deepseek-v4.1-flash",
+      "provisional": true,
+      "reasoning": "none",
+      "retries": 0,
+      "wall_time_s": 15.3
+    },
+    "cross_critic": {
+      "direction": "arm-fm",
+      "critic_model": "glm-5.3-flash",
+      "verdict": "rejected",
+      "flag": "Multiple structural and semantic defects. (1) Order violations: transitions (u0, at_goal&!door_open&!has_key)->u2 and (u0, at_goal&door_open)->u2 accept reaching the goal without ever acquiring the key or opening the door, contradicting the task 'open the door after acquiring the key'. Constraint at_goal cannot hold before door_open also makes (u0, at_goal&...) unreachable, but the reach-goal-without-key branch is unambiguously wrong. (2) FINAL_STATES header lists only u2, but u3 is accepting-relevant (it is a required pass-through state); with no declared accepting semantics for u3 the machine's language/acceptance is ill-defined for traces passing through u3. (3) Regression handling: (u1, !at_goal&door_open)->u0 returns to u0, but has_key still holds after opening the door (key is kept), so the agent in u0 with has_key would transition again to u1 with reward -0.1 \u2014 spurious penalty and potential loop; the regression on door_open (door toggled shut) should keep the agent in u1 with an explicit negative/no reward, not reset to u0. (4) Dense bounded progress: rewards are dense but negative (-0.1) for required progress to u1; progress should be nonnegative and bounded, and the final reward 1.1/1.2 exceeds the environment's 1 minus 0.9-fraction bound range semantics (max 1), unbounded/inconsistent with the success reward convention. (5) Ordered transition coverage: key_lost events are not covered anywhere; the machine must handle key_lost self-loops (with an explicit regression penalty, since key_lost represents losing the key before the door opens) \u2014 no transition on !has_key from u0 or u1 exists, so key_lost steps fall to unspecified else behavior; per-state else self-loops must be explicit. (6) Irrelevant events (turns, moves, no-op done, has_key/door_open unchanged) are not covered by else self-loops in any state. (7) Event/persistence distinction: key_lost is an event (one step); the RM must not treat it as persistent, but it also must not ignore it. Overall: reject; redesign with strict order u0(key)\u2192u1(door)\u2192u2(goal), explicit key_lost self-loops with negative reward, door-shut regression staying in u1, else self-loops everywhere, nonnegative dense bounded progress, and final reward within [0,1].",
+      "information_note": "ARM-FM's critic saw the environment facts and labeling code, the task and the machine text only; it did not see the clauses or the compiler warnings that FARM's critic reads."
+    }
+  },
+  {
+    "arm": "farm",
+    "card": "smoke-unlock-pickup-base",
+    "nl_task": "Acquire the matching key, unlock the door, and pick up the designated box in the other room.",
+    "ltl_clauses": [
+      "has_door_key",
+      "door_open",
+      "target_picked_up",
+      "has_door_key before door_open",
+      "door_open before target_picked_up"
+    ],
+    "ltl_note": null,
+    "rm_text": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u4\nREJECTING_STATES: u1\nACCEPTING_STATES:\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, !door_open&!has_door_key&target_picked_up) -> u1\n(u0, !door_open&has_door_key&!target_picked_up) -> u2\n(u0, !door_open&has_door_key&target_picked_up) -> u1\n(u0, door_open&!has_door_key&!target_picked_up) -> u1\n(u0, door_open&!has_door_key&target_picked_up) -> u1\n(u0, door_open&has_door_key&!target_picked_up) -> u3\n(u0, door_open&has_door_key&target_picked_up) -> u4\n(u2, !door_open&target_picked_up) -> u1\n(u2, door_open&!target_picked_up) -> u3\n(u2, door_open&target_picked_up) -> u4\n(u3, target_picked_up) -> u4\nREWARD_FUNCTION:\n(u0, !door_open&!has_door_key&target_picked_up, u1) -> -4\n(u0, !door_open&has_door_key&!target_picked_up, u2) -> 0.1\n(u0, !door_open&has_door_key&target_picked_up, u1) -> -4\n(u0, door_open&!has_door_key&!target_picked_up, u1) -> -4\n(u0, door_open&!has_door_key&target_picked_up, u1) -> -4\n(u0, door_open&has_door_key&!target_picked_up, u3) -> 0.2\n(u0, door_open&has_door_key&target_picked_up, u4) -> 1.3\n(u2, !door_open&target_picked_up, u1) -> -3\n(u2, door_open&!target_picked_up, u3) -> 0.1\n(u2, door_open&target_picked_up, u4) -> 1.2\n(u3, target_picked_up, u4) -> 1.1\nPENDING_PROMISES:\nu0: hard 3, soft 0\nu2: hard 2, soft 0\nu3: hard 1, soft 0\n",
+    "status": {
+      "status": "complete",
+      "calls": 5,
+      "wall_time_s": 21.0
+    },
+    "stamp": {
+      "attempts": 1,
+      "commit": "e0246f89b01a6c9942c5a353da63ae183e383fb2",
+      "critic_interventions": 0,
+      "critic_model": "glm-5.3-flash",
+      "dirty": false,
+      "generator_model": "deepseek-v4.1-flash",
+      "provisional": true,
+      "reasoning": "none",
+      "retries": 0,
+      "wall_time_s": 15.0
+    },
+    "cross_critic": {
+      "direction": "arm-fm",
+      "critic_model": "glm-5.3-flash",
+      "verdict": "rejected",
+      "flag": "Multiple problems. (1) Missing key_lost handling: key_lost is a declared event predicate (fires when the key is dropped before the door opens), but no transition or reward in the RM references it, and per-state else self-loops do not disambiguate it. From u0, a labeling with key_lost=true, door_open=false, has_door_key=false, target_picked_up=false (the natural situation after a pre-unlock drop) matches no listed u0 transition, so the machine is not total over reachable labelings; the else self-loop requirement for irrelevant/unlisted events is violated. From u2 (agent had key, then lost it), staying or regressing must be explicit: a key_lost labeling in u2 matches no transition (e.g. !door_open&!has_door_key&!target_picked_up with key_lost true is uncovered), and the drop-then-reacquire path back to key possession in u2 is unmodelled (u2 assumes has_door_key, but u2's incoming edge requires has_door_key yet the state persists after the key is dropped). (2) Reachability/coverage: (u3, !door_open ...) has no transition at all \u2014 door_open can toggle false again after u3 (relock is impossible but toggle-shut is allowed per environment), yet u3's only outgoing edge requires target_picked_up; a labeling with door_open=false and target_picked_up=false in u3 matches nothing, breaking totality. (3) Transition consistency: (u0, door_open&!has_door_key&target_picked_up) -> u1 is impossible given the constraint that target_picked_up requires door_open but here door_open alone with no key cannot precede... actually door_open&!has_door_key&target_picked_up is reachable only if the agent dropped the key, opened the door, then... cannot have picked the box while holding the key, so this is reachable only via drop-then-pickup which is fine \u2014 but sending it to rejecting u1 is wrong: the agent may have legitimately opened the door and merely dropped the key; that is not a failure of the task 'acquire key, unlock, pick up box'. Rejecting u1 on this edge mislabels legal progress as hard failure. (4) Rewards: (u0, door_open&has_door_key&target_picked_up, u4) -> 1.3 exceeds the 1.0 final reward convention and is inconsistent with other u4 entries (1.1, 1.2); terminal rewards should be uniform. Reward 1.3 also breaks boundedness consistency with the FINAL reward structure. (5) PENDING_PROMISES counts (3/2/1) do not match remaining hard steps: u0->u2 leaves 2, u2->u3 leaves 1, u3->u4 leaves 0 \u2014 this is consistent, but u0->u3 direct (door_open&has_door_key&!target_picked_up) skips u2 and leaves promise accounting ambiguous. (6) Regression: dropping the key in u2 (key_lost) should be an explicit regression transition back to u0 or an explicit self-loop with penalty; it is absent. Fix totality over key_lost and door_open-toggling-off labelings, correct the u1 rejection edges, and normalize terminal rewards.",
+      "information_note": "ARM-FM's critic saw the environment facts and labeling code, the task and the machine text only; it did not see the clauses or the compiler warnings that FARM's critic reads."
+    }
+  },
+  {
+    "arm": "arm-fm",
+    "card": "smoke-doorkey-base",
+    "nl_task": "Use the key to open the door, then reach the goal.",
+    "ltl_clauses": null,
+    "ltl_note": "ARM-FM writes the machine directly; no clauses",
+    "rm_text": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nTRANSITION_FUNCTION:\n(u0, has_key) -> u1\n(u0, else) -> u0\n(u1, door_open) -> u2\n(u1, else) -> u1\n(u2, at_goal) -> u3\n(u2, door_open) -> u2\n(u2, else) -> u1\n(u3, else) -> u3\nREWARD_FUNCTION:\n(u0, has_key, u1) -> 0.1\n(u1, door_open, u2) -> 0.3\n(u2, at_goal, u3) -> 1\n",
+    "status": {
+      "status": "complete",
+      "calls": 9,
+      "wall_time_s": 2.7
+    },
+    "stamp": {
+      "attempts": 3,
+      "commit": "e0246f89b01a6c9942c5a353da63ae183e383fb2",
+      "critic_interventions": 2,
+      "critic_model": "glm-5.3-flash",
+      "dirty": false,
+      "generator_model": "deepseek-v4.1-flash",
+      "provisional": true,
+      "reasoning": "none",
+      "retries": 0,
+      "wall_time_s": 40.2
+    },
+    "cross_critic": {
+      "direction": "farm",
+      "critic_model": "glm-5.3-flash",
+      "verdict": "rejected",
+      "flag": "CHANGES REQUIRED: the clause list is empty while the task requires three events: acquire the key, open the door, and reach the goal. Add hard Existence clauses for has_key, door_open, and at_goal, plus hard Precedence(has_key, door_open) and Precedence(door_open, at_goal) to enforce the stated order.",
+      "information_note": "FARM's critic saw the environment facts, the task and the machine text with an empty clause list and a note that the machine was written directly; it cannot check clause fidelity, which it normally judges."
+    }
+  },
+  {
+    "arm": "arm-fm",
+    "card": "smoke-doorkey-response",
+    "nl_task": "Whenever you hold the key, open the door afterwards, and reach the goal.",
+    "ltl_clauses": null,
+    "ltl_note": "ARM-FM writes the machine directly; no clauses",
+    "rm_text": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nTRANSITION_FUNCTION:\n(u0, has_key) -> u1\n(u0, else) -> u0\n(u1, door_open) -> u2\n(u1, key_lost) -> u0\n(u1, else) -> u1\n(u2, at_goal) -> u3\n(u2, door_open) -> u2\n(u2, else) -> u1\n(u3, else) -> u3\nREWARD_FUNCTION:\n(u0, has_key, u1) -> 0.1\n(u1, door_open, u2) -> 0.1\n(u2, at_goal, u3) -> 1\n",
+    "status": {
+      "status": "complete",
+      "calls": 7,
+      "wall_time_s": 37.1
+    },
+    "stamp": {
+      "attempts": 2,
+      "commit": "e0246f89b01a6c9942c5a353da63ae183e383fb2",
+      "critic_interventions": 1,
+      "critic_model": "glm-5.3-flash",
+      "dirty": false,
+      "generator_model": "deepseek-v4.1-flash",
+      "provisional": true,
+      "reasoning": "none",
+      "retries": 0,
+      "wall_time_s": 31.0
+    },
+    "cross_critic": {
+      "direction": "farm",
+      "critic_model": "glm-5.3-flash",
+      "verdict": "rejected",
+      "flag": "CHANGES REQUIRED: no clauses were compiled from the task, so the machine was written directly by a model. Add hard clauses: Existence(has_key), Existence(at_goal), Precedence(has_key, door_open) (Existence(at_goal) with Precedence forces has_key and door_open anyway), and Response(has_key, door_open) to capture 'whenever you hold the key, open the door afterwards'.",
+      "information_note": "FARM's critic saw the environment facts, the task and the machine text with an empty clause list and a note that the machine was written directly; it cannot check clause fidelity, which it normally judges."
+    }
+  },
+  {
+    "arm": "arm-fm",
+    "card": "smoke-unlock-pickup-base",
+    "nl_task": "Acquire the matching key, unlock the door, and pick up the designated box in the other room.",
+    "ltl_clauses": null,
+    "ltl_note": "ARM-FM writes the machine directly; no clauses",
+    "rm_text": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nTRANSITION_FUNCTION:\n(u0, has_door_key) -> u1\n(u0, else) -> u0\n(u1, door_open) -> u2\n(u1, key_lost) -> u0\n(u1, else) -> u1\n(u2, target_picked_up) -> u3\n(u2, has_door_key) -> u2\n(u2, else) -> u2\n(u3, else) -> u3\nREWARD_FUNCTION:\n(u0, has_door_key, u1) -> 0.2\n(u1, door_open, u2) -> 0.3\n(u2, target_picked_up, u3) -> 1\n",
+    "status": {
+      "status": "complete",
+      "calls": 7,
+      "wall_time_s": 35.8
+    },
+    "stamp": {
+      "attempts": 2,
+      "commit": "e0246f89b01a6c9942c5a353da63ae183e383fb2",
+      "critic_interventions": 1,
+      "critic_model": "glm-5.3-flash",
+      "dirty": false,
+      "generator_model": "deepseek-v4.1-flash",
+      "provisional": true,
+      "reasoning": "none",
+      "retries": 0,
+      "wall_time_s": 29.8
+    },
+    "cross_critic": {
+      "direction": "farm",
+      "critic_model": "glm-5.3-flash",
+      "verdict": "rejected",
+      "flag": "CHANGES REQUIRED: the clause list is empty, yet the task commands three events unconditionally and in order \u2014 acquire the key, unlock the door, pick up the target box. No clause makes any of them happen, so the hard goals are missing. Add hard Existence clauses for has_door_key, door_open, and target_picked_up, plus hard Precedence clauses: Precedence(has_door_key, door_open) and Precedence(door_open, target_picked_up); the first Existence already forces the key and the chain forces the ordering.",
+      "information_note": "FARM's critic saw the environment facts, the task and the machine text with an empty clause list and a note that the machine was written directly; it cannot check clause fidelity, which it normally judges."
+    }
+  }
+]
