@@ -18,7 +18,12 @@ from src.compiler import (
     serialize_paper_reward_machine,
 )
 from src.config import Configuration
-from src.engines import ProposalSelection
+from src.engines import (
+    CriticUnavailableError,
+    CriticValidationError,
+    ProposalSelection,
+    retry_critic,
+)
 from src.models import EnvironmentDescription
 from src.prompts import read_prompt, render_prompt
 
@@ -118,6 +123,8 @@ def generate_reward_machine(
 
             rm_history.append(feedback)
 
+        except CriticUnavailableError:
+            raise  # the critic never answered about this candidate: no new candidate
         except Exception as error:
             attempts.append(
                 StageAttempt("reward_machine", attempt, "failed", machine_text, error=str(error))
@@ -544,12 +551,15 @@ def generate_compiler_labeling(
     def review(source: str) -> tuple[bool, str, str]:
         if critic_engine is None:
             return True, "", ""
-        verdict = critic_engine.review_labeling(
-            task=task,
-            candidate_rm=compiled.text,
-            api=labeling_api,
-            labeling=source,
-            **context,
+        verdict = retry_critic(
+            lambda: critic_engine.review_labeling(
+                task=task,
+                candidate_rm=compiled.text,
+                api=labeling_api,
+                labeling=source,
+                **context,
+            ),
+            getattr(critic_engine, "warn", None),
         )
         return verdict.accepted, verdict.feedback, ""
 
@@ -586,6 +596,8 @@ def _refine_labeling(
             if accepted:
                 return labeling_source
             history.append(feedback)
+        except CriticUnavailableError:
+            raise  # the critic never answered about this candidate: no new candidate
         except Exception as error:
             attempts.append(
                 StageAttempt("labeling", attempt, "failed", labeling_source, error=str(error))
@@ -648,16 +660,21 @@ def _request_text(engine: object, role: str, family: str = "arm_fm", **values: s
 
 
 def _critic(engine: object, role: str, **values: str) -> tuple[bool, str, str]:
+    """Ask the critic about one candidate, repeating the request while it fails or is malformed."""
+    return retry_critic(lambda: _ask_critic(engine, role, **values), getattr(engine, "warn", None))
+
+
+def _ask_critic(engine: object, role: str, **values: str) -> tuple[bool, str, str]:
     response = _request_text(engine, role, **values)
     try:
         parsed = json.loads(_extract_artifact(response))
     except json.JSONDecodeError as error:
-        raise ValueError("ARM-FM critic returned invalid JSON") from error
+        raise CriticValidationError("ARM-FM critic returned invalid JSON") from error
     if not isinstance(parsed, dict) or not isinstance(parsed.get("accepted"), bool):
-        raise ValueError("ARM-FM critic must return boolean accepted")
+        raise CriticValidationError("ARM-FM critic must return boolean accepted")
     feedback = parsed.get("feedback")
     if not isinstance(feedback, str) or not feedback.strip():
-        raise ValueError("ARM-FM critic feedback must be nonempty")
+        raise CriticValidationError("ARM-FM critic feedback must be nonempty")
     return parsed["accepted"], feedback.strip(), response
 
 

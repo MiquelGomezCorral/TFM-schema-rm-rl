@@ -86,7 +86,11 @@ tasks, while keeping the generator and critic responsibilities stable.
   10, also a web UI field). Only a critic rejection uses one: a provider failure (connection
   error, exhausted 400 repeats, timeout) or a content failure (invalid proposal, incompatible
   clauses, malformed tagger output) reruns the same attempt and reports a warning, bounded by a
-  fixed fuse of uncounted reruns. The critic may be disabled; disabling it prints a warning and
+  fixed fuse of uncounted reruns. A failed critic request (a provider failure or critic output
+  that cannot be parsed) is not one of those reruns: it is repeated on the same candidate, in
+  compiler and baseline generation alike, bounded by the same fuse. Generation does not restart
+  and no candidate is drawn. When the fuse runs out, the run ends with a critic error that names
+  the last cause. The critic may be disabled; disabling it prints a warning and
   accepts the compiler's first result. Enabled critics use the configured provider and critic
   model.
 - The creator assumes the task is feasible in its environment; there is no refusal field.
