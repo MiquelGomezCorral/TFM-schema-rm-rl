@@ -7,9 +7,9 @@ Usage:
 A run is one card x arm x learner x variant x seed. Its folder is
 ``outputs/runs/<exp_name>/seed<seed>-<UTC>-<pid>/`` (written by ``train-rl``), beside the
 suite's ``card.json`` and ``run-config.yaml``. A rerun skips ``finished`` runs (``summary.json``
-present), leaves a run whose process is alive alone, renames an ``interrupted`` folder to
-``<folder>.interrupted`` and restarts it from zero, restarts a ``timed-out`` run only with
-``--retry-timed-out``, and never trains a run whose bundle lacks a file training needs or has
+present), leaves a run whose process is alive alone, renames an ``interrupted`` or ``timed-out``
+folder to ``<folder>.<status>`` and restarts it from zero (a ``timed-out`` run only with
+``--retry-timed-out``), and never trains a run whose bundle lacks a file training needs or has
 status ``pipeline-failed`` (``no-data``). A bundle with status ``provider-error`` or
 ``incomplete`` is retried by bundle generation, not here: its runs stay ``pending``. The driver
 writes ``resources.json`` into each run folder. Linux only: it reads ``/proc``. One driver per
@@ -72,10 +72,8 @@ BUNDLE_FILES = (
 )
 # Bundle statuses (`<card-id>.status.json`): generation retries these, so their runs wait.
 BUNDLE_RETRIED = ("provider-error", "incomplete")
-# Fields the S2 learner switches add to Configuration; a checkout without them rejects the configs.
-S2_FIELDS = ("double_q", "time_limit_penalty", "eval_greedy")
 OMP_THREADS = "2"
-POLL_SECONDS = 3  # one loop: sample memory, check the time box, start what fits
+POLL_SECONDS = 3
 KILL_GRACE_SECONDS = 30  # SIGTERM first; SIGKILL after this long
 WAIT_LOG_SECONDS = 60  # a run held back for RAM is logged this often
 
@@ -236,48 +234,50 @@ def process_alive(folder: Path, run: Run) -> bool:
     return b"train-rl" in cmdline and run.exp_name.encode() in cmdline
 
 
-def run_state(run: Run) -> tuple[str, Path | None]:
-    """The run's status and its latest run folder (None when it has none).
+def run_state(run: Run) -> tuple[str, Path | None, str | None]:
+    """The run's status, its latest run folder (None when it has none) and the bundle reason.
 
     A ``summary.json`` in any of the run's folders means ``finished``, whatever else is recorded;
     a live process means ``running``. Otherwise an unusable bundle makes the run ``no-data`` (or
-    ``pending``), also when an old folder exists.
+    ``pending``), also when an old folder exists. The reason (``bundle_problem``'s) is set only
+    for those two statuses.
     """
     folders = sorted(
         path
         for path in run.exp_dir.glob(f"seed{run.seed}-*")
-        if path.is_dir() and "." not in path.name  # `.interrupted` folders are archived
+        if path.is_dir() and "." not in path.name  # `<folder>.<status>` ones are archived
     )
     finished = [folder for folder in folders if (folder / "summary.json").is_file()]
     if finished:
-        return FINISHED, finished[-1]
+        return FINISHED, finished[-1], None
     live = [folder for folder in folders if process_alive(folder, run)]
     if live:
-        return RUNNING, live[-1]
+        return RUNNING, live[-1], None
 
     folder = folders[-1] if folders else None
     problem = bundle_problem(run)
     if problem:
-        return problem[0], folder
+        status, reason = problem
+        return status, folder, reason
     if folder is None:
-        return PENDING, None
+        return PENDING, None, None
     if read_json(folder / "resources.json").get("status") == TIMED_OUT:
-        return TIMED_OUT, folder
-    return INTERRUPTED, folder
+        return TIMED_OUT, folder, None
+    return INTERRUPTED, folder, None
 
 
-def decide(run: Run, retry_timed_out: bool) -> tuple[str, str]:
+def decide(run: Run, CONFIG: Configuration) -> tuple[str, str]:
     """What a driver does with the run: (action, note).
 
     The action is ``skip``, ``start``, ``restart``, ``no-data`` or ``pending`` (bundle being
-    retried); the note is the run status, or the bundle problem for the last two.
+    retried); the note is the run status, or the bundle problem for the last two. A ``timed-out``
+    run is skipped unless ``CONFIG.suite_retry_timed_out``.
     """
-    status, _ = run_state(run)
-    if status in (FINISHED, RUNNING) or (status == TIMED_OUT and not retry_timed_out):
+    status, _, reason = run_state(run)
+    if status in (FINISHED, RUNNING) or (status == TIMED_OUT and not CONFIG.suite_retry_timed_out):
         return "skip", status
-    problem = bundle_problem(run)
-    if problem:
-        return problem
+    if reason:
+        return status, reason
     return ("start" if status == PENDING else "restart"), status
 
 
@@ -324,14 +324,11 @@ def write_run_files(run: Run, spec: dict) -> Path:
 
 
 def config_error(config_path: Path) -> str | None:
-    """Why ``train-rl`` would reject the config, or None. Catches missing S2 fields early."""
+    """Why ``train-rl`` would reject the config, or None."""
     try:
         Configuration(yaml_config_name=str(config_path))
     except (ValueError, TypeError, OSError) as error:
-        message = f"{config_path.parent.name}: {error}"
-        if "Unknown keys" in message and any(field in message for field in S2_FIELDS):
-            message += f" ({', '.join(S2_FIELDS)} come from the S2 learner switches: merge S2)"
-        return message
+        return f"{config_path.parent.name}: {error}"
     return None
 
 
@@ -340,7 +337,7 @@ def archive_old(run: Run) -> None:
 
     Any other state is left alone: a live process owns its folder, a finished run keeps it.
     """
-    status, folder = run_state(run)
+    status, folder, _ = run_state(run)
     if folder is None or status not in (INTERRUPTED, TIMED_OUT):
         return
     resources = read_json(folder / "resources.json")
@@ -362,19 +359,6 @@ def log(message: str) -> None:
 
 def now_utc() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def child_command(config_path: Path, seed: int) -> list[str]:
-    """The argv of one training child; a test swaps this for a stub."""
-    return [
-        sys.executable,
-        "app/main.py",
-        "train-rl",
-        "--config",
-        str(config_path),
-        "--seed",
-        str(seed),
-    ]
 
 
 def die_with_driver(driver_pid: int) -> None:
@@ -560,7 +544,15 @@ class Driver:
 
         log_file = (run.exp_dir / f"seed{run.seed}.log").open("a", encoding="utf-8")
         process = subprocess.Popen(  # noqa: S603  approved: fixed argv built here, no shell
-            child_command(config_path, run.seed),
+            [
+                sys.executable,
+                "app/main.py",
+                "train-rl",
+                "--config",
+                str(config_path),
+                "--seed",
+                str(run.seed),
+            ],
             cwd=ROOT,
             env={**os.environ, "OMP_NUM_THREADS": OMP_THREADS, "PYTHONUNBUFFERED": "1"},
             stdout=log_file,
@@ -593,11 +585,11 @@ def _raise_interrupt(_signal: int, _frame: object) -> None:
     raise KeyboardInterrupt
 
 
-def plan(runs: list[Run], retry_timed_out: bool) -> list[tuple[Run, str]]:
+def plan(runs: list[Run], CONFIG: Configuration) -> list[tuple[Run, str]]:
     """Print what happens to each run; return the runs to train, with ``start`` or ``restart``."""
     queue, counts = [], Counter()
     for run in runs:
-        action, note = decide(run, retry_timed_out)
+        action, note = decide(run, CONFIG)
         print(f"{action:<8} {run.exp_name} seed {run.seed} ({note})")
         counts[action] += 1
         if action in ("start", "restart"):
@@ -628,7 +620,7 @@ def run_suite(CONFIG: Configuration) -> bool:
         raise ValueError("--parallel must be at least 1")
 
     if CONFIG.suite_dry_run:
-        plan(runs, CONFIG.suite_retry_timed_out)
+        plan(runs, CONFIG)
         return True
 
     # The lock is held while this file is open: it ends with the driver, however it ends.
@@ -643,7 +635,7 @@ def run_suite(CONFIG: Configuration) -> bool:
             )
             return False
 
-        queue = plan(runs, CONFIG.suite_retry_timed_out)
+        queue = plan(runs, CONFIG)
         if not queue:
             return True
         signal.signal(signal.SIGTERM, _raise_interrupt)

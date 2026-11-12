@@ -23,10 +23,10 @@ from pathlib import Path
 from src.config import Configuration
 
 from .run_suite import (
+    FINISHED,
     ROOT,
     TIMED_OUT,
     Run,
-    bundle_problem,
     expand_runs,
     load_suite,
     read_json,
@@ -136,7 +136,7 @@ def machine_wrong(bundle: Path | None, bundles: Path, replay: dict | None) -> bo
 
 def run_row(run: Run, bundles: Path, replay: dict | None) -> dict:
     """The results row of one run; ``bundles`` is the suite's bundles folder."""
-    status, folder = run_state(run)
+    status, folder, note = run_state(run)
     row = dict.fromkeys(COLUMNS)
     row.update(
         exp_name=run.exp_name,
@@ -146,14 +146,12 @@ def run_row(run: Run, bundles: Path, replay: dict | None) -> dict:
         variant=run.variant or "",
         seed=run.seed,
         status=status,
+        note=note,
         judged_success=NOT_EVALUATED,  # a run with no folder has no judge.json either
         bundle=str(run.bundle or ""),
         run_folder=str(folder or ""),
         time_limit_asymmetry=ASYMMETRY,
     )
-    problem = bundle_problem(run)
-    if problem and problem[0] == status:
-        row["note"] = problem[1]
     if folder is None:
         return row
 
@@ -192,8 +190,12 @@ def group_rows(rows: list[dict]) -> list[dict]:
 
     result = []
     for (card, arm, learner, variant), members in groups.items():
-        finished = sum(member["status"] == "finished" for member in members)
-        cells = {key: mean_cell([member[key] for member in members]) for _, key in METRICS}
+        finished = sum(member["status"] == FINISHED for member in members)
+        cells = {
+            key: mean_cell([member[key] for member in members])
+            for _, key in METRICS
+            if key != "machine_wrong"
+        }
         checks = [m["machine_wrong"] for m in members if m["machine_wrong"] is not None]
         cells["machine_wrong"] = any(checks) if checks else None  # unknown stays unknown
         result.append(
@@ -220,7 +222,11 @@ def cell(value: object) -> str:
         return ""
     if isinstance(value, bool):
         return "yes" if value else "no"
-    return f"{value:.4g}" if isinstance(value, float) else str(value)
+    if isinstance(value, float):
+        if value.is_integer() or abs(value) >= 1e6:
+            return str(round(value))  # 90000.0 and 1234567.5, never e-notation
+        return f"{value:.6g}"
+    return str(value)
 
 
 def markdown_table(headers: list[str], rows: list[list]) -> str:
@@ -292,7 +298,9 @@ def aggregate_suite(CONFIG: Configuration) -> None:
     if CONFIG.suite is None or CONFIG.suite_output is None:
         raise ValueError("aggregate-suite requires --suite and --output")
     spec = load_suite(CONFIG.suite)
-    replay = read_json(ROOT / spec["replay_summary"]) if spec.get("replay_summary") else None
+    replay = None
+    if spec.get("replay_summary"):  # written once: a missing or bad file raises, not "unknown"
+        replay = json.loads((ROOT / spec["replay_summary"]).read_text(encoding="utf-8"))
     bundles = Path(spec["bundles"])
     rows = [run_row(run, bundles, replay) for run in expand_runs(spec)]
     groups = group_rows(rows)
