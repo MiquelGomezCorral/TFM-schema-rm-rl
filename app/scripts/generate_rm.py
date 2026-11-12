@@ -77,10 +77,6 @@ def generate_rm(
             hooks.notify_run_started(progress.log_path)
             progress(f"Run log: {progress.log_path}")
         progress(f"Recurrent soft rules: {'on' if CONFIG.recurrent_soft_penalty else 'off'}")
-        switches = asdict(RewardSwitches.from_config(CONFIG))
-        off = [name for name, on in switches.items() if name.startswith("reward_") and not on]
-        if off:
-            progress(f"Reward parts switched off: {', '.join(off)}")
 
         _run_pipeline(CONFIG, hooks, progress, write_outputs=write_outputs)
         return True

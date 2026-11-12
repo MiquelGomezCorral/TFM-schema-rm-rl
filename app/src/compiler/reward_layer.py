@@ -80,11 +80,12 @@ class RewardLayerResult:
 
 @dataclass(frozen=True)
 class RewardSwitches:
-    """Which reward parts the machine pays; a part switched off pays 0. Defaults come from CONFIG.
+    """Which reward parts the machine pays; a part switched off pays 0.
 
-    The field names are the ``Configuration`` field names. Completion is never switched off.
-    The recurrent soft penalty changes the machine's structure (see ``_rearm_violated``); the
-    other switches only change the rewards (and, for the end judgment, the machine's end lines).
+    The defaults are the ``Configuration`` class defaults, and the field names are its field
+    names. Completion is never switched off. The recurrent soft penalty changes the machine's
+    structure (see ``_rearm_violated``); the other switches only change the rewards (and, for the
+    end judgment, the machine's end lines).
     """
 
     reward_progress: bool = Configuration.reward_progress
@@ -112,7 +113,7 @@ def build_reward_machine(
     ``reward_end_judgment`` the machine carries an end judgment for the promises still open where
     the environment ends the episode; without it the runtime pays the flat time-limit penalty on
     a truncated step that did not terminate, and nothing on a termination. The other
-    ``switches`` default to CONFIG's.
+    ``switches`` default to the ``Configuration`` class defaults.
     Raises ``ValueError`` on a non-total DFA, conflicting clauses, or a positive reward cycle.
     """
     switches = switches or RewardSwitches()

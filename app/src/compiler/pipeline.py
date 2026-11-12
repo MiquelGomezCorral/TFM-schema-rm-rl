@@ -85,7 +85,8 @@ def build_compilation_result(
 ) -> CompilationResult:
     """Build and serialize a task-specific Reward Machine from compiled DFAs.
 
-    ``switches`` says which reward parts it pays; without them CONFIG's defaults apply.
+    ``switches`` says which reward parts it pays; without them the ``Configuration`` class
+    defaults apply.
     """
     soft = [clause.priority is PriorityLevel.SOFT for clause in proposal.clauses]
     layer = build_reward_machine(dfas, soft, switches)

@@ -408,7 +408,7 @@ class ArmFMArtifactTests(unittest.TestCase):
                 proposition_ids=("done",),
                 propositions=(SimpleNamespace(identifier="done", description="finished"),),
             ),
-            proposal=SimpleNamespace(task="finish", clauses=()),
+            proposal=SimpleNamespace(task="finish"),
             text="numeric",
             reward_machine=RewardMachineStructure(
                 states=(0, 1),
