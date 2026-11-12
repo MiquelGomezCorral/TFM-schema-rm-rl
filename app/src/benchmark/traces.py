@@ -22,6 +22,7 @@ from plotly.subplots import make_subplots
 
 from src.arm_fm.artifacts import ArtifactBundle, load_bundle
 from src.arm_fm.environments import make_environment, terminated_with_reward
+from src.arm_fm.evaluation import ablation_of
 from src.arm_fm.runtime import RewardMachineEnvironment, RewardMachineRuntime
 from src.compiler.rm_format import PaperRewardMachine
 
@@ -143,13 +144,18 @@ def write_json(path: Path, value: object, indent: int | None = None) -> Path:
     return path
 
 
+def as_object(value: object) -> dict[str, Any]:
+    """``value`` when it is a JSON object, else ``{}``: a malformed manifest field counts as missing."""
+    return value if isinstance(value, dict) else {}
+
+
 def read_json(path: Path) -> dict[str, Any]:
     """The JSON object in ``path``, or ``{}`` when it is absent, cut mid-write or not an object."""
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
-    return value if isinstance(value, dict) else {}
+    return as_object(value)
 
 
 def load_bank(folder: Path) -> tuple[dict[str, Card], list[TraceRecord]]:
@@ -313,9 +319,11 @@ NO_PART = "none"  # the ``ablate-rm --off`` value of the control that switches n
 
 
 def ablation_settings(folder: Path) -> dict[str, Any]:
-    """The ``ablate-rm`` settings in the manifest (``off``, ``no_op``); ``{}`` for other bundles."""
-    manifest = read_json(folder / "manifest.json")
-    return (manifest.get("effective_settings") or {}).get("ablation") or {}
+    """The ``ablate-rm`` settings in the manifest (``off``, ``no_op``); ``{}`` for other bundles.
+
+    A field that is not an object counts as missing; the bundle's own load error still shows.
+    """
+    return ablation_of(read_json(folder / "manifest.json").get("effective_settings"))
 
 
 @dataclass(frozen=True)

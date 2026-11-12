@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from src.arm_fm import load_bundle, review_reward_machine
+from src.compiler import parse_paper_reward_machine
 from src.config import Configuration
 from src.models import EnvironmentDescription, EnvironmentValidationError
 from src.utils import get_engine
@@ -43,14 +44,16 @@ def cross_critic(
     and the identity of what was judged (see ``_identity``), so a regenerated machine, another
     critic model or another direction is judged again and its old result removed. Launching
     stops once ``max_calls`` requests were sent; requests already running finish, so the count
-    can pass it by up to ``parallel``. Raises ``ValueError`` when no bundle is one this critic
-    judges, and ``RuntimeError`` after the run when any bundle could not be judged.
+    can pass it by up to ``parallel``. A pipeline-failed bundle is judged on its last candidate
+    only when that candidate parses; otherwise it is skipped with the parser error and no
+    request is sent. Raises ``ValueError`` when no bundle is one this critic judges, and
+    ``RuntimeError`` after the run when any bundle could not be judged.
     """
     if direction not in JUDGED_RM_MODE:
         raise ValueError(f"--critic must be one of {', '.join(JUDGED_RM_MODE)}: {direction!r}")
     if not CONFIG.critic_model:
         raise ValueError("cross-critic needs a critic model; set the provider's critic variable")
-    pending, eligible = _pending(bundles, direction, CONFIG.critic_model)
+    pending, eligible, unparseable = _pending(bundles, direction, CONFIG.critic_model)
     if not eligible:
         raise ValueError(
             f"--critic {direction} judges bundles with rm_mode {JUDGED_RM_MODE[direction]!r}; "
@@ -74,22 +77,28 @@ def cross_critic(
     if "stopped" in outcomes:
         print(f"stopped at --max-calls: {outcomes.count('stopped')} bundle(s) left", flush=True)
     _print_summary(bundles)
+    if unparseable:
+        print(
+            f"critic {direction}: {unparseable} not judged, the last candidate does not parse",
+            flush=True,
+        )
     if "failed" in outcomes:
         raise RuntimeError(
             f"{outcomes.count('failed')} bundle(s) were not judged; run again to retry them"
         )
 
 
-def _pending(bundles: Path, direction: str, critic_model: str) -> tuple[list[Path], int]:
-    """Return the bundles this critic still has to judge and how many it is eligible for.
+def _pending(bundles: Path, direction: str, critic_model: str) -> tuple[list[Path], int, int]:
+    """Return the bundles to judge, the eligible count and the unparseable-last-candidate count.
 
     A bundle is eligible when its ``rm_mode`` is the one this critic judges. It stays pending
     unless its result already holds the bundle's current identity; a result with another
     identity is removed here, so it can neither be counted nor outlive a failed rejudgment.
-    The reason for every skip is printed.
+    A bundle whose last candidate does not parse is never pending and loses its result, which
+    judged an older candidate. The reason for every skip is printed.
     """
     pending = []
-    eligible = 0
+    eligible = unparseable = 0
     for directory in sorted(
         path for path in bundles.iterdir() if (path / "manifest.json").is_file()
     ):
@@ -102,14 +111,48 @@ def _pending(bundles: Path, direction: str, critic_model: str) -> tuple[list[Pat
             continue
         eligible += 1
         identity = _identity(directory, direction, critic_model)
+        parse_error = _last_candidate_error(directory, manifest)
         if identity is None:
             print(f"{directory.name}: skipped (no reward machine)", flush=True)
+        elif parse_error:
+            unparseable += 1
+            (directory / RESULT_FILE).unlink(missing_ok=True)
+            print(
+                f"{directory.name}: skipped (last candidate does not parse: {parse_error})",
+                flush=True,
+            )
         elif _stored_identity(directory) == identity:
             print(f"{directory.name}: skipped (already judged)", flush=True)
         else:
             (directory / RESULT_FILE).unlink(missing_ok=True)
             pending.append(directory)
-    return pending, eligible
+    return pending, eligible, unparseable
+
+
+def _last_candidate_error(directory: Path, manifest: dict) -> str | None:
+    """Return the parser error of a pipeline-failed bundle's last candidate, else None.
+
+    A pipeline-failed ARM-FM bundle has Reward Machine attempts and none accepted. Its
+    ``reward_machine.txt`` is the last candidate that parsed, which is an older one when the
+    last candidate did not. Any other bundle (accepted attempt, compiler attempts, no
+    ``attempts.json``) returns None.
+    """
+    try:
+        attempts = json.loads((directory / "attempts.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    rounds = [item for item in attempts if item.get("stage") == "reward_machine"]
+    if not rounds or any(item.get("status") == "accepted" for item in rounds):
+        return None
+    try:
+        parse_paper_reward_machine(
+            rounds[-1].get("candidate", ""),
+            propositions=tuple(manifest["proposition_semantics"]),
+            require_final_states=True,
+        )
+    except Exception as error:  # the generation loop records any failure as a failed attempt
+        return f"{type(error).__name__}: {' '.join(str(error).split())[:100]}"
+    return None
 
 
 def _identity(directory: Path, direction: str, critic_model: str) -> str | None:

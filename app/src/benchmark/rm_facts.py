@@ -18,7 +18,7 @@ from src.arm_fm.artifacts import ArtifactBundle
 
 from .cards import Card, card_header, load_cards
 from .declare_judge import ClauseError, as_clause
-from .traces import BundleRef, find_bundles, load_machine_bundle, read_json, write_json
+from .traces import BundleRef, as_object, find_bundles, load_machine_bundle, read_json, write_json
 
 STAMP_FIELDS = ("attempts", "critic_interventions", "retries", "wall_time_s")
 FARM = "farm"
@@ -48,8 +48,12 @@ def write_rm_facts(
 
 
 def _manifest_stamp(ref: BundleRef) -> dict[str, Any] | None:
-    """The manifest's provenance stamp, read apart from the machine so a failed bundle keeps it."""
-    return (read_json(ref.path / "manifest.json").get("provenance") or {}).get("stamp")
+    """The manifest's provenance stamp, read apart from the machine so a failed bundle keeps it.
+
+    A provenance or stamp that is not an object counts as missing (``None``).
+    """
+    provenance = as_object(read_json(ref.path / "manifest.json").get("provenance"))
+    return as_object(provenance.get("stamp")) or None
 
 
 def _bundle_facts(ref: BundleRef, card: Card | None) -> dict[str, Any]:
@@ -134,10 +138,15 @@ def clause_status(stored: list[list[Any]] | None, card: Card) -> str:
 
 
 def generation_table(suite: str, facts: Mapping[str, Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Per arm: bundles, stamped bundles and the stamped counts (R22); null counts are skipped."""
+    """Per arm: bundles, stamped bundles and the stamped counts (R22); null counts are skipped.
+
+    An ablation variant is left out: it copies its source machine's stamp, which the source
+    bundle already counts once.
+    """
     stamps_by_arm: dict[str, list[Mapping[str, Any] | None]] = defaultdict(list)
     for entry in facts.values():
-        stamps_by_arm[entry["arm"]].append(entry.get("stamp"))
+        if not entry["ablation"]:
+            stamps_by_arm[entry["arm"]].append(entry.get("stamp"))
     rows = []
     for arm, stamps in sorted(stamps_by_arm.items()):
         stamped = [stamp for stamp in stamps if stamp]

@@ -11,6 +11,7 @@ from src.arm_fm import (
     judge_bundle,
     load_bundle,
 )
+from src.benchmark.traces import ablation_settings
 from src.config import Configuration
 from src.models import EnvironmentDescription
 from src.utils import get_engine, print_warning
@@ -41,9 +42,13 @@ def evaluate_larm(CONFIG: Configuration) -> None:
             )
             decisions.append(judge_bundle(bundle, engine))
         except Exception as error:
-            if bundle is None or not _generation_complete(bundle):
+            # Read from the manifest file: the bundle may not have loaded. A variant is no failure.
+            ablation = bool(ablation_settings(path))
+            if not ablation and (bundle is None or not _generation_complete(bundle)):
                 failures += 1
-            decisions.append(JudgeDecision(False, False, f"unscored: {error}", scored=False))
+            decisions.append(
+                JudgeDecision(False, False, f"unscored: {error}", scored=False, ablation=ablation)
+            )
 
     summary = aggregate_judgments(decisions, submitted=len(paths), generation_failures=failures)
     if CONFIG.output is not None:
