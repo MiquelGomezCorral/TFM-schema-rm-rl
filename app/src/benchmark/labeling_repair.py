@@ -8,6 +8,10 @@ a corrected labeling with the failure evidence, up to a round limit, and checks 
 way the first check did. The Reward Machine is never changed. The record of one bundle sits
 beside its folder (``<name>.labeling_check.json``), so a bundle folder gains no file; the repaired
 labeling replaces ``labeling.py`` and the original stays in the record.
+
+A bundle whose generation stopped at labeling has no descriptions and no embeddings either.
+``needs_finish`` and ``finished_status`` decide which repaired bundles get those stages and how
+their ``<name>.status.json`` reads afterwards; the driver runs the stages.
 """
 
 import hashlib
@@ -48,6 +52,8 @@ DONE_OUTCOMES = (OK, FIXED, FIXED_BY_AGENT)
 EVIDENCE_LIMIT = 5  # failures kept per check, and mismatching steps per proposition
 RECORD_SUFFIX = ".labeling_check.json"
 SUMMARY_FILE = "labeling_check.json"
+STATUS_SUFFIX = ".status.json"
+BY_SMALL_MODEL, BY_AGENT = "small-model", "agent"  # who repaired the labeling of a finished bundle
 
 
 # ======================================================================================
@@ -321,6 +327,48 @@ def new_record(
         "rounds": [],
         "calls": 0,
         "wall_time_s": 0.0,
+    }
+
+
+def status_path(folder: Path) -> Path:
+    """The generation status of a bundle, beside its folder (written by ``generate-suite``)."""
+    return folder.with_name(folder.name + STATUS_SUFFIX)
+
+
+def needs_finish(bundle: ArtifactBundle, record: dict[str, Any], status: dict[str, Any]) -> bool:
+    """Whether generation stopped after an accepted Reward Machine and the labeling is now fixed.
+
+    The status ``pipeline-failed`` is what ``run-suite`` reads, so it gates the step and goes back
+    to ``complete`` only when the step ends. The record must say the labeling was repaired, and
+    the file must still be the one that passed the check. A machine the critic never accepted
+    stays failed: it is saved like a labeling-stage failure but its generation never got there.
+    """
+    accepted_machine = any(
+        item.get("stage") == "reward_machine" and item.get("status") == "accepted"
+        for item in bundle.attempts
+    )
+    return (
+        status.get("status") == "pipeline-failed"
+        and accepted_machine
+        and record.get("outcome") in (FIXED, FIXED_BY_AGENT)
+        and record.get("labeling_sha256") == sha256(bundle.labeling_source)
+    )
+
+
+def finished_status(status: dict[str, Any], record: dict[str, Any]) -> dict[str, Any]:
+    """The status of a finished bundle: ``complete``, with the generation outcome kept apart.
+
+    ``generation_status`` and ``generation_reason`` hold what the generation itself ended with, so a
+    count of generation successes reads them and not ``status``. ``calls`` and ``wall_time_s`` stay
+    the generation's.
+    """
+    return {
+        **status,
+        "status": "complete",
+        "reason": None,
+        "generation_status": status["status"],
+        "generation_reason": status.get("reason"),
+        "labeling_repaired_by": BY_AGENT if record["outcome"] == FIXED_BY_AGENT else BY_SMALL_MODEL,
     }
 
 

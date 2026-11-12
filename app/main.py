@@ -621,7 +621,7 @@ if __name__ == "__main__":
     # ======================================================================================
     repair_parser = subparsers.add_parser(
         "repair-labeling",
-        help="Class every bundle's labeling failures against a trace bank, then repair them",
+        help="Class every bundle's labeling failures against a trace bank, repair them, finish repaired bundles",
     )
     repair_parser.add_argument("--traces", required=True, type=Path, help="trace-bank output")
     repair_parser.add_argument(
