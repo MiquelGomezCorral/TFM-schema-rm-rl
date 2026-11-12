@@ -20,7 +20,7 @@ The target and matching key are determined from the current randomized mission a
 |---|---|---|
 | `key_found` | latch, reading | the agent sees the matching key now: the key lies in the 7x7 box in front of the agent (the agent's row or column and the 6 cells ahead, 3 cells to each side) and no wall or closed door hides it; or `key_found` was true at the previous step |
 | `has_matching_key` | condition | the agent carries a key of the locked door's color |
-| `target_door_open` | condition | the locked door is open; false again if toggled shut |
+| `target_door_open` | condition | the locked door is open; false again if toggled shut. "The locked door" is the door that starts locked, also after the key has unlocked it |
 | `target_room_entered` | latch, reading | the agent stands on the locked doorway or on a cell inside the target room now (the room's 6x6 block, door cell included); or `target_room_entered` was true at the previous step |
 | `target_picked_up` | condition, last step only | the agent carries the mission's ball |
 
