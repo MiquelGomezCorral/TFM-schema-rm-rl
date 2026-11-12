@@ -6,7 +6,8 @@ success rule), so the training loops stay environment-agnostic. Families: MiniGr
 
 import copy
 import random
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -340,6 +341,15 @@ class MultiTaskEnvironment(gym.Env):
     def unwrapped(self):
         """The current task's own environment, so grid state stays readable."""
         return self.runs[self._index].env.unwrapped
+
+    @contextmanager
+    def keep_task_draws(self) -> Iterator[None]:
+        """Restore the task-draw generator on exit, so extra episodes leave later draws unchanged."""
+        state = self._task_rng.getstate()
+        try:
+            yield
+        finally:
+            self._task_rng.setstate(state)
 
     def is_success(self, terminated: bool, env_reward: float) -> bool:
         # The task that ran the last step: PPO's SAME_STEP autoreset may already have drawn the next one.

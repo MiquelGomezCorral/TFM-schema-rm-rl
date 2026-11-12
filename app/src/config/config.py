@@ -63,7 +63,13 @@ PPO_POSITIVE = (
     "ppo_max_grad_norm",
     "ppo_clip_coef",
 )
-PPO_NON_NEGATIVE = ("ppo_ent_coef", "ppo_vf_coef")
+PPO_NON_NEGATIVE = (
+    "ppo_ent_coef",
+    "ppo_vf_coef",
+    "ppo_ent_decay_steps",
+    "ppo_epsilon_start",
+    "ppo_epsilon_decay_steps",
+)
 PPO_NUMBERS = (*PPO_POSITIVE, *PPO_NON_NEGATIVE, "ppo_gae_lambda")
 PPO_FLAGS = ("ppo_anneal_lr", "ppo_clip_vloss", "ppo_norm_adv")
 
@@ -321,6 +327,15 @@ class Configuration:
     ppo_norm_adv: bool = True
     ppo_ent_coef: float = 0.01
     ppo_vf_coef: float = 0.5
+    # PPO exploration variants; each default leaves training unchanged.
+    # Entropy bonus falls linearly from ppo_ent_coef_start (None: ppo_ent_coef) to ppo_ent_coef
+    # over ppo_ent_decay_steps env steps (0: no schedule).
+    ppo_ent_coef_start: float | None = None
+    ppo_ent_decay_steps: int = 0
+    # Forced random start: actions come from (1 - eps) * policy + eps / n_actions, with eps falling
+    # linearly from ppo_epsilon_start to 0 over ppo_epsilon_decay_steps env steps (0: off).
+    ppo_epsilon_start: float = 0.0
+    ppo_epsilon_decay_steps: int = 0
 
     def __post_init__(self) -> None:
         # The YAML loads first so its path values get the same Path conversion.
@@ -463,6 +478,17 @@ class Configuration:
             raise ValueError("ppo_gae_lambda must be between 0 and 1")
         if (self.ppo_num_envs * self.ppo_num_steps) % self.ppo_num_minibatches:
             raise ValueError("ppo_num_envs * ppo_num_steps must divide by ppo_num_minibatches")
+        self._validate_ppo_exploration()
+
+    def _validate_ppo_exploration(self) -> None:
+        if self.ppo_ent_coef_start is not None and not _is_finite_number(self.ppo_ent_coef_start):
+            raise ValueError("ppo_ent_coef_start must be a finite number or null")
+        if self.ppo_ent_decay_steps and (self.ppo_ent_coef_start or 0) < self.ppo_ent_coef:
+            raise ValueError("ppo_ent_decay_steps needs ppo_ent_coef_start at least ppo_ent_coef")
+        if not 0 <= self.ppo_epsilon_start <= 1:
+            raise ValueError("ppo_epsilon_start must be between 0 and 1")
+        if bool(self.ppo_epsilon_start) != bool(self.ppo_epsilon_decay_steps):
+            raise ValueError("ppo_epsilon_start and ppo_epsilon_decay_steps go together")
 
     def _validate_generation(self) -> None:
         if self.reasoning not in REASONING_LEVELS:

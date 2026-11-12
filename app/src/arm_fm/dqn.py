@@ -44,7 +44,7 @@ import shutil
 import subprocess
 import time
 from collections.abc import Callable, Iterable, Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -131,6 +131,10 @@ RUN_SETTINGS = (
     "ppo_norm_adv",
     "ppo_ent_coef",
     "ppo_vf_coef",
+    "ppo_ent_coef_start",
+    "ppo_ent_decay_steps",
+    "ppo_epsilon_start",
+    "ppo_epsilon_decay_steps",
 )
 
 # Each run folder CSV and its columns.
@@ -144,6 +148,7 @@ CSV_COLUMNS = {
         "length",
         "exited",
         "final_rm_state",
+        "rm_path",
         "epsilon",
         "wall_seconds",
         "task",
@@ -160,6 +165,9 @@ CSV_COLUMNS = {
         "accept_exit_agreement",
         "seeds",
         "task",
+        "sampled_exit_rate",
+        "sampled_mean_env_return",
+        "sampled_mean_rm_return",
     ),
     "train.csv": ("global_step", "td_loss", "q_mean", "epsilon", "sps"),
 }
@@ -524,6 +532,7 @@ class EpisodeTracker:
     length: int = 0
     exited: bool = False
     rm_state: str | None = None
+    rm_path: list[str] = field(default_factory=list)  # RM states in visit order, repeats merged
     rm_accept: bool | None = None
     task: str | None = None  # set by a multi-task env
     seed: int | None = None  # the reset seed of an evaluation episode
@@ -539,6 +548,8 @@ class EpisodeTracker:
         if "rm_reward" in info:
             self.rm_return = (self.rm_return or 0.0) + info["rm_reward"]
             self.rm_state = info["rm_state"]
+            if not self.rm_path or self.rm_path[-1] != str(self.rm_state):
+                self.rm_path.append(str(self.rm_state))
             self.rm_accept = info["rm_accept"]
 
 
@@ -694,6 +705,7 @@ class RunRecorder:
                 "length": episode.length,
                 "exited": episode.exited,
                 "final_rm_state": episode.rm_state,
+                "rm_path": " ".join(episode.rm_path),
                 "epsilon": epsilon,
                 "wall_seconds": self.wall_seconds,
                 "task": episode.task,

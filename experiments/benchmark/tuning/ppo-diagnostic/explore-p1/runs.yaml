@@ -1,0 +1,42 @@
+# PPO diagnostic, UnlockPickup with the Reward Machine, 1.5M steps: the two exploration variants
+# on top of s07-tuned. A: entropy 0.05 falling to 0.01 over 300k steps. C: forced random start,
+# 0.3 falling to 0 over 200k steps. (B, an episodic count bonus, was dropped: it is a second
+# reward next to the Reward Machine.) Phase 1 runs seeds 1 and 2;
+# explore-p2 adds 3 and 21, explore-p3 adds 4. Settings and why:
+# plans/testing-program-20261111/slices/ppo-diagnostic/settings.md.
+# Run: setsid nohup experiments/benchmark/scripts/train.sh tuning/ppo-diagnostic/explore-p1 --parallel 2 --max-ram-gb 7.5
+suite: ppo-diag-explore
+tasks: experiments/benchmark/tuning/ppo-diagnostic/tasks.json
+bundles: experiments/benchmark/pilot/bundles
+learner: tuned-epsilon
+compare_learners: [tuned-epsilon, tuned-entropy]
+s07-tuned: &s07-tuned # not a learner: the values the two variants start from
+  ppo_learning_rate: 1.0e-3
+  ppo_num_envs: 16
+  ppo_num_steps: 256
+  ppo_num_minibatches: 16
+  ppo_update_epochs: 10
+  ppo_clip_coef: 0.2
+  ppo_clip_vloss: false
+  ppo_ent_coef: 0.01
+learners:
+  tuned-epsilon:
+    config: &config experiments/benchmark/configs/ppo.yaml
+    ram_gb: &ram 2.4
+    overrides:
+      <<: *s07-tuned
+      ppo_epsilon_start: 0.3
+      ppo_epsilon_decay_steps: 200000
+  tuned-entropy:
+    config: *config
+    ram_gb: *ram
+    overrides:
+      <<: *s07-tuned
+      ppo_ent_coef_start: 0.05
+      ppo_ent_decay_steps: 300000
+arms: [farm]
+seeds: [1, 2]
+total_timesteps: 1500000
+time_box_min: 120
+only: [base-unlock-pickup]
+variants: []

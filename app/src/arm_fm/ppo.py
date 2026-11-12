@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import math
 import time
-from contextlib import ExitStack
+from contextlib import ExitStack, nullcontext
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -64,7 +64,7 @@ from .dqn import (
     rm_embedding_branch,
 )
 from .dqn import evaluation_resets as task_evaluation_resets
-from .environments import RunEnvironment, make_run_environment
+from .environments import MultiTaskEnvironment, RunEnvironment, make_run_environment
 
 TRAIN_COLUMNS = (
     "global_step",
@@ -72,6 +72,8 @@ TRAIN_COLUMNS = (
     "engine_crashes",
     "iteration",
     "learning_rate",
+    "ent_coef",
+    "epsilon",
     "policy_loss",
     "value_loss",
     "entropy",
@@ -146,6 +148,15 @@ def fixed_layout(CONFIG: Configuration) -> bool:
     return CONFIG.layout == "fixed" and CONFIG.env_family == "minigrid"
 
 
+def training_reset_seeds(CONFIG: Configuration) -> list[int]:
+    """The first-reset seed of each training env: ``seed * ppo_num_envs + index``.
+
+    Run seeds never share an env seed (``seed + index`` made seeds closer than ``ppo_num_envs``
+    train on the same layouts), and they stay below ``eval_seed_base``, which seeds evaluation.
+    """
+    return [CONFIG.seed * CONFIG.ppo_num_envs + index for index in range(CONFIG.ppo_num_envs)]
+
+
 def _open_run(CONFIG: Configuration, cleanup: ExitStack) -> RunEnvironment:
     run = make_run_environment(CONFIG)
     cleanup.callback(run.env.close)
@@ -175,7 +186,7 @@ def _run(
     _train(CONFIG, collector, eval_run, learner, recorder)
 
     global_step = collector.global_step
-    final_eval = evaluate(CONFIG, eval_run, learner.agent, CONFIG.final_eval_episodes)
+    final_eval = evaluate_with_sampled(CONFIG, eval_run, learner.agent, CONFIG.final_eval_episodes)
     recorder.write_evaluation(global_step, final_eval, CONFIG.success_threshold)
     fields = {**learner.summary_fields(), **collector.summary_fields()}
     recorder.write_summary(CONFIG, fields, final_eval)
@@ -203,6 +214,11 @@ def _check_settings(CONFIG: Configuration) -> None:
             f"PPO minibatch size must be at least 2 (got {minibatch_size} = ppo_num_envs "
             f"{CONFIG.ppo_num_envs} * ppo_num_steps {CONFIG.ppo_num_steps} / ppo_num_minibatches "
             f"{CONFIG.ppo_num_minibatches}): advantage normalization needs two samples"
+        )
+    if training_reset_seeds(CONFIG)[-1] >= CONFIG.eval_seed_base:
+        raise ValueError(
+            f"seed {CONFIG.seed} gives training env seeds that reach eval_seed_base "
+            f"{CONFIG.eval_seed_base}; use a smaller seed or a larger eval_seed_base"
         )
 
 
@@ -260,13 +276,22 @@ class PPOAgent(nn.Module):
         return self.critic(self._features(observation))
 
     def get_action_and_value(
-        self, observation: Observation, action: Tensor | None = None
+        self, observation: Observation, action: Tensor | None = None, epsilon: float = 0.0
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        """Sample (or score) actions from the behaviour policy, plus the policy's entropy.
+
+        With ``epsilon`` the behaviour policy is ``(1 - epsilon) * pi + epsilon / n_actions``: the
+        action and its log-probability follow that mixture, the entropy stays the policy's.
+        """
         hidden = self._features(observation)
-        distribution = Categorical(logits=self.actor(hidden))
+        logits = self.actor(hidden)
+        policy = Categorical(logits=logits)
+        behaviour = policy
+        if epsilon > 0:
+            behaviour = Categorical(probs=(1 - epsilon) * policy.probs + epsilon / logits.shape[1])
         if action is None:
-            action = distribution.sample()
-        return action, distribution.log_prob(action), distribution.entropy(), self.critic(hidden)
+            action = behaviour.sample()
+        return action, behaviour.log_prob(action), policy.entropy(), self.critic(hidden)
 
     @torch.no_grad()
     def act(
@@ -307,6 +332,7 @@ class Rollout:
     rewards: Tensor
     dones: Tensor
     values: Tensor
+    epsilon: float = 0.0  # the mixture weight of the random actions that collected this rollout
 
     @classmethod
     def create(
@@ -390,7 +416,7 @@ class RolloutCollector:
         self.global_step = 0
         self.trackers = [EpisodeTracker() for _ in runs]
         self.rm_states: set[str] = set()
-        observation, _ = envs.reset(seed=CONFIG.seed)
+        observation, _ = envs.reset(seed=training_reset_seeds(CONFIG))
         self.next_observation = _to_tensors(_as_dict(observation), device)
         self.next_done = torch.zeros(len(runs), device=device)
 
@@ -405,7 +431,9 @@ class RolloutCollector:
             rollout.dones[step] = self.next_done
 
             with torch.no_grad():
-                action, logprob, _, value = agent.get_action_and_value(self.next_observation)
+                action, logprob, _, value = agent.get_action_and_value(
+                    self.next_observation, epsilon=rollout.epsilon
+                )
             rollout.values[step] = value.flatten()
             rollout.actions[step] = action
             rollout.logprobs[step] = logprob
@@ -506,6 +534,7 @@ class PPOLearner:
     optimizer: optim.Optimizer
     initial_parameters: Tensor
     shuffler: np.random.Generator
+    ent_coef: float  # the entropy bonus weight of the current iteration (``ppo_ent_coef`` schedule)
     gradient_updates: int = 0
 
     @classmethod
@@ -520,7 +549,8 @@ class PPOLearner:
         agent = PPOAgent(run.make_encoder(), observation_space, action_count).to(device)
         optimizer = optim.Adam(agent.parameters(), lr=CONFIG.ppo_learning_rate, eps=1e-5)
         initial = nn.utils.parameters_to_vector(agent.parameters()).detach().clone()
-        return cls(agent, optimizer, initial, np.random.default_rng(CONFIG.seed))
+        shuffler = np.random.default_rng(CONFIG.seed)
+        return cls(agent, optimizer, initial, shuffler, CONFIG.ppo_ent_coef)
 
     def set_learning_rate(self, learning_rate: float) -> None:
         self.optimizer.param_groups[0]["lr"] = learning_rate
@@ -565,15 +595,18 @@ class PPOLearner:
                 chosen = torch.as_tensor(
                     indices[start : start + minibatch_size], device=batch.actions.device
                 )
-                metrics = self._minibatch_step(CONFIG, batch[chosen])
+                metrics = self._minibatch_step(CONFIG, batch[chosen], rollout.epsilon)
                 clip_fractions.append(metrics.pop("clipfrac"))
         metrics["clipfrac"] = float(np.mean(clip_fractions))
         metrics["explained_variance"] = _explained_variance(batch.values, batch.returns)
         return metrics
 
-    def _minibatch_step(self, CONFIG: Configuration, batch: Batch) -> dict[str, float]:
+    def _minibatch_step(
+        self, CONFIG: Configuration, batch: Batch, epsilon: float
+    ) -> dict[str, float]:
+        # The ratio compares the mixture that collected the batch with the updated one.
         _, new_logprob, entropy, new_value = self.agent.get_action_and_value(
-            batch.observations, batch.actions
+            batch.observations, batch.actions, epsilon
         )
         log_ratio = new_logprob - batch.logprobs
         ratio = log_ratio.exp()
@@ -600,7 +633,7 @@ class PPOLearner:
             value_loss = 0.5 * ((new_value - batch.returns) ** 2).mean()
 
         entropy_loss = entropy.mean()
-        loss = policy_loss - CONFIG.ppo_ent_coef * entropy_loss + CONFIG.ppo_vf_coef * value_loss
+        loss = policy_loss - self.ent_coef * entropy_loss + CONFIG.ppo_vf_coef * value_loss
         self.optimizer.zero_grad()
         loss.backward()
         nn.utils.clip_grad_norm_(self.agent.parameters(), CONFIG.ppo_max_grad_norm)
@@ -626,6 +659,21 @@ def _explained_variance(predicted: Tensor, target: Tensor) -> float:
 # ======================================================================================
 
 
+def _linear(start: float, end: float, step: int, duration: int) -> float:
+    """``start`` falling linearly to ``end`` over ``duration`` env steps; ``end`` without one."""
+    if duration <= 0:
+        return end
+    return start + (end - start) * min(step / duration, 1.0)
+
+
+def _exploration_schedule(CONFIG: Configuration, step: int) -> tuple[float, float]:
+    """The entropy coefficient and the random-action weight epsilon at ``step`` env steps."""
+    start = CONFIG.ppo_ent_coef if CONFIG.ppo_ent_coef_start is None else CONFIG.ppo_ent_coef_start
+    ent_coef = _linear(start, CONFIG.ppo_ent_coef, step, CONFIG.ppo_ent_decay_steps)
+    epsilon = _linear(CONFIG.ppo_epsilon_start, 0.0, step, CONFIG.ppo_epsilon_decay_steps)
+    return ent_coef, epsilon
+
+
 def _train(
     CONFIG: Configuration,
     collector: RolloutCollector,
@@ -643,6 +691,7 @@ def _train(
         if CONFIG.ppo_anneal_lr:
             learning_rate *= 1.0 - (iteration - 1.0) / iterations
         learner.set_learning_rate(learning_rate)
+        learner.ent_coef, rollout.epsilon = _exploration_schedule(CONFIG, collector.global_step)
 
         started = time.monotonic()
         collector.collect(CONFIG, learner.agent, rollout, recorder)
@@ -662,6 +711,8 @@ def _train(
                 "engine_crashes": collector.engine_crashes(),
                 "iteration": iteration,
                 "learning_rate": learning_rate,
+                "ent_coef": learner.ent_coef,
+                "epsilon": rollout.epsilon,
                 "sps": sps,
                 "wall_seconds": recorder.wall_seconds,
                 "collect_seconds": collected - started,
@@ -673,7 +724,7 @@ def _train(
             print(f"iteration {iteration}/{iterations}: step {global_step}, {sps} sps", flush=True)
         # The final evaluation (train_ppo) covers the last iteration.
         if global_step >= next_evaluation and iteration < iterations:
-            row = evaluate(CONFIG, eval_run, learner.agent, CONFIG.eval_episodes)
+            row = evaluate_with_sampled(CONFIG, eval_run, learner.agent, CONFIG.eval_episodes)
             recorder.write_evaluation(global_step, row, CONFIG.success_threshold)
             while next_evaluation <= global_step:
                 next_evaluation += CONFIG.eval_frequency
@@ -685,51 +736,86 @@ def _train(
 
 
 def evaluate(
-    CONFIG: Configuration, run: RunEnvironment, agent: PPOAgent, episode_count: int
+    CONFIG: Configuration,
+    run: RunEnvironment,
+    agent: PPOAgent,
+    episode_count: int,
+    greedy: bool | None = None,
 ) -> dict[str, object]:
     """Roll out ``episode_count`` evaluation episodes and return one ``eval.csv`` row.
 
-    The policy samples its actions, or with ``eval_greedy`` plays its most likely one. Sampling
-    draws come from a fresh generator seeded with the run seed, never from the training streams.
-    Resets follow ``evaluation_resets``: only a fixed layout with ``eval_greedy`` assigns the tasks
-    of a multi-task env; in every other case the env draws its own task.
+    The policy samples its actions, or with ``greedy`` (default ``eval_greedy``) plays its most
+    likely one. Sampling draws come from a fresh generator seeded with the run seed, never from
+    the training streams. Resets follow ``evaluation_resets``: only a fixed layout with a greedy
+    policy assigns the tasks of a multi-task env; in every other case the env draws its own task.
     """
+    greedy = CONFIG.eval_greedy if greedy is None else greedy
     generator = torch.Generator().manual_seed(CONFIG.seed)
-    resets = evaluation_resets(CONFIG, run, episode_count)
-    episodes = [_evaluation_episode(CONFIG, run, agent, reset, generator) for reset in resets]
+    resets = evaluation_resets(CONFIG, run, episode_count, greedy)
+    episodes = [_evaluation_episode(run, agent, reset, generator, greedy) for reset in resets]
     return evaluation_row(episodes)
 
 
+def evaluate_with_sampled(
+    CONFIG: Configuration, run: RunEnvironment, agent: PPOAgent, episode_count: int
+) -> dict[str, object]:
+    """The ``evaluate`` row plus the sampled (training) policy's result on the same seeds.
+
+    The headline stays the ``eval_greedy`` one. A run whose headline already samples copies it
+    into the ``sampled_*`` columns instead of rolling the episodes out twice. The sampled pass
+    gives back the multi-task env's task draws, so the next headline pass sees the same tasks as
+    without it.
+    """
+    row = evaluate(CONFIG, run, agent, episode_count)
+    sampled = row
+    if CONFIG.eval_greedy:
+        keep_draws = (
+            run.env.keep_task_draws()
+            if isinstance(run.env, MultiTaskEnvironment)
+            else nullcontext()
+        )
+        with keep_draws:
+            sampled = evaluate(CONFIG, run, agent, episode_count, greedy=False)
+    row["sampled_exit_rate"] = sampled["exit_rate"]
+    row["sampled_mean_env_return"] = sampled["mean_env_return"]
+    row["sampled_mean_rm_return"] = sampled.get("mean_rm_return")
+    return row
+
+
 def evaluation_resets(
-    CONFIG: Configuration, run: RunEnvironment, episode_count: int
+    CONFIG: Configuration,
+    run: RunEnvironment,
+    episode_count: int,
+    greedy: bool | None = None,
 ) -> list[dict[str, object]]:
     """The ``reset`` arguments of the evaluation episodes: their seed, and their task if any.
 
-    A fixed MiniGrid layout resets every episode on the layout seed. With ``eval_greedy`` the
-    episodes would repeat, so DQN's plan applies: one episode per task (one without tasks), each
-    reset naming its task. Without it, ``episode_count`` resets carry a seed only. Outside a fixed
-    layout, episode ``i`` seeds ``eval_seed_base + i``. Only the greedy fixed branch assigns
-    tasks; in the other two a multi-task env draws its task itself.
+    A fixed MiniGrid layout resets every episode on the layout seed. With a greedy policy
+    (default ``eval_greedy``) the episodes would repeat, so DQN's plan applies: one episode per
+    task (one without tasks), each reset naming its task. Without it, ``episode_count`` resets
+    carry a seed only. Outside a fixed layout, episode ``i`` seeds ``eval_seed_base + i``. Only
+    the greedy fixed branch assigns tasks; in the other two a multi-task env draws its task itself.
     """
+    greedy = CONFIG.eval_greedy if greedy is None else greedy
     if fixed_layout(CONFIG):
-        if CONFIG.eval_greedy:
+        if greedy:
             return task_evaluation_resets(CONFIG, run, episode_count)
         return [{"seed": layout_seed(CONFIG)} for _ in range(episode_count)]
     return [{"seed": CONFIG.eval_seed_base + index} for index in range(episode_count)]
 
 
 def _evaluation_episode(
-    CONFIG: Configuration,
     run: RunEnvironment,
     agent: PPOAgent,
     reset: dict[str, object],
     generator: torch.Generator,
+    greedy: bool,
 ) -> EpisodeTracker:
     episode = EpisodeTracker(seed=reset["seed"])
     observation, _ = run.env.reset(**reset)
     done = False
     while not done:
-        step = run.env.step(agent.act(observation, generator, deterministic=CONFIG.eval_greedy))
+        step = run.env.step(agent.act(observation, generator, deterministic=greedy))
         episode.record(step, run.is_success)
         observation, _, terminated, truncated, _ = step
         done = terminated or truncated
