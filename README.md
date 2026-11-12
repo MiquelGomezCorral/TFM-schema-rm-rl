@@ -236,7 +236,8 @@ them into conjunctive clauses, each an IBM DECLARE template with declared propos
 The command displays timed progress for every task attempt and stage. One critic runs by
 default after the Reward Machine is built; `--no-critic` disables it for a controlled fallback
 run, prints a warning, and then accepts the compiler's first result for each task. Each task
-has at most three attempts, and no output is written unless every task is accepted. The stages
+has up to three attempts by default (`--attempts N` sets 1 to 10; the benchmark uses 10; ARM-FM's
+Reward Machine stage reads it too), and no output is written unless every task is accepted. The stages
 are structured proposal generation, DECLARE/LTLf materialization, FL-AT/MONA DFA compilation,
 Reward Machine construction (FL-AT's product plus the reward layer), the critic, state
 descriptions, and optional labeling and embeddings. State descriptions are written by default;
@@ -402,7 +403,7 @@ flowchart TD
     A["Input<br/>environment.md + task"]
     B["Validate input<br/>fix the allowed proposition vocabulary"]
     C["LLM<br/>only natural-language interpretation step"]
-    D{"Critic accepts within 3 attempts"}
+    D{"Critic accepts within the attempt limit (default 3)"}
     X["Stop<br/>write nothing"]
     E["IBM nl2ltl templates<br/>build one LTLf formula per clause"]
     F["FL-AT + MONA<br/>one DFA per clause and their product"]

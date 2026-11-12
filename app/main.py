@@ -338,6 +338,16 @@ if __name__ == "__main__":
         help="Reasoning level of every model call (default: %(default)s)",
     )
     larm_parser.add_argument(
+        "--attempts",
+        type=int,
+        choices=Configuration.ATTEMPT_LIMITS,
+        default=Configuration.attempts,
+        metavar="N",
+        help="Reward Machine attempts per task in both arms (compiler mode: critic rejections; "
+        "arm-fm mode: generate-and-critic rounds), 1 to 10; --mode paper ignores it and runs its "
+        "own three rounds (default: %(default)s)",
+    )
+    larm_parser.add_argument(
         "--embeddings",
         action=argparse.BooleanOptionalAction,
         default=False,

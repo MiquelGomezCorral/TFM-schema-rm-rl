@@ -46,6 +46,15 @@ completes are skipped by that suite's later call:
 
 - Per card, one `generate-larm --mode compiler` (FARM) or `--mode arm-fm --arm-fm-critic` (ARM-FM)
   child process; bundle folder `<dir>/<card-id>/`, paraphrase k at `<card-id>~p<k>`.
+- Both arms get the same counted Reward Machine budget: `--attempts 10` (`RM_ATTEMPTS` in
+  `app/scripts/generate_suite.py`; FARM's free reruns differ, see "Stamp and per-call records"
+  below). FARM counts critic rejections; ARM-FM counts generate-and-critic rounds. ARM-FM
+  labeling and state descriptions keep their three tries and FARM's tagging keeps its own limit.
+  A bundle records the limit in `effective_settings.max_attempts` (the Reward Machine stage's,
+  in both arms).
+- A card keeps the limit it was generated with: `complete` and `pipeline-failed` cards are
+  skipped on a rerun, so start a new output folder when the limit changes. The bundle's
+  `effective_settings.max_attempts` shows the limit it ran with.
 - Beside each folder: `<card-id>.status.json` (`status`, `reason`, `calls`, `wall_time_s`, `log`) and
   `<card-id>.log`.
 - Embeddings run afterwards, one bundle at a time, with `embed-larm --embedding-server`.
@@ -66,7 +75,7 @@ Statuses and what a rerun does:
 | Status | Meaning | Rerun |
 | --- | --- | --- |
 | `complete` | every stage and `embeddings.json` | skipped |
-| `pipeline-failed` | attempts exhausted or a stage rejected | skipped; `--retry-failed` runs it again |
+| `pipeline-failed` | Reward Machine attempts exhausted (10 in the benchmark) or a stage rejected | skipped; `--retry-failed` runs it again |
 | `provider-error` | connection, timeout, quota or server error | runs again |
 | `incomplete` | a stage file is missing, embeddings are pending, or the run crashed before writing a bundle | runs again; a bundle with generation done only embeds |
 
@@ -99,6 +108,10 @@ The arms count differently, so their `attempts` and `retries` are not comparable
 `attempts` are proposals (a critic rejection starts the next one) and `retries` are reruns after
 provider or content failures, one for each failure that another try followed (11 failed tries in a
 row make 10 retries); ARM-FM `attempts` are loop rounds and `retries` the rounds that failed.
+Both arms stop at the same counted Reward Machine limit (`effective_settings.max_attempts`, 10 in
+the benchmark); what one attempt counts still differs as described. FARM also reruns a failed
+attempt for free on provider or content failures (up to 10 reruns per attempt); ARM-FM counts
+every failed round against its limit.
 
 ### Cross-critic
 

@@ -161,7 +161,7 @@ def generate_baseline_bundle(
     Every bundle carries the stamp of its run. A failed run persists its inspectable bundle
     to ``CONFIG.bundle`` before it raises.
     """
-    run = _Generation(task, environment, engine, critic_engine)
+    run = _Generation(task, environment, engine, critic_engine, rm_attempts=CONFIG.attempts)
     started = time.monotonic()
     run.generate_reward_machine()
     try:
@@ -189,7 +189,11 @@ def _stamped_bundle(run: _Generation, CONFIG: Configuration, started: float) -> 
 
 
 class _Generation:
-    """One generation run: the accepted artifacts so far and every attempt that produced them."""
+    """One generation run: the accepted artifacts so far and every attempt that produced them.
+
+    ``rm_attempts`` bounds the reward-machine stage only; labeling and descriptions keep
+    ``MAX_ATTEMPTS``.
+    """
 
     def __init__(
         self,
@@ -197,11 +201,13 @@ class _Generation:
         environment: EnvironmentDescription,
         engine: object,
         critic_engine: object | None = None,
+        rm_attempts: int = MAX_ATTEMPTS,
     ) -> None:
         self.task = task
         self.environment = environment
         self.engine = engine
         self.critic_engine = engine if critic_engine is None else critic_engine
+        self.rm_attempts = rm_attempts
         self.labeling_api = environment.require_labeling_api()
         self.attempts: list[StageAttempt] = []
         self.machine: PaperRewardMachine | None = None
@@ -227,6 +233,7 @@ class _Generation:
             self.environment,
             self.engine,
             critic_engine=self.critic_engine,
+            max_attempts=self.rm_attempts,
         )
 
     def require_accepted_reward_machine(self) -> None:
@@ -234,7 +241,9 @@ class _Generation:
             item.stage == "reward_machine" and item.status == "accepted" for item in self.attempts
         )
         if not accepted:
-            raise RuntimeError("Reward Machine generation was not accepted within three attempts")
+            raise RuntimeError(
+                f"Reward Machine generation was not accepted within {self.rm_attempts} attempts"
+            )
 
     def generate_labeling(self) -> None:
         self.labeling_source = _refine_labeling(
@@ -290,7 +299,7 @@ class _Generation:
             },
             provenance={"status": "reconstructed", "generator": "arm-fm"},
             generation={
-                "max_attempts": MAX_ATTEMPTS,
+                "max_attempts": self.rm_attempts,
                 "labeling_api": self.labeling_api,
                 **_attempt_metadata(self.attempts, {"reward_machine", "labeling", "descriptions"}),
             },
@@ -312,7 +321,7 @@ class _Generation:
             effective_settings={
                 "provider": getattr(self.engine, "provider_name", None),
                 "model": getattr(self.engine, "model", None),
-                "max_attempts": MAX_ATTEMPTS,
+                "max_attempts": self.rm_attempts,
             },
             rm_mode="arm-fm",
         )
@@ -435,8 +444,10 @@ def record_bundle_role_models(
     CONFIG: Configuration,
     run_stats: Mapping[str, Any] | None = None,
 ) -> None:
-    """Record the resolved compiler role models, the critic verdict and the reward switches.
+    """Record the compiler role models, the attempt limit, the critic verdict and the switches.
 
+    ``max_attempts`` is the critic rejections the run allowed (``CONFIG.attempts``), the
+    reward-machine limit that ``arm-fm`` bundles record under the same key.
     The critic verdict is whether a critic accepted the machine. A run without the critic
     records no critic validation: a recorded ``False`` would make
     ``validate(require_complete=True)`` reject the bundle for training. The switches are
@@ -454,6 +465,7 @@ def record_bundle_role_models(
         {
             "generator_model": generator_model,
             "critic_model": critic_model,
+            "max_attempts": CONFIG.attempts,
             **asdict(RewardSwitches.from_config(CONFIG)),
         }
     )
@@ -471,6 +483,7 @@ def record_compiler_failure(
     are not in the failure bundle, so a number would be short.
     """
     bundle.raw_responses.extend(run_stats.get("calls", ()))
+    bundle.manifest.effective_settings["max_attempts"] = CONFIG.attempts
     stats = {**run_stats, "critic_interventions": None, "retries": None}
     record_bundle_stamp(bundle, CONFIG, _compiler_role_models(CONFIG), stats)
 

@@ -16,8 +16,18 @@ from src.config import Configuration
 
 MAIN = Path(__file__).resolve().parents[1] / "main.py"
 
+# Tries until the reward machine is accepted, the same counted budget in both arms: a FARM
+# attempt is a proposal the critic judges, an ARM-FM attempt is a loop round. Labeling and
+# descriptions keep their own limit. Not the same total tries: FARM also reruns a failed attempt
+# for free on provider or content failures (up to 10 reruns per attempt, ``generate_rm.py``),
+# while ARM-FM counts every failed round. See ``experiments/benchmark/REPRODUCE.md``.
+RM_ATTEMPTS = 10
+
 # The ``generate-larm`` flags of each arm; ARM-FM judges with the critic model, as FARM does.
-ARM_FLAGS = {"farm": ("--mode", "compiler"), "arm-fm": ("--mode", "arm-fm", "--arm-fm-critic")}
+ARM_FLAGS = {
+    "farm": ("--mode", "compiler", "--attempts", str(RM_ATTEMPTS)),
+    "arm-fm": ("--mode", "arm-fm", "--arm-fm-critic", "--attempts", str(RM_ATTEMPTS)),
+}
 
 # What a provider failure looks like in the final error text (OpenAI SDK wording), by cause:
 # connection loss ("Connection error", "APIConnectionError", "Connection refused"); timeouts

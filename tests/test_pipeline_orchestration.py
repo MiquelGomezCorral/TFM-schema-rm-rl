@@ -760,6 +760,7 @@ class OrchestrationTests(unittest.TestCase):
                     "mode": "compiler",
                     "generator_model": "generator-model",
                     "critic_model": "critic-model",
+                    "max_attempts": 3,
                     "reward_progress": True,
                     "reward_well": False,
                     "reward_soft_break": True,
