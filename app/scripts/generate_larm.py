@@ -1,6 +1,5 @@
 """Generate one baseline or compiler-adapted ARM-FM task bundle."""
 
-from contextlib import suppress
 from dataclasses import replace
 from pathlib import Path
 
@@ -11,6 +10,7 @@ from src.arm_fm import (
     Engines,
     PaperPrompts,
     PaperRun,
+    arm_fm_role_models,
     clone_head,
     generate_baseline_bundle,
     generate_compiler_bundle,
@@ -20,7 +20,9 @@ from src.arm_fm import (
     load_task_manifest,
     record_bundle_embeddings,
     record_bundle_role_models,
+    record_compiler_failure,
 )
+from src.compiler import CompilationResult
 from src.config import Configuration
 from src.models import EnvironmentDescription
 from src.utils import (
@@ -53,46 +55,79 @@ def generate_larm(CONFIG: Configuration) -> None:
     environment = EnvironmentDescription.from_file(CONFIG.environment, code=True)
 
     if CONFIG.mode == "compiler":
-        CONFIG.output = CONFIG.output or Path("arm-fm.rm")
-        # Compiler bundles require persisted labeling, so the optional stage is always on.
-        CONFIG.labeling = True
-        accepted = []
-
-        def capture(results, _paths):
-            accepted.extend(results)
-
-        try:
-            succeeded = generate_rm(
-                CONFIG,
-                hooks=GenerationHooks(completion=capture, warning=print_warning),
-                write_outputs=False,
-            )
-        except Exception as error:
-            _persist_compiler_failure(CONFIG, environment, str(error))
-            raise
-
-        if not succeeded or not accepted:
-            _persist_compiler_failure(
-                CONFIG, environment, "Compiler generation returned no accepted result"
-            )
-            raise RuntimeError("Compiler generation failed without an accepted result")
-
-        # The compiler pipeline already produced accepted labeling and node descriptions;
-        # the adapter reuses them, so no baseline engine or extra provider call is needed.
-        bundles = generate_compiler_bundle(tuple(accepted), None, CONFIG)
-        record_bundle_role_models(bundles[0], CONFIG)
-        if CONFIG.embeddings:
-            destination = embedding_artifact_path(CONFIG, Path(CONFIG.bundle).name)
-            preflight_paths([destination], overwrite=CONFIG.overwrite, kind="Embedding artifact(s)")
-            write_embedding_artifact(accepted[0], destination)
-            record_bundle_embeddings(bundles[0], accepted[0], destination)
-        bundles[0].save(CONFIG.bundle, overwrite=CONFIG.overwrite)
+        generate_compiler(CONFIG, environment)
     else:
-        engine = get_engine(
-            CONFIG, environment, warn=lambda message: print_warning(f"Baseline {message}")
+        generate_arm_fm(CONFIG, environment)
+
+
+def generate_compiler(CONFIG: Configuration, environment: EnvironmentDescription) -> None:
+    """Generate and save one ``compiler`` bundle; a failed run saves its failure bundle first."""
+    CONFIG.output = CONFIG.output or Path("arm-fm.rm")
+    # Compiler bundles require persisted labeling, so the optional stage is always on.
+    CONFIG.labeling = True
+    destination = None
+    if CONFIG.embeddings:
+        # Checked before the first provider call, so an old file cannot fail a paid-for machine.
+        destination = embedding_artifact_path(CONFIG, Path(CONFIG.bundle).name)
+        preflight_paths([destination], overwrite=CONFIG.overwrite, kind="Embedding artifact(s)")
+    accepted = []
+    run_stats = []
+
+    def capture(results, _paths):
+        accepted.extend(results)
+
+    try:
+        succeeded = generate_rm(
+            CONFIG,
+            hooks=GenerationHooks(completion=capture, warning=print_warning),
+            write_outputs=False,
+            run_stats=run_stats,
         )
-        result = generate_baseline_bundle(CONFIG.tasks[0], environment, engine, CONFIG)
-        result.bundle.save(CONFIG.bundle, overwrite=CONFIG.overwrite)
+        if not succeeded or not accepted:
+            raise RuntimeError("Compiler generation failed without an accepted result")
+        bundle = _accepted_compiler_bundle(CONFIG, accepted[0], run_stats[0], destination)
+    except Exception as error:
+        _persist_compiler_failure(CONFIG, environment, str(error), run_stats)
+        raise
+    bundle.save(CONFIG.bundle, overwrite=CONFIG.overwrite)
+
+
+def _accepted_compiler_bundle(
+    CONFIG: Configuration, result: CompilationResult, run_stats: dict, destination: Path | None
+) -> ArtifactBundle:
+    """Adapt the accepted compiler result into its bundle, with the run's records and stamp.
+
+    The compiler pipeline already produced accepted labeling and node descriptions; the adapter
+    reuses them, so no baseline engine or extra provider call is needed. ``destination`` is the
+    embedding artifact to write, if any.
+    """
+    bundle = generate_compiler_bundle((result,), None, CONFIG)[0]
+    record_bundle_role_models(bundle, CONFIG, run_stats)
+    if destination is not None:
+        write_embedding_artifact(result, destination)
+        record_bundle_embeddings(bundle, result, destination)
+    return bundle
+
+
+def generate_arm_fm(CONFIG: Configuration, environment: EnvironmentDescription) -> None:
+    """Generate and save one ``arm-fm`` bundle; ``--arm-fm-critic`` gives the critic its own model."""
+    generator_model, critic_model = arm_fm_role_models(CONFIG)
+    engine = get_engine(
+        CONFIG,
+        environment,
+        generator_model,
+        warn=lambda message: print_warning(f"Baseline {message}"),
+    )
+    critic_engine = None
+    if critic_model != generator_model:
+        critic_engine = get_engine(
+            CONFIG,
+            environment,
+            critic_model,
+            warn=lambda message: print_warning(f"Critic {message}"),
+        )
+    result = generate_baseline_bundle(CONFIG.tasks[0], environment, engine, CONFIG, critic_engine)
+    result.bundle.save(CONFIG.bundle, overwrite=CONFIG.overwrite)
 
 
 def generate_paper(CONFIG: Configuration) -> None:
@@ -157,9 +192,16 @@ def generate_paper(CONFIG: Configuration) -> None:
 
 
 def _persist_compiler_failure(
-    CONFIG: Configuration, environment: EnvironmentDescription, error: str
+    CONFIG: Configuration,
+    environment: EnvironmentDescription,
+    error: str,
+    run_stats: list[dict],
 ) -> None:
-    """Persist an inspectable compiler failure without inventing RM artifacts."""
+    """Persist an inspectable compiler failure without inventing RM artifacts.
+
+    The failed run's request records and stamp go in with it (``run_stats`` is empty when the
+    run made no request); a save error is printed, not raised over the failure itself.
+    """
     if CONFIG.bundle is None:
         return
     manifest = BundleManifest(
@@ -184,8 +226,12 @@ def _persist_compiler_failure(
         },
         rm_mode="compiler",
     )
-    with suppress(OSError):
-        ArtifactBundle(manifest, None).save(CONFIG.bundle, overwrite=CONFIG.overwrite)
+    bundle = ArtifactBundle(manifest, None)
+    record_compiler_failure(bundle, CONFIG, run_stats[0] if run_stats else {})
+    try:
+        bundle.save(CONFIG.bundle, overwrite=CONFIG.overwrite)
+    except OSError as save_error:
+        print_warning(f"could not save the failed bundle: {save_error}")
 
 
 def generate_manifest(CONFIG: Configuration) -> None:

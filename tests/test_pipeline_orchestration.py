@@ -112,7 +112,7 @@ class Engine:
             raise value
         return value
 
-    def request_text(self, system, user):
+    def request_text(self, system, user, stage="text"):
         self.labeling_requests.append(user)
         value = (
             self.labeling_results.pop(0)
@@ -741,6 +741,7 @@ class OrchestrationTests(unittest.TestCase):
             self.saved.assert_called_once()
             manifest = json.loads((bundle_path / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["validation"], {"structural": True, "critic": True})
+            self.assertEqual(manifest["provenance"]["stamp"]["attempts"], 1)
             self.assertEqual(manifest["stage_status"]["labeling"], "complete")
             self.assertEqual(manifest["stage_status"]["descriptions"], "complete")
             self.assertIn("env.grid.get", manifest["api_definitions"]["labeling"])

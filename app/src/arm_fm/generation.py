@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
+import sys
+import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from contextlib import suppress
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 from src.compiler import (
     ClauseProposal,
@@ -61,11 +65,27 @@ class LabelingError(RuntimeError):
 # ======================================================================================
 
 
+def arm_fm_role_models(CONFIG: Configuration) -> tuple[str | None, str | None]:
+    """Return the generator and critic model of the ``arm-fm`` path.
+
+    One model serves every role, as in the reproduction, unless ``arm_fm_critic`` asks for
+    the provider's generator and critic models.
+    """
+    if not CONFIG.arm_fm_critic:
+        return CONFIG.model, CONFIG.model
+    if not CONFIG.critic_model:
+        raise ValueError(
+            "--arm-fm-critic needs a critic model; set the provider's critic model variable"
+        )
+    return CONFIG.generator_model, CONFIG.critic_model
+
+
 def generate_reward_machine(
     task: str,
     environment: EnvironmentDescription,
     engine: object,
     *,
+    critic_engine: object,
     max_attempts: int = MAX_ATTEMPTS,
 ) -> tuple[PaperRewardMachine | None, str, list[StageAttempt]]:
     """Generate and refine one paper Reward Machine, keeping the last parseable candidate."""
@@ -95,7 +115,7 @@ def generate_reward_machine(
             )
 
             accepted, feedback, raw_response = _critic(
-                engine,
+                critic_engine,
                 "rm_critic",
                 environment=environment.markdown,
                 task=task,
@@ -133,33 +153,55 @@ def generate_baseline_bundle(
     environment: EnvironmentDescription,
     engine: object,
     CONFIG: Configuration,
+    critic_engine: object | None = None,
 ) -> GenerationResult:
     """Generate RM, labeling code, and state descriptions with bounded refinement.
 
-    A failed run persists its inspectable bundle to ``CONFIG.bundle`` before it raises.
+    ``critic_engine`` serves the critic calls; without it ``engine`` serves every role.
+    Every bundle carries the stamp of its run. A failed run persists its inspectable bundle
+    to ``CONFIG.bundle`` before it raises.
     """
-    run = _Generation(task, environment, engine)
+    run = _Generation(task, environment, engine, critic_engine)
+    started = time.monotonic()
     run.generate_reward_machine()
     try:
         run.require_accepted_reward_machine()
         run.generate_labeling()
         run.generate_descriptions()
     except Exception:
-        _persist_failure(run.bundle(), CONFIG)
+        _persist_failure(_stamped_bundle(run, CONFIG, started), CONFIG)
         raise
 
-    bundle = run.bundle()
+    bundle = _stamped_bundle(run, CONFIG, started)
     bundle.validate()
     return GenerationResult(bundle=bundle, attempts=run.attempts)
+
+
+def _stamped_bundle(run: _Generation, CONFIG: Configuration, started: float) -> ArtifactBundle:
+    """Return the run's bundle with its stamp, counted from the attempts made so far."""
+    bundle = run.bundle()
+    stats = {
+        **rm_stage_counts(bundle.attempts),
+        "wall_time_s": round(time.monotonic() - started, 1),
+    }
+    record_bundle_stamp(bundle, CONFIG, arm_fm_role_models(CONFIG), stats)
+    return bundle
 
 
 class _Generation:
     """One generation run: the accepted artifacts so far and every attempt that produced them."""
 
-    def __init__(self, task: str, environment: EnvironmentDescription, engine: object) -> None:
+    def __init__(
+        self,
+        task: str,
+        environment: EnvironmentDescription,
+        engine: object,
+        critic_engine: object | None = None,
+    ) -> None:
         self.task = task
         self.environment = environment
         self.engine = engine
+        self.critic_engine = engine if critic_engine is None else critic_engine
         self.labeling_api = environment.require_labeling_api()
         self.attempts: list[StageAttempt] = []
         self.machine: PaperRewardMachine | None = None
@@ -184,6 +226,7 @@ class _Generation:
             self.task,
             self.environment,
             self.engine,
+            critic_engine=self.critic_engine,
         )
 
     def require_accepted_reward_machine(self) -> None:
@@ -206,7 +249,7 @@ class _Generation:
                 history=history,
             ),
             lambda source: _critic(
-                self.engine,
+                self.critic_engine,
                 "labeling_critic",
                 environment=self.environment.markdown,
                 task=self.task,
@@ -279,14 +322,35 @@ class _Generation:
             labeling_source=self.labeling_source,
             state_descriptions=dict(self.descriptions),
             attempts=[item.__dict__ for item in self.attempts],
-            raw_responses=[_raw_response(item) for item in self.attempts],
+            raw_responses=[_raw_response(item) for item in self.attempts]
+            + call_records(self.engine, self.critic_engine),
         )
+
+
+def call_records(*engines: object) -> list[dict[str, str | None]]:
+    """Return the request records of ``engines``; an engine that serves two roles counts once."""
+    return [dict(call) for log in _call_logs(engines) for call in log]
+
+
+def clear_call_records(*engines: object) -> None:
+    """Forget the request records of ``engines`` so the next task counts its own requests."""
+    for log in _call_logs(engines):
+        log.clear()
+
+
+def _call_logs(engines: Sequence[object]) -> list[list[dict[str, str | None]]]:
+    distinct = {id(engine): engine for engine in engines if engine is not None}.values()
+    return [getattr(engine, "calls", []) for engine in distinct]
 
 
 def _persist_failure(bundle: ArtifactBundle, CONFIG: Configuration) -> None:
     if CONFIG.bundle is not None:
-        with suppress(OSError):
+        try:
             bundle.save(CONFIG.bundle, overwrite=CONFIG.overwrite)
+        except OSError as error:
+            # The failure that got us here is re-raised by the caller; this one must not hide it.
+            # Plain stderr print: importing ``print_warning`` here is a circular import.
+            print(f"warning: could not save the failed bundle: {error}", file=sys.stderr)
 
 
 def _raw_response(attempt: StageAttempt) -> dict[str, object]:
@@ -366,7 +430,11 @@ def build_compiler_bundle(
     return bundle
 
 
-def record_bundle_role_models(bundle: ArtifactBundle, CONFIG: Configuration) -> None:
+def record_bundle_role_models(
+    bundle: ArtifactBundle,
+    CONFIG: Configuration,
+    run_stats: Mapping[str, Any] | None = None,
+) -> None:
     """Record the resolved compiler role models, the critic verdict and the reward switches.
 
     The critic verdict is whether a critic accepted the machine. A run without the critic
@@ -374,16 +442,114 @@ def record_bundle_role_models(bundle: ArtifactBundle, CONFIG: Configuration) -> 
     ``validate(require_complete=True)`` reject the bundle for training. The switches are
     flat keys (``recurrent_soft_penalty`` and the five ``reward_*``), so ``ablate-rm`` can
     rebuild the machine with the settings it was made with.
+
+    ``run_stats`` is the accepted run's record: its request records join ``raw_responses``
+    and its counts go to the stamp. Without it the stamp counts are null.
     """
+    run_stats = run_stats or {}
     if CONFIG.critic:
         bundle.manifest.validation["critic"] = True
+    generator_model, critic_model = _compiler_role_models(CONFIG)
     bundle.manifest.effective_settings.update(
         {
-            "generator_model": CONFIG.generator_model,
-            "critic_model": CONFIG.critic_model if CONFIG.critic else None,
+            "generator_model": generator_model,
+            "critic_model": critic_model,
             **asdict(RewardSwitches.from_config(CONFIG)),
         }
     )
+    bundle.raw_responses.extend(run_stats.get("calls", ()))
+    record_bundle_stamp(bundle, CONFIG, (generator_model, critic_model), run_stats)
+
+
+def record_compiler_failure(
+    bundle: ArtifactBundle, CONFIG: Configuration, run_stats: Mapping[str, Any]
+) -> None:
+    """Give a failed compiler run's bundle the request records and the stamp of that run.
+
+    ``run_stats`` is empty when the run failed before it made a request; the counts are null.
+    The interventions and retries are null in any case: its labeling and description attempts
+    are not in the failure bundle, so a number would be short.
+    """
+    bundle.raw_responses.extend(run_stats.get("calls", ()))
+    stats = {**run_stats, "critic_interventions": None, "retries": None}
+    record_bundle_stamp(bundle, CONFIG, _compiler_role_models(CONFIG), stats)
+
+
+def _compiler_role_models(CONFIG: Configuration) -> tuple[str | None, str | None]:
+    """Return the compiler path's generator model and critic model (none without a critic)."""
+    return CONFIG.generator_model, CONFIG.critic_model if CONFIG.critic else None
+
+
+def rm_stage_counts(attempts: Iterable[Mapping[str, Any]]) -> dict[str, int]:
+    """Count the ``arm-fm`` path's reward-machine attempts, critic rejections and failures.
+
+    Every loop round is an attempt there, so a failed round counts as an attempt and a retry
+    (the ``farm`` path counts proposals and reruns; see ``record_bundle_stamp``).
+    """
+    rm_attempts = [item for item in attempts if item["stage"] == "reward_machine"]
+    return {
+        "attempts": len(rm_attempts),
+        "critic_interventions": sum(item["status"] == "rejected" for item in rm_attempts),
+        "retries": sum(item["status"] == "failed" for item in rm_attempts),
+    }
+
+
+def record_bundle_stamp(
+    bundle: ArtifactBundle,
+    CONFIG: Configuration,
+    models: tuple[str | None, str | None],
+    run_stats: Mapping[str, Any],
+) -> None:
+    """Write ``provenance["stamp"]``: the code, models and effort behind one bundle.
+
+    ``run_stats`` holds the reward-machine stage's ``attempts``, ``critic_interventions`` and
+    ``retries`` and the run's ``wall_time_s``. The labeling and description attempts in
+    ``bundle.attempts`` add to the last two. A count the run did not report is null, never
+    estimated. The two arms count differently: ``farm`` attempts are proposals (a critic
+    rejection starts the next one) and its retries are reruns after provider or content
+    failures; ``arm-fm`` attempts are loop rounds and its retries the rounds that failed.
+
+    ``dirty`` is whether any file under ``app/`` differs from the commit, untracked files
+    included, so bundles written under ``outputs/`` or ``experiments/`` do not taint it. A git
+    command that fails leaves ``commit`` or ``dirty`` null, and ``provisional`` true.
+
+    shortcut: the frozen commit is not recorded anywhere yet, so ``provisional`` is false for
+    a clean ``main``; compare the commit once the user freezes one.
+    """
+    commit = _git("rev-parse", "HEAD")
+    changes = _git("status", "--porcelain", "--", "app")
+    dirty = None if changes is None else bool(changes)
+    on_main = _git("rev-parse", "--abbrev-ref", "HEAD") == "main"
+    counts = {key: run_stats.get(key) for key in ("attempts", "critic_interventions", "retries")}
+    if None not in counts.values():
+        later = [item for item in bundle.attempts if item["stage"] in {"labeling", "descriptions"}]
+        counts["critic_interventions"] += sum(item["status"] == "rejected" for item in later)
+        counts["retries"] += sum(item["status"] == "failed" for item in later)
+    bundle.manifest.provenance["stamp"] = {
+        "commit": commit,
+        "dirty": dirty,
+        "generator_model": models[0],
+        "critic_model": models[1],
+        "reasoning": CONFIG.reasoning,
+        **counts,
+        "wall_time_s": run_stats.get("wall_time_s"),
+        "provisional": not (commit and dirty is False and on_main),
+    }
+
+
+def _git(*arguments: str) -> str | None:
+    """Return the output of one git command in this repository, or None when it fails."""
+    git = shutil.which("git")
+    if git is None:
+        return None
+    completed = subprocess.run(  # noqa: S603  approved: fixed git argv, no shell
+        [git, *arguments],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=Configuration.WORKSPACE_PATH,
+    )
+    return completed.stdout.strip() if completed.returncode == 0 else None
 
 
 def record_bundle_embeddings(
@@ -656,7 +822,19 @@ def _request_text(engine: object, role: str, family: str = "arm_fm", **values: s
     request = getattr(engine, "request_text", None)
     if request is None:
         raise RuntimeError("Prompted generation requires an engine with request_text")
-    return str(request(read_prompt(family, role), render_prompt(family, role, **values)))
+    return str(
+        request(read_prompt(family, role), render_prompt(family, role, **values), stage=role)
+    )
+
+
+def review_reward_machine(
+    engine: object, environment: str, task: str, candidate: str
+) -> tuple[bool, str]:
+    """Ask the ARM-FM reward-machine critic about one machine: accepted and feedback."""
+    accepted, feedback, _reply = _critic(
+        engine, "rm_critic", environment=environment, task=task, candidate=candidate
+    )
+    return accepted, feedback
 
 
 def _critic(engine: object, role: str, **values: str) -> tuple[bool, str, str]:

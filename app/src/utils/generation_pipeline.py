@@ -1,9 +1,10 @@
 """Name, check, and write the outputs of one Reward Machine generation run."""
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 from src.arm_fm.generation import (
     generate_compiler_bundle,
@@ -87,8 +88,12 @@ def write_run_outputs(
     output_paths: tuple[Path, ...],
     CONFIG: Configuration,
     progress: Progress,
+    run_stats: Sequence[Mapping[str, Any]],
 ) -> tuple[CompilationResult, ...]:
-    """Check every destination, then write the RM files and each requested artifact."""
+    """Check every destination, then write the RM files and each requested artifact.
+
+    ``run_stats`` holds one run record per result, for the stamp of each labeling bundle.
+    """
     if CONFIG.labeling:
         _preflight_labeling_bundles(CONFIG, output_paths)
     if CONFIG.embeddings:
@@ -106,7 +111,7 @@ def write_run_outputs(
 
     save_results(results, output_paths, overwrite=CONFIG.overwrite)
     if CONFIG.labeling:
-        bundle_paths = _write_labeling_bundles(results, output_paths, CONFIG, progress)
+        bundle_paths = _write_labeling_bundles(results, output_paths, CONFIG, progress, run_stats)
         results = tuple(
             replace(result, bundle_path=path)
             for result, path in zip(results, bundle_paths, strict=True)
@@ -207,15 +212,16 @@ def _write_labeling_bundles(
     output_paths: tuple[Path, ...],
     CONFIG: Configuration,
     progress: Progress,
+    run_stats: Sequence[Mapping[str, Any]],
 ) -> tuple[Path, ...]:
     """Persist one reuse bundle per accepted task and return their directories."""
     written = []
     bundles = generate_compiler_bundle(results, None, CONFIG)
     bundle_paths = _labeling_bundle_paths(CONFIG, output_paths)
-    for result, bundle, bundle_path, output_path in zip(
-        results, bundles, bundle_paths, output_paths, strict=True
+    for result, bundle, bundle_path, output_path, stats in zip(
+        results, bundles, bundle_paths, output_paths, run_stats, strict=True
     ):
-        record_bundle_role_models(bundle, CONFIG)
+        record_bundle_role_models(bundle, CONFIG, stats)
         if CONFIG.embeddings:
             record_bundle_embeddings(
                 bundle, result, embedding_artifact_path(CONFIG, output_path.stem)

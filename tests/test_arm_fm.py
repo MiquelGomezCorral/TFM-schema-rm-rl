@@ -447,7 +447,7 @@ REWARD_FUNCTION:
                 '{"u0":"start","u1":"finished"}',
             ]
         )
-        engine = SimpleNamespace(request_text=lambda system, user: next(responses))
+        engine = SimpleNamespace(request_text=lambda system, user, **kwargs: next(responses))
         result = generate_baseline_bundle("finish", environment, engine, Configuration())
         self.assertEqual(
             [item.stage for item in result.attempts],
@@ -475,7 +475,7 @@ REWARD_FUNCTION:
             ),
         )
         engine = SimpleNamespace(
-            request_text=lambda system, user: (_ for _ in ()).throw(RuntimeError("down"))
+            request_text=lambda system, user, **kwargs: (_ for _ in ()).throw(RuntimeError("down"))
         )
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(RuntimeError):
@@ -567,7 +567,9 @@ REWARD_FUNCTION:
         engine = SimpleNamespace(
             model="mock-model",
             provider_name="mock",
-            request_text=lambda system, user: (_ for _ in ()).throw(RuntimeError("provider down")),
+            request_text=lambda system, user, **kwargs: (_ for _ in ()).throw(
+                RuntimeError("provider down")
+            ),
         )
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(RuntimeError):
@@ -584,7 +586,9 @@ REWARD_FUNCTION:
         engine = SimpleNamespace(
             model="mock-model",
             provider_name="mock",
-            request_text=lambda system, user: (_ for _ in ()).throw(RuntimeError("new failure")),
+            request_text=lambda system, user, **kwargs: (_ for _ in ()).throw(
+                RuntimeError("new failure")
+            ),
         )
         with tempfile.TemporaryDirectory() as directory:
             bundle = Path(directory)
