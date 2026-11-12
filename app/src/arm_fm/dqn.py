@@ -429,10 +429,10 @@ class DQNLearner:
             if CONFIG.double_q:
                 # Double DQN: the online network picks the action, the target network values it.
                 best = self.q_network(data.next_observations).argmax(dim=1, keepdim=True)
-                target_max = target_values.gather(1, best).squeeze(1)
+                next_value = target_values.gather(1, best).squeeze(1)
             else:
-                target_max, _ = target_values.max(dim=1)
-            td_target = data.rewards.flatten() + CONFIG.gamma * target_max * (
+                next_value, _ = target_values.max(dim=1)
+            td_target = data.rewards.flatten() + CONFIG.gamma * next_value * (
                 1 - data.dones.flatten()
             )
         old_val = self.q_network(data.observations).gather(1, data.actions).squeeze(1)

@@ -44,6 +44,7 @@ from contextlib import ExitStack
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
@@ -136,7 +137,7 @@ class FixedLayoutReset(Wrapper):
         super().__init__(env)
         self.layout_seed = seed
 
-    def reset(self, **kwargs):
+    def reset(self, **kwargs: Any) -> tuple[Any, dict[str, Any]]:
         return self.env.reset(**{**kwargs, "seed": self.layout_seed})
 
 
@@ -690,13 +691,12 @@ def evaluate(
 
     The policy samples its actions, or with ``eval_greedy`` plays its most likely one. Sampling
     draws come from a fresh generator seeded with the run seed, never from the training streams.
-    Resets follow ``evaluation_resets``.
+    Resets follow ``evaluation_resets``: only a fixed layout with ``eval_greedy`` assigns the tasks
+    of a multi-task env; in every other case the env draws its own task.
     """
     generator = torch.Generator().manual_seed(CONFIG.seed)
     resets = evaluation_resets(CONFIG, run, episode_count)
-    episodes = [
-        _evaluation_episode(run, agent, reset, generator, CONFIG.eval_greedy) for reset in resets
-    ]
+    episodes = [_evaluation_episode(CONFIG, run, agent, reset, generator) for reset in resets]
     return evaluation_row(episodes)
 
 
@@ -705,9 +705,11 @@ def evaluation_resets(
 ) -> list[dict[str, object]]:
     """The ``reset`` arguments of the evaluation episodes: their seed, and their task if any.
 
-    A fixed MiniGrid layout resets every episode on the layout seed. A greedy policy repeats the
-    same episode there, so it runs DQN's one episode per task (one without tasks); a sampling
-    policy runs ``episode_count``. Otherwise episode ``i`` seeds ``eval_seed_base + i``.
+    A fixed MiniGrid layout resets every episode on the layout seed. With ``eval_greedy`` the
+    episodes would repeat, so DQN's plan applies: one episode per task (one without tasks), each
+    reset naming its task. Without it, ``episode_count`` resets carry a seed only. Outside a fixed
+    layout, episode ``i`` seeds ``eval_seed_base + i``. Only the greedy fixed branch assigns
+    tasks; in the other two a multi-task env draws its task itself.
     """
     if fixed_layout(CONFIG):
         if CONFIG.eval_greedy:
@@ -717,17 +719,17 @@ def evaluation_resets(
 
 
 def _evaluation_episode(
+    CONFIG: Configuration,
     run: RunEnvironment,
     agent: PPOAgent,
     reset: dict[str, object],
     generator: torch.Generator,
-    greedy: bool,
 ) -> EpisodeTracker:
     episode = EpisodeTracker(seed=reset["seed"])
     observation, _ = run.env.reset(**reset)
     done = False
     while not done:
-        step = run.env.step(agent.act(observation, generator, deterministic=greedy))
+        step = run.env.step(agent.act(observation, generator, deterministic=CONFIG.eval_greedy))
         episode.record(step, run.is_success)
         observation, _, terminated, truncated, _ = step
         done = terminated or truncated
