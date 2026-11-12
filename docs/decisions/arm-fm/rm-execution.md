@@ -15,6 +15,10 @@ without changing how labels, transitions, and rewards are interpreted.
   the RM exactly once per environment step. Do not reevaluate from the destination state.
 - A guard depends only on propositions it mentions. Ignore irrelevant propositions and
   use an implicit zero-reward self-loop when no ordinary guard or explicit fallback applies.
+- Our parser rejects an ARM-FM reward row on a transition the machine never declared
+  (`app/src/compiler/rm_format.py`, `_with_rewards`). The parser error goes back to the model as the
+  next ARM-FM round, within its attempt limit. The authors' code accepts such a row and never pays it;
+  we keep rejecting.
 - Baseline RM text retains the paper's per-state `else` self-loop convention. Compiler
   generation omits `else` rows and declares a zero default reward. Both modes apply
   an explicit `else` when present, otherwise the implicit zero-reward self-loop.
@@ -84,7 +88,8 @@ without changing how labels, transitions, and rewards are interpreted.
   whose text has `PENDING_PROMISES`: every compiled machine, with or without a final state (a
   goal is a hard promise). RMs without it, such as imported author bundles and fresh ARM-FM machines, pay the run's
   `time_limit_penalty` at the time limit (default -0.5, the reproduction value; the [thesis
-  benchmark](../benchmark/thesis-benchmark.md) sets 0) and get no end judgment.
+  benchmark](../benchmark/thesis-benchmark.md) sets 0) and get no end judgment. Test exception: an
+  ablation variant with `reward_end_judgment` off carries none; every non-ablation machine still does.
 - The compiler never removes states or transitions on environment facts. The critic judges every
   clause against the environment file (`## Constraints`, the truth table, what the agent can and
   cannot do) and rejects a clause that restates an order the environment guarantees or that rests on
@@ -175,3 +180,7 @@ without expanding the machine or adding a guard-coverage calculation.
 - 2026-11-12: The flat -0.5 at the time limit becomes the run setting `time_limit_penalty`
   (default -0.5, so reproduction runs keep it); the thesis benchmark sets 0 for ARM-FM machines,
   as the ARM-FM paper pays nothing there. FARM's end judgment is unchanged (user decision).
+- 2026-11-12: An ablation variant with `reward_end_judgment` off carries no end judgment, as a test
+  exception; every non-ablation machine keeps it (user).
+- 2026-11-12: Kept rejecting an ARM-FM reward row on an undeclared transition; the parser error is the
+  next ARM-FM round's feedback (user).

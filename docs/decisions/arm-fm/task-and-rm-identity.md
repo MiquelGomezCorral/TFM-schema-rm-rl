@@ -150,19 +150,23 @@ tasks, while keeping the generator and critic responsibilities stable.
 - Compiler bundles reuse accepted compiler labeling and node descriptions without
   additional generation calls. Persist predicates in `labeling.py` before execution;
   tests select a saved file and use the existing fixed predicate loader. No aggregate
-  generated callable or dynamic import swapping is required.
+  generated callable or dynamic import swapping is required. Test exception: in ablation runs only,
+  turning the recurrent soft penalty off makes one description-rewrite call, because the machine's
+  structure changes.
 
 ## Protected invariants
 
 - Every compiler clause uses only propositions declared by that environment.
 - In compiler mode, one task's clauses have conjunction semantics; incompatible hard clauses are
   rejected rather than weakened, and a soft clause may be violated only at its recorded cost per
-  break, never silently dropped.
+  break, never silently dropped. Test exception: in ablation runs only, a soft violation may cost
+  nothing (`soft_break` or `soft_pending` off); every non-ablation run keeps the rule as written.
 - Separate tasks remain separate RMs even when they share propositions or subgoals.
 - Task terminology is used consistently across CLI, web, configuration, prompts, and
   output; the removed instruction and priority-override interfaces are not aliases.
 - In compiler mode, the RM is accepted/finalized only after the enabled critic accepts the same
-  compiled attempt.
+  compiled attempt. Test exception: in ablation runs only, an ablated copy carries no critic verdict
+  yet stays trainable; every non-ablation run keeps the rule as written.
 - Compiler presentation and critic improvements must preserve ARM-FM baseline prompts
   and published evidence. A declared `## Labeling API` replaces only the marked labeling-API
   regions and `${api}` in both modes; it is the only labeling surface (no MiniGrid default).
@@ -301,3 +305,6 @@ through their inputs and prompts, while both challenge the same generator.
 - 2026-11-11: An edge into the rejecting well pays -1 plus the end charge of the state it leaves,
   so a break is always worse than timing out there (user decision; see
   [RM execution](rm-execution.md)).
+- 2026-11-12: Ablation runs only may leave a soft violation free (`soft_break` or `soft_pending` off),
+  keep an ablated copy trainable without a critic verdict, and make one description-rewrite call when the
+  recurrent soft penalty is off. Non-ablation runs keep the rules as written (user).
