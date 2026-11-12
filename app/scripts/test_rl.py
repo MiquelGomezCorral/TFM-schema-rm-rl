@@ -36,7 +36,7 @@ from src.arm_fm.dqn import evaluate as evaluate_dqn
 from src.arm_fm.environments import RunEnvironment
 from src.arm_fm.ppo import evaluate as evaluate_ppo
 from src.arm_fm.ppo import evaluation_resets as evaluation_resets_ppo
-from src.arm_fm.ppo import load_ppo_agent
+from src.arm_fm.ppo import fixed_layout, load_ppo_agent
 from src.config import Configuration
 
 CPU = torch.device("cpu")  # training may hold the GPU
@@ -126,7 +126,8 @@ def _test_run(CONFIG: Configuration, directory: Path, gifs: int) -> dict[str, ob
         **row,
         "gifs": records,
     }
-    if config.layout == "fixed":
+    fixed = fixed_layout(config) if config.algorithm == "ppo" else config.layout == "fixed"
+    if fixed:
         test["settings"]["note"] = FIXED_LAYOUT_NOTES[config.algorithm]
     (directory / "test.json").write_text(json.dumps(test, indent=2) + "\n", encoding="utf-8")
     return row
@@ -149,8 +150,10 @@ def _load_policy(config: Configuration, run: RunEnvironment, directory: Path) ->
         generator = torch.Generator().manual_seed(config.seed)
         return Policy(
             evaluate=lambda count: evaluate_ppo(config, run, agent, count),
-            resets=lambda count: evaluation_resets_ppo(config, count),
-            act=lambda observation: agent.act(observation, generator),
+            resets=lambda count: evaluation_resets_ppo(config, run, count),
+            act=lambda observation: agent.act(
+                observation, generator, deterministic=config.eval_greedy
+            ),
         )
 
     q_network = QNetwork(run.make_encoder(), run.env.observation_space, int(run.env.action_space.n))

@@ -186,7 +186,7 @@ required. Every nonblank line in it must use this shape:
 
 Identifiers must match `^[a-z_][a-z0-9_]*$`, be unique, and cannot be `true` or
 `false`. Validation errors include the offending line. See
-`examples/multitaxi/environment.md` for the transition-based MultiTaxi propositions.
+`experiments/dev/multitaxi/environment.md` for the transition-based MultiTaxi propositions.
 
 Environments used for labeling or training need an `environment-code.md` next to `environment.md`,
 with a `## Labeling API` section listing what the labeling code may read from the live environment.
@@ -221,7 +221,7 @@ Run the compiler from the repository root:
 
 ```bash
 python app/main.py generate-rm \
-  --environment examples/multitaxi/environment.md \
+  --environment experiments/dev/multitaxi/environment.md \
   --task "Eventually deliver passengers 1 and 2" \
   --task "Deliver passenger 1 before passenger 2" \
   --output multitaxi.rm \
@@ -362,7 +362,7 @@ be installed separately and available on `PATH` (or configured through
 
 Upload a UTF-8 environment Markdown file or paste it into the editor, add one or more
 tasks, and provide one base output filename. Uploading a tasks manifest such as
-`examples/arm-fm/minigrid-doorkey/tasks.json` (`env`, `env_description`, `tasks`) instead
+`experiments/dev/arm-fm/minigrid-doorkey/tasks.json` (`env`, `env_description`, `tasks`) instead
 reads the referenced Markdown, fills every task, and names the output after `env`. The optional
 Code file box takes `environment-code.md` (upload or paste); the labeling option needs it and refuses
 to start without it. The UI validates each task automatically with the critic. Multiple tasks
