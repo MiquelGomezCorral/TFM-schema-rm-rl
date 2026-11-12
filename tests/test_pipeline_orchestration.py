@@ -757,6 +757,11 @@ class OrchestrationTests(unittest.TestCase):
                     "mode": "compiler",
                     "generator_model": "generator-model",
                     "critic_model": "critic-model",
+                    "reward_progress": True,
+                    "reward_well": True,
+                    "reward_soft_break": True,
+                    "reward_soft_pending": True,
+                    "reward_end_judgment": True,
                     "recurrent_soft_penalty": True,
                 },
             )

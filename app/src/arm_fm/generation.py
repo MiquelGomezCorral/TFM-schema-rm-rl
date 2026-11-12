@@ -6,13 +6,14 @@ import json
 import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from src.compiler import (
     ClauseProposal,
     CompilationResult,
     PaperRewardMachine,
+    RewardSwitches,
     compiler_machine_to_paper,
     parse_paper_reward_machine,
     serialize_paper_reward_machine,
@@ -366,11 +367,13 @@ def build_compiler_bundle(
 
 
 def record_bundle_role_models(bundle: ArtifactBundle, CONFIG: Configuration) -> None:
-    """Record the resolved compiler role models, the critic verdict and the soft-penalty setting.
+    """Record the resolved compiler role models, the critic verdict and the reward switches.
 
     The critic verdict is whether a critic accepted the machine. A run without the critic
     records no critic validation: a recorded ``False`` would make
-    ``validate(require_complete=True)`` reject the bundle for training.
+    ``validate(require_complete=True)`` reject the bundle for training. The switches are
+    flat keys (``recurrent_soft_penalty`` and the five ``reward_*``), so ``ablate-rm`` can
+    rebuild the machine with the settings it was made with.
     """
     if CONFIG.critic:
         bundle.manifest.validation["critic"] = True
@@ -378,7 +381,7 @@ def record_bundle_role_models(bundle: ArtifactBundle, CONFIG: Configuration) -> 
         {
             "generator_model": CONFIG.generator_model,
             "critic_model": CONFIG.critic_model if CONFIG.critic else None,
-            "recurrent_soft_penalty": CONFIG.recurrent_soft_penalty,
+            **asdict(RewardSwitches.from_config(CONFIG)),
         }
     )
 
@@ -473,6 +476,15 @@ def _finish_compiler_bundle(
         "error": "",
     }
     bundle.manifest.generation["labeling_api"] = labeling_api
+    # The compiled clause list, so `ablate-rm` can rebuild the machine without a model call;
+    # `clause_texts` holds each clause's sentence, in the same order, for the description prompt.
+    bundle.manifest.generation["clauses"] = [
+        [clause.pattern, list(clause.propositions), clause.priority.value]
+        for clause in result.proposal.clauses
+    ]
+    bundle.manifest.generation["clause_texts"] = [
+        clause.normalized_clause for clause in result.proposal.clauses
+    ]
     recorded_stages = {item.stage for item in attempts} or {"labeling", "descriptions"}
     bundle.manifest.generation.update(_attempt_metadata(attempts, recorded_stages))
     bundle.manifest.api_definitions["labeling"] = labeling_api

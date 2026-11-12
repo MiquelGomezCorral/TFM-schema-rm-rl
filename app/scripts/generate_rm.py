@@ -1,6 +1,6 @@
 """Generate one Reward Machine per critic-validated natural-language task."""
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, replace
 from pathlib import Path
 
@@ -22,12 +22,14 @@ from src.arm_fm.generation import (
 from src.compiler import (
     CompilationResult,
     Proposal,
+    RewardSwitches,
     build_compilation_result,
     compile_dfas,
     materialize_proposal,
 )
 from src.config import Configuration
 from src.engines import (
+    GenericEngine,
     ImmediateEngineError,
     ProposalSelection,
     ProposalValidationError,
@@ -75,6 +77,10 @@ def generate_rm(
             hooks.notify_run_started(progress.log_path)
             progress(f"Run log: {progress.log_path}")
         progress(f"Recurrent soft rules: {'on' if CONFIG.recurrent_soft_penalty else 'off'}")
+        switches = asdict(RewardSwitches.from_config(CONFIG))
+        off = [name for name, on in switches.items() if name.startswith("reward_") and not on]
+        if off:
+            progress(f"Reward parts switched off: {', '.join(off)}")
 
         _run_pipeline(CONFIG, hooks, progress, write_outputs=write_outputs)
         return True
@@ -262,10 +268,7 @@ class _Pipeline:
         self.progress.start(PipelineStep.REWARD_MACHINE)
 
         compiled = build_compilation_result(
-            self.environment,
-            proposal,
-            dfas,
-            recurrent_soft_penalty=self.CONFIG.recurrent_soft_penalty,
+            self.environment, proposal, dfas, RewardSwitches.from_config(self.CONFIG)
         )
 
         self.progress.artifact("Serialized Reward Machine", compiled.text)
@@ -281,33 +284,12 @@ class _Pipeline:
             return compiled
         self.progress.start(PipelineStep.STATE_DESCRIPTIONS)
 
-        facts = _tagger_facts(compiled)
+        descriptions = tag_states(self.generator_engine, task, compiled, self.progress.warn)
         nodes = tuple(state_identifiers(compiled).values())
-        attempts = Configuration.TAGGING_ATTEMPTS
 
-        last_error: Exception | None = None
-        for tagging_attempt in range(1, attempts + 1):
-            try:
-                descriptions = self.generator_engine.describe_states(
-                    task, facts["Clauses"], facts["Reward Machine"], nodes
-                )
-            except (RetryableEngineError, ProposalValidationError) as error:
-                last_error = error
-                self.progress.warn(
-                    f"state tagging request {tagging_attempt}/{attempts} failed: {error}"
-                )
-                continue
-
-            self.progress.artifact(
-                "State descriptions",
-                dict(zip(nodes, descriptions, strict=True)),
-            )
-            self.progress.complete()
-            return replace(compiled, state_descriptions=descriptions)
-
-        raise ImmediateEngineError(
-            f"State-description tagging failed after {attempts} requests: {last_error}"
-        )
+        self.progress.artifact("State descriptions", dict(zip(nodes, descriptions, strict=True)))
+        self.progress.complete()
+        return replace(compiled, state_descriptions=descriptions)
 
     def _review_candidate(
         self,
@@ -432,6 +414,34 @@ class _Pipeline:
 #                                   HELPERS
 #
 # ============================================================================
+
+
+def tag_states(
+    engine: GenericEngine, task: str, compiled: CompilationResult, warn: Callable[[str], None]
+) -> tuple[str, ...]:
+    """Have the generator describe every state of one compiled machine, in node order.
+
+    A malformed answer or a transient provider failure is asked again, at most
+    ``Configuration.TAGGING_ATTEMPTS`` requests in all.
+
+    Raises:
+        ImmediateEngineError: Every request failed.
+    """
+    facts = _tagger_facts(compiled)
+    nodes = tuple(state_identifiers(compiled).values())
+    attempts = Configuration.TAGGING_ATTEMPTS
+
+    last_error: Exception | None = None
+    for tagging_attempt in range(1, attempts + 1):
+        try:
+            return engine.describe_states(task, facts["Clauses"], facts["Reward Machine"], nodes)
+        except (RetryableEngineError, ProposalValidationError) as error:
+            last_error = error
+            warn(f"state tagging request {tagging_attempt}/{attempts} failed: {error}")
+
+    raise ImmediateEngineError(
+        f"State-description tagging failed after {attempts} requests: {last_error}"
+    )
 
 
 def state_embedding_context(compiled: CompilationResult) -> str:

@@ -4,7 +4,7 @@ import unittest
 
 from src.arm_fm.runtime import RewardMachineRuntime
 from src.compiler import parse_paper_reward_machine, serialize_reward_machine
-from src.compiler.reward_layer import build_reward_machine
+from src.compiler.reward_layer import RewardSwitches, build_reward_machine
 
 # F goal: unsatisfied until `goal` is seen, then it stays satisfied.
 GOAL = {
@@ -70,7 +70,7 @@ RESPONSE = {
 def rewards_of(clauses, soft, propositions, steps, recurrent_soft_penalty=True):
     """Run one episode of true-proposition sets through the compiled, serialized machine."""
     machine = build_reward_machine(
-        clauses, soft, recurrent_soft_penalty=recurrent_soft_penalty
+        clauses, soft, RewardSwitches(recurrent_soft_penalty=recurrent_soft_penalty)
     ).reward_machine
     text = serialize_reward_machine(machine)
     runtime = RewardMachineRuntime(parse_paper_reward_machine(text, propositions=propositions))

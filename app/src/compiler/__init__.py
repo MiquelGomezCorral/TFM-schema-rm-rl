@@ -8,6 +8,7 @@ from .pipeline import (
     compile_dfas,
     materialize_proposal,
 )
+from .reward_layer import RewardSwitches
 from .reward_machine import evaluate_boolean_guard, parse_boolean_guard
 from .rm_format import (
     PaperRewardMachine,

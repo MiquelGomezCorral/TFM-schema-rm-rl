@@ -11,7 +11,7 @@ from src.engines.structured import ProposalSelection
 from src.models import EnvironmentDescription
 
 from .ltlf import to_flat_syntax
-from .reward_layer import RewardLayerResult, build_reward_machine
+from .reward_layer import RewardLayerResult, RewardSwitches, build_reward_machine
 from .reward_machine import RewardMachineStructure
 from .rm_format import serialize_reward_machine
 
@@ -81,12 +81,14 @@ def build_compilation_result(
     environment: EnvironmentDescription,
     proposal: Proposal,
     dfas: Sequence[dict],
-    *,
-    recurrent_soft_penalty: bool = True,
+    switches: RewardSwitches | None = None,
 ) -> CompilationResult:
-    """Build and serialize a task-specific Reward Machine from compiled DFAs."""
+    """Build and serialize a task-specific Reward Machine from compiled DFAs.
+
+    ``switches`` says which reward parts it pays; without them CONFIG's defaults apply.
+    """
     soft = [clause.priority is PriorityLevel.SOFT for clause in proposal.clauses]
-    layer = build_reward_machine(dfas, soft, recurrent_soft_penalty=recurrent_soft_penalty)
+    layer = build_reward_machine(dfas, soft, switches)
     return CompilationResult(
         environment=environment,
         proposal=proposal,
