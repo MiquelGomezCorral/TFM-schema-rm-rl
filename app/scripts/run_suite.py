@@ -115,7 +115,15 @@ def bundle_path(spec: dict, card_id: str, arm: str, variant: str | None) -> Path
 
 
 def load_suite(path: Path) -> dict:
-    """Read a ``runs.yaml`` and its task cards, checking the keys and the arms."""
+    """Read a ``runs.yaml`` and its task cards, checking the keys and the arms.
+
+    ``only`` is a list of card ids or the repo-relative path of a JSON card file; the file's
+    ids, in file order, replace the path, so ``spec["only"]`` is a list after this call.
+
+    Raises:
+        ValueError: If a key, arm or learner entry is missing or unknown, or ``only`` is a path
+            that is not a card file with a non-empty ``cards`` list.
+    """
     spec = yaml.safe_load(path.read_text(encoding="utf-8"))
     missing = [key for key in SUITE_KEYS if key not in spec]
     if missing:
@@ -128,14 +136,25 @@ def load_suite(path: Path) -> dict:
         if absent:
             raise ValueError(f"{path}: learner {name} lacks {', '.join(absent)}")
     spec["cards"] = json.loads((ROOT / spec["tasks"]).read_text(encoding="utf-8"))["cards"]
+
+    only = spec.get("only")
+    if isinstance(only, str):
+        try:
+            entries = json.loads((ROOT / only).read_text(encoding="utf-8"))["cards"]
+            spec["only"] = [card["id"] for card in entries]
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise ValueError(f"{path}: only {only} is not a card file with a cards list") from error
+        if not spec["only"]:  # an empty list would fall back to every train card
+            raise ValueError(f"{path}: only {only} lists no cards")
     return spec
 
 
 def expand_runs(spec: dict) -> list[Run]:
     """Every run of the suite: ``train`` cards (or ``only``) x arms x learners x variants x seeds.
 
-    Variants apply to the arms that have a bundle, not to ``no-rm``. A learner name must be in
-    ``learners`` (``TBD`` is allowed: it is refused later, except by ``--dry-run``).
+    ``spec`` comes from ``load_suite``, so ``only`` is a list of card ids here. Variants apply to
+    the arms that have a bundle, not to ``no-rm``. A learner name must be in ``learners``
+    (``TBD`` is allowed: it is refused later, except by ``--dry-run``).
 
     Raises:
         ValueError: If ``only`` or a learner names something unknown, or two runs share a

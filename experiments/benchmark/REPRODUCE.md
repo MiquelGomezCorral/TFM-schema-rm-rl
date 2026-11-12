@@ -121,7 +121,11 @@ directions are reported apart and never pooled.
 
 Runs expand from each suite's `runs.yaml`; `run-suite` and `aggregate-suite` and the wrapper scripts
 `experiments/benchmark/scripts/train.sh` and `experiments/benchmark/scripts/evaluate.sh` come from the
-runs slice. In order: `run-suite --suite <runs.yaml> --dry-run`, then without `--dry-run`, then
+runs slice. The `runs.yaml` key `only` is a list of card ids or the path of a JSON card file whose
+ids are used: the ablation suite reads its cards from `complex/tasks.json` and takes its 3 ids from
+`complex/ablation.json`.
+
+In order: `run-suite --suite <runs.yaml> --dry-run`, then without `--dry-run`, then
 `test-rl --judge` over the finished runs, then `aggregate-suite --suite <runs.yaml> --output <dir>`.
 
 <!-- seeds: the target is three seeds [1, 2, 3]; the committed runs.yaml files carry seed 1. -->

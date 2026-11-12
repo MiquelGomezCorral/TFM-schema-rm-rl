@@ -19,7 +19,8 @@ approves them.
 
 - `tasks.json`: the cards.
 - `ablation.json`: three of these cards, of different sizes, used to switch off one reward part at a
-  time.
+  time. It holds notes, not card content: `../ablation/runs.yaml` takes its ids through `only` and
+  reads the cards from `tasks.json`.
 - `bundles/<arm>/<card-id>/`: the generated machine per arm (`farm` or `arm-fm`).
 - `traces/<card-id>/`: trace records of the scripted plans.
 - `runs.yaml`: which cards, arms, seeds and steps `run-suite` trains.
