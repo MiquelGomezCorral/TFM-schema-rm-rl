@@ -206,6 +206,7 @@ class RewardMachineEnvironment:
         else:
             observation, reward, terminated, info = result
             truncated = False
+        info = {**(info or {}), "env_terminated": bool(terminated)}
         valuation = self.runtime.evaluate_labeling(self.environment, self.labeling)
         rm_step = self.runtime.step(valuation)
         env_ended = bool(terminated) or truncated
