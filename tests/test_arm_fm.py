@@ -39,7 +39,7 @@ from src.compiler import (
 )
 from src.compiler.reward_machine import RewardMachineStructure, Transition
 from src.config import Configuration
-from src.engines import ImmediateEngineError, RetryableEngineError
+from src.engines import CriticUnavailableError, ImmediateEngineError, RetryableEngineError
 from src.models import EnvironmentDescription
 
 DEMO_MARKDOWN = (
@@ -498,6 +498,46 @@ REWARD_FUNCTION:
             loaded = ArtifactBundle.load(directory)
         self.assertEqual(len(requests), 1)
         self.assertEqual(loaded.attempts, [])
+
+    def test_baseline_critic_failure_is_retried_on_the_same_candidate(self):
+        environment = EnvironmentDescription.from_markdown(DEMO_MARKDOWN, source="demo.md")
+        machine = (
+            "```plaintext\nREWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES: u1\n"
+            "TRANSITION_FUNCTION:\n(u0, done) -> u1\n(u0, else) -> u0\n(u1, else) -> u1\n"
+            "REWARD_FUNCTION:\n(u0, done, u1) -> 1\n```"
+        )
+        verdict = '{"accepted":true,"feedback":"ok"}'
+        labeling = "```python\ndef done(env):\n    return True\n```"
+        outage = RetryableEngineError("Connection error.")
+
+        def run(responses):
+            queue = iter(responses)
+            requests = []
+
+            def request_text(_system, _user, **_kwargs):
+                requests.append(1)
+                response = next(queue)
+                if isinstance(response, Exception):
+                    raise response
+                return response
+
+            engine = SimpleNamespace(request_text=request_text)
+            result = generate_baseline_bundle("finish", environment, engine, Configuration())
+            return result, requests
+
+        for failures in ((outage, outage), ("not json", '{"accepted":true}')):
+            with self.subTest(failures=failures):
+                result, requests = run(
+                    [machine, *failures, verdict, labeling, verdict, '{"u0":"a","u1":"b"}']
+                )
+                records = [item for item in result.attempts if item.stage == "reward_machine"]
+                self.assertEqual(
+                    [(item.attempt, item.status) for item in records], [(1, "accepted")]
+                )
+                self.assertEqual(len(requests), 7)  # one machine, three critic requests, the rest
+
+        with self.assertRaisesRegex(CriticUnavailableError, "Connection error"):
+            run([machine, *[outage] * (Configuration.OUTAGE_RETRIES + 1)])
 
     def test_compiler_failure_persists_accepted_rm(self):
         environment = EnvironmentDescription.from_markdown(DEMO_MARKDOWN, source="demo.md")

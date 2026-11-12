@@ -84,13 +84,17 @@ tasks, while keeping the generator and critic responsibilities stable.
   of a critic's verdict.
 - Each task has at most `--attempts` Reward Machine attempts (default 3, at most 10, also a web UI
   field), in compiler mode and in `arm-fm` mode alike. Every new candidate uses one: an accepted
-  one, a critic rejection, and an invalid one (invalid proposal, incompatible clauses, malformed
-  critic output; in `arm-fm` also an unparseable machine). A provider failure (connection error,
-  rate limit, timeout, server error, exhausted 400 repeats) uses none: the same attempt runs again
-  with a warning, at most `Configuration.OUTAGE_RETRIES` (10) reruns in a row, and then the run
-  ends as a provider error. The critic may be disabled; disabling it prints a warning and
-  accepts the compiler's first result. Enabled critics use the configured provider and critic
-  model.
+  one, a critic rejection, and an invalid one (invalid proposal, incompatible clauses; in `arm-fm`
+  also an unparseable machine). A generator provider failure (connection error, rate limit,
+  timeout, server error, exhausted 400 repeats) uses none: the same attempt runs again with a
+  warning, at most `Configuration.OUTAGE_RETRIES` (10) reruns in a row, and then the run ends as a
+  provider error. A failed critic request (a provider failure or critic output that cannot be
+  parsed) is not one of those reruns: it is repeated on the same candidate, in compiler and
+  baseline generation alike, bounded by the same `OUTAGE_RETRIES`. Generation does not restart and
+  no candidate is drawn; when the repeats run out, the run ends with a critic error that names the
+  last cause, and the candidate keeps its attempt. The critic may be disabled; disabling it prints
+  a warning and accepts the compiler's first result. Enabled critics use the configured provider
+  and critic model.
 - The creator assumes the task is feasible in its environment; there is no refusal field.
   Whether a task can be done at all is the environment author's and the user's responsibility.
 - The environment's `## Constraints` are declared facts that the generator and the critic read. The
