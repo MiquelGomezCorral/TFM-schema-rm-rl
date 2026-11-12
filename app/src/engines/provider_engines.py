@@ -57,7 +57,7 @@ class OpenAIEngine(GenericEngine):
         self,
         environment: EnvironmentDescription,
         model: str | None,
-        reasoning: str = "none",
+        reasoning: str = Configuration.reasoning,
     ) -> None:
         model = _required_model(model, "OpenAI")
         self._client = OpenAI(api_key=_required_env("OPENAI_API_KEY"), max_retries=0)
@@ -89,6 +89,7 @@ class OpenAIEngine(GenericEngine):
             },
             reasoning={"effort": _OPENAI_EFFORT.get(self.reasoning, self.reasoning)},
         )
+        self.reported_model = getattr(response, "model", None)
         return responses_text(response)
 
     def _request_responses_text(self, model: str, system: str, user: str) -> str:
@@ -100,6 +101,7 @@ class OpenAIEngine(GenericEngine):
             ],
             reasoning={"effort": _OPENAI_EFFORT.get(self.reasoning, self.reasoning)},
         )
+        self.reported_model = getattr(response, "model", None)
         return responses_text(response)
 
 
@@ -110,7 +112,7 @@ class OpenCodeEngine(GenericEngine):
         self,
         environment: EnvironmentDescription,
         model: str | None,
-        reasoning: str = "none",
+        reasoning: str = Configuration.reasoning,
     ) -> None:
         model = _required_model(model, "OpenCode")
         if model == OPENCODE_GO_MODEL:
@@ -158,6 +160,7 @@ class OpenCodeEngine(GenericEngine):
                 "json_schema": {"name": name, "strict": True, "schema": schema},
             },
         )
+        self.reported_model = getattr(response, "model", None)
         return completion_text(response)
 
     def _request_chat_completions_text(self, model: str, system: str, user: str) -> str:
@@ -168,13 +171,15 @@ class OpenCodeEngine(GenericEngine):
                 {"role": "user", "content": user},
             ],
         )
+        self.reported_model = getattr(response, "model", None)
         return completion_text(response)
 
     def _create_completion(self, **request: Any) -> ChatCompletion:
         """Send one chat completion, resending at once with ``low`` if the model refuses ``none``.
 
         The switch is kept for the engine's later requests and warned once. The resend is not a
-        provider repeat; a refusal that survives ``low`` raises like any other 400.
+        provider repeat; a refusal that survives ``low`` raises like any other 400. The refused
+        send is counted in ``resends`` so the request's records include it.
         """
         try:
             return self._client.chat.completions.create(**request, reasoning_effort=self.reasoning)
@@ -194,6 +199,7 @@ class OpenCodeEngine(GenericEngine):
             if self.reasoning != "none" or not (about_reasoning and cannot_disable):
                 raise
         self.reasoning = "low"
+        self.resends += 1
         if self.warn is not None:
             self.warn(
                 f'model {self.model} does not accept reasoning "none"; '

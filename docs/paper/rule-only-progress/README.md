@@ -2,6 +2,13 @@
 
 Date: 2026-10-26. Open `index.html` in a browser; everything it needs is in this folder.
 
+> **Note, 2026-11-12.** The numbers quoted here were made on commit `cca2c3c`, before the well charge.
+> A rerun of `check/end_judgment_check.py` on `42bc2f0` or the wave head gives totals of -2.2 and -3.2
+> where this entry quotes -2.1 and -1.1, because the well charge (`cfc7ee0`, "charge open items at any
+> end") now charges open items at any end. The hard ChainResponse line of `check/real_code_check.py`
+> differs from the P2 text for the same reason. `check/p2_sim.py` reruns only on `e0a054a` code and is
+> unchanged on purpose. The quoted numbers are not changed.
+
 ## What it shows
 
 A task made only of rules has no goal, so its Reward Machine has no final state. Before this change the

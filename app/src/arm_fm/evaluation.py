@@ -374,6 +374,7 @@ class JudgeDecision:
     reason: str
     scored: bool = True
     attempt: int = 1
+    ablation: bool = False  # an ``ablate-rm`` variant; it is not counted (see aggregate_judgments)
 
     @property
     def category(self) -> str:
@@ -453,11 +454,19 @@ def _judgment(response: str, bundle: ArtifactBundle) -> JudgeDecision:
         value["labeling_correct"],
         reason.strip(),
         attempt=_bundle_attempt(bundle),
+        ablation=_is_ablation(bundle),
     )
 
 
 def _unscored(bundle: ArtifactBundle, reason: str) -> JudgeDecision:
-    return JudgeDecision(False, False, reason, scored=False, attempt=_bundle_attempt(bundle))
+    return JudgeDecision(
+        False,
+        False,
+        reason,
+        scored=False,
+        attempt=_bundle_attempt(bundle),
+        ablation=_is_ablation(bundle),
+    )
 
 
 def aggregate_judgments(
@@ -466,8 +475,15 @@ def aggregate_judgments(
     submitted: int | None = None,
     generation_failures: int = 0,
 ) -> BenchmarkSummary:
-    decisions = tuple(decisions)
-    submitted = len(decisions) + generation_failures if submitted is None else submitted
+    """Count the judgments; an ablation variant is left out of every counter.
+
+    A variant copies its source bundle's attempt, so counting it would add a second
+    first-attempt (or refined) win for the one source machine.
+    """
+    everything = tuple(decisions)
+    decisions = tuple(decision for decision in everything if not decision.ablation)
+    variants = len(everything) - len(decisions)
+    submitted = len(decisions) + generation_failures if submitted is None else submitted - variants
     counts = Counter(decision.category for decision in decisions)
     for category in ("both", "rm_only", "labeling_only", "neither", "unscored"):
         counts.setdefault(category, 0)
@@ -521,6 +537,20 @@ def _machine_text(bundle: ArtifactBundle) -> str:
     if bundle.reward_machine is None:
         return ""
     return serialize_paper_reward_machine(bundle.reward_machine)
+
+
+def ablation_of(effective_settings: object) -> dict[str, Any]:
+    """The ``ablate-rm`` settings in a manifest's ``effective_settings``; ``{}`` for other bundles.
+
+    The one rule for "is this bundle an ablation variant": a value that is not an object, at
+    either level, counts as missing.
+    """
+    ablation = effective_settings.get("ablation") if isinstance(effective_settings, dict) else None
+    return ablation if isinstance(ablation, dict) else {}
+
+
+def _is_ablation(bundle: ArtifactBundle) -> bool:
+    return bool(ablation_of(bundle.manifest.effective_settings))
 
 
 def _bundle_attempt(bundle: ArtifactBundle) -> int:

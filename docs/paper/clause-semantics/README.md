@@ -9,6 +9,11 @@ table differs from it. The design is in the
 [recurrent soft rules note](../recurrent-soft-rules/README.md) and in
 [`COMPILER_REWARD_DESIGN.md`](../../COMPILER_REWARD_DESIGN.md).
 
+> **Note, 2026-11-12.** The numbers quoted here were made on commit `cca2c3c`, before the well charge.
+> A rerun of `check/clause_semantics.py` on `42bc2f0` or the wave head ends with `201 asserted counts
+> checked, 4 differ`, because the well charge (`cfc7ee0`, "charge open items at any end") now charges
+> open items at any end. The quoted numbers are not changed.
+
 Contents: [Notation](#notation) · [Scope](#scope) · [Hard, soft and recurrent soft](#hard-soft-and-recurrent-soft) ·
 [Where the environment ends the episode](#where-the-environment-ends-the-episode) ·
 [The eight templates at a glance](#the-eight-templates-at-a-glance) ·

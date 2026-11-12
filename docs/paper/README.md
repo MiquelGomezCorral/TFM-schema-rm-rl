@@ -251,3 +251,124 @@ rerun after a critic reply that was not JSON; replay 33/33). No run measures lea
 **Files, rerun, code.** In `rule-only-rewards/README.md`: the page, 15 RM graphs, the reports in
 `evidence/close/`, the window check and how to rerun it, and the commits
 on `feat/rule-only-rewards`.
+
+### ARM-FM rewards on undeclared transitions (`li2-undeclared-reward-rows/`), 2026-11-12
+
+**What it shows.** ARM-FM writes the whole machine. On the two event-room cards, 3 of its 6 attempts
+stopped at our parser: the reward section paid a self-loop the transition section never declared. The
+authors' code accepts such a row and never pays it; we keep rejecting it and the error goes back to the
+model as the next round (user decision, 2026-11-12). Two cards, one model pair: a data point, not a rate.
+
+**Evidence.** The six recorded attempts of `cx-siren` and `cx-box`, with the parser or critic reply of
+each, and a script that re-parses them.
+
+**Files.** `README.md`, `check/parse_attempts.py`, `check/attempts/`.
+
+**Rerun** (no LLM call): `PYTHONPATH=app python -W ignore docs/paper/li2-undeclared-reward-rows/check/parse_attempts.py`
+prints `3 of 6 candidates stopped at the parser`.
+
+**Code.** `_with_rewards` in `app/src/compiler/rm_format.py`, the retry loop in
+`app/src/arm_fm/generation.py`; the rule is in `docs/decisions/arm-fm/rm-execution.md`.
+
+### Event room (`s3-event-room/`), 2026-11-12
+
+**What it shows.** `MiniGrid-ServiceRoom-v0`, a small room where events happen to the agent (a siren
+rings, a box falls). Frame sheets and GIFs show the events, the answers to them, and that answering is
+what earns the exit reward. A scripted policy reaches the exit with reward above 0 in 200 of 200 seeded
+episodes over four setups; policies that ignore the events earn 0. It shows the room works, not that an
+agent can learn it.
+
+**Evidence.** 42 checks in `check/summary.json`, all pass; eight GIFs byte-identical to the rerun.
+
+**Files.** `README.md`, `sheets/`, `gifs/`, `graphs/` (the two FARM machines), `check/summary.json`.
+
+**Rerun** (no LLM call): `PYTHONPATH=app python -W ignore experiments/benchmark/scripts/check_service_room.py --out <output dir>`
+ends with `all 42 checks passed`.
+
+**Code.** `app/src/arm_fm/service_room.py`, merged as `09d7455` (`merge: tp-s3-event-room`).
+
+### The task-card set (`s4-card-set/`), 2026-11-12
+
+**What it shows.** 58 benchmark cards and 179 judged plan runs: every solving plan is judged a success
+and every wrong plan breaks exactly the clauses it says. Response and Precedence are not
+trace-equivalent: 156 of 340 short traces are judged differently, so a card's Response alternative is
+not the same task as its Precedence pair. The cards are under revision (D10); the numbers describe the
+set as of that morning.
+
+**Evidence.** Three trace-bank logs and summaries in `results/`, and the Response against Precedence
+check.
+
+**Files.** `README.md`, `results/`, `check/response_vs_precedence.py`.
+
+**Rerun** (no LLM call): `PYTHONPATH=app python -W ignore docs/paper/s4-card-set/check/response_vs_precedence.py`
+prints `156 of 340 traces up to 4 steps are judged differently`.
+
+**Code.** `app/src/benchmark/declare_judge.py`, the `trace-bank` command, merged as `47403ef`
+(`merge: tp-s4-cards`).
+
+### Cross-critic caution (`s6-cross-critic-caution/`), 2026-11-12
+
+**What it shows.** FARM's critic rejected all three ARM-FM machines of the smoke, each time because the
+clause list is empty (ARM-FM has no clauses) and asking to add clauses; the same happened in LI.2. The
+FARM critic's verdict on an ARM-FM machine is therefore not a quality score, and the two cross-critic
+directions are reported apart. Three cards, one model pair.
+
+**Evidence.** The smoke evidence JSON with each verdict's full text and information note, the critic
+outputs, and the three ARM-FM machines as graphs.
+
+**Files.** `README.md`, `evidence/`, `graphs/`.
+
+**Rerun.** The smoke needs the provider; the README lists the verdicts from the evidence file.
+
+**Code.** The `cross-critic` command of `generate-suite`, merged as `ab1ecbc` (`merge: tp-s6-generation`).
+
+### Generation cost per bundle (`s6-generation-cost/`), 2026-11-12
+
+**What it shows.** On the same three cards and models, FARM took 5 to 7 model calls and 21 to 31 s per
+bundle, ARM-FM 7 to 9 calls and 36 to 46 s (3-attempt limit of the smoke). A smoke measurement of the
+cost, not of quality; the full suites allow up to 10 attempts, so costs will rise.
+
+**Evidence.** The `generate-suite` output lines and the stamps in the smoke evidence JSON; the six
+machines as graphs, each with its NL task and clause list.
+
+**Files.** `README.md`, `evidence/`, `graphs/`.
+
+**Rerun.** Needs the provider; the README lists the counts from the evidence file.
+
+**Code.** `generate-suite` and its provenance stamps, merged as `ab1ecbc`.
+
+### Reward parts against sequences (`s8-sequence-switch-table/`), 2026-11-12
+
+**What it shows.** `ablate-rm` rebuilds a FARM bundle with one reward part off (progress, well,
+soft break, soft pending, end judgment, recurrent soft penalty). On one DoorKey machine, six hand-written
+label sequences show that each switch changes only its own part of the reward: the table lists the
+per-step rewards of the full machine and of each ablated copy, with the seven machines as graphs. It
+checks the switches; it does not train anything.
+
+**Evidence.** The printed table and bundle check of the live run on the slice head `35b7944`, and the
+recurrent-off log.
+
+**Files.** `README.md`, `graphs/`, `evidence/`.
+
+**Rerun.** `ablate-rm --bundle <FARM bundle> --off <switch> --output <dir>`; the source bundle is a
+git-ignored output of the S8 run (see the README).
+
+**Code.** `RewardSwitches` in `app/src/compiler/reward_layer.py`, `app/scripts/ablate_rm.py`; commits
+`a690013`, `c7140e9`, `35b7944`.
+
+### Judge columns of the suite table (`c2-f1-judge-columns/`), 2026-11-12
+
+**What it shows.** Before the C2 fix, `aggregate-suite` read judge keys the writer never wrote, so all
+four judge columns were empty. After it, two real judge files (a no-RM run, a FARM run) fill them with
+the file's own numbers. Two runs: a check that the table reads the judge, not a result about the arms.
+
+**Evidence.** The check's verdicts before (`"pass": false`) and after (`"pass": true`), the two judge
+files, and the FARM machine as a graph.
+
+**Files.** `README.md`, `evidence/`, `check/`, `graphs/`.
+
+**Rerun.** `f1_aggregation.py before|after`, on the code before (`0f7e56b^`) and after (`0f7e56b`) the
+fix; it needs the finished runs under `outputs/` (see the README).
+
+**Code.** `judge_columns` in `app/scripts/aggregate_suite.py`, `judge_means` in `app/scripts/test_rl.py`;
+commit `0f7e56b`, C2 final head `7ae1157`.

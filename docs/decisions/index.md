@@ -14,3 +14,6 @@ smallest relevant set before planning or reviewing a change.
   ordered overlap handling, `else` fallbacks, graph defaults, and one update per step.
 - [Run observability](generation/run-observability.md) — typed stage events, dual Run
   views, failure reasons, local diagnostics, retention, and secret exclusion.
+- [Thesis benchmark](benchmark/thesis-benchmark.md) — the three arms, task cards, the
+  independent judge, statuses, ablation switches, attempts, prompts, layouts, card-miss rule,
+  provenance stamps, and fairness notes.

@@ -69,7 +69,7 @@ _DEFAULT_ENVIRONMENT_NAME = "environment.md"
 _ENVIRONMENT_STEM = "environment"
 _UNSAFE_OUTPUT_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 _ENVIRONMENT_TITLE = re.compile(r"^#\s+(\S.*)$", re.MULTILINE)
-# A tasks manifest (examples/arm-fm/*/tasks.json) names the environment, points at its
+# A tasks manifest (experiments/dev/arm-fm/*/tasks.json) names the environment, points at its
 # Markdown relative to the repository root, and lists the tasks to compile.
 _MANIFEST_FIELDS = ("env", "env_description", "tasks")
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -268,9 +268,7 @@ def _register_start_callback(app: Dash, controller: RunController) -> None:
             return "Every task row must contain text."
         if attempts not in Configuration.ATTEMPT_LIMITS:
             limits = Configuration.ATTEMPT_LIMITS
-            return (
-                f"Enter a whole number from {limits.start} to {limits.stop - 1} critic rejections."
-            )
+            return f"Enter a whole number of attempts from {limits.start} to {limits.stop - 1}."
         if reasoning not in REASONING_LEVELS:
             return "Choose a reasoning level."
         submitted_name = (output_filename or "").strip()
@@ -606,7 +604,7 @@ def _step_attempts(
     value: object,
     locked: bool | None,
 ) -> tuple[object, bool, bool]:
-    """Move the rejection limit one step and keep both buttons inside its bounds.
+    """Move the attempt limit one step and keep both buttons inside its bounds.
 
     A click on a button moves the value; a typed or pasted value is kept untouched, so only
     the two ``disabled`` flags are recomputed and the pair never freezes.

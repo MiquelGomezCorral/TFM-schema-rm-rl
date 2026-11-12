@@ -35,7 +35,7 @@ The candidate may use only the surface listed in the user prompt's Documented ru
 section, plus:
 
 - `env.episode_memory["previous_valuation"]`: read-only proposition-to-boolean map from the
-  preceding step; empty on the first step.
+  preceding step; every proposition is false on the first step.
 
 ### Candidate labeling source
 The generated Python predicates under review.

@@ -14,7 +14,7 @@ from nl2ltl.declare.declare import Existence
 from pylogics.syntax.ltl import Atomic
 
 from scripts.generate_rm import EMBEDDING_INSTRUCTION, generate_rm
-from src.compiler import CompilationResult, Proposal
+from src.compiler import CompilationResult, Proposal, RewardSwitches
 from src.compiler.reward_machine import RewardMachineStructure
 from src.config import Configuration, PriorityLevel
 from src.engines import (
@@ -113,7 +113,7 @@ class Engine:
             raise value
         return value
 
-    def request_text(self, system, user):
+    def request_text(self, system, user, stage="text"):
         self.labeling_requests.append(user)
         value = (
             self.labeling_results.pop(0)
@@ -157,7 +157,7 @@ class OrchestrationTests(unittest.TestCase):
         self.critic.verdicts = []
         self.saved = Mock()
 
-    def execute(self, tasks=("finish",), *, hooks=None, compiled=None, **flags):
+    def execute(self, tasks=("finish",), *, hooks=None, compiled=None, run_stats=None, **flags):
         CONFIG = Configuration(environment="demo.md", tasks=list(tasks), output="out.rm", **flags)
         with (
             patch(
@@ -175,12 +175,29 @@ class OrchestrationTests(unittest.TestCase):
                 return_value=compiled or result(),
             ),
         ):
-            return generate_rm(CONFIG, hooks)
+            return generate_rm(CONFIG, hooks, run_stats=run_stats)
 
     def test_first_attempt_acceptance(self):
         self.critic.verdicts = [CriticResult(True, "ok")]
         self.assertTrue(self.execute())
         self.saved.assert_called_once()
+
+    def test_generator_that_never_answers_draws_no_candidate(self):
+        self.engine.proposals = [RetryableEngineError("generator unavailable")] * 20
+        run_stats = []
+        CONFIG = Configuration(environment="demo.md", tasks=["finish"], output="out.rm")
+        with (
+            patch(
+                "scripts.generate_rm.setup_environment_and_engines",
+                return_value=(ENV, self.engine, self.critic),
+            ),
+            patch(
+                "src.utils.generation_pipeline.derive_output_paths", return_value=(Path("out.rm"),)
+            ),
+        ):
+            self.assertFalse(generate_rm(CONFIG, run_stats=run_stats, write_outputs=False))
+        self.assertEqual(len(self.engine.histories), Configuration.OUTAGE_RETRIES + 1)
+        self.assertEqual(run_stats[0]["attempts"], 0)
 
     def test_failed_critic_request_is_retried_on_the_same_candidate(self):
         self.critic.verdicts = [
@@ -198,14 +215,17 @@ class OrchestrationTests(unittest.TestCase):
 
     def test_critic_that_keeps_failing_ends_the_run_without_a_new_candidate(self):
         self.critic.verdicts = [RetryableEngineError("Connection error.")] * (
-            Configuration.UNCOUNTED_RETRIES + 1
+            Configuration.OUTAGE_RETRIES + 1
         )
-        failures = []
+        failures, run_stats = [], []
 
-        self.assertFalse(self.execute(hooks=GenerationHooks(failure=failures.append)))
+        self.assertFalse(
+            self.execute(hooks=GenerationHooks(failure=failures.append), run_stats=run_stats)
+        )
 
         self.assertEqual(self.engine.histories, ["None."])
-        self.assertEqual(len(self.critic.candidates), Configuration.UNCOUNTED_RETRIES + 1)
+        self.assertEqual(len(self.critic.candidates), Configuration.OUTAGE_RETRIES + 1)
+        self.assertEqual(run_stats[0]["attempts"], 1)  # the candidate keeps its attempt
         self.assertIn("Critic failed", failures[0])
         self.assertIn("Connection error.", failures[0])
 
@@ -234,7 +254,7 @@ class OrchestrationTests(unittest.TestCase):
         self.assertIn("fix rm", self.engine.histories[1])
         self.assertIn('"source": "critic"', self.engine.histories[1])
 
-    def test_only_a_critic_rejection_uses_an_attempt_and_other_failures_warn(self):
+    def test_candidates_use_attempts_and_provider_outages_do_not(self):
         self.engine.proposals = [
             RetryableEngineError("provider down"),
             RetryableEngineError("timeout"),
@@ -248,10 +268,12 @@ class OrchestrationTests(unittest.TestCase):
         )
 
         self.assertTrue(accepted)
-        self.assertTrue(any("attempt 2/3 accepted" in message for message in messages))
+        # The malformed proposal and the critic rejection each use an attempt; the two
+        # provider outages before them use none.
+        self.assertTrue(any("attempt 3/3 accepted" in message for message in messages))
         self.assertEqual(len(warnings), 3)
         self.assertIn("provider failed: provider down, attempt 1/3 kept", warnings[0])
-        self.assertIn("proposal invalid: malformed, attempt 1/3 kept", warnings[2])
+        self.assertIn("proposal invalid: malformed, attempt 1/3 used", warnings[2])
         history = json.loads(self.engine.histories[-1])
         self.assertEqual([item["source"] for item in history], ["generator", "critic"])
 
@@ -714,8 +736,10 @@ class OrchestrationTests(unittest.TestCase):
                 labeling=True,
                 generator_model="generator-model",
                 critic_model="critic-model",
+                reward_well=False,
             )
             CONFIG.OUTPUT_PATH = root
+            build = Mock(return_value=result())
             patches = (
                 patch(
                     "scripts.generate_rm.setup_environment_and_engines",
@@ -726,7 +750,7 @@ class OrchestrationTests(unittest.TestCase):
                 ),
                 patch("src.utils.generation_pipeline.save_results", self.saved),
                 patch("scripts.generate_rm.compile_dfas", return_value=()),
-                patch("scripts.generate_rm.build_compilation_result", return_value=result()),
+                patch("scripts.generate_rm.build_compilation_result", build),
             )
             completion = []
             with patches[0], patches[1], patches[2], patches[3], patches[4]:
@@ -744,6 +768,7 @@ class OrchestrationTests(unittest.TestCase):
             self.saved.assert_called_once()
             manifest = json.loads((bundle_path / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["validation"], {"structural": True, "critic": True})
+            self.assertEqual(manifest["provenance"]["stamp"]["attempts"], 1)
             self.assertEqual(manifest["stage_status"]["labeling"], "complete")
             self.assertEqual(manifest["stage_status"]["descriptions"], "complete")
             self.assertIn("env.grid.get", manifest["api_definitions"]["labeling"])
@@ -762,9 +787,16 @@ class OrchestrationTests(unittest.TestCase):
                     "mode": "compiler",
                     "generator_model": "generator-model",
                     "critic_model": "critic-model",
+                    "max_attempts": 3,
+                    "reward_progress": True,
+                    "reward_well": False,
+                    "reward_soft_break": True,
+                    "reward_soft_pending": True,
+                    "reward_end_judgment": True,
                     "recurrent_soft_penalty": True,
                 },
             )
+            self.assertEqual(build.call_args.args[3], RewardSwitches.from_config(CONFIG))
             self.critic.verdicts = [CriticResult(True, "ok")]
             self.saved.reset_mock()
             with (

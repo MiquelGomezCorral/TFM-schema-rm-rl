@@ -15,6 +15,10 @@ without changing how labels, transitions, and rewards are interpreted.
   the RM exactly once per environment step. Do not reevaluate from the destination state.
 - A guard depends only on propositions it mentions. Ignore irrelevant propositions and
   use an implicit zero-reward self-loop when no ordinary guard or explicit fallback applies.
+- Our parser rejects an ARM-FM reward row on a transition the machine never declared
+  (`app/src/compiler/rm_format.py`, `_with_rewards`). The parser error goes back to the model as the
+  next ARM-FM round, within its attempt limit. The authors' code accepts such a row and never pays it;
+  we keep rejecting.
 - Baseline RM text retains the paper's per-state `else` self-loop convention. Compiler
   generation omits `else` rows and declares a zero default reward. Both modes apply
   an explicit `else` when present, otherwise the implicit zero-reward self-loop.
@@ -23,7 +27,8 @@ without changing how labels, transitions, and rewards are interpreted.
   the fallback applies only when no ordinary guard matches.
 - Expect disjoint ordinary guards. If several match, select the first stored transition
   and emit a warning. An `else` row applies only when no ordinary guard matches.
-- Reset the RM and episode-local labeling memory on environment reset.
+- Reset the RM and episode-local labeling memory on environment reset. The previous valuation at the
+  first step of every episode holds every proposition as false, in both pipelines.
 - Only declared final states accept the task. A machine with no final may declare
   `ACCEPTING_STATES` instead: an episode the environment ends in one of them is accepted
   (`rm_accept`; a success when the run uses `success: rm`), and being there never ends the
@@ -82,8 +87,10 @@ without changing how labels, transitions, and rewards are interpreted.
   execution semantics. An explicit `else` destination and reward must remain intact.
 - The end judgment applies once, only on an episode end the RM did not cause, and only to RMs
   whose text has `PENDING_PROMISES`: every compiled machine, with or without a final state (a
-  goal is a hard promise). RMs without it, such as imported author bundles, keep the flat -0.5 at
-  the time limit and get no end judgment.
+  goal is a hard promise). RMs without it, such as imported author bundles and fresh ARM-FM machines, pay the run's
+  `time_limit_penalty` at the time limit (default -0.5, the reproduction value; the [thesis
+  benchmark](../benchmark/thesis-benchmark.md) sets 0) and get no end judgment. Test exception: an
+  ablation variant with `reward_end_judgment` off carries none; every non-ablation machine still does.
 - The compiler never removes states or transitions on environment facts. The critic judges every
   clause against the environment file (`## Constraints`, the truth table, what the agent can and
   cannot do) and rejects a clause that restates an order the environment guarantees or that rests on
@@ -171,3 +178,10 @@ without expanding the machine or adding a guard-coverage calculation.
   timing out in that state. This solves the disclosed corner where idling with two hard promises
   open (-2) cost more than a hard break (-1). The number is in the edge's reward, so the runtime
   does not change and the well adds no charge at the end (user decision).
+- 2026-11-12: The flat -0.5 at the time limit becomes the run setting `time_limit_penalty`
+  (default -0.5, so reproduction runs keep it); the thesis benchmark sets 0 for ARM-FM machines,
+  as the ARM-FM paper pays nothing there. FARM's end judgment is unchanged (user decision).
+- 2026-11-12: An ablation variant with `reward_end_judgment` off carries no end judgment, as a test
+  exception; every non-ablation machine keeps it (user).
+- 2026-11-12: Kept rejecting an ARM-FM reward row on an undeclared transition; the parser error is the
+  next ARM-FM round's feedback (user).

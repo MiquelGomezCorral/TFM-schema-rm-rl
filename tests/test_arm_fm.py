@@ -39,7 +39,7 @@ from src.compiler import (
 )
 from src.compiler.reward_machine import RewardMachineStructure, Transition
 from src.config import Configuration
-from src.engines import CriticUnavailableError, RetryableEngineError
+from src.engines import CriticUnavailableError, ImmediateEngineError, RetryableEngineError
 from src.models import EnvironmentDescription
 
 DEMO_MARKDOWN = (
@@ -128,6 +128,23 @@ class ArmFMRuntimeTests(unittest.TestCase):
             snapshots[0]["current"] = False
         runtime.reset()
         self.assertEqual(runtime.episode_memory, {})
+
+    def test_first_step_previous_valuation_holds_every_proposition_false(self):
+        rm = PaperRewardMachine(("u0",), "u0", (), (), ("current", "event"))
+        runtime = RewardMachineRuntime(rm)
+        read = []
+        labeling = {
+            name: lambda env, name=name: (
+                read.append(env.episode_memory["previous_valuation"][name]) or True
+            )
+            for name in rm.propositions
+        }
+        runtime.evaluate_labeling(SimpleNamespace(), labeling)
+        runtime.evaluate_labeling(SimpleNamespace(), labeling)
+        runtime.reset()
+        runtime.evaluate_labeling(SimpleNamespace(), labeling)
+        # step 1, step 2 (sees step 1's True), then step 1 again after the reset
+        self.assertEqual(read, [False, False, True, True, False, False])
 
     def test_labeling_failure_does_not_replace_previous_valuation(self):
         rm = PaperRewardMachine(("u0",), "u0", (), (), ("value",))
@@ -448,7 +465,7 @@ REWARD_FUNCTION:
                 '{"u0":"start","u1":"finished"}',
             ]
         )
-        engine = SimpleNamespace(request_text=lambda system, user: next(responses))
+        engine = SimpleNamespace(request_text=lambda system, user, **kwargs: next(responses))
         result = generate_baseline_bundle("finish", environment, engine, Configuration())
         self.assertEqual(
             [item.stage for item in result.attempts],
@@ -457,6 +474,47 @@ REWARD_FUNCTION:
         self.assertEqual(len(result.bundle.raw_responses), 3)
         self.assertTrue(result.bundle.manifest.generation["first_attempt"])
         self.assertFalse(result.bundle.manifest.generation["refined"])
+
+    def test_provider_outage_reruns_without_an_attempt_and_ends_as_a_provider_error(self):
+        environment = EnvironmentDescription.from_markdown(DEMO_MARKDOWN, source="demo.md")
+        requests = []
+
+        def down(system, user, **kwargs):
+            requests.append(kwargs.get("stage"))
+            raise RetryableEngineError("Connection error.")
+
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(RetryableEngineError):
+                generate_baseline_bundle(
+                    "finish",
+                    environment,
+                    SimpleNamespace(request_text=down),
+                    Configuration(bundle=directory, attempts=3),
+                )
+            loaded = ArtifactBundle.load(directory)
+        # One try and OUTAGE_RETRIES reruns, far past the 3 attempts; none is recorded.
+        self.assertEqual(len(requests), Configuration.OUTAGE_RETRIES + 1)
+        self.assertEqual(loaded.attempts, [])
+
+    def test_immediate_engine_error_ends_the_run_at_once(self):
+        environment = EnvironmentDescription.from_markdown(DEMO_MARKDOWN, source="demo.md")
+        requests = []
+
+        def refused(system, user, **kwargs):
+            requests.append(kwargs.get("stage"))
+            raise ImmediateEngineError("Error code: 401")
+
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(ImmediateEngineError):
+                generate_baseline_bundle(
+                    "finish",
+                    environment,
+                    SimpleNamespace(request_text=refused),
+                    Configuration(bundle=directory, attempts=3),
+                )
+            loaded = ArtifactBundle.load(directory)
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(loaded.attempts, [])
 
     def test_baseline_critic_failure_is_retried_on_the_same_candidate(self):
         environment = EnvironmentDescription.from_markdown(DEMO_MARKDOWN, source="demo.md")
@@ -469,11 +527,11 @@ REWARD_FUNCTION:
         labeling = "```python\ndef done(env):\n    return True\n```"
         outage = RetryableEngineError("Connection error.")
 
-        def run(responses):
+        def run(responses, **settings):
             queue = iter(responses)
             requests = []
 
-            def request_text(_system, _user):
+            def request_text(_system, _user, **_kwargs):
                 requests.append(1)
                 response = next(queue)
                 if isinstance(response, Exception):
@@ -481,7 +539,9 @@ REWARD_FUNCTION:
                 return response
 
             engine = SimpleNamespace(request_text=request_text)
-            result = generate_baseline_bundle("finish", environment, engine, Configuration())
+            result = generate_baseline_bundle(
+                "finish", environment, engine, Configuration(**settings)
+            )
             return result, requests
 
         for failures in ((outage, outage), ("not json", '{"accepted":true}')):
@@ -495,14 +555,21 @@ REWARD_FUNCTION:
                 )
                 self.assertEqual(len(requests), 7)  # one machine, three critic requests, the rest
 
-        with self.assertRaisesRegex(CriticUnavailableError, "Connection error"):
-            run([machine, *[outage] * (Configuration.UNCOUNTED_RETRIES + 1)])
+        for failures, error, message in (
+            ([outage] * (Configuration.OUTAGE_RETRIES + 1), CriticUnavailableError, "Connection"),
+            ([ImmediateEngineError("critic authentication failed")], ImmediateEngineError, "auth"),
+        ):
+            with self.subTest(error=error.__name__), tempfile.TemporaryDirectory() as directory:
+                with self.assertRaisesRegex(error, message):
+                    run([machine, *failures], bundle=directory)
+                stamp = ArtifactBundle.load(directory).manifest.provenance["stamp"]
+                self.assertEqual(stamp["attempts"], 1)  # the candidate keeps its attempt
 
     def test_compiler_failure_persists_accepted_rm(self):
         environment = EnvironmentDescription.from_markdown(DEMO_MARKDOWN, source="demo.md")
         compiled = SimpleNamespace(
             environment=environment,
-            proposal=SimpleNamespace(task="finish"),
+            proposal=SimpleNamespace(task="finish", clauses=()),
             text="numeric",
             state_descriptions=(),
             labeling_source="",
@@ -516,7 +583,7 @@ REWARD_FUNCTION:
             ),
         )
         engine = SimpleNamespace(
-            request_text=lambda system, user: (_ for _ in ()).throw(RuntimeError("down"))
+            request_text=lambda system, user, **kwargs: (_ for _ in ()).throw(RuntimeError("down"))
         )
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(RuntimeError):
@@ -532,7 +599,7 @@ REWARD_FUNCTION:
         """Minimal accepted compiler result shared by compiler-bundle checks."""
         values = {
             "environment": EnvironmentDescription.from_markdown(DEMO_MARKDOWN, source="demo.md"),
-            "proposal": SimpleNamespace(task="finish"),
+            "proposal": SimpleNamespace(task="finish", clauses=()),
             "text": "numeric",
             "state_descriptions": ("start", "finished"),
             "labeling_source": "def done(env):\n    return True\n",
@@ -608,7 +675,9 @@ REWARD_FUNCTION:
         engine = SimpleNamespace(
             model="mock-model",
             provider_name="mock",
-            request_text=lambda system, user: (_ for _ in ()).throw(RuntimeError("provider down")),
+            request_text=lambda system, user, **kwargs: (_ for _ in ()).throw(
+                RuntimeError("provider down")
+            ),
         )
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(RuntimeError):
@@ -625,7 +694,9 @@ REWARD_FUNCTION:
         engine = SimpleNamespace(
             model="mock-model",
             provider_name="mock",
-            request_text=lambda system, user: (_ for _ in ()).throw(RuntimeError("new failure")),
+            request_text=lambda system, user, **kwargs: (_ for _ in ()).throw(
+                RuntimeError("new failure")
+            ),
         )
         with tempfile.TemporaryDirectory() as directory:
             bundle = Path(directory)

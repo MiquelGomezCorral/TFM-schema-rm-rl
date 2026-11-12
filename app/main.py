@@ -8,13 +8,23 @@ import dotenv
 from maikol_utils.other_utils import args_to_dataclass
 
 from scripts import (
+    OFF_CHOICES,
+    SuiteOptions,
+    ablate_rm,
+    aggregate_suite,
+    cross_critic,
     embed_larm,
     evaluate_larm,
     generate_larm,
     generate_rm,
+    generate_suite,
     import_paper_bundle,
     render_rm,
+    replay_traces,
+    rm_facts,
+    run_suite,
     test_rl,
+    trace_bank,
     train_rl,
 )
 from src.config import REASONING_LEVELS, Configuration
@@ -40,10 +50,45 @@ def cmd_generate_larm(args: argparse.Namespace) -> None:
     generate_larm(CONFIG)
 
 
+def cmd_generate_suite(args: argparse.Namespace) -> None:
+    """Generate the bundles of one task card file for one arm."""
+    only = tuple(item for item in (args.only or "").split(",") if item)
+    generate_suite(
+        SuiteOptions(
+            tasks=args.tasks,
+            arm=args.arm,
+            output=args.output.resolve(),  # the child processes run in the repository root
+            only=only,
+            paraphrases=args.paraphrases,
+            parallel=args.parallel,
+            max_calls=args.max_calls,
+            deadline_min=args.deadline_min,
+            retry_failed=args.retry_failed,
+        )
+    )
+
+
+def cmd_cross_critic(args: argparse.Namespace) -> None:
+    """Judge generated machines with the other pipeline's critic."""
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    try:
+        cross_critic(CONFIG, args.bundles, args.direction, args.max_calls, args.parallel)
+    except ValueError as error:  # usage errors: no eligible bundle, no critic model
+        print(f"error: {error}", file=sys.stderr)
+        sys.exit(1)
+
+
 def cmd_embed_larm(args: argparse.Namespace) -> None:
     """Embed validated ARM-FM state descriptions with the local server or the Qwen loader."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
     embed_larm(CONFIG)
+
+
+def cmd_ablate_rm(args: argparse.Namespace) -> None:
+    """Rebuild a compiler bundle's Reward Machine with one reward part switched off."""
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    if not ablate_rm(CONFIG, args.off, args.destination):
+        sys.exit(1)
 
 
 def cmd_import_paper_bundle(args: argparse.Namespace) -> None:
@@ -67,7 +112,35 @@ def cmd_train_rl(args: argparse.Namespace) -> None:
 def cmd_test_rl(args: argparse.Namespace) -> None:
     """Test finished runs on unseen maps and render GIFs."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
-    test_rl(CONFIG, args.gifs)
+    test_rl(CONFIG, args.gifs, args.judge)
+
+
+def cmd_trace_bank(args: argparse.Namespace) -> None:
+    """Run every card plan in the real env and check the judge's verdicts."""
+    trace_bank(args.tasks, args.output, args.only, args.seed)
+
+
+def cmd_replay_traces(args: argparse.Namespace) -> None:
+    """Replay a trace bank through generated bundles and check each machine."""
+    replay_traces(args.traces, args.bundles, args.output)
+
+
+def cmd_rm_facts(args: argparse.Namespace) -> None:
+    """Write the machine, clause and generation facts of generated bundles."""
+    rm_facts(args.bundles, args.tasks, args.replay, args.output)
+
+
+def cmd_run_suite(args: argparse.Namespace) -> None:
+    """Train every run of a benchmark suite, skipping finished ones."""
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    if not run_suite(CONFIG):
+        sys.exit(1)
+
+
+def cmd_aggregate_suite(args: argparse.Namespace) -> None:
+    """Collect a benchmark suite's runs into results tables."""
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    aggregate_suite(CONFIG)
 
 
 # ======================================================================================
@@ -139,8 +212,9 @@ if __name__ == "__main__":
         choices=Configuration.ATTEMPT_LIMITS,
         default=Configuration.attempts,
         metavar="N",
-        help="Critic rejections allowed per task, 1 to 10; other failures retry for free "
-        "(default: %(default)s)",
+        help="Reward Machine attempts per task, 1 to 10 (every new candidate counts: accepted, "
+        "rejected by the critic or invalid; a provider outage or a failed critic request is "
+        "repeated without counting) (default: %(default)s)",
     )
     generate_parser.add_argument(
         "--labeling",
@@ -265,6 +339,16 @@ if __name__ == "__main__":
         help="Reasoning level of every model call (default: %(default)s)",
     )
     larm_parser.add_argument(
+        "--attempts",
+        type=int,
+        choices=Configuration.ATTEMPT_LIMITS,
+        default=Configuration.attempts,
+        metavar="N",
+        help="Reward Machine attempts per task in both arms (every new candidate counts: "
+        "accepted, rejected by the critic or invalid; a provider outage reruns without counting), "
+        "1 to 10; --mode paper ignores it and runs its own three rounds (default: %(default)s)",
+    )
+    larm_parser.add_argument(
         "--embeddings",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -276,7 +360,73 @@ if __name__ == "__main__":
         default=False,
         help="Prefix each description with its task context before embedding (default: disabled)",
     )
+    larm_parser.add_argument(
+        "--arm-fm-critic",
+        action="store_true",
+        help="arm-fm mode only: the critic calls use the critic model and the generator calls the "
+        "generator model (default: one model for every role)",
+    )
     larm_parser.set_defaults(func=cmd_generate_larm)
+
+    # ======================================================================================
+    #                                       generate-suite
+    # ======================================================================================
+    suite_parser = subparsers.add_parser(
+        "generate-suite",
+        help="Generate one bundle per task card for one arm, with a status file per card",
+    )
+    suite_parser.add_argument("--tasks", required=True, type=Path, help="Task card file")
+    suite_parser.add_argument("--arm", required=True, choices=("farm", "arm-fm"))
+    suite_parser.add_argument(
+        "--output", required=True, type=Path, help="Folder that receives <card-id>/ bundles"
+    )
+    suite_parser.add_argument("--only", help="Comma-separated card ids to run (default: all)")
+    suite_parser.add_argument(
+        "--paraphrases",
+        action="store_true",
+        help="Also generate each card's paraphrases as <card-id>~p<k>",
+    )
+    suite_parser.add_argument(
+        "--parallel", type=int, default=10, help="Bundles generated at once (default: %(default)s)"
+    )
+    suite_parser.add_argument(
+        "--max-calls",
+        type=int,
+        help="Stop launching bundles once finished bundles used this many model calls",
+    )
+    suite_parser.add_argument(
+        "--deadline-min", type=float, help="Stop launching bundles after this many minutes"
+    )
+    suite_parser.add_argument(
+        "--retry-failed",
+        action="store_true",
+        help="Run bundles whose status is pipeline-failed again (default: they stay skipped)",
+    )
+    suite_parser.set_defaults(func=cmd_generate_suite)
+
+    # ======================================================================================
+    #                                       cross-critic
+    # ======================================================================================
+    cross_parser = subparsers.add_parser(
+        "cross-critic", help="Judge generated machines with the other pipeline's critic"
+    )
+    cross_parser.add_argument(
+        "--bundles", required=True, type=Path, help="Folder of <card-id>/ bundles of one arm"
+    )
+    cross_parser.add_argument(
+        "--critic",
+        dest="direction",
+        required=True,
+        choices=("farm", "arm-fm"),
+        help="farm judges ARM-FM bundles; arm-fm judges FARM bundles",
+    )
+    cross_parser.add_argument(
+        "--max-calls", type=int, help="Stop launching judgments after this many model calls"
+    )
+    cross_parser.add_argument(
+        "--parallel", type=int, default=10, help="Bundles judged at once (default: %(default)s)"
+    )
+    cross_parser.set_defaults(func=cmd_cross_critic)
 
     # ======================================================================================
     #                                       embed-larm
@@ -295,6 +445,36 @@ if __name__ == "__main__":
         "(default: built-in Qwen loader)",
     )
     embed_parser.set_defaults(func=cmd_embed_larm)
+
+    # ======================================================================================
+    #                                       ablate-rm
+    # ======================================================================================
+    ablate_parser = subparsers.add_parser(
+        "ablate-rm",
+        help="Rebuild a compiler bundle's Reward Machine with one reward part switched off",
+    )
+    ablate_parser.add_argument(
+        "--bundle",
+        required=True,
+        type=Path,
+        help="Source bundle made by generate-larm --mode compiler; it must store its clauses",
+    )
+    ablate_parser.add_argument(
+        "--off",
+        required=True,
+        choices=OFF_CHOICES,
+        help="Reward part that pays 0 in the copy; none rebuilds the source unchanged",
+    )
+    ablate_parser.add_argument(
+        "--output",
+        dest="destination",
+        required=True,
+        type=Path,
+        metavar="DIR",
+        help="Bundle folder to write",
+    )
+    ablate_parser.add_argument("--overwrite", action="store_true")
+    ablate_parser.set_defaults(func=cmd_ablate_rm)
 
     # ======================================================================================
     #                                   import-paper-bundle
@@ -379,7 +559,119 @@ if __name__ == "__main__":
     test_parser.add_argument(
         "--gifs", type=int, default=0, metavar="N", help="Test episodes to render as GIFs"
     )
+    test_parser.add_argument(
+        "--judge",
+        type=Path,
+        default=None,
+        metavar="CARD",
+        help="Task card (card.json) to judge the test episodes with: writes agent-traces/ep<k>.json "
+        "and judge.json in each run folder",
+    )
     test_parser.set_defaults(func=cmd_test_rl)
+
+    # ======================================================================================
+    #                                       trace-bank
+    # ======================================================================================
+    bank_parser = subparsers.add_parser(
+        "trace-bank", help="Run every card plan in the real env, write traces, check the judge"
+    )
+    bank_parser.add_argument("--tasks", required=True, type=Path, help="Card file (tasks.json)")
+    bank_parser.add_argument("--output", required=True, type=Path, help="Folder for the traces")
+    bank_parser.add_argument("--only", nargs="+", metavar="ID", help="Run only these card ids")
+    bank_parser.set_defaults(func=cmd_trace_bank)
+
+    # ======================================================================================
+    #                                      replay-traces
+    # ======================================================================================
+    replay_parser = subparsers.add_parser(
+        "replay-traces", help="Replay a trace bank through generated bundles and check each machine"
+    )
+    replay_parser.add_argument("--traces", required=True, type=Path, help="trace-bank output")
+    replay_parser.add_argument(
+        "--bundles", required=True, type=Path, help="Folder <arm>/<card-id>[~p<k>]/ of bundles"
+    )
+    replay_parser.add_argument("--output", required=True, type=Path, help="Folder for the replay")
+    replay_parser.set_defaults(func=cmd_replay_traces)
+
+    # ======================================================================================
+    #                                        rm-facts
+    # ======================================================================================
+    facts_parser = subparsers.add_parser(
+        "rm-facts", help="Write the machine, clause and generation facts of bundles"
+    )
+    facts_parser.add_argument(
+        "--bundles", required=True, type=Path, help="Folder <arm>/<card-id>[~p<k>]/ of bundles"
+    )
+    facts_parser.add_argument("--tasks", type=Path, default=None, help="Card file (clause check)")
+    facts_parser.add_argument(
+        "--replay", type=Path, default=None, help="replay-summary.json (paraphrase agreement)"
+    )
+    facts_parser.add_argument("--output", required=True, type=Path, help="JSON file to write")
+    facts_parser.set_defaults(func=cmd_rm_facts)
+
+    # ======================================================================================
+    #                                       run-suite
+    # ======================================================================================
+    run_suite_parser = subparsers.add_parser(
+        "run-suite", help="Train every run of a benchmark runs.yaml, skipping finished runs"
+    )
+    run_suite_parser.add_argument("--suite", required=True, type=Path, help="A runs.yaml")
+    run_suite_parser.add_argument(
+        "--parallel",
+        dest="suite_parallel",
+        type=int,
+        default=Configuration.suite_parallel,
+        metavar="N",
+        help="Most runs at once (default: %(default)s)",
+    )
+    run_suite_parser.add_argument(
+        "--max-ram-gb",
+        dest="suite_max_ram_gb",
+        type=float,
+        default=Configuration.suite_max_ram_gb,
+        metavar="GB",
+        help="Budget for the running runs' RAM estimates; a run waits when it would not fit "
+        "(default: only the free RAM limits)",
+    )
+    run_suite_parser.add_argument(
+        "--time-box-min",
+        dest="suite_time_box_min",
+        type=float,
+        default=Configuration.suite_time_box_min,
+        metavar="M",
+        help="Stop a run after this many minutes and mark it timed-out "
+        "(default: the runs.yaml value, else none)",
+    )
+    run_suite_parser.add_argument(
+        "--retry-timed-out",
+        dest="suite_retry_timed_out",
+        action="store_true",
+        help="Restart timed-out runs from zero (default: they are skipped)",
+    )
+    run_suite_parser.add_argument(
+        "--dry-run",
+        dest="suite_dry_run",
+        action="store_true",
+        help="List the runs and what would happen to each; start and write nothing",
+    )
+    run_suite_parser.set_defaults(func=cmd_run_suite)
+
+    # ======================================================================================
+    #                                    aggregate-suite
+    # ======================================================================================
+    aggregate_parser = subparsers.add_parser(
+        "aggregate-suite", help="Collect a benchmark suite's runs into results.csv, .json and .md"
+    )
+    aggregate_parser.add_argument("--suite", required=True, type=Path, help="A runs.yaml")
+    aggregate_parser.add_argument(
+        "--output",
+        dest="suite_output",
+        required=True,
+        type=Path,
+        metavar="DIR",
+        help="Folder for results.csv, results.json and results.md",
+    )
+    aggregate_parser.set_defaults(func=cmd_aggregate_suite)
 
     # ======================================================================================
     #                                       CALL

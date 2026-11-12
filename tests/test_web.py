@@ -71,7 +71,7 @@ class WebTests(unittest.TestCase):
             },
         }
         for failure, expected, calls in (
-            ("generator", "Last error: Unsupported priority: 'none'", 11),
+            ("generator", "Last generator feedback: Unsupported priority: 'none'", 3),
             ("critic", "Last critic feedback: Rejected candidate", 6),
             ("provider", "Experiment provider is unavailable", 0),
         ):

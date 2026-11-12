@@ -24,7 +24,7 @@ from src.compiler import (
     parse_paper_reward_machine,
     serialize_reward_machine,
 )
-from src.compiler.reward_layer import build_reward_machine
+from src.compiler.reward_layer import RewardSwitches, build_reward_machine
 from src.config import PriorityLevel
 
 BOX = ["box_fell", "box_on_shelf"]
@@ -65,7 +65,7 @@ def compile_machine(clauses: list[tuple[str, list[str], str]]) -> PaperRewardMac
     proposal = materialize_proposal("probe", [sim.selection(*clause) for clause in clauses])
     dfas = compile_dfas(proposal, sim.CONFIG)
     soft = [clause.priority is PriorityLevel.SOFT for clause in proposal.clauses]
-    result = build_reward_machine(dfas, soft, recurrent_soft_penalty=True)
+    result = build_reward_machine(dfas, soft, RewardSwitches(recurrent_soft_penalty=True))
     return parse_paper_reward_machine(serialize_reward_machine(result.reward_machine))
 
 

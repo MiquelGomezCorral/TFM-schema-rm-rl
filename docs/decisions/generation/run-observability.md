@@ -56,8 +56,8 @@ diagnostics to reproduce a failed run without changing compilation semantics.
   failure retains its stage-specific diagnostic and does not restart proposal generation.
 - Failure reporting must not parse logs, replace an available diagnostic with a
   generic failure message, add refinement attempts, or override a critic's rejection.
-- Warnings are a typed observer next to progress text: an uncounted rerun (a provider or
-  content failure that keeps the attempt number) and every compile warning reach the CLI as a
+- Warnings are a typed observer next to progress text: an uncounted rerun (a provider outage
+  that keeps the attempt number) and every compile warning reach the CLI as a
   warning line and the web Run status as a `warn (N)` stack that lists them; the log keeps the
   lines too.
 - Logs include validated proposal data, critic verdicts, LTLf clauses, complete DFA data,

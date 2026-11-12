@@ -7,7 +7,7 @@ details or reconstructed prompts as if they were published artifacts.
 
 ## Current decisions
 
-- Each environment lives under `examples/arm-fm/<environment>/` with two description files
+- Each environment lives under `experiments/dev/arm-fm/<environment>/` with two description files
   (`docs/ENVIRONMENT_AUTHORING.md`). `environment.md` holds the facts an agent building a
   Reward Machine needs: the environment, the proposition semantics in plain words, the
   constraints, what can and cannot happen, one real trace, the propositions and example tasks,
@@ -110,9 +110,9 @@ the paper Appendix A.9 block.
   labeling run without it. The split between the two files is Review-only: no check tells
   implementation from fact.
 - Catalogue structure and evidence labels are review-only, checked by the Markdown
-  validation command used for `examples/arm-fm`.
+  validation command used for `experiments/dev/arm-fm`.
 - Source artifacts: `docs/ARM-FM/ARM-FM.md` and the repository linked from
-  `examples/arm-fm/README.md`.
+  `experiments/dev/arm-fm/README.md`.
 - Separation of reconstructed bundles from recovered evidence is Review-only until bundle
   provenance checks are implemented; provenance claims still require source review.
 
@@ -133,3 +133,5 @@ the paper Appendix A.9 block.
   generator and the critic still read the facts file alone (user decision: the code file exists
   for steps that generate code). ARM-FM bundles store the joined text because the judge reviews
   code, and the web app gained a code-file input so web labeling keeps working.
+- 2026-11-12: The catalogue moved from `examples/arm-fm/` to `experiments/dev/arm-fm/`; the
+  thesis benchmark keeps its own copies under `experiments/benchmark/envs/` (user decision).

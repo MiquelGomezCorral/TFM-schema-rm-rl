@@ -164,10 +164,12 @@ class Configuration:
     #                                   REWARD MACHINE
     # ======================================================================================
 
-    # Each candidate gets this many tagging requests. Only a critic rejection uses one of
-    # ``attempts``; a provider or content failure reruns the attempt, at most this many times.
+    # Each candidate gets this many tagging requests. Every new Reward Machine candidate uses one
+    # of ``attempts`` in both pipelines: an accepted one, a critic rejection and an invalid one
+    # (content failure). A provider outage uses none: the round runs again, this many times in a
+    # row at most, and then the run ends as a provider error.
     TAGGING_ATTEMPTS: ClassVar[int] = 3
-    UNCOUNTED_RETRIES: ClassVar[int] = 10
+    OUTAGE_RETRIES: ClassVar[int] = 10
     ATTEMPT_LIMITS: ClassVar[range] = range(1, 11)
     # The provider sometimes answers HTTP 400 at random; the same call is repeated this many
     # times, this far apart, before it counts as a failure. Repeats use no proposal attempt.
@@ -183,11 +185,9 @@ class Configuration:
     # Soft clauses: paid when one breaks, and on the finishing edge when one is still pending.
     SOFT_BREAK_REWARD: ClassVar[float] = -0.5
     SOFT_PENDING_AT_FINISH_REWARD: ClassVar[float] = -0.5
-    # Added to the RM reward on the step where the time limit ends an episode the RM did not.
-    TIME_LIMIT_PENALTY: ClassVar[float] = -0.5
     # A compiled machine is judged where the environment ends an episode before its final state:
-    # each hard and soft promise still open pays one of these, instead of TIME_LIMIT_PENALTY. A
-    # goal is a hard promise.
+    # each hard and soft promise still open pays one of these, instead of ``time_limit_penalty``.
+    # A goal is a hard promise.
     HARD_FAILED_REWARD: ClassVar[float] = -1.0
     SOFT_FAILED_REWARD: ClassVar[float] = -0.5
 
@@ -204,8 +204,20 @@ class Configuration:
     mona_executable: str | None = None
     overwrite: bool = False
     critic: bool = True
+    # generate-larm --mode arm-fm: the critic calls use the critic model instead of one model
+    # for every role.
+    arm_fm_critic: bool = False
     # A soft rule's -0.5 is paid at every new break (on) or once per episode (off).
     recurrent_soft_penalty: bool = True
+    # Reward switches for the ablation: off, a term pays 0 (completion is never switched off).
+    # Progress; the well's -1 (the well stays a rejecting sink); a soft rule's break; a soft rule
+    # still pending at the finish; the end judgment (open items charged where the environment ends
+    # the episode, also on the edges into the well).
+    reward_progress: bool = True
+    reward_well: bool = True
+    reward_soft_break: bool = True
+    reward_soft_pending: bool = True
+    reward_end_judgment: bool = True
     reasoning: str = "none"
     attempts: int = 3
     labeling: bool = False
@@ -236,6 +248,15 @@ class Configuration:
     paper_sources: Path | None = None  # generate-larm --mode paper: its paper-sources.json
     draws: int = 3  # generate-larm --mode paper: independent generations
 
+    # ============================ Suite runs (run-suite) ============================
+    suite: Path | None = None  # a benchmark runs.yaml
+    suite_output: Path | None = None  # aggregate-suite: folder for results.csv, results.json
+    suite_parallel: int = 1  # most train-rl children at once
+    suite_max_ram_gb: float | None = None  # None: only the free RAM limits new runs
+    suite_time_box_min: float | None = None  # None: the runs.yaml value, else no time box
+    suite_retry_timed_out: bool = False
+    suite_dry_run: bool = False  # list what would run; start nothing, write nothing
+
     # ============================== Training (train-rl) ==============================
     # A YAML run config overrides these; defaults follow ARM-FM Table 5.
 
@@ -250,6 +271,9 @@ class Configuration:
     # The learner's reward: ``rm`` the RM reward alone, ``both`` environment + RM reward, ``env``
     # the plain environment with no RM. The flag is run-wide.
     reward_source: str = "rm"
+    # Added to the RM reward on the step where the time limit ends an episode the RM did not (0 or
+    # negative). A machine with an end judgment pays that judgment instead.
+    time_limit_penalty: float = -0.5
     env_kwargs: dict = field(default_factory=dict)  # keyword arguments of gym.make
     algorithm: str = "dqn"
     # Which rule counts an episode as a success: the environment's own (``env``) or RM
@@ -271,11 +295,15 @@ class Configuration:
     exploration_fraction: float = 0.35
     learning_starts: int = 80_000
     train_frequency: int = 4
+    # Double DQN: the online network picks the next action, the target network values it.
+    double_q: bool = False
 
     eval_frequency: int = 10_000
     eval_episodes: int = 10
     final_eval_episodes: int = 100
     eval_epsilon: float = 0.0
+    # PPO evaluation plays the policy's most likely action instead of sampling one.
+    eval_greedy: bool = False
     eval_seed_base: int = 1_000_000
     success_threshold: float = 0.9
     cuda: bool = True
@@ -383,6 +411,8 @@ class Configuration:
         self.reference = _optional_path(self.reference)
         self.paper_sources = _optional_path(self.paper_sources)
         self.steps_report = _optional_path(self.steps_report)
+        self.suite = _optional_path(self.suite)
+        self.suite_output = _optional_path(self.suite_output)
         self.trace_dir = _optional_path(self.trace_dir)
         self.manifests = [Path(path) for path in self.manifests]
         self.svg_dir = Path(self.svg_dir) if self.svg_dir is not None else self.OUTPUT_PATH / "svgs"
@@ -400,6 +430,11 @@ class Configuration:
             )
         if self.reward_source == "env" and self.success == "rm":
             raise ValueError("success: rm needs a Reward Machine; reward_source: env has none")
+        if not _is_finite_number(self.time_limit_penalty) or self.time_limit_penalty > 0:
+            raise ValueError(
+                "time_limit_penalty must be a finite number, 0 or negative: "
+                f"{self.time_limit_penalty}"
+            )
         _check_env_kwargs(self.env_kwargs, "env_kwargs")
 
         if not isinstance(self.task_bundles, list):

@@ -50,7 +50,7 @@ The predicate receives one argument, `env`. The user prompt's Documented runtime
 section lists the environment surface it exposes, and it also exposes:
 
 - `env.episode_memory["previous_valuation"]`: a read-only mapping proposition to boolean
-  from the preceding environment step. It is an empty mapping during the first step.
+  from the preceding environment step. On the first step every proposition is false in it.
 
 No other attribute is documented. Do not import object classes or call methods not listed
 in that section or here. The predicate sandbox allows only these builtins: `abs`, `all`, `any`, `bool`,
@@ -78,8 +78,8 @@ Every predicate is a single expression:
   missing before reading their attributes.
 - Persistent propositions describe only the current observation.
 - Event propositions compare the current observation with
-  `env.episode_memory["previous_valuation"]`. On the first step that snapshot is empty, so
-  guarded access must stay false.
+  `env.episode_memory["previous_valuation"]`. On the first step every proposition in that
+  snapshot is false.
 - A predicate never depends on state descriptions, RM progress, RM rewards, or node
   identities.
 - If a declared event cannot be expressed with this API, do not invent attributes and do

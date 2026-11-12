@@ -32,18 +32,20 @@ def record_attempt_failure(
     compiled: CompilationResult | None,
     error: Exception,
 ) -> None:
-    """Fail the current stage and warn that the attempt is kept, not used up.
+    """Fail the current stage and warn whether the attempt is kept or used up.
 
-    A content failure also goes to ``history`` so the generator sees why; a provider failure
-    does not, because there is nothing to learn from it.
+    A provider failure keeps the attempt, which runs again. A content failure uses it up and
+    also goes to ``history`` so the generator sees why.
     """
     progress.fail(str(error))
     if isinstance(error, RetryableEngineError):
-        reason = f"provider failed: {error}"
+        reason, outcome = f"provider failed: {error}", "kept"
     else:
-        reason = f"proposal invalid: {error}"
+        reason, outcome = f"proposal invalid: {error}", "used"
         append_history(history, proposal_text, compiled, progress.current_step, error)
-    progress.warn(f"{reason}, attempt {progress.current_attempt}/{progress.attempt_limit} kept")
+    progress.warn(
+        f"{reason}, attempt {progress.current_attempt}/{progress.attempt_limit} {outcome}"
+    )
 
 
 def append_history(
@@ -135,7 +137,7 @@ def setup_environment_and_engines(
 def get_engine(
     CONFIG: Configuration,
     environment: EnvironmentDescription,
-    model: str | None = None,
+    model: str | None = Configuration.model,
     *,
     should_stop: Callable[[], bool] | None = None,
     warn: Callable[[str], None] | None = None,

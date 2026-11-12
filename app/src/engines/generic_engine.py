@@ -50,12 +50,20 @@ class GenericEngine:
         self.provider_name = provider_name
         self._request = requester
         self._request_text = text_requester
+        # One record per request sent, for the bundle's raw_responses. Adapters whose reply
+        # names a model set ``reported_model`` while the request runs; one that sends again
+        # inside a request after a refusal counts each refused send in ``resends``.
+        self.calls: list[dict[str, str | None]] = []
+        self.reported_model: str | None = None
+        self.resends = 0
+        # The latest reply as the provider sent it, for callers that keep the raw text.
+        self.last_reply: str | None = None
 
-    def request_text(self, system: str, user: str) -> str:
+    def request_text(self, system: str, user: str, *, stage: str = "text") -> str:
         """Request an unconstrained artifact while retaining provider error mapping."""
         if self._request_text is None:
             raise RuntimeError(f"{self.provider_name} does not provide text artifact requests")
-        return self._call_provider(self._request_text, system, user)
+        return self._call_provider(self._request_text, stage, system, user)
 
     def propose_task(
         self,
@@ -97,6 +105,7 @@ class GenericEngine:
                 reward_machine=candidate_rm,
                 nodes_json=json.dumps(list(nodes)),
             ),
+            stage="rm_tagger",
         )
         return parse_state_descriptions(response_text, nodes)
 
@@ -161,20 +170,26 @@ class GenericEngine:
         schema: dict,
         name: str,
     ) -> str:
-        return self._call_provider(self._request, system, user, schema, name)
+        return self._call_provider(self._request, name, system, user, schema, name)
 
-    def _call_provider(self, request: Callable[..., str], *arguments: str | dict) -> str:
+    def _call_provider(
+        self, request: Callable[..., str], stage: str, *arguments: str | dict
+    ) -> str:
         """Call the provider and map its errors, repeating a transient HTTP 400 first.
 
         OpenCode answers some valid requests with a random HTTP 400 that sticks to the
         session: the same call succeeds on a new session. Each repeat starts a new session
         first. The repeats happen here, so they never use up a refinement attempt; a 400
         that survives every repeat is retryable like the other transient provider errors.
+        Every request sent, repeats and failures included, adds a record to ``calls``.
         """
         repeats = 0
         while True:
+            self.reported_model = None
+            self.resends = 0
             try:
-                return request(self.model, *arguments)
+                self.last_reply = request(self.model, *arguments)
+                return self.last_reply
             except BadRequestError as error:
                 repeats += 1
                 if repeats > Configuration.PROVIDER_RETRIES:
@@ -184,6 +199,17 @@ class GenericEngine:
                 sleep(Configuration.PROVIDER_RETRY_WAIT_S)
             except Exception as error:
                 raise classify_provider_error(error) from error
+            finally:
+                sent = {
+                    "stage": stage,
+                    # Every critic request is named ``critic`` or ``<something>_critic``.
+                    "role": "critic" if stage.endswith("critic") else "generator",
+                    "model_requested": self.model,
+                }
+                # A refused send got no reply, so it names no model; the last record is the reply's.
+                for _ in range(self.resends):
+                    self.calls.append({**sent, "model_reported": None})
+                self.calls.append({**sent, "model_reported": self.reported_model})
 
     def _check_stopped(self) -> None:
         """Abort the retry loop instead of retrying again once the run was stopped."""

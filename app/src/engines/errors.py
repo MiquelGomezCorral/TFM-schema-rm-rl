@@ -47,12 +47,12 @@ def retry_critic[T](request: Callable[[], T], warn: Callable[[str], None] | None
     """Repeat a failed critic request on the same candidate; it uses no candidate attempt.
 
     A provider outage or critic output that cannot be parsed repeats the request, at most
-    ``Configuration.UNCOUNTED_RETRIES`` times. Any verdict, a rejection included, returns at once.
+    ``Configuration.OUTAGE_RETRIES`` times. Any verdict, a rejection included, returns at once.
 
     Raises:
         CriticUnavailableError: Every request failed; the message names the last cause.
     """
-    requests = Configuration.UNCOUNTED_RETRIES + 1
+    requests = Configuration.OUTAGE_RETRIES + 1
     for number in range(1, requests + 1):
         try:
             return request()

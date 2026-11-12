@@ -186,7 +186,7 @@ required. Every nonblank line in it must use this shape:
 
 Identifiers must match `^[a-z_][a-z0-9_]*$`, be unique, and cannot be `true` or
 `false`. Validation errors include the offending line. See
-`examples/multitaxi/environment.md` for the transition-based MultiTaxi propositions.
+`experiments/dev/multitaxi/environment.md` for the transition-based MultiTaxi propositions.
 
 Environments used for labeling or training need an `environment-code.md` next to `environment.md`,
 with a `## Labeling API` section listing what the labeling code may read from the live environment.
@@ -221,7 +221,7 @@ Run the compiler from the repository root:
 
 ```bash
 python app/main.py generate-rm \
-  --environment examples/multitaxi/environment.md \
+  --environment experiments/dev/multitaxi/environment.md \
   --task "Eventually deliver passengers 1 and 2" \
   --task "Deliver passenger 1 before passenger 2" \
   --output multitaxi.rm \
@@ -236,8 +236,9 @@ them into conjunctive clauses, each an IBM DECLARE template with declared propos
 The command displays timed progress for every task attempt and stage. One critic runs by
 default after the Reward Machine is built; `--no-critic` disables it for a controlled fallback
 run, prints a warning, and then accepts the compiler's first result for each task. Each task
-has at most three attempts, and no output is written unless every task is accepted. The stages
-are structured proposal generation, DECLARE/LTLf materialization, FL-AT/MONA DFA compilation,
+has up to three attempts by default (`--attempts N` sets 1 to 10; the benchmark's setting is in
+`experiments/benchmark/REPRODUCE.md`; ARM-FM's Reward Machine stage reads it too), and no
+output is written unless every task is accepted. The stages are structured proposal generation, DECLARE/LTLf materialization, FL-AT/MONA DFA compilation,
 Reward Machine construction (FL-AT's product plus the reward layer), the critic, state
 descriptions, and optional labeling and embeddings. State descriptions are written by default;
 `--no-state-descriptions` skips that stage, and `--labeling` and `--embeddings` require it.
@@ -362,7 +363,7 @@ be installed separately and available on `PATH` (or configured through
 
 Upload a UTF-8 environment Markdown file or paste it into the editor, add one or more
 tasks, and provide one base output filename. Uploading a tasks manifest such as
-`examples/arm-fm/minigrid-doorkey/tasks.json` (`env`, `env_description`, `tasks`) instead
+`experiments/dev/arm-fm/minigrid-doorkey/tasks.json` (`env`, `env_description`, `tasks`) instead
 reads the referenced Markdown, fills every task, and names the output after `env`. The optional
 Code file box takes `environment-code.md` (upload or paste); the labeling option needs it and refuses
 to start without it. The UI validates each task automatically with the critic. Multiple tasks
@@ -402,7 +403,7 @@ flowchart TD
     A["Input<br/>environment.md + task"]
     B["Validate input<br/>fix the allowed proposition vocabulary"]
     C["LLM<br/>only natural-language interpretation step"]
-    D{"Critic accepts within 3 attempts"}
+    D{"Critic accepts within the attempt limit (default 3)"}
     X["Stop<br/>write nothing"]
     E["IBM nl2ltl templates<br/>build one LTLf formula per clause"]
     F["FL-AT + MONA<br/>one DFA per clause and their product"]

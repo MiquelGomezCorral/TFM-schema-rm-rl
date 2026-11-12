@@ -82,17 +82,19 @@ tasks, while keeping the generator and critic responsibilities stable.
   Prompt feedback begins with `NO CHANGES NEEDED` or `CHANGES REQUIRED`. These are
   prompt instructions, not an additional execution-evidence gate or automated override
   of a critic's verdict.
-- In compiler mode, each task has at most `--attempts` generator attempts (default 3, at most
-  10, also a web UI field). Only a critic rejection uses one: a provider failure (connection
-  error, exhausted 400 repeats, timeout) or a content failure (invalid proposal, incompatible
-  clauses, malformed tagger output) reruns the same attempt and reports a warning, bounded by a
-  fixed fuse of uncounted reruns. A failed critic request (a provider failure or critic output
-  that cannot be parsed) is not one of those reruns: it is repeated on the same candidate, in
-  compiler and baseline generation alike, bounded by the same fuse. Generation does not restart
-  and no candidate is drawn. When the fuse runs out, the run ends with a critic error that names
-  the last cause. The critic may be disabled; disabling it prints a warning and
-  accepts the compiler's first result. Enabled critics use the configured provider and critic
-  model.
+- Each task has at most `--attempts` Reward Machine attempts (default 3, at most 10, also a web UI
+  field), in compiler mode and in `arm-fm` mode alike. Every new candidate uses one: an accepted
+  one, a critic rejection, and an invalid one (invalid proposal, incompatible clauses; in `arm-fm`
+  also an unparseable machine). A generator provider failure (connection error, rate limit,
+  timeout, server error, exhausted 400 repeats) uses none: the same attempt runs again with a
+  warning, at most `Configuration.OUTAGE_RETRIES` (10) reruns in a row, and then the run ends as a
+  provider error. A failed critic request (a provider failure or critic output that cannot be
+  parsed) is not one of those reruns: it is repeated on the same candidate, in compiler and
+  baseline generation alike, bounded by the same `OUTAGE_RETRIES`. Generation does not restart and
+  no candidate is drawn; when the repeats run out, the run ends with a critic error that names the
+  last cause, and the candidate keeps its attempt. The critic may be disabled; disabling it prints
+  a warning and accepts the compiler's first result. Enabled critics use the configured provider
+  and critic model.
 - The creator assumes the task is feasible in its environment; there is no refusal field.
   Whether a task can be done at all is the environment author's and the user's responsibility.
 - The environment's `## Constraints` are declared facts that the generator and the critic read. The
@@ -154,19 +156,23 @@ tasks, while keeping the generator and critic responsibilities stable.
 - Compiler bundles reuse accepted compiler labeling and node descriptions without
   additional generation calls. Persist predicates in `labeling.py` before execution;
   tests select a saved file and use the existing fixed predicate loader. No aggregate
-  generated callable or dynamic import swapping is required.
+  generated callable or dynamic import swapping is required. Test exception: in ablation runs only,
+  turning the recurrent soft penalty off makes one description-rewrite call, because the machine's
+  structure changes.
 
 ## Protected invariants
 
 - Every compiler clause uses only propositions declared by that environment.
 - In compiler mode, one task's clauses have conjunction semantics; incompatible hard clauses are
   rejected rather than weakened, and a soft clause may be violated only at its recorded cost per
-  break, never silently dropped.
+  break, never silently dropped. Test exception: in ablation runs only, a soft violation may cost
+  nothing (`soft_break` or `soft_pending` off); every non-ablation run keeps the rule as written.
 - Separate tasks remain separate RMs even when they share propositions or subgoals.
 - Task terminology is used consistently across CLI, web, configuration, prompts, and
   output; the removed instruction and priority-override interfaces are not aliases.
 - In compiler mode, the RM is accepted/finalized only after the enabled critic accepts the same
-  compiled attempt.
+  compiled attempt. Test exception: in ablation runs only, an ablated copy carries no critic verdict
+  yet stays trainable; every non-ablation run keeps the rule as written.
 - Compiler presentation and critic improvements must preserve ARM-FM baseline prompts
   and published evidence. A declared `## Labeling API` replaces only the marked labeling-API
   regions and `${api}` in both modes; it is the only labeling surface (no MiniGrid default).
@@ -185,7 +191,7 @@ tasks, while keeping the generator and critic responsibilities stable.
 - Antigravity requests use the selected `schema-rm-provider` agent, must not bypass tool
   permissions, and must reject any tool or subagent execution. AGY's advertised tool list
   is not treated as execution because primary sessions always expose the CLI registry.
-- A reconstruction target in `examples/arm-fm/*/tasks.md` is the input for one task;
+- A reconstruction target in `experiments/dev/arm-fm/*/tasks.md` is the input for one task;
   its atomic probes are diagnostic inputs, not an implicit batch to merge.
 
 ## Rationale and tradeoffs
@@ -239,7 +245,9 @@ through their inputs and prompts, while both challenge the same generator.
   share schema and runtime validation in
   `app/src/engines/structured.py`.
 - Bounded refinement, strict critic schemas, and atomic batch output are implemented in
-  `app/scripts/generate_rm.py` and `app/src/engines/generic_engine.py`.
+  `app/scripts/generate_rm.py` and `app/src/engines/generic_engine.py`; the `arm-fm` loop counts
+  attempts the same way in `app/src/arm_fm/generation.py`, and
+  `Configuration.OUTAGE_RETRIES` bounds the provider reruns in both.
 - Compiler description-list validation belongs to `app/src/engines/structured.py`;
   request context, stage ordering, and bounded retries belong to the shared engine
   and compiler orchestration. Focused engine and orchestration checks enforce these
@@ -305,3 +313,11 @@ through their inputs and prompts, while both challenge the same generator.
 - 2026-11-11: An edge into the rejecting well pays -1 plus the end charge of the state it leaves,
   so a break is always worse than timing out there (user decision; see
   [RM execution](rm-execution.md)).
+- 2026-11-12: Ablation runs only may leave a soft violation free (`soft_break` or `soft_pending` off),
+  keep an ablated copy trainable without a critic verdict, and make one description-rewrite call when the
+  recurrent soft penalty is off. Non-ablation runs keep the rules as written (user).
+- 2026-11-12: Every new Reward Machine candidate uses one of the `--attempts` in both pipelines
+  (accepted, rejected or invalid); a provider outage uses none and ends the run as a provider error
+  after 10 reruns in a row. This replaces FARM's free reruns of invalid candidates from 2026-10-14
+  (up to 110 candidates per task at the limit of 10) and stops `arm-fm` from spending attempts on
+  outages (user, card fix round 2).
