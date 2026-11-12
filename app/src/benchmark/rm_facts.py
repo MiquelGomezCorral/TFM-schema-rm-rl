@@ -8,7 +8,7 @@ bundles of one card across ``~p<k>`` (clauses, and the machine-check verdicts of
 """
 
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Mapping
 from pathlib import Path
 from statistics import fmean
@@ -18,7 +18,7 @@ from src.arm_fm.artifacts import ArtifactBundle
 
 from .cards import Card, card_header, load_cards
 from .declare_judge import ClauseError, as_clause
-from .traces import BundleRef, find_bundles, load_machine_bundle, write_json
+from .traces import BundleRef, find_bundles, load_machine_bundle, read_manifest, write_json
 
 STAMP_FIELDS = ("attempts", "critic_interventions", "retries", "wall_time_s")
 FARM = "farm"
@@ -47,8 +47,19 @@ def write_rm_facts(
     return summary
 
 
+def _manifest_stamp(ref: BundleRef) -> dict[str, Any] | None:
+    """The manifest's provenance stamp, read apart from the machine so a failed bundle keeps it."""
+    provenance = read_manifest(ref.path).get("provenance")
+    return provenance.get("stamp") if isinstance(provenance, dict) else None
+
+
 def _bundle_facts(ref: BundleRef, card: Card | None) -> dict[str, Any]:
-    facts: dict[str, Any] = {"arm": ref.arm, "card_id": ref.card_id}
+    facts: dict[str, Any] = {
+        "arm": ref.arm,
+        "card_id": ref.card_id,
+        "ablation": ref.ablation,
+        "stamp": _manifest_stamp(ref),
+    }
     bundle = load_machine_bundle(ref)
     if isinstance(bundle, str):
         return {**facts, "error": bundle}
@@ -56,7 +67,6 @@ def _bundle_facts(ref: BundleRef, card: Card | None) -> dict[str, Any]:
     facts |= {
         "rm_path": str(ref.rm_path),
         **machine_facts(bundle),
-        "stamp": bundle.manifest.provenance.get("stamp"),
         "stored_clauses": stored,
     }
     if card is not None:
@@ -67,10 +77,20 @@ def _bundle_facts(ref: BundleRef, card: Card | None) -> dict[str, Any]:
 
 
 def machine_facts(bundle: ArtifactBundle) -> dict[str, Any]:
-    """States, transitions, reward values, wells, accepting states and node labels of the RM."""
+    """States, transitions, reward values, wells, accepting states and node labels of the RM.
+
+    ``reward_values`` are the transition rewards, ``end_charges`` what the end judgment charges
+    an episode that ends open; ``reward_signs`` classifies both.
+    """
     machine = bundle.reward_machine
     judgment = machine.judgment
     rewards = sorted({float(transition.reward) for transition in machine.transitions})
+    # What an episode that ends in a state with open promises is charged, beside the transitions.
+    end_charges = (
+        sorted({float(judgment.end_charge(state)) for state, _, _ in judgment.pending})
+        if judgment
+        else []
+    )
     return {
         "states": len(machine.states),
         "state_names": list(machine.states),
@@ -82,7 +102,10 @@ def machine_facts(bundle: ArtifactBundle) -> dict[str, Any]:
         "transitions": len(machine.transitions),
         "else_transitions": sum(transition.is_else for transition in machine.transitions),
         "reward_values": rewards,
-        "reward_signs": "also negative" if any(r < 0 for r in rewards) else "positive only",
+        "end_charges": end_charges,
+        "reward_signs": (
+            "also negative" if any(r < 0 for r in [*rewards, *end_charges]) else "positive only"
+        ),
         "propositions": list(machine.propositions),
         "node_labels": dict(bundle.state_descriptions),
     }
@@ -102,10 +125,11 @@ def clause_status(stored: list[list[Any]] | None, card: Card) -> str:
     """``exact``, ``also_ok``, ``mismatch`` or ``missing`` for the ``_normalized`` stored clauses."""
     if stored is None:
         return "missing"
-    clauses = frozenset((template, tuple(names), priority) for template, names, priority in stored)
-    if clauses == frozenset(card.expect):
+    # A Counter keeps a repeated clause: the reward compiler prices each copy.
+    clauses = Counter((template, tuple(names), priority) for template, names, priority in stored)
+    if clauses == Counter(card.expect):
         return "exact"
-    if any(clauses == frozenset(option) for option in card.also_ok):
+    if any(clauses == Counter(option) for option in card.also_ok):
         return "also_ok"
     return "mismatch"
 
@@ -142,11 +166,13 @@ def paraphrase_groups(
     """Per card and arm with several bundles (``<id>`` and ``<id>~p<k>``): do the paraphrases agree?
 
     FARM: the stored clause sets are ``identical`` (or ``different``, ``missing``). Both arms:
-    the machine-check verdicts are ``equal`` (or ``different``, ``no-replay``).
+    the machine-check verdicts are ``equal`` (or ``different``, ``no-replay``). Ablation variants
+    of one card are different machines, not paraphrases, so they never form a group.
     """
     groups: dict[tuple[str, str], list[str]] = defaultdict(list)
     for key, entry in facts.items():
-        groups[entry["arm"], entry["card_id"]].append(key)
+        if not entry["ablation"]:
+            groups[entry["arm"], entry["card_id"]].append(key)
     return [
         {
             "arm": arm,

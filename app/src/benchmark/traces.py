@@ -300,17 +300,41 @@ def _plan_problems(
 # ======================================================================================
 
 
+def read_manifest(folder: Path) -> dict[str, Any]:
+    """The raw ``manifest.json`` of a bundle folder, or ``{}`` when absent or cut mid-write.
+
+    For readers that must work on a bundle ``load_bundle`` rejects, such as a failed one.
+    """
+    try:
+        manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return manifest if isinstance(manifest, dict) else {}
+
+
+def ablation_settings(folder: Path) -> dict[str, Any]:
+    """The ``ablate-rm`` settings in the manifest (``off``, ``no_op``); ``{}`` for other bundles."""
+    settings = read_manifest(folder).get("effective_settings")
+    ablation = settings.get("ablation") if isinstance(settings, dict) else None
+    return ablation if isinstance(ablation, dict) else {}
+
+
 @dataclass(frozen=True)
 class BundleRef:
-    """A bundle folder ``<bundles>/<arm>/<card-id>[~p<k>]/``."""
+    """A bundle ``<bundles>/<arm>/<card-id>[~p<k>]/`` or an ablation's ``<card-id>/off-<switch>/``.
+
+    ``ablation`` tells the layouts apart: the bundle's manifest records ``ablate-rm`` settings. Then
+    the first folder (``arm``) is the card, not an arm. ``key`` is the relative path either way.
+    """
 
     arm: str
     name: str
     path: Path
+    ablation: bool = False
 
     @property
     def card_id(self) -> str:
-        return self.name.split("~", 1)[0]
+        return self.arm if self.ablation else self.name.split("~", 1)[0]
 
     @property
     def key(self) -> str:
@@ -334,7 +358,7 @@ class Replay:
 def find_bundles(folder: Path) -> list[BundleRef]:
     """The bundle folders (symlinks included) one level below each arm folder."""
     return [
-        BundleRef(arm.name, bundle.name, bundle)
+        BundleRef(arm.name, bundle.name, bundle, ablation=bool(ablation_settings(bundle)))
         for arm in sorted(Path(folder).iterdir())
         if arm.is_dir()
         for bundle in sorted(arm.iterdir())
