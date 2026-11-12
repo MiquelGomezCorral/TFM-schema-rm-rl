@@ -9,7 +9,7 @@ from pathlib import Path
 
 from src.arm_fm import load_bundle, review_reward_machine
 from src.config import Configuration
-from src.models import EnvironmentDescription
+from src.models import EnvironmentDescription, EnvironmentValidationError
 from src.utils import get_engine
 
 # The only file this command adds to a bundle.
@@ -40,7 +40,8 @@ def cross_critic(
 
     ``direction`` names the critic: ``farm`` judges ARM-FM bundles and ``arm-fm`` judges FARM
     bundles. ``cross_critic.json`` is the only file added; it holds the verdict, the raw reply
-    and the identity of the machine judged, so a regenerated machine is judged again. Launching
+    and the identity of what was judged (see ``_identity``), so a regenerated machine, another
+    critic model or another direction is judged again and its old result removed. Launching
     stops once ``max_calls`` requests were sent; requests already running finish, so the count
     can pass it by up to ``parallel``. Raises ``ValueError`` when no bundle is one this critic
     judges, and ``RuntimeError`` after the run when any bundle could not be judged.
@@ -49,7 +50,7 @@ def cross_critic(
         raise ValueError(f"--critic must be one of {', '.join(JUDGED_RM_MODE)}: {direction!r}")
     if not CONFIG.critic_model:
         raise ValueError("cross-critic needs a critic model; set the provider's critic variable")
-    pending, eligible = _pending(bundles, direction)
+    pending, eligible = _pending(bundles, direction, CONFIG.critic_model)
     if not eligible:
         raise ValueError(
             f"--critic {direction} judges bundles with rm_mode {JUDGED_RM_MODE[direction]!r}; "
@@ -79,12 +80,13 @@ def cross_critic(
         )
 
 
-def _pending(bundles: Path, direction: str) -> tuple[list[Path], int]:
+def _pending(bundles: Path, direction: str, critic_model: str) -> tuple[list[Path], int]:
     """Return the bundles this critic still has to judge and how many it is eligible for.
 
     A bundle is eligible when its ``rm_mode`` is the one this critic judges. It stays pending
-    unless it was judged already, in this direction and for this very task and machine. The
-    reason for every skip is printed.
+    unless its result already holds the bundle's current identity; a result with another
+    identity is removed here, so it can neither be counted nor outlive a failed rejudgment.
+    The reason for every skip is printed.
     """
     pending = []
     eligible = 0
@@ -92,36 +94,60 @@ def _pending(bundles: Path, direction: str) -> tuple[list[Path], int]:
         path for path in bundles.iterdir() if (path / "manifest.json").is_file()
     ):
         manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
-        machine_file = directory / "reward_machine.txt"
         if manifest.get("rm_mode") != JUDGED_RM_MODE[direction]:
-            reason = f"rm_mode is not {JUDGED_RM_MODE[direction]}"
-        elif not machine_file.is_file():
-            eligible += 1
-            reason = "no reward machine"
+            print(
+                f"{directory.name}: skipped (rm_mode is not {JUDGED_RM_MODE[direction]})",
+                flush=True,
+            )
+            continue
+        eligible += 1
+        identity = _identity(directory, direction, critic_model)
+        if identity is None:
+            print(f"{directory.name}: skipped (no reward machine)", flush=True)
+        elif _stored_identity(directory) == identity:
+            print(f"{directory.name}: skipped (already judged)", flush=True)
         else:
-            eligible += 1
-            identity = _identity(manifest.get("task", ""), machine_file.read_text(encoding="utf-8"))
-            if _judged(directory, direction) == identity:
-                reason = "already judged"
-            else:
-                pending.append(directory)
-                continue
-        print(f"{directory.name}: skipped ({reason})", flush=True)
+            (directory / RESULT_FILE).unlink(missing_ok=True)
+            pending.append(directory)
     return pending, eligible
 
 
-def _identity(task: str, machine: str) -> str:
-    """Return a short identity of the task and machine a verdict is about."""
-    return hashlib.sha256(f"{task}\0{machine}".encode()).hexdigest()
+def _identity(directory: Path, direction: str, critic_model: str) -> str | None:
+    """Return the identity of what a verdict is about, or None for a bundle without a machine.
 
-
-def _judged(directory: Path, direction: str) -> str | None:
-    """Return the identity a bundle's existing result in this direction judged, if any."""
+    It hashes the task and the machine text of the bundle, the environment text as the critic
+    reads it (the live environment file, loaded as ``_judge`` loads it; empty when unreadable or
+    invalid, which ``_judge`` then reports as not judged), the critic model and the direction: a
+    verdict stands only while all of them are unchanged.
+    """
+    machine_file = directory / "reward_machine.txt"
+    if not machine_file.is_file():
+        return None
+    manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
     try:
-        record = json.loads((directory / RESULT_FILE).read_text(encoding="utf-8"))
+        environment = EnvironmentDescription.from_file(
+            manifest["environment"], code=direction == "arm-fm"
+        ).markdown
+    except EnvironmentValidationError:  # ``from_file`` wraps a read error in this one
+        environment = ""
+    parts = (
+        manifest.get("task", ""),
+        environment,
+        machine_file.read_text(encoding="utf-8"),
+        critic_model,
+        direction,
+    )
+    return hashlib.sha256("\0".join(parts).encode()).hexdigest()
+
+
+def _stored_identity(directory: Path) -> str | None:
+    """Return the identity a bundle's existing result judged, if it has a readable one."""
+    try:
+        return json.loads((directory / RESULT_FILE).read_text(encoding="utf-8")).get(
+            "judged_sha256"
+        )
     except (OSError, json.JSONDecodeError):
         return None
-    return record.get("judged_sha256") if record.get("direction") == direction else None
 
 
 def _judge(CONFIG: Configuration, directory: Path, direction: str) -> tuple[str, int]:
@@ -133,6 +159,7 @@ def _judge(CONFIG: Configuration, directory: Path, direction: str) -> tuple[str,
     engine = None
     outcome = "failed"
     try:
+        identity = _identity(directory, direction, CONFIG.critic_model)
         bundle = load_bundle(directory)
         task = bundle.manifest.task
         machine = (directory / "reward_machine.txt").read_text(encoding="utf-8")
@@ -153,7 +180,7 @@ def _judge(CONFIG: Configuration, directory: Path, direction: str) -> tuple[str,
             "flags": [] if accepted else [feedback],
             "raw_reply": engine.last_reply or "",
             "raw_reply_path": None,
-            "judged_sha256": _identity(task, machine),
+            "judged_sha256": identity,
             "information_note": INFORMATION_NOTES[direction],
         }
         (directory / RESULT_FILE).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
@@ -165,11 +192,19 @@ def _judge(CONFIG: Configuration, directory: Path, direction: str) -> tuple[str,
 
 
 def _print_summary(bundles: Path) -> None:
-    """Print the verdict counts of every direction found under ``bundles``, never pooled."""
+    """Print the verdict counts of every direction found under ``bundles``, never pooled.
+
+    Only a verdict about the bundle as it is now counts; the others get a ``stale`` line.
+    """
     counts: dict[str, Counter[str]] = {}
+    stale: Counter[str] = Counter()
     for path in sorted(bundles.glob(f"*/{RESULT_FILE}")):
         record = json.loads(path.read_text(encoding="utf-8"))
-        counts.setdefault(record["direction"], Counter())[record["verdict"]] += 1
+        direction = record["direction"]
+        if record.get("judged_sha256") != _identity(path.parent, direction, record["critic_model"]):
+            stale[direction] += 1
+        else:
+            counts.setdefault(direction, Counter())[record["verdict"]] += 1
     for direction, verdicts in sorted(counts.items()):
         total = sum(verdicts.values())
         print(
@@ -177,3 +212,5 @@ def _print_summary(bundles: Path) -> None:
             f"{verdicts['rejected']} rejected",
             flush=True,
         )
+    for direction, number in sorted(stale.items()):
+        print(f"critic {direction}: {number} stale, not counted (the bundle changed)", flush=True)

@@ -5,7 +5,9 @@
 # usage: generate.sh [--dry-run] [--suite NAME]... [--max-calls N] [--deadline-min M] [--parallel N]
 #   NAME is closed, smoke, base, templates, complex, pilot or ablation; without --suite all of
 #   them run in that order. --dry-run prints the commands and runs nothing. The caps apply to
-#   each generate-suite call, not to the whole script.
+#   each generate-suite call, not to the whole script. The closed-set pass is its own
+#   generate-suite call (per suite and arm) with its own cap; the cards it completes are
+#   skipped by that suite's later call.
 #
 # Everything but smoke is refused while experiments/benchmark/prompt-budget.md is undecided
 # (R49): missing, a line starting "decision: pending", or no line starting "decision:". The

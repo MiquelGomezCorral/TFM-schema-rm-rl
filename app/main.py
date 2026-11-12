@@ -64,7 +64,11 @@ def cmd_generate_suite(args: argparse.Namespace) -> None:
 def cmd_cross_critic(args: argparse.Namespace) -> None:
     """Judge generated machines with the other pipeline's critic."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
-    cross_critic(CONFIG, args.bundles, args.direction, args.max_calls, args.parallel)
+    try:
+        cross_critic(CONFIG, args.bundles, args.direction, args.max_calls, args.parallel)
+    except ValueError as error:  # usage errors: no eligible bundle, no critic model
+        print(f"error: {error}", file=sys.stderr)
+        sys.exit(1)
 
 
 def cmd_embed_larm(args: argparse.Namespace) -> None:

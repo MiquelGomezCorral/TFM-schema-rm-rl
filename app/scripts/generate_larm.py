@@ -65,6 +65,11 @@ def generate_compiler(CONFIG: Configuration, environment: EnvironmentDescription
     CONFIG.output = CONFIG.output or Path("arm-fm.rm")
     # Compiler bundles require persisted labeling, so the optional stage is always on.
     CONFIG.labeling = True
+    destination = None
+    if CONFIG.embeddings:
+        # Checked before the first provider call, so an old file cannot fail a paid-for machine.
+        destination = embedding_artifact_path(CONFIG, Path(CONFIG.bundle).name)
+        preflight_paths([destination], overwrite=CONFIG.overwrite, kind="Embedding artifact(s)")
     accepted = []
     run_stats = []
 
@@ -80,7 +85,7 @@ def generate_compiler(CONFIG: Configuration, environment: EnvironmentDescription
         )
         if not succeeded or not accepted:
             raise RuntimeError("Compiler generation failed without an accepted result")
-        bundle = _accepted_compiler_bundle(CONFIG, accepted[0], run_stats[0])
+        bundle = _accepted_compiler_bundle(CONFIG, accepted[0], run_stats[0], destination)
     except Exception as error:
         _persist_compiler_failure(CONFIG, environment, str(error), run_stats)
         raise
@@ -88,18 +93,17 @@ def generate_compiler(CONFIG: Configuration, environment: EnvironmentDescription
 
 
 def _accepted_compiler_bundle(
-    CONFIG: Configuration, result: CompilationResult, run_stats: dict
+    CONFIG: Configuration, result: CompilationResult, run_stats: dict, destination: Path | None
 ) -> ArtifactBundle:
     """Adapt the accepted compiler result into its bundle, with the run's records and stamp.
 
     The compiler pipeline already produced accepted labeling and node descriptions; the adapter
-    reuses them, so no baseline engine or extra provider call is needed.
+    reuses them, so no baseline engine or extra provider call is needed. ``destination`` is the
+    embedding artifact to write, if any.
     """
     bundle = generate_compiler_bundle((result,), None, CONFIG)[0]
     record_bundle_role_models(bundle, CONFIG, run_stats)
-    if CONFIG.embeddings:
-        destination = embedding_artifact_path(CONFIG, Path(CONFIG.bundle).name)
-        preflight_paths([destination], overwrite=CONFIG.overwrite, kind="Embedding artifact(s)")
+    if destination is not None:
         write_embedding_artifact(result, destination)
         record_bundle_embeddings(bundle, result, destination)
     return bundle

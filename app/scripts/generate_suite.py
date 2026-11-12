@@ -29,6 +29,7 @@ PROVIDER_ERROR = re.compile(
     r"Connection error|APIConnectionError|Request timed out|Connection refused"
     r"|Error code: (?:400|401|402|403|408|429|5\d\d)"
 )
+RESPONSES_FILE = "raw_responses.json"  # a bundle's per-call records
 LOG_TAIL_CHARS = 4000
 EMBEDDINGS_PENDING = "generation done, embeddings pending"
 
@@ -86,11 +87,10 @@ def generate_suite(options: SuiteOptions) -> None:
             over_budget = options.max_calls is not None and spent >= options.max_calls
         if over_budget or (deadline is not None and time.monotonic() > deadline):
             return None
-        result, ran = _generate(job, options)
+        result, new_calls = _generate(job, options)
         _write_status(job, options, result)
-        if ran:  # a card that only waits for embeddings made no request in this call
-            with lock:
-                spent += result["calls"]
+        with lock:
+            spent += new_calls
         return result
 
     with ThreadPoolExecutor(max_workers=options.parallel) as pool:
@@ -164,17 +164,19 @@ def _needs_work(job: Job, options: SuiteOptions) -> bool:
 # ======================================================================================
 
 
-def _generate(job: Job, options: SuiteOptions) -> tuple[dict, bool]:
+def _generate(job: Job, options: SuiteOptions) -> tuple[dict, int]:
     """Run ``generate-larm`` for one job unless its generation is already done.
 
-    Returns the status record and whether a ``generate-larm`` process ran. A finished
+    Returns the status record and the requests this run made. Those are the records of the
+    bundle's ``raw_responses.json`` when the run rewrote it, else none: a run that saved
+    nothing leaves the previous run's file, whose requests were counted then. A finished
     generation without embeddings is ``incomplete`` with the reason ``EMBEDDINGS_PENDING``,
     which the embedding pass picks up.
     """
     directory = options.output / job.id
     started = time.monotonic()
     if _bundle_state(directory) == "generated":
-        return _status("incomplete", EMBEDDINGS_PENDING, job, options, started), False
+        return _status("incomplete", EMBEDDINGS_PENDING, job, options, started), 0
     command = [
         sys.executable,
         str(MAIN),
@@ -189,14 +191,18 @@ def _generate(job: Job, options: SuiteOptions) -> tuple[dict, bool]:
     ]
     if directory.exists():
         command.append("--overwrite")
+    responses = directory / RESPONSES_FILE
+    before = _file_stamp(responses)
     exit_code = _run(command, _log_path(job, options), append=False)
     state = _bundle_state(directory)
     if exit_code == 0 and state == "complete":
-        return _status("complete", None, job, options, started), True
-    if exit_code == 0 and state == "generated":
-        return _status("incomplete", EMBEDDINGS_PENDING, job, options, started), True
-    status, reason = _classify_failure(directory, _log_path(job, options))
-    return _status(status, reason, job, options, started), True
+        status, reason = "complete", None
+    elif exit_code == 0 and state == "generated":
+        status, reason = "incomplete", EMBEDDINGS_PENDING
+    else:
+        status, reason = _classify_failure(directory, _log_path(job, options))
+    result = _status(status, reason, job, options, started)
+    return result, result["calls"] if _file_stamp(responses) != before else 0
 
 
 def _embed(job: Job, options: SuiteOptions, result: dict) -> dict:
@@ -297,7 +303,7 @@ def _status(
     status: str, reason: str | None, job: Job, options: SuiteOptions, started: float | None = None
 ) -> dict:
     """Build one status record; the calls come from the per-call records of the bundle."""
-    responses = _read_json(options.output / job.id / "raw_responses.json", [])
+    responses = _read_json(options.output / job.id / RESPONSES_FILE, [])
     return {
         "status": status,
         "reason": reason,
@@ -305,6 +311,15 @@ def _status(
         "wall_time_s": None if started is None else round(time.monotonic() - started, 1),
         "log": str(_log_path(job, options)),
     }
+
+
+def _file_stamp(path: Path) -> tuple[int, int] | None:
+    """Return the size and modification time of a file, or None when it does not exist."""
+    try:
+        info = path.stat()
+    except OSError:
+        return None
+    return info.st_size, info.st_mtime_ns
 
 
 def _write_status(job: Job, options: SuiteOptions, result: dict) -> None:

@@ -349,6 +349,7 @@ def _persist_failure(bundle: ArtifactBundle, CONFIG: Configuration) -> None:
             bundle.save(CONFIG.bundle, overwrite=CONFIG.overwrite)
         except OSError as error:
             # The failure that got us here is re-raised by the caller; this one must not hide it.
+            # Plain stderr print: importing ``print_warning`` here is a circular import.
             print(f"warning: could not save the failed bundle: {error}", file=sys.stderr)
 
 
@@ -464,9 +465,12 @@ def record_compiler_failure(
     """Give a failed compiler run's bundle the request records and the stamp of that run.
 
     ``run_stats`` is empty when the run failed before it made a request; the counts are null.
+    The interventions and retries are null in any case: its labeling and description attempts
+    are not in the failure bundle, so a number would be short.
     """
     bundle.raw_responses.extend(run_stats.get("calls", ()))
-    record_bundle_stamp(bundle, CONFIG, _compiler_role_models(CONFIG), run_stats)
+    stats = {**run_stats, "critic_interventions": None, "retries": None}
+    record_bundle_stamp(bundle, CONFIG, _compiler_role_models(CONFIG), stats)
 
 
 def _compiler_role_models(CONFIG: Configuration) -> tuple[str | None, str | None]:

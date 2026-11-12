@@ -204,12 +204,13 @@ class _Pipeline:
         error, the only way out besides the critic's verdict.
         """
         reruns = self.CONFIG.UNCOUNTED_RETRIES
-        for _ in range(reruns + 1):
+        for tries in range(1, reruns + 2):
             self.progress.check_cancelled()
             try:
                 return self._attempt(task, history)
             except _RerunError as failure:
-                self.reruns += 1
+                if tries <= reruns:  # the last failure is followed by no rerun
+                    self.reruns += 1
                 last_error = failure
         raise RetryableEngineError(
             f"Task {task_index + 1} attempt {self.progress.current_attempt}/"
@@ -327,7 +328,8 @@ class _Pipeline:
                 )
             except (RetryableEngineError, ProposalValidationError) as error:
                 last_error = error
-                self.reruns += 1
+                if tagging_attempt < attempts:  # the last failure is followed by no rerun
+                    self.reruns += 1
                 self.progress.warn(
                     f"state tagging request {tagging_attempt}/{attempts} failed: {error}"
                 )

@@ -40,7 +40,9 @@ then `ablate-rm` for the ablation cards. Everything but `smoke` is refused while
 `experiments/benchmark/prompt-budget.md` is undecided: the file is missing, has a line starting
 `decision: pending`, or has no line starting `decision:`. Each step is a
 `python app/main.py generate-suite --tasks <file> --arm farm|arm-fm --output <dir>` call, one per
-suite and arm, with `--paraphrases` (which also covers the base wordings) except for `smoke`:
+suite and arm, with `--paraphrases` (which also covers the base wordings) except for `smoke`. The
+closed-set pass is its own `generate-suite` call per suite and arm with its own cap; the cards it
+completes are skipped by that suite's later call:
 
 - Per card, one `generate-larm --mode compiler` (FARM) or `--mode arm-fm --arm-fm-critic` (ARM-FM)
   child process; bundle folder `<dir>/<card-id>/`, paraphrase k at `<card-id>~p<k>`.
@@ -50,10 +52,12 @@ suite and arm, with `--paraphrases` (which also covers the base wordings) except
 - Caps: `--parallel` (default 10), `--max-calls` and `--deadline-min` stop launching new cards;
   cards already running finish, so the call count can pass the cap by up to `--parallel` cards.
   A cap holds per `generate-suite` call, not for the whole `generate.sh` run: each suite and arm
-  starts its own count. Only the requests of `generate-larm` runs made by that call count; a card
-  that waits just for embeddings adds none. Each card prints one line, including `not launched
-  (cap or deadline)` for the ones left out. `calls` in a status counts the per-call records in the
-  bundle's `raw_responses.json`; failed cards of both arms keep theirs.
+  starts its own count. Only the requests of `generate-larm` runs made by that call count, and
+  only when the run rewrote the bundle's `raw_responses.json` (a run that saved nothing adds none,
+  and neither does a card that waits just for embeddings). Each card prints one line, including
+  `not launched (cap or deadline)` for the ones left out. `calls` in a status counts the per-call
+  records in the bundle's `raw_responses.json`, so it may show a previous run's total; failed
+  cards of both arms keep their records.
 - Each status file is written as soon as its card finishes generating and again after its
   embedding, so an interrupted call keeps the statuses of the cards it finished.
 
@@ -67,7 +71,9 @@ Statuses and what a rerun does:
 | `incomplete` | a stage file is missing, embeddings are pending, or the run crashed before writing a bundle | runs again; a bundle with generation done only embeds |
 
 Known gap: `generate-larm` saves a bundle only at the end of a run and has no stage resume, so an
-`incomplete` card that needs generation runs again whole, not just its missing stages.
+`incomplete` card that needs generation runs again whole, not just its missing stages. A run
+killed mid-save leaves a new `manifest.json`; with `--overwrite`, files of an earlier run stay
+beside it. Either way the card reads `pipeline-failed`.
 
 A run is a `provider-error` when its final error text carries an OpenAI-SDK network or HTTP
 failure in the log tail or in the last failed attempt of the ARM-FM path: connection loss
@@ -81,13 +87,17 @@ Any other failure that left a bundle is `pipeline-failed`. The match is a heuris
 Each bundle's `manifest.json`, failed bundles included, holds `provenance["stamp"]`: `commit`,
 `dirty` (any change under `app/`, untracked files included), `generator_model`, `critic_model`,
 `reasoning`, `attempts`, `critic_interventions`, `retries`, `wall_time_s`, `provisional`. A value
-the pipeline does not report, or git cannot tell, is `null`. `provisional` is true unless the
-tree is clean on `main`. `raw_responses.json` adds one record per model request,
+the pipeline does not report is `null`; a FARM failure bundle has `null` `critic_interventions`
+and `retries`, because its labeling attempts are lost with the run. If git cannot tell, `commit`
+and `dirty` are `null` and `provisional` is true. `provisional` is true unless `main` is checked
+out and nothing under `app/` changed (the dirty check covers `app/`).
+`raw_responses.json` adds one record per model request,
 `{stage, role, model_requested, model_reported}`; `model_reported` is the model named in the
 provider's reply and `null` when the provider names none. The arms count differently, so their
 `attempts` and `retries` are not comparable numbers: FARM `attempts` are proposals (a critic
-rejection starts the next one) and `retries` are reruns after provider or content failures;
-ARM-FM `attempts` are loop rounds and `retries` the rounds that failed.
+rejection starts the next one) and `retries` are reruns after provider or content failures, one
+for each failure that another try followed (11 failed tries in a row make 10 retries); ARM-FM
+`attempts` are loop rounds and `retries` the rounds that failed.
 
 ### Cross-critic
 
@@ -98,11 +108,14 @@ python app/main.py cross-critic --bundles <dir>/farm   --critic arm-fm [--max-ca
 
 The other pipeline's critic (`glm-5.3-flash`) judges each machine and writes `cross_critic.json`,
 the only file it adds, into the bundle: verdict, flags, the critic's `raw_reply` (`raw_reply_path`
-stays `null`) and `judged_sha256`, the identity of the task and machine judged. A bundle is
-skipped only when its file has the same direction and identity; a regenerated machine is judged
-again and the file overwritten. The command fails when no bundle is one this critic judges. The
-two critics read different inputs (see each file's `information_note`), so the two directions are
-reported apart and never pooled.
+stays `null`) and `judged_sha256`, the identity of what was judged: the bundle's task and machine
+text, the environment file as the critic reads it, the critic model and the direction. A bundle
+is skipped only when its file holds the current identity; otherwise the old file is removed and
+the bundle is judged again. The summary counts only verdicts with the current identity and prints
+the others on a `stale` line. A bundle with no machine is skipped and keeps its old file, which
+the summary reports as stale. With no bundle this critic judges the command prints `error: ...`
+to stderr and exits 1. The two critics read different inputs (see each file's `information_note`), so the two
+directions are reported apart and never pooled.
 
 ## 3. Training and evaluation
 
