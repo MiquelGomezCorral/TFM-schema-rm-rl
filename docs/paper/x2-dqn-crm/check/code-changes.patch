@@ -1,0 +1,590 @@
+diff --git a/app/src/arm_fm/dqn.py b/app/src/arm_fm/dqn.py
+index 3031c45..836471e 100644
+--- a/app/src/arm_fm/dqn.py
++++ b/app/src/arm_fm/dqn.py
+@@ -5,10 +5,10 @@ Adapted from CleanRL ``cleanrl/dqn_atari.py`` at commit
+ https://github.com/vwxyzjn/cleanrl/blob/004f8a086a892a2a180f4dd332b90d83a968aa7a/cleanrl/dqn_atari.py
+
+ Kept: ``linear_schedule``, the epsilon-greedy action, the MSE TD update and the target copy.
+-Changed: one non-vector env with manual resets, SB3 replay buffers storing
+-``done = terminated``, an optional RM-embedding branch in the Q-network, periodic greedy
+-evaluation, and CSV/JSON run metrics. Removed: tyro, vector envs, Atari wrappers,
+-wandb/Hugging Face upload and TensorBoard.
++Changed: ``dqn_num_envs`` plain envs stepped in a loop with manual resets, SB3 replay buffers
++storing ``done = terminated``, an optional RM-embedding branch in the Q-network, optional
++counterfactual RM experience, periodic greedy evaluation, and CSV/JSON run metrics. Removed:
++tyro, vector envs, Atari wrappers, wandb/Hugging Face upload and TensorBoard.
+
+ MIT License
+
+@@ -43,7 +43,7 @@ import random
+ import shutil
+ import subprocess
+ import time
+-from collections.abc import Callable, Iterable, Iterator, Mapping
++from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+ from dataclasses import dataclass
+ from datetime import UTC, datetime
+ from pathlib import Path
+@@ -62,9 +62,13 @@ from src.config import Configuration
+
+ from .environments import MultiTaskEnvironment, RunEnvironment, make_run_environment, task_name
+
++Observation = np.ndarray | dict[str, np.ndarray]
++# One replay entry: observation, next observation, reward, terminated.
++Transition = tuple[Observation, Observation, float, bool]
+ LAYOUTS = ("fixed", "procedural")
+ POSITIVE_SETTINGS = (
+     "total_timesteps",
++    "dqn_num_envs",
+     "batch_size",
+     "train_frequency",
+     "target_network_frequency",
+@@ -109,6 +113,8 @@ RUN_SETTINGS = (
+     "learning_starts",
+     "train_frequency",
+     "double_q",
++    "dqn_num_envs",
++    "counterfactual",
+     "eval_frequency",
+     "eval_episodes",
+     "final_eval_episodes",
+@@ -188,19 +194,20 @@ def train_dqn(CONFIG: Configuration) -> Path:
+     torch.backends.cudnn.deterministic = CONFIG.torch_deterministic
+     device = torch.device("cuda" if torch.cuda.is_available() and CONFIG.cuda else "cpu")
+
+-    train_run = make_run_environment(CONFIG)
++    train_runs = [make_run_environment(CONFIG) for _ in range(CONFIG.dqn_num_envs)]
+     eval_run = make_run_environment(CONFIG)
+-    if not isinstance(train_run.env.action_space, spaces.Discrete):
++    if not isinstance(train_runs[0].env.action_space, spaces.Discrete):
+         raise ValueError(
+             f"train-rl DQN needs a Discrete action space; {CONFIG.gym_id} has "
+-            f"{train_run.env.action_space}"
++            f"{train_runs[0].env.action_space}"
+         )
+-    train_run.env.action_space.seed(CONFIG.seed)
++    # Exploration draws random actions from the first env's space, in env order.
++    train_runs[0].env.action_space.seed(CONFIG.seed)
+     eval_run.env.action_space.seed(CONFIG.seed)
+
+-    learner = DQNLearner.create(CONFIG, train_run, device)
++    learner = DQNLearner.create(CONFIG, train_runs[0], device)
+     recorder = RunRecorder.create(CONFIG, device)
+-    _train(CONFIG, train_run, eval_run, learner, recorder)
++    _train(CONFIG, train_runs, eval_run, learner, recorder)
+
+     final_eval = evaluate(CONFIG, eval_run, learner.q_network, CONFIG.final_eval_episodes)
+     recorder.write_evaluation(CONFIG.total_timesteps, final_eval, CONFIG.success_threshold)
+@@ -221,6 +228,12 @@ def _check_settings(CONFIG: Configuration) -> None:
+         raise ValueError("learning_starts must not be negative")
+     if CONFIG.algorithm != "dqn":
+         raise ValueError(f"train_dqn trains algorithm: dqn, not {CONFIG.algorithm!r}")
++    if CONFIG.total_timesteps % CONFIG.dqn_num_envs:
++        raise ValueError("total_timesteps must be a multiple of dqn_num_envs")
++    if CONFIG.counterfactual and (CONFIG.reward_source == "env" or CONFIG.task_bundles):
++        raise ValueError(
++            "counterfactual needs one Reward Machine task: reward_source rm or both, no task_bundles"
++        )
+     if CONFIG.task_bundles:
+         _check_task_bundles(CONFIG)
+
+@@ -306,23 +319,50 @@ class QNetwork(nn.Module):
+
+ def select_action(
+     q_network: QNetwork,
+-    observation: np.ndarray | dict[str, np.ndarray],
++    observation: Observation,
+     epsilon: float,
+     action_space: spaces.Discrete,
+     rng: random.Random,
+ ) -> int:
+     """Epsilon-greedy action for one observation; ``rng`` is drawn only when epsilon > 0."""
+-    if epsilon > 0 and rng.random() < epsilon:
+-        return int(action_space.sample())
+-    device = next(q_network.parameters()).device
+-    if isinstance(observation, dict):
+-        batch = {
+-            key: torch.as_tensor(value, device=device)[None] for key, value in observation.items()
++    return select_actions(q_network, [observation], epsilon, action_space, rng)[0]
++
++
++def select_actions(
++    q_network: QNetwork,
++    observations: Sequence[Observation],
++    epsilon: float,
++    action_space: spaces.Discrete,
++    rng: random.Random,
++) -> list[int]:
++    """Epsilon-greedy action per observation: one draw each, then one greedy pass for the rest."""
++    actions: list[int | None] = [None] * len(observations)
++    for index in range(len(observations)):
++        if epsilon > 0 and rng.random() < epsilon:
++            actions[index] = int(action_space.sample())
++    greedy = [index for index, action in enumerate(actions) if action is None]
++    if greedy:
++        device = next(q_network.parameters()).device
++        stacked = _stack([observations[index] for index in greedy])
++        if isinstance(stacked, dict):
++            batch = {key: torch.as_tensor(value, device=device) for key, value in stacked.items()}
++        else:
++            batch = torch.as_tensor(stacked, device=device)
++        with torch.no_grad():
++            best = q_network(batch).argmax(dim=1).tolist()
++        for index, action in zip(greedy, best, strict=True):
++            actions[index] = action
++    return actions
++
++
++def _stack(observations: Sequence[Observation]) -> Observation:
++    """Stack single observations on a new first axis, key by key for a Dict observation."""
++    if isinstance(observations[0], dict):
++        return {
++            key: np.stack([observation[key] for observation in observations])
++            for key in observations[0]
+         }
+-    else:
+-        batch = torch.as_tensor(observation, device=device)[None]
+-    with torch.no_grad():
+-        return int(q_network(batch).argmax(dim=1).item())
++    return np.stack(observations)
+
+
+ # ======================================================================================
+@@ -331,7 +371,10 @@ def select_action(
+
+
+ def create_replay_buffer(CONFIG: Configuration, env: gym.Env, device: torch.device) -> ReplayBuffer:
+-    """SB3 replay sized ``min(buffer_size, total_timesteps)``; Dict observations use the Dict buffer."""
++    """SB3 replay holding ``min(buffer_size, total_timesteps)`` transitions over ``dqn_num_envs`` rows.
++
++    Dict observations use the Dict buffer. Counterfactual transitions count against the size too.
++    """
+     buffer_class = (
+         DictReplayBuffer if isinstance(env.observation_space, spaces.Dict) else ReplayBuffer
+     )
+@@ -340,32 +383,45 @@ def create_replay_buffer(CONFIG: Configuration, env: gym.Env, device: torch.devi
+         env.observation_space,
+         env.action_space,
+         device=device,
+-        n_envs=1,
++        n_envs=CONFIG.dqn_num_envs,
+         optimize_memory_usage=False,
+         handle_timeout_termination=False,
+     )
+
+
+-def store_transition(
+-    buffer: ReplayBuffer,
+-    observation: np.ndarray | dict[str, np.ndarray],
+-    action: int,
+-    step: tuple,
++def step_transitions(
++    CONFIG: Configuration, env: gym.Env, observation: Observation, step: tuple
++) -> list[Transition]:
++    """What one env step adds to the replay: the real transition, then its counterfactuals if on.
++
++    A truncated episode is not terminal (``terminated`` is stored as ``done``), and the next
++    observation is the real final one (with the RM, it carries phi(u_{t+1})).
++    """
++    next_observation, reward, terminated, _truncated, _info = step
++    transitions = [(observation, next_observation, reward, terminated)]
++    if CONFIG.counterfactual:
++        transitions += env.counterfactual_transitions(observation, step)
++    return transitions
++
++
++def store_transitions(
++    buffer: ReplayBuffer, actions: Sequence[int], transitions: Sequence[Sequence[Transition]]
+ ) -> None:
+-    """Store one ``env.step`` result with ``done = terminated``.
++    """Add each env's transitions, its k-th one of all envs in the k-th buffer row.
+
+-    A truncated episode is not terminal, and ``next_obs`` is the real final observation
+-    (with the RM, it carries phi(u_{t+1})).
++    Every env contributes the same number of transitions per step (the counterfactual ones
++    depend only on the machine), so the rows stay full.
+     """
+-    next_observation, reward, terminated, _truncated, info = step
+-    buffer.add(
+-        observation,
+-        next_observation,
+-        np.array([action]),
+-        np.array([reward]),
+-        np.array([terminated]),
+-        [info],
+-    )
++    for row in zip(*transitions, strict=True):
++        observations, next_observations, rewards, dones = zip(*row, strict=True)
++        buffer.add(
++            _stack(observations),
++            _stack(next_observations),
++            np.array(actions),
++            np.array(rewards),
++            np.array(dones),
++            [{}] * len(actions),
++        )
+
+
+ @dataclass
+@@ -394,19 +450,26 @@ class DQNLearner:
+             nn.utils.parameters_to_vector(q_network.parameters()).detach().clone(),
+         )
+
+-    def update(self, CONFIG: Configuration, global_step: int) -> tuple[float, float] | None:
+-        """Run CleanRL's update schedule for one step index.
++    def update(
++        self, CONFIG: Configuration, first_step: int, step_count: int
++    ) -> tuple[float, float] | None:
++        """Run CleanRL's update schedule over the env step indices of one round.
++
++        The round covers ``first_step`` .. ``first_step + step_count - 1``. Each index above
++        ``learning_starts`` that divides by ``train_frequency`` owes one gradient update and each
++        one that divides by ``target_network_frequency`` one target sync, so any
++        ``dqn_num_envs`` keeps the 1-env gradient steps per env step.
+
+         Returns:
+-            tuple[float, float] | None: ``(td_loss, q_mean)`` every
+-            ``TRAIN_LOG_EVERY_UPDATES`` gradient updates, otherwise None.
++            tuple[float, float] | None: ``(td_loss, q_mean)`` of the last logged gradient update
++            (one every ``TRAIN_LOG_EVERY_UPDATES``) of the round, otherwise None.
+         """
+-        if global_step <= CONFIG.learning_starts:
+-            return None
++        first = max(first_step, CONFIG.learning_starts + 1)
++        last = first_step + step_count - 1
+         metrics = None
+-        if global_step % CONFIG.train_frequency == 0:
+-            metrics = self._gradient_step(CONFIG)
+-        if global_step % CONFIG.target_network_frequency == 0:
++        for _ in range(_multiples(CONFIG.train_frequency, first, last)):
++            metrics = self._gradient_step(CONFIG) or metrics
++        for _ in range(_multiples(CONFIG.target_network_frequency, first, last)):
+             self._sync_target(CONFIG.tau)
+         return metrics
+
+@@ -461,53 +524,69 @@ class DQNLearner:
+
+ def _train(
+     CONFIG: Configuration,
+-    train_run: RunEnvironment,
++    train_runs: list[RunEnvironment],
+     eval_run: RunEnvironment,
+     learner: DQNLearner,
+     recorder: RunRecorder,
+ ) -> None:
+-    env = train_run.env
+-    reset_seeds = _training_reset_seeds(CONFIG)
++    """Round after round, every env takes one step; ``env_steps`` counts all of them."""
++    envs = [run.env for run in train_runs]
++    reset_seeds = [_training_reset_seeds(CONFIG, index) for index in range(len(envs))]
+     exploration_steps = CONFIG.exploration_fraction * CONFIG.total_timesteps
+     exploration_rng = random.Random(CONFIG.seed)
+-    episode = EpisodeTracker()
+-    observation, _ = env.reset(seed=next(reset_seeds))
++    episodes = [EpisodeTracker() for _ in envs]
++    observations = [
++        env.reset(seed=next(seeds))[0] for env, seeds in zip(envs, reset_seeds, strict=True)
++    ]
+
+-    for global_step in range(CONFIG.total_timesteps):
+-        epsilon = linear_schedule(CONFIG.start_e, CONFIG.end_e, exploration_steps, global_step)
+-        action = select_action(
+-            learner.q_network, observation, epsilon, env.action_space, exploration_rng
++    for first_step in range(0, CONFIG.total_timesteps, len(envs)):
++        epsilon = linear_schedule(CONFIG.start_e, CONFIG.end_e, exploration_steps, first_step)
++        actions = select_actions(
++            learner.q_network, observations, epsilon, envs[0].action_space, exploration_rng
+         )
+-        step = env.step(action)
+-        store_transition(learner.buffer, observation, action, step)
+-        episode.record(step, train_run.is_success)
+-
+-        # == Manual reset: the stored next_obs above is the real final observation ==
+-        observation, _, terminated, truncated, _ = step
+-        env_steps = global_step + 1
+-        if terminated or truncated:
+-            recorder.write_episode(env_steps, episode, epsilon)
+-            episode = EpisodeTracker()
+-            observation, _ = env.reset(seed=next(reset_seeds))
+-
+-        metrics = learner.update(CONFIG, global_step)
++        steps = [env.step(action) for env, action in zip(envs, actions, strict=True)]
++        stored = [
++            step_transitions(CONFIG, env, observation, step)
++            for env, observation, step in zip(envs, observations, steps, strict=True)
++        ]
++        store_transitions(learner.buffer, actions, stored)
++
++        # == Manual resets: the stored next_obs above is the real final observation ==
++        env_steps = first_step + len(envs)
++        for index, step in enumerate(steps):
++            episodes[index].record(step, train_runs[index].is_success)
++            observations[index], _, terminated, truncated, _ = step
++            if terminated or truncated:
++                recorder.write_episode(env_steps, episodes[index], epsilon)
++                episodes[index] = EpisodeTracker()
++                observations[index], _ = envs[index].reset(seed=next(reset_seeds[index]))
++
++        metrics = learner.update(CONFIG, first_step, len(envs))
+         if metrics is not None:
+             recorder.write_training(env_steps, metrics, epsilon)
+         # The final evaluation (train_dqn) covers the last step.
+-        if env_steps % CONFIG.eval_frequency == 0 and env_steps < CONFIG.total_timesteps:
++        if (
++            _multiples(CONFIG.eval_frequency, first_step + 1, env_steps)
++            and env_steps < CONFIG.total_timesteps
++        ):
+             row = evaluate(CONFIG, eval_run, learner.q_network, CONFIG.eval_episodes)
+             recorder.write_evaluation(env_steps, row, CONFIG.success_threshold)
+
+
++def _multiples(frequency: int, first: int, last: int) -> int:
++    """How many multiples of ``frequency`` lie in ``first`` .. ``last``, both included."""
++    return max(0, last // frequency - (first - 1) // frequency)
++
++
+ def layout_seed(CONFIG: Configuration) -> int:
+     return CONFIG.seed if CONFIG.layout_seed is None else CONFIG.layout_seed
+
+
+-def _training_reset_seeds(CONFIG: Configuration) -> Iterator[int | None]:
+-    """Fixed: every reset uses the layout seed. Procedural: seed only the first reset."""
++def _training_reset_seeds(CONFIG: Configuration, index: int) -> Iterator[int | None]:
++    """Fixed: every reset uses the layout seed. Procedural: seed only env ``index``'s first reset."""
+     if CONFIG.layout == "fixed":
+         return itertools.repeat(layout_seed(CONFIG))
+-    return itertools.chain([CONFIG.seed], itertools.repeat(None))
++    return itertools.chain([CONFIG.seed + index], itertools.repeat(None))
+
+
+ @dataclass
+diff --git a/app/src/arm_fm/environments.py b/app/src/arm_fm/environments.py
+index 4548aaa..fdb017c 100644
+--- a/app/src/arm_fm/environments.py
++++ b/app/src/arm_fm/environments.py
+@@ -251,6 +251,47 @@ class RewardMachineObservation(gym.Wrapper):
+         )
+         return self._observation(observation, state), reward, terminated, truncated, info
+
++    def counterfactual_transition(
++        self, state: str, observation: dict[str, np.ndarray], step: tuple
++    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray], float, bool]:
++        """The replay transition RM state ``state`` would have stored for the real ``step``.
++
++        Counterfactual experience for Reward Machines (CRM, Toro Icarte et al., JAIR 2022): the
++        environment move and its true propositions are the real ones; the machine transition, the
++        reward with its end charge, the terminal flag and the encoding come from the wrapper's own
++        code.
++
++        Args:
++            state (str): The RM state to take the step from.
++            observation (dict[str, np.ndarray]): The observation the real step started from.
++            step (tuple): The real ``env.step`` result.
++
++        Returns:
++            tuple: ``(observation, next_observation, reward, terminated)`` with ``state``'s encoding.
++        """
++        next_observation, _reward, _terminated, truncated, info = step
++        machine = self.reward_machine
++        rm_step = machine.runtime.step_from(state, info["valuation"])
++        terminated, _rm_reward, reward = machine.settle(
++            rm_step, info["env_reward"], info["env_terminated"], truncated
++        )
++        return (
++            self._observation(observation["image"], state),
++            self._observation(next_observation["image"], rm_step.destination),
++            reward,
++            terminated,
++        )
++
++    def counterfactual_transitions(self, observation: dict[str, np.ndarray], step: tuple) -> list:
++        """One counterfactual transition for every other source state that is not final or rejecting."""
++        machine = self.reward_machine
++        real = step[4]["rm_source"]
++        return [
++            self.counterfactual_transition(state, observation, step)
++            for state in machine.runtime.machine.states
++            if state != real and state not in machine.terminal_states
++        ]
++
+     def is_success(self, terminated: bool, _env_reward: float) -> bool:
+         """Success rule of config ``success: rm``, for missions the environment cannot judge.
+
+diff --git a/app/src/arm_fm/runtime.py b/app/src/arm_fm/runtime.py
+index e83735a..ed4c25f 100644
+--- a/app/src/arm_fm/runtime.py
++++ b/app/src/arm_fm/runtime.py
+@@ -83,11 +83,17 @@ class RewardMachineRuntime:
+
+     def step(self, valuation: Mapping[str, bool]) -> RuntimeStep:
+         """Select and apply one transition from the old state."""
++        rm_step = self.step_from(self.state, valuation)
++        self.state = rm_step.destination
++        return rm_step
++
++    def step_from(self, state: str, valuation: Mapping[str, bool]) -> RuntimeStep:
++        """Select the transition ``state`` takes on ``valuation`` without moving the runtime."""
+         values = _complete_valuation(valuation, self.machine.propositions)
+         ordinary = [
+             transition
+             for transition in self.machine.transitions
+-            if transition.source == self.state
++            if transition.source == state
+             and not transition.is_else
+             and evaluate_boolean_guard(
+                 parse_boolean_guard(transition.condition, self.machine.propositions),
+@@ -99,26 +105,24 @@ class RewardMachineRuntime:
+             candidates = [
+                 transition
+                 for transition in self.machine.transitions
+-                if transition.source == self.state and transition.is_else
++                if transition.source == state and transition.is_else
+             ]
+         overlap = tuple(ordinary[1:])
+         selected = candidates[0] if candidates else None
+         if len(ordinary) > 1:
+             message = (
+-                f"Overlapping RM guards in state {self.state!r}; selecting stored transition "
++                f"Overlapping RM guards in state {state!r}; selecting stored transition "
+                 f"to {ordinary[0].destination!r}"
+             )
+             if self.warning_handler is not None:
+                 self.warning_handler(message)
+             else:
+-                warnings.warn(message, RuntimeWarning, stacklevel=2)
+-        source = self.state
++                warnings.warn(message, RuntimeWarning, stacklevel=3)
+         if selected is None:
+-            destination, reward = source, 0.0
++            destination, reward = state, 0.0
+         else:
+             destination, reward = selected.destination, float(selected.reward)
+-        self.state = destination
+-        return RuntimeStep(source, destination, reward, selected, overlap)
++        return RuntimeStep(state, destination, reward, selected, overlap)
+
+     def evaluate_labeling(
+         self,
+@@ -209,15 +213,9 @@ class RewardMachineEnvironment:
+         info = {**(info or {}), "env_terminated": bool(terminated)}
+         valuation = self.runtime.evaluate_labeling(self.environment, self.labeling)
+         rm_step = self.runtime.step(valuation)
+-        env_ended = bool(terminated) or truncated
+-        rm_ended = rm_step.destination in self.terminal_states
+-        terminated = bool(terminated) or rm_ended
+-        rm_reward = rm_step.reward
+-        if self.judgment is None:
+-            if truncated and not terminated:
+-                rm_reward += self.time_limit_penalty
+-        elif env_ended and not rm_ended:
+-            rm_reward += self.judgment.end_charge(rm_step.destination)
++        terminated, rm_reward, learner_reward = self.settle(
++            rm_step, float(reward), bool(terminated), truncated
++        )
+         self.execution_evidence.append(
+             {
+                 "valuation": dict(valuation),
+@@ -230,14 +228,38 @@ class RewardMachineEnvironment:
+         info.update(
+             {
+                 "valuation": valuation,
++                "rm_source": rm_step.source,
+                 "rm_state": rm_step.destination,
+                 "env_reward": float(reward),
+                 "rm_reward": rm_reward,
+             }
+         )
+-        learner_reward = rm_reward + (float(reward) if self.reward_source == "both" else 0.0)
+         return observation, learner_reward, terminated, truncated, info
+
++    def settle(
++        self, rm_step: RuntimeStep, env_reward: float, env_terminated: bool, truncated: bool
++    ) -> tuple[bool, float, float]:
++        """Episode end, RM reward and learner reward of ``rm_step`` as the wrapper pays them.
++
++        Also scores the step a counterfactual RM state would have taken (CRM), so both read the
++        same end rules.
++
++        Returns:
++            tuple[bool, float, float]: ``terminated``, the RM reward with the time-limit penalty
++            or end charge, and the reward the learner receives.
++        """
++        env_ended = env_terminated or truncated
++        rm_ended = rm_step.destination in self.terminal_states
++        terminated = env_terminated or rm_ended
++        rm_reward = rm_step.reward
++        if self.judgment is None:
++            if truncated and not terminated:
++                rm_reward += self.time_limit_penalty
++        elif env_ended and not rm_ended:
++            rm_reward += self.judgment.end_charge(rm_step.destination)
++        learner_reward = rm_reward + (env_reward if self.reward_source == "both" else 0.0)
++        return terminated, rm_reward, learner_reward
++
+
+ class _LabelingContext:
+     """Forward a live environment while exposing resettable episode memory."""
+diff --git a/app/src/config/config.py b/app/src/config/config.py
+index e91ea67..27501a2 100644
+--- a/app/src/config/config.py
++++ b/app/src/config/config.py
+@@ -295,6 +295,12 @@ class Configuration:
+     train_frequency: int = 4
+     # Double DQN: the online network picks the next action, the target network values it.
+     double_q: bool = False
++    # Environments DQN collects from side by side. One round steps all of them, and the frequencies
++    # and counts above (train, target network, learning starts, evaluation, total) count env steps.
++    dqn_num_envs: int = 1
++    # Counterfactual experience (CRM): each real step also stores the transition every other
++    # non-final, non-rejecting RM state would have taken under the same labels. Needs one RM task.
++    counterfactual: bool = False
+
+     eval_frequency: int = 10_000
+     eval_episodes: int = 10
+diff --git a/tests/test_rl_contract.py b/tests/test_rl_contract.py
+index 64e09c1..1550c7a 100644
+--- a/tests/test_rl_contract.py
++++ b/tests/test_rl_contract.py
+@@ -9,7 +9,7 @@ from minigrid.core.constants import DIR_TO_VEC
+ from minigrid.core.world_object import Key
+
+ from src.arm_fm import load_bundle, make_run_environment
+-from src.arm_fm.dqn import create_replay_buffer, store_transition
++from src.arm_fm.dqn import create_replay_buffer, step_transitions, store_transitions
+ from src.config import Configuration
+
+ BUNDLE = Configuration.WORKSPACE_PATH / "outputs" / "bundles" / "UnlockPickup-1"
+@@ -54,7 +54,9 @@ class RewardMachineTransitionContractTest(unittest.TestCase):
+         self.assertFalse(terminated or truncated)
+         np.testing.assert_array_equal(next_observation["rm_embedding"], phi["u2"])
+
+-        store_transition(buffer, observation, done_action, key_step)
++        store_transitions(
++            buffer, [done_action], [step_transitions(CONFIG, env, observation, key_step)]
++        )
+         sample = buffer.sample(1)
+         self.assertEqual(sample.dones.item(), 0.0)
+         np.testing.assert_array_equal(sample.next_observations["rm_embedding"][0], phi["u2"])
+@@ -75,7 +77,9 @@ class RewardMachineTransitionContractTest(unittest.TestCase):
+         self.assertEqual(
+             (info["rm_state"], info["rm_accept"], info["rm_reward"]), ("u4", True, 1.1)
+         )
+-        store_transition(buffer, door_observation, pickup_action, pickup)
++        store_transitions(
++            buffer, [pickup_action], [step_transitions(CONFIG, env, door_observation, pickup)]
++        )
+
+         observation, info = env.reset(seed=1)
+         self.assertEqual(info["rm_state"], "u0")
+@@ -86,7 +90,9 @@ class RewardMachineTransitionContractTest(unittest.TestCase):
+         grid_env.max_steps = grid_env.step_count + 1
+         truncation = env.step(done_action)
+         self.assertEqual((truncation[4]["rm_state"], *truncation[2:4]), ("u2", False, True))
+-        store_transition(buffer, observation, done_action, truncation)
++        store_transitions(
++            buffer, [done_action], [step_transitions(CONFIG, env, observation, truncation)]
++        )
+         np.testing.assert_array_equal(buffer.dones[: buffer.pos, 0], [0.0, 1.0, 0.0])
+
+         observation, info = env.reset(seed=1)
