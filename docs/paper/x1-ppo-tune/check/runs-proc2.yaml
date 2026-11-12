@@ -1,0 +1,32 @@
+# X1 procedural check: the best fixed-layout setting trained on a new layout every episode
+# (layout: procedural, layout_seed: null in tasks.json; no code change). Evaluation is the same as
+# everywhere: episode i resets with eval_seed_base + i, so every run is scored on the same layouts.
+#
+# Seeds 1, 21 and 41, not 1, 2, 3: training env i resets on run seed + i, so run seeds closer than
+# ppo_num_envs (16 here) share envs and layouts (seeds 1 and 2 share 28 of their first 32 training
+# layouts with 8 envs). reset_check.py shows the overlap.
+# First launch (suite x1-procedural, 5 at once) was stopped at 180k (DoorKey) and 290k (UnlockPickup) steps
+# when Claude Code reaped its shells for low system memory; its partial runs are kept. This is the
+# restart under a new suite name, 2 runs at once under setsid (the machine is shared with X2 and C3):
+# Run: setsid nohup experiments/benchmark/scripts/train.sh tuning/ppo/procedural --parallel 2 --max-ram-gb 4.8
+suite: x1-proc2
+tasks: experiments/benchmark/tuning/ppo/procedural/tasks.json
+bundles: experiments/benchmark/pilot/bundles
+learner: s07-proc
+compare_learners: [s07-proc]
+learners:
+  s07-proc: # s07: lr 1e-3, minibatches 16, epochs 10, envs 16, rollout 256
+    config: experiments/benchmark/configs/ppo.yaml
+    ram_gb: 2.4
+    overrides:
+      ppo_learning_rate: 1.0e-3
+      ppo_num_minibatches: 16
+      ppo_update_epochs: 10
+      ppo_num_envs: 16
+      ppo_num_steps: 256
+arms: [farm]
+seeds: [1, 21, 41]
+total_timesteps: 500000
+time_box_min: 90
+only: [base-unlock-pickup, base-doorkey]
+variants: []

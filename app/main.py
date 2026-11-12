@@ -20,6 +20,7 @@ from scripts import (
     generate_suite,
     import_paper_bundle,
     render_rm,
+    repair_labeling,
     replay_traces,
     rm_facts,
     run_suite,
@@ -128,6 +129,12 @@ def cmd_replay_traces(args: argparse.Namespace) -> None:
 def cmd_rm_facts(args: argparse.Namespace) -> None:
     """Write the machine, clause and generation facts of generated bundles."""
     rm_facts(args.bundles, args.tasks, args.replay, args.output)
+
+
+def cmd_repair_labeling(args: argparse.Namespace) -> None:
+    """Check bundles' labeling against a trace bank and repair the failed ones."""
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    repair_labeling(CONFIG, args.traces, args.bundles, tuple(args.only or ()), args.check_only)
 
 
 def cmd_run_suite(args: argparse.Namespace) -> None:
@@ -608,6 +615,43 @@ if __name__ == "__main__":
     )
     facts_parser.add_argument("--output", required=True, type=Path, help="JSON file to write")
     facts_parser.set_defaults(func=cmd_rm_facts)
+
+    # ======================================================================================
+    #                                    repair-labeling
+    # ======================================================================================
+    repair_parser = subparsers.add_parser(
+        "repair-labeling",
+        help="Class every bundle's labeling failures against a trace bank, then repair them",
+    )
+    repair_parser.add_argument("--traces", required=True, type=Path, help="trace-bank output")
+    repair_parser.add_argument(
+        "--bundles", required=True, type=Path, help="Folder <arm>/<card-id>[~p<k>]/ of bundles"
+    )
+    repair_parser.add_argument(
+        "--only", nargs="+", metavar="ID", help="Only these card ids or bundle names"
+    )
+    repair_parser.add_argument(
+        "--check-only",
+        action="store_true",
+        help="Class the failures and write the records; ask no model",
+    )
+    repair_parser.add_argument(
+        "--max-iterations",
+        dest="repair_iterations",
+        type=int,
+        default=Configuration.repair_iterations,
+        metavar="N",
+        help="Repair rounds per bundle (default: %(default)s)",
+    )
+    repair_parser.add_argument(
+        "--parallel",
+        dest="repair_parallel",
+        type=int,
+        default=Configuration.repair_parallel,
+        metavar="N",
+        help="Most bundles repaired at once (default: %(default)s)",
+    )
+    repair_parser.set_defaults(func=cmd_repair_labeling)
 
     # ======================================================================================
     #                                       run-suite

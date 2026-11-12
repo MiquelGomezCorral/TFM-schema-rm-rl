@@ -1,0 +1,75 @@
+# X1 round 2: six PPO settings one knob away from s07 (round 1), seeds 1 and 2, both pilot cards.
+# Run: experiments/benchmark/scripts/train.sh tuning/ppo/round2 --parallel 6 --max-ram-gb 12
+#
+# Round 1 (UnlockPickup, seeds 1/2): the settings that solve it on both seeds all contain U
+# (minibatches 16, epochs 10): s01, s04, s07, s10. GAE 0.99, gamma 0.995 and entropy 0.03 did not
+# help. s07 = lr 1e-3, mb 16, ep 10, envs 16, steps 256 is the cheapest of them (batch 4096, 122
+# iterations of 160 gradient steps = 19.5k steps, against 78k for s01 and s10). Round 2 moves one
+# knob at a time from s07, to see how wide the working region is and whether the update can get
+# cheaper without losing UnlockPickup:
+suite: x1-r2
+tasks: experiments/benchmark/pilot/tasks.json
+bundles: experiments/benchmark/pilot/bundles
+learner: r01
+compare_learners: [r01, r02, r03, r04, r05, r06]
+learners:
+  r01: # s07 with 4 epochs: 7.8k gradient steps, 2.5x cheaper update
+    config: experiments/benchmark/configs/ppo.yaml
+    ram_gb: 2.4
+    overrides:
+      ppo_learning_rate: 1.0e-3
+      ppo_num_minibatches: 16
+      ppo_update_epochs: 4
+      ppo_num_envs: 16
+      ppo_num_steps: 256
+  r02: # s07 with 8 minibatches (512 samples each): 9.8k gradient steps, 2x cheaper update
+    config: experiments/benchmark/configs/ppo.yaml
+    ram_gb: 2.4
+    overrides:
+      ppo_learning_rate: 1.0e-3
+      ppo_num_minibatches: 8
+      ppo_update_epochs: 10
+      ppo_num_envs: 16
+      ppo_num_steps: 256
+  r03: # s07 with the base learning rate 2.5e-4: is the high rate needed next to U?
+    config: experiments/benchmark/configs/ppo.yaml
+    ram_gb: 2.4
+    overrides:
+      ppo_num_minibatches: 16
+      ppo_update_epochs: 10
+      ppo_num_envs: 16
+      ppo_num_steps: 256
+  r04: # s07 with 32 envs: batch 8192, 61 iterations, 9.8k gradient steps
+    config: experiments/benchmark/configs/ppo.yaml
+    ram_gb: 2.4
+    overrides:
+      ppo_learning_rate: 1.0e-3
+      ppo_num_minibatches: 16
+      ppo_update_epochs: 10
+      ppo_num_envs: 32
+      ppo_num_steps: 256
+  r05: # s07 with learning rate 5e-4: half way between the base and s07
+    config: experiments/benchmark/configs/ppo.yaml
+    ram_gb: 2.4
+    overrides:
+      ppo_learning_rate: 5.0e-4
+      ppo_num_minibatches: 16
+      ppo_update_epochs: 10
+      ppo_num_envs: 16
+      ppo_num_steps: 256
+  r06: # s07 with clip 0.2 (zoo value; the base uses 0.1, tight for 10 epochs)
+    config: experiments/benchmark/configs/ppo.yaml
+    ram_gb: 2.4
+    overrides:
+      ppo_learning_rate: 1.0e-3
+      ppo_num_minibatches: 16
+      ppo_update_epochs: 10
+      ppo_num_envs: 16
+      ppo_num_steps: 256
+      ppo_clip_coef: 0.2
+arms: [farm]
+seeds: [1, 2]
+total_timesteps: 500000
+time_box_min: 30
+only: [base-unlock-pickup, base-doorkey]   # UnlockPickup first
+variants: []

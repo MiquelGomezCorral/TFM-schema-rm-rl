@@ -171,6 +171,8 @@ class Configuration:
     TAGGING_ATTEMPTS: ClassVar[int] = 3
     OUTAGE_RETRIES: ClassVar[int] = 10
     ATTEMPT_LIMITS: ClassVar[range] = range(1, 11)
+    # The only models that generate or repair benchmark labeling (the thesis' small pair).
+    REPAIR_MODELS: ClassVar[tuple[str, ...]] = ("deepseek-v4.1-flash", "glm-5.3-flash")
     # The provider sometimes answers HTTP 400 at random; the same call is repeated this many
     # times, this far apart, before it counts as a failure. Repeats use no proposal attempt.
     # A repeat uses a new provider session, because OpenCode's 400 sticks to the session.
@@ -256,6 +258,10 @@ class Configuration:
     suite_time_box_min: float | None = None  # None: the runs.yaml value, else no time box
     suite_retry_timed_out: bool = False
     suite_dry_run: bool = False  # list what would run; start nothing, write nothing
+
+    # ======================= Labeling repair (repair-labeling) =======================
+    repair_iterations: int = 10  # repair rounds per bundle before it stays unfixed
+    repair_parallel: int = 10  # bundles repaired at once
 
     # ============================== Training (train-rl) ==============================
     # A YAML run config overrides these; defaults follow ARM-FM Table 5.

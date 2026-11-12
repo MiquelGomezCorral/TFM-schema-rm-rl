@@ -36,6 +36,13 @@ thing whichever arm produced it.
   directions are reported apart, never pooled, each with a note on what its critic could see.
 - **Attempts.** Both pipelines get up to 10 reward-machine generation attempts, the first included.
   Labeling, descriptions and FARM tagging keep their own limits.
+- **Labeling repair.** Before any repair, `repair-labeling` gives each bundle one class from replays of
+  its card's traces: `missing`, `load`, `crash`, `wrong` or `ok`. That class is the measured failure
+  rate and is never overwritten. A failed labeling is then repaired by the bundle's own generator
+  (`deepseek-v4.1-flash` or `glm-5.3-flash` only) in up to 10 rounds, each shown the failure
+  evidence. The Reward Machine is never touched. A bundle still failing after the loop is `unfixed`
+  and goes to an outside agent step; if the agent changes the labeling and it then checks `ok`, the
+  bundle is `fixed-by-agent` and still counts as failed.
 - **Prompts.** Each pipeline keeps its own prompts. ARM-FM runs as its authors ran it, without worked
   examples; FARM keeps its examples as part of the method. The paper states the asymmetry and any gain
   from the examples is a result to show. No control run.
@@ -66,6 +73,8 @@ thing whichever arm produced it.
 - A results table without the time-limit asymmetry line, or with pooled cross-critic numbers, is wrong.
 - With every reward switch at its default, compiled RM text is byte-identical to the text from
   before the switches existed.
+- Labeling repair never edits a Reward Machine and never replaces the class recorded before repair.
+  A repaired or agent-fixed bundle is still a failure in the failure rate.
 
 ## Rationale and tradeoffs
 
@@ -84,6 +93,8 @@ and a restart is easier to trust.
 - `trace-bank`, `replay-traces`, `rm-facts` and `test-rl --judge`: card checks and judged results.
 - `generate-suite` and `run-suite`: statuses, skip and retry rules, arm settings, call caps.
 - `ablate-rm`: which term each switch owns, and no-op detection.
+- `repair-labeling` with `app/src/benchmark/labeling_repair.py`: the classes, the 10-round limit, the
+  small-model gate, and the record beside each bundle (it keeps the machine's hash and the first class).
 - `aggregate-suite`: the asymmetry line on every table and per-direction cross-critic summaries.
 - Card approval, no human fixes, equal model pairs and the prompt-budget decision are Review-only:
   they are rules about how the experiment is run, which no check can observe.
@@ -97,3 +108,5 @@ and a restart is easier to trust.
   paraphrases claim clause identity and only generate; a card miss counts only when its expected result
   is confirmed. The progress-ablation control and the -0.5 sensitivity run are dropped (no record
   listed them as planned).
+- 2026-11-12: Labeling repair rule added with the `repair-labeling` command (testing program slice
+  `labeling-repair`).

@@ -34,7 +34,7 @@ from src.engines import ProposalValidationError, RetryableEngineError
 from src.prompts import read_prompt, render_prompt
 
 from .artifacts import ArtifactBundle, BundleManifest
-from .generation import _extract_artifact, _extract_code, _parse_descriptions
+from .generation import _extract_artifact, _parse_descriptions, extract_labeling_code
 from .probe import EpisodeProbe, probe_labeling
 from .runtime import load_labeling_functions
 
@@ -244,7 +244,7 @@ def refine_labeling(
     loop = _Loop(
         "labeling",
         template.replace("{REWARD_MACHINE}", rm_text),
-        _extract_code,
+        extract_labeling_code,
         load,
         lambda candidate: (
             f"{critic_template}\n\n---\n\n## Reward machine\n\n```plaintext\n{rm_text}\n```\n\n"

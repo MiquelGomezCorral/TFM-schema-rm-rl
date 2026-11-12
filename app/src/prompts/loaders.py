@@ -8,8 +8,9 @@ from importlib.resources import files
 from string import Template
 from typing import Literal
 
-PromptFamily = Literal["compiler", "arm_fm"]
+PromptFamily = Literal["compiler", "arm_fm", "repair"]
 PromptAgent = Literal[
+    "labeling_repair",
     "creator",
     "critic",
     "rm_tagger",
@@ -50,6 +51,12 @@ PROMPTS = {
             "description_generator": "description_generator",
         },
         "optional": {"history"},
+    },
+    # One user prompt for both pipelines; the system prompt is the bundle's own generator's.
+    "repair": {
+        "directory": "repair",
+        "files": {"labeling_repair": "labeling-repair"},
+        "optional": {"labeling"},
     },
 }
 

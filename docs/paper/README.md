@@ -372,3 +372,178 @@ fix; it needs the finished runs under `outputs/` (see the README).
 
 **Code.** `judge_columns` in `app/scripts/aggregate_suite.py`, `judge_means` in `app/scripts/test_rl.py`;
 commit `0f7e56b`, C2 final head `7ae1157`.
+
+### A critic outage no longer multiplies generator requests (`critic-outage-retry/`), 2026-11-12
+
+**What it shows.** Before the fix, a failed critic request (outage or unreadable output) restarted the
+attempt and asked the generator again. In the FARM worst case, ten outages before every rejection, that
+was 110 generator requests for 10 counted attempts, while ARM-FM got 10 in the same setting; the benchmark
+promises the same limit to both arms. Now the failed request repeats on the same candidate (up to 11
+requests) and the case takes 10 generator requests for 10 counted attempts. Scripted engines on a toy
+task: a data point on the accounting, not a card result.
+
+**Evidence.** 17 probe rows (11 FARM, 6 ARM-FM) on the tree before the fix (`fb36d17`) and on the freeze
+(`a77709b`), reproduced for this entry.
+
+**Files.** `README.md`, `check/f7_limits.py` and its two JSON outputs, `graphs/` (the probe machine).
+
+**Rerun** (no LLM call): `f7_limits.py` on a copy of `fb36d17` and on the head; compare `proposal_requests`
+of the row "10 critic outages, then one rejection": 110 before, 10 after.
+
+**Code.** `retry_critic` and `CriticUnavailableError` in `app/src/engines/errors.py`; commit `9611837`,
+merged as `7949c1d`.
+
+### Step 1 has a previous valuation (`step1-previous-valuation/`), 2026-11-12
+
+**What it shows.** A labeling rule that remembers the previous step raised `KeyError` at step 1, because
+the previous valuation started empty. It now starts with every proposition false. Fresh-runtime runs of
+each environment page's executable rows on seeds 1 to 50 crashed at step 1 on 50 of 50 layouts before
+(48 of 50 where the scenario can drop the key) and run with 0 errors and 0 differences from the reference
+labeler after, over 10,000-step random walks too.
+
+**Evidence.** Per-page counts before and after (`check/pages-*.json`) and the replay of the two pilot
+machines, which is unchanged (`check/pilot-replay-*.json`).
+
+**Files.** `README.md`, `check/prev_false_pages.py`, `graphs/` (the two pilot machines).
+
+**Rerun** (no LLM call): `prev_false_pages.py before <runtime copy of 6149c47>` and `after`.
+
+**Code.** `RewardMachineRuntime.evaluate_labeling` in `app/src/arm_fm/runtime.py`; commit `1a25106`, merged
+as `50a7a96`.
+
+### A pre-seeded probe hides the step-1 crash (`preseeded-memory-probe/`), 2026-11-12
+
+**What it shows.** The first check of the KeyCorridor documentation example for `key_found` handed the
+function a previous valuation it wrote itself and passed on 50 of 50 layouts. Run through a fresh runtime,
+the same unguarded expression raised `KeyError` at step 1 on 50 of 50 (0 steps checked); the guarded form,
+or the runtime default of the step-1 entry, runs 2,113 steps with 0 errors and 0 differences. A check that
+supplies the state the code is meant to create hides the bug about that state.
+
+**Evidence.** Three runs of one expression on the solving plan of `cx-sequence`, seeds 1 to 50, on the
+wave before the runtime change (`6149c47`) and on the freeze (`a77709b`); the reviewer's original logs.
+
+**Files.** `README.md`, `check/cold_start_vs_preseeded.py` and its two JSON outputs, `evidence/`,
+`graphs/` (the probe machine).
+
+**Rerun** (no LLM call): the script on a copy of `6149c47` and on the head; `error_runs` of the fresh
+unguarded row is 50 before and 0 after.
+
+**Code.** `evaluate_labeling` in `app/src/arm_fm/runtime.py` and the `key_found` row of the KeyCorridor
+`environment-code.md`; commits `28ae75e` and `1a25106`.
+
+### Box chain: the solving plan now solves it (`box-chain-solver/`), 2026-11-12
+
+**What it shows.** The event-room cards with a falling box ship a solving plan the benchmark trusts. An
+independent sweep (12 cards x 50 seeds) found the plan missed the card's own rule in 74 of 600 runs, all on
+the six ChainResponse cards, and a direct walk to the exit passed 8 cards. The scripted policy now waits
+holding the box until every planned fall has fired, and the box cards ask for the box at the exit. The same
+sweep gives 0 solve misses of 600 and 1 card still passed by a direct exit (`tpl-absence-3-nogoal`, which
+forbids only the switch). The cards changed together with the solver, so the sweep cannot separate the two.
+
+**Evidence.** Per-card counts before (`69b64db`) and after (`a77709b`), with the first misses by seed.
+
+**Files.** `README.md`, `check/box_chain_sweep.py`, `check/compile_cards.py`, two JSON outputs, `graphs/`
+(the `cx-box` and `tpl-chain-response-2-goal` machines).
+
+**Rerun** (no LLM call): the sweep on a copy of `69b64db` and on the head; it ends with `total: 74 solve
+misses over 600 runs on 12 cards` and `total: 0 ...`.
+
+**Code.** `_fall_pending` in `app/src/arm_fm/service_room.py` and the `tpl-chain-response-*` cards; commit
+`fb36d17`, merged as `6149c47`.
+
+### `key_found` needs a clear view (`key-found-clear-view/`), 2026-11-12
+
+**What it shows.** The reference labeler read `key_found` as "the key is inside the 7x7 box in front of the
+agent", so a wall or closed door did not hide it: it was already true on step 1 in 9 of 50 KeyCorridor
+layouts without the key in the agent's view. It now reads the agent's own view (`env.gen_obs()["image"]`),
+which stops at walls and doors: 0 of 50, with the solving plan still succeeding on 50 of 50 and no matching
+key held before `key_found`.
+
+**Evidence.** Counts on each tree (`check/before-69b64db.json`, `check/after-a77709b.json`); the per-seed
+list of the nine layouts is in the reviewer's run, not here.
+
+**Files.** `README.md`, `check/key_view_check.py`, `check/compile_cards.py`, `graphs/` (the `cx-sequence`
+machine).
+
+**Rerun** (no LLM call): `key_view_check.py` on a copy of `69b64db` and on the head; `key_found_without_view`
+is 9 before, 0 after.
+
+**Code.** `key_seen` in `app/src/benchmark/reference_labels.py`; commit `fb36d17`, merged as `6149c47`.
+
+### One counted attempt per candidate, the same in both arms (`attempt-counting/`), 2026-11-12
+
+**What it shows.** The benchmark gives both arms 10 attempts, but FARM reran a failed attempt for free (110
+generator requests for 10 counted attempts in the worst case) while ARM-FM counted outages and
+authentication errors as used attempts, and FARM stamped 1 attempt when the provider never answered. Now
+every candidate the generator returns uses one attempt; only a provider outage keeps the attempt number,
+10 reruns at most, then ends as a provider error. Scripted engines on a toy task, so illustrative: no card
+was run.
+
+**Evidence.** 17 probe rows on the tree before (`69b64db`) and on the freeze (`a77709b`).
+
+**Files.** `README.md`, `check/f7_limits.py` and its two JSON outputs, `graphs/`.
+
+**Rerun** (no LLM call): `f7_limits.py` on a copy of `69b64db` and on the head; compare generator requests
+and counted attempts row by row.
+
+**Code.** `_Pipeline.generated` in `app/scripts/generate_rm.py`, `_Generation.generate_reward_machine` in
+`app/src/arm_fm/generation.py`; commits `fb36d17` and `28ae75e`, merged as `6149c47`.
+
+### What an independent card review found (`card-verdict-counterexamples/`), 2026-11-12
+
+**What it shows.** A reviewer who had not seen earlier audits judged all 58 cards by building physical
+counterexamples: 21 ok, 16 weak, 5 unclear, 8 wrong-expected, 8 broken. Eight broken cards are the six
+ChainResponse cards (see the box-chain entry) and two counting cards whose "wrong" plan (pick the key up and
+put it down) actually held it for two or more steps: 7 of 100 layouts satisfied the count before, 0 of 100
+now. The eight Response cards still judge a state, not an event, so opening and closing a door fails the
+card by design (the Response limitation, an open paper item).
+
+**Evidence.** `evidence/verdicts.json` and `independence.json` (the reviewer's frozen verdicts and marker),
+the counting check on both trees, and the counterexample cases on the freeze.
+
+**Files.** `README.md`, `check/` (three scripts, three outputs), `evidence/`, `graphs/` (two card machines).
+
+**Rerun** (no LLM call): `count_negatives.py` on a copy of `7ae1157` and on the head: `"false_negatives": 7`
+then `0`.
+
+**Code.** The counting cards in `experiments/benchmark/templates/tasks.json`; commit `fb36d17`, merged as
+`6149c47`.
+
+### Learner probe X1: PPO tuning (`x1-ppo-tune/`), 2026-11-12
+
+**What it shows.** The pilot chose DQN (0.77 of evaluation points solved) over PPO (0.413), which never
+solved UnlockPickup. Setting `s07` (learning rate 1e-3, 16 minibatches, 10 epochs, 16 environments, rollout
+256) solves both pilot cards on 3 of 3 seeds, scores 0.711 on the same rule, and ran 2.2 times faster than
+the pilot DQN at the same load (4.4 against 9.9 minutes). Nine of 18 settings solve UnlockPickup on both
+seeds, so it is not a lucky value. On procedural layouts `s07` solves UnlockPickup on 2 of 3 seeds.
+
+**Evidence.** Per-run tables for all 18 settings, the pilot's own evaluation files, the same-load speed
+check and the layout reset check.
+
+**Files.** `README.md`, `evidence/`, `check/` (summary script, reset check, suite files), `graphs/` (the two
+pilot machines).
+
+**Rerun.** Training only, 4 to 17 minutes a run, on branch `MiquelGomezCorral/tp-x1-ppo-tune`; the README
+lists the commands.
+
+**Code.** The tuning suites, commit `306d402` on that branch (not merged at the freeze).
+
+### Learner probe X2: DQN on 8 environments and counterfactual experience (`x2-dqn-crm/`), 2026-11-12
+
+**What it shows.** DQN on 8 training environments with half the gradient updates (`train_frequency: 8`)
+solves 0.735 of evaluation points on the two pilot cards (pilot DQN 0.77) and ran 1.9 times faster than one
+environment in a concurrent 100k-step check (1.85 times for the same update ratio over 500k). Counterfactual
+experience (one extra transition per other machine state) hurt: 0.00 with 8 environments and 0.12 with one.
+On procedural layouts the final evaluation spreads from 0.01 to 0.82 over three seeds. A seeding finding:
+neighbouring run seeds share 28 of 32 layouts in the 8-environment code.
+
+**Evidence.** Per-run tables, the saved output of three code checks (defaults identical, counterfactual adds
+exactly 3 rows per step, equal update counts for 1 and 8 environments), the timing check and the reset check.
+
+**Files.** `README.md`, `evidence/`, `check/` (check scripts, the code diff), `graphs/` (the two pilot
+machines).
+
+**Rerun.** Checks K1 to K3 need no training; the runs are training only, 7 to 33 minutes each, on branch
+`MiquelGomezCorral/tp-x2-dqn-crm`.
+
+**Code.** The learner change, commit `236dda1` on that branch (not merged at the freeze).

@@ -781,7 +781,7 @@ def _refine_labeling(
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             candidate = request("\n\n".join(history))
-            labeling_source = _extract_code(candidate)
+            labeling_source = extract_labeling_code(candidate)
             load_labeling_functions(labeling_source, propositions)
             accepted, feedback, raw_response = review(labeling_source)
             attempts.append(
@@ -899,7 +899,8 @@ def _extract_artifact(text: str) -> str:
     return (match.group(1) if match else text).strip()
 
 
-def _extract_code(text: str) -> str:
+def extract_labeling_code(text: str) -> str:
+    """The Python source in a model reply: its first ```python block, else the whole reply."""
     match = re.search(r"```python\s*(.*?)```", text, flags=re.IGNORECASE | re.DOTALL)
     return (match.group(1) if match else _extract_artifact(text)).strip() + "\n"
 

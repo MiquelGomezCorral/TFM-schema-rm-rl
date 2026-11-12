@@ -15,6 +15,7 @@ from src.compiler import (
     parse_paper_reward_machine,
     serialize_paper_reward_machine,
 )
+from src.config import Configuration
 
 from .runtime import load_labeling_functions
 
@@ -148,7 +149,7 @@ class ArtifactBundle:
             stage for stage, status in self.manifest.stage_status.items() if status == "complete"
         }
 
-    def save(self, directory: str | Path, *, overwrite: bool = False) -> Path:
+    def save(self, directory: str | Path, *, overwrite: bool = Configuration.overwrite) -> Path:
         """Write a bundle using simple JSON/text files and no hidden state."""
         target = Path(directory)
         if target.exists() and any(target.iterdir()) and not overwrite:
@@ -173,7 +174,8 @@ class ArtifactBundle:
         return target
 
     @classmethod
-    def load(cls, directory: str | Path) -> ArtifactBundle:
+    def load(cls, directory: str | Path, *, allow_missing_labeling: bool = False) -> ArtifactBundle:
+        """Read a bundle folder; ``allow_missing_labeling`` reads an absent ``labeling.py`` as empty."""
         root = Path(directory)
         try:
             manifest = BundleManifest.from_dict(
@@ -188,7 +190,12 @@ class ArtifactBundle:
                 if reward_path.exists()
                 else None
             )
-            labeling = (root / "labeling.py").read_text(encoding="utf-8")
+            labeling_path = root / "labeling.py"
+            labeling = (
+                ""
+                if allow_missing_labeling and not labeling_path.exists()
+                else labeling_path.read_text(encoding="utf-8")
+            )
             descriptions = _load_json(root / "state_descriptions.json", {})
             embeddings = _load_json(root / "embeddings.json", {})
             attempts = _load_json(root / "attempts.json", [])

@@ -20,7 +20,7 @@ from typing import Any
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from src.arm_fm.artifacts import ArtifactBundle, load_bundle
+from src.arm_fm.artifacts import ArtifactBundle
 from src.arm_fm.environments import make_environment, terminated_with_reward
 from src.arm_fm.evaluation import ablation_of
 from src.arm_fm.runtime import RewardMachineEnvironment, RewardMachineRuntime
@@ -376,10 +376,12 @@ def find_bundles(folder: Path) -> list[BundleRef]:
     ]
 
 
-def load_machine_bundle(ref: BundleRef) -> ArtifactBundle | str:
+def load_machine_bundle(
+    ref: BundleRef, *, allow_missing_labeling: bool = False
+) -> ArtifactBundle | str:
     """The bundle of ``ref`` when it loads and holds a Reward Machine, else why it cannot be used."""
     try:
-        bundle = load_bundle(ref.path)
+        bundle = ArtifactBundle.load(ref.path, allow_missing_labeling=allow_missing_labeling)
     except Exception as error:  # a bundle on disk can fail to load in any way; that is its result
         return f"{type(error).__name__}: {error}"
     if bundle.reward_machine is None:
