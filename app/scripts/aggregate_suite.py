@@ -5,8 +5,9 @@ Usage:
 
 One row per run of the suite (``run_suite.expand_runs``), with the run's status, then a
 per-card table that sets the arms side by side. Judged success, hard and soft breaks and open
-at end come from the run's ``judge.json`` (``test-rl --judge``); a run without one shows
-"not evaluated". Env success, returns and episode length come from the last ``eval.csv`` row.
+at end are the episode means in the run's ``judge.json`` (``test-rl --judge``); open at end is
+the hard and the soft clauses still open, added. A run without one shows "not evaluated". Env
+success, returns and episode length come from the last ``eval.csv`` row.
 An optional ``replay_summary:`` in the runs.yaml names a ``replay-traces`` summary JSON with a
 ``machine_check`` per bundle, keyed by the bundle path under the suite's ``bundles:`` folder
 (``<arm>/<card-id>``, or ``<card-id>/off-<switch>`` for ablation); a failed check flags
@@ -39,7 +40,7 @@ ASYMMETRY = (
 )
 NOT_EVALUATED = "not evaluated"
 SEED_TARGET = 3
-JUDGE_KEYS = ("judged_success", "hard_breaks", "soft_breaks", "open_at_end")
+JUDGE_KEYS = ("judged_success", "hard_breaks", "soft_breaks")  # open_at_end is built apart
 # (table header, results key) of the metric columns, in table order.
 METRICS = (
     ("judged success", "judged_success"),
@@ -114,11 +115,18 @@ def eval_columns(card: dict, rows: list[dict], status: str) -> dict:
 
 
 def judge_columns(folder: Path) -> dict:
-    """The judge's columns, or "not evaluated" when ``test-rl --judge`` has not run."""
+    """The judge's columns, or "not evaluated" when ``test-rl --judge`` has not run.
+
+    ``judge.json`` holds the episode means (``mean_*``, see ``test_rl.JUDGE_MEANS``). Open at end
+    is the mean number of clauses still open, hard and soft together; a missing mean stays empty.
+    """
     judge = read_json(folder / "judge.json")
     if not judge:
         return {"judged_success": NOT_EVALUATED}
-    return {key: judge.get(key) for key in JUDGE_KEYS}  # a missing key stays empty
+    columns = {key: judge.get(f"mean_{key}") for key in JUDGE_KEYS}
+    hard_open, soft_open = judge.get("mean_hard_open"), judge.get("mean_soft_open")
+    columns["open_at_end"] = None if None in (hard_open, soft_open) else hard_open + soft_open
+    return columns
 
 
 def machine_wrong(bundle: Path | None, bundles: Path, replay: dict | None) -> bool | None:

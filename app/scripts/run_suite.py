@@ -9,12 +9,13 @@ A run is one card x arm x learner x variant x seed. Its folder is
 suite's ``card.json`` and ``run-config.yaml``. A rerun skips ``finished`` runs (``summary.json``
 present), leaves a run whose process is alive alone, renames an ``interrupted`` or ``timed-out``
 folder to ``<folder>.<status>`` and restarts it from zero (a ``timed-out`` run only with
-``--retry-timed-out``), and never trains a run whose bundle lacks a file training needs or has
-status ``pipeline-failed`` (``no-data``). A bundle with status ``provider-error`` or
-``incomplete`` is retried by bundle generation, not here: its runs stay ``pending``. The driver
-writes ``resources.json`` into each run folder. Linux only: it reads ``/proc``. One driver per
-suite: a second one exits at once (lock ``outputs/runs/bench__<suite>.lock``); ``--dry-run``
-takes no lock. If the driver dies, its children get SIGTERM (``PR_SET_PDEATHSIG``).
+``--retry-timed-out``), and never trains a run whose bundle lacks a file training needs, has
+status ``pipeline-failed`` or is an ablation no-op (``no-data``, with the reason). A bundle with
+status ``provider-error`` or ``incomplete`` is retried by bundle generation, not here: its runs
+stay ``pending``. The driver writes ``resources.json`` into each run folder. Linux only: it reads
+``/proc``. One driver per suite: a second one exits at once (lock
+``outputs/runs/bench__<suite>.lock``); ``--dry-run`` takes no lock. If the driver dies, its
+children get SIGTERM (``PR_SET_PDEATHSIG``).
 """
 
 import ctypes
@@ -35,7 +36,10 @@ from typing import IO
 
 import yaml
 
+from src.benchmark.traces import ablation_settings
 from src.config import Configuration
+
+from .ablate_rm import NO_PART
 
 ROOT = Configuration.WORKSPACE_PATH
 RUNS_PATH = Configuration.OUTPUT_PATH / "runs"
@@ -222,8 +226,10 @@ def bundle_problem(run: Run) -> tuple[str, str] | None:
     """The run status and the reason when its bundle cannot be trained on now, else None.
 
     ``no-data``: the bundle folder or a file training needs is missing, or its
-    ``<card-id>.status.json`` (beside the folder) says ``pipeline-failed``. ``pending``: that
-    status is ``provider-error`` or ``incomplete``, which bundle generation retries.
+    ``<card-id>.status.json`` (beside the folder) says ``pipeline-failed``, or it is an ablation
+    variant whose manifest marks it a no-op (the machine equals its source: not trained; the
+    ``none`` control stays eligible). ``pending``: that status is ``provider-error`` or
+    ``incomplete``, which bundle generation retries.
     """
     if run.bundle is None:
         return None
@@ -240,6 +246,10 @@ def bundle_problem(run: Run) -> tuple[str, str] | None:
     missing = [name for name in BUNDLE_FILES if not (ROOT / run.bundle / name).is_file()]
     if missing:
         return NO_DATA, f"bundle lacks {', '.join(missing)}"
+
+    ablation = ablation_settings(ROOT / run.bundle)
+    if ablation.get("no_op") and ablation.get("off") != NO_PART:
+        return NO_DATA, f"ablation no-op: off={ablation.get('off')} changes nothing, not trained"
     return None
 
 

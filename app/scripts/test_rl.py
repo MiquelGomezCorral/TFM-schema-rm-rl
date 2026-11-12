@@ -405,7 +405,7 @@ class JudgeRecorder:
             "rm_bundle": str(self.config.bundle) if self.config.bundle else None,
             "episodes": len(episodes),
             "rm_return_definition": RM_RETURN_DEFINITION,
-            **{f"mean_{name}": _mean(episodes, name) for name in JUDGE_MEANS},
+            **judge_means(episodes),
             "per_episode": episodes,
         }
         write_json(directory / "judge.json", summary, indent=2)
@@ -437,6 +437,11 @@ class JudgeRecorder:
             rollout.rm_stopped = bool(terminated) and not rollout.terminated
             done = bool(terminated) or bool(truncated)
         return rollout, rm_return
+
+
+def judge_means(episodes: list[dict[str, Any]]) -> dict[str, float | None]:
+    """The ``mean_<name>`` entries of ``judge.json``, one per ``JUDGE_MEANS`` name."""
+    return {f"mean_{name}": _mean(episodes, name) for name in JUDGE_MEANS}
 
 
 def _mean(episodes: list[dict[str, Any]], name: str) -> float | None:

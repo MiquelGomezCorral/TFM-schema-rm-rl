@@ -91,13 +91,14 @@ the pipeline does not report is `null`; a FARM failure bundle has `null` `critic
 and `retries`, because its labeling attempts are lost with the run. If git cannot tell, `commit`
 and `dirty` are `null` and `provisional` is true. `provisional` is true unless `main` is checked
 out and nothing under `app/` changed (the dirty check covers `app/`).
-`raw_responses.json` adds one record per model request,
+`raw_responses.json` adds one record per request sent to the provider,
 `{stage, role, model_requested, model_reported}`; `model_reported` is the model named in the
-provider's reply and `null` when the provider names none. The arms count differently, so their
-`attempts` and `retries` are not comparable numbers: FARM `attempts` are proposals (a critic
-rejection starts the next one) and `retries` are reruns after provider or content failures, one
-for each failure that another try followed (11 failed tries in a row make 10 retries); ARM-FM
-`attempts` are loop rounds and `retries` the rounds that failed.
+provider's reply and `null` when the provider names none. A model that refuses reasoning `none`
+gets it again as `low`: that is two requests, and the refused one has `model_reported` `null`.
+The arms count differently, so their `attempts` and `retries` are not comparable numbers: FARM
+`attempts` are proposals (a critic rejection starts the next one) and `retries` are reruns after
+provider or content failures, one for each failure that another try followed (11 failed tries in a
+row make 10 retries); ARM-FM `attempts` are loop rounds and `retries` the rounds that failed.
 
 ### Cross-critic
 
@@ -128,6 +129,10 @@ ids are used: the ablation suite reads its cards from `complex/tasks.json` and t
 In order: `run-suite --suite <runs.yaml> --dry-run`, then without `--dry-run`, then
 `test-rl --judge` over the finished runs, then `aggregate-suite --suite <runs.yaml> --output <dir>`.
 
+An ablation variant whose manifest marks it a no-op (`effective_settings.ablation.no_op`: the switch
+changes nothing in that machine) is listed `no-data` with that reason and is not trained. The
+`none` control, which `ablate-rm` also marks no-op, stays eligible.
+
 <!-- seeds: the target is three seeds [1, 2, 3]; the committed runs.yaml files carry seed 1. -->
 
 Learner calibrations (disclosed, not tuned per arm): see `experiments/benchmark/configs/dqn.yaml`
@@ -155,6 +160,8 @@ Smoke and test output goes to `outputs/wave-tests/` and is never committed.
 
 Generation (from the stamps): attempts, critic interventions, retries, wall time, calls. Training
 (from `aggregate-suite`): run status, judged success, environment success, hard and soft breaks,
-open items at the end, steps to first environment success (`n/a` when the environment reward does
-not match the task), evaluation success over the last three evaluation points, environment return,
-RM return (within an arm only), episode length, wall time, peak RSS, and the `machine-wrong` flag.
+open items at the end (hard and soft clauses together; judged success, breaks and open items are
+means over the test episodes), steps to first environment success (`n/a` when the environment
+reward does not match the task), evaluation success over the last three evaluation points,
+environment return, RM return (within an arm only), episode length, wall time, peak RSS, and the
+`machine-wrong` flag.
