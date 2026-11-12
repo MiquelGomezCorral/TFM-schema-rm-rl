@@ -19,6 +19,7 @@ from src.compiler.reward_machine import RewardMachineStructure
 from src.config import Configuration, PriorityLevel
 from src.engines import (
     CriticResult,
+    CriticValidationError,
     ImmediateEngineError,
     OpenCodeEngine,
     ProposalValidationError,
@@ -181,28 +182,32 @@ class OrchestrationTests(unittest.TestCase):
         self.assertTrue(self.execute())
         self.saved.assert_called_once()
 
-    def test_critic_provider_failure_reruns_the_attempt_without_history(self):
+    def test_failed_critic_request_is_retried_on_the_same_candidate(self):
         self.critic.verdicts = [
             RetryableEngineError("critic unavailable"),
+            CriticValidationError("malformed critic output"),
             CriticResult(True, "ok"),
         ]
-        compiled = [result("rm-before-retry"), result()]
-        with (
-            patch(
-                "scripts.generate_rm.setup_environment_and_engines",
-                return_value=(ENV, self.engine, self.critic),
-            ),
-            patch(
-                "src.utils.generation_pipeline.derive_output_paths", return_value=(Path("out.rm"),)
-            ),
-            patch("src.utils.generation_pipeline.save_results", self.saved),
-            patch("scripts.generate_rm.compile_dfas", return_value=()),
-            patch("scripts.generate_rm.build_compilation_result", side_effect=compiled),
-        ):
-            self.assertTrue(
-                generate_rm(Configuration(environment="demo.md", tasks=["finish"], output="out.rm"))
-            )
-        self.assertEqual(self.engine.histories, ["None.", "None."])
+        warnings = []
+
+        self.assertTrue(self.execute(hooks=GenerationHooks(warning=warnings.append)))
+
+        self.assertEqual(self.engine.histories, ["None."])  # one candidate was generated
+        self.assertEqual(len(self.critic.candidates), 3)
+        self.assertEqual(len(warnings), 2)
+
+    def test_critic_that_keeps_failing_ends_the_run_without_a_new_candidate(self):
+        self.critic.verdicts = [RetryableEngineError("Connection error.")] * (
+            Configuration.UNCOUNTED_RETRIES + 1
+        )
+        failures = []
+
+        self.assertFalse(self.execute(hooks=GenerationHooks(failure=failures.append)))
+
+        self.assertEqual(self.engine.histories, ["None."])
+        self.assertEqual(len(self.critic.candidates), Configuration.UNCOUNTED_RETRIES + 1)
+        self.assertIn("Critic failed", failures[0])
+        self.assertIn("Connection error.", failures[0])
 
     def test_critic_rejection_recompiles_and_keeps_history(self):
         self.critic.verdicts = [

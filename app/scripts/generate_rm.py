@@ -32,6 +32,7 @@ from src.engines import (
     ProposalSelection,
     ProposalValidationError,
     RetryableEngineError,
+    retry_critic,
 )
 from src.models import EnvironmentDescription
 from src.utils import (
@@ -322,8 +323,15 @@ class _Pipeline:
             return True
         self.progress.start(PipelineStep.CRITIC)
 
-        critic = self.critic_engine.review_candidate(
-            task, clauses_json(compiled.proposal.clauses), compiled.text, compiled.warnings
+        def request_verdict():
+            self.progress.check_cancelled()
+            return self.critic_engine.review_candidate(
+                task, clauses_json(compiled.proposal.clauses), compiled.text, compiled.warnings
+            )
+
+        # A failed critic request is repeated on this candidate; it never restarts generation.
+        critic = retry_critic(
+            request_verdict, lambda message: self.progress.warn(f"Critic {message}")
         )
 
         self.progress.artifact(
