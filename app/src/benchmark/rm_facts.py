@@ -125,12 +125,19 @@ def _normalized(raw: object) -> list[list[Any]] | None:
 
 
 def clause_status(stored: list[list[Any]] | None, card: Card) -> str:
-    """``exact``, ``also_ok``, ``mismatch`` or ``missing`` for the ``_normalized`` stored clauses."""
+    """``exact``, ``also_ok``, ``mismatch`` or ``missing`` for the ``_normalized`` stored clauses.
+
+    ``exact`` holds every clause of ``expect`` except the card's ``forced`` ones, which are optional
+    extras: the compiler policy drops orders the world guarantees, so neither keeping nor dropping
+    them counts against the output.
+    """
     if stored is None:
         return "missing"
     # A Counter keeps a repeated clause: the reward compiler prices each copy.
     clauses = Counter((template, tuple(names), priority) for template, names, priority in stored)
-    if clauses == Counter(card.expect):
+    expected = Counter(card.expect)
+    required = Counter(c for i, c in enumerate(card.expect) if i not in card.forced)
+    if required <= clauses <= expected:
         return "exact"
     if any(clauses == Counter(option) for option in card.also_ok):
         return "also_ok"

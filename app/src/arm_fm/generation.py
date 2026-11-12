@@ -23,7 +23,14 @@ from src.compiler import (
     serialize_paper_reward_machine,
 )
 from src.config import Configuration
-from src.engines import ProposalSelection
+from src.engines import (
+    CriticUnavailableError,
+    CriticValidationError,
+    ImmediateEngineError,
+    ProposalSelection,
+    RetryableEngineError,
+    retry_critic,
+)
 from src.models import EnvironmentDescription
 from src.prompts import read_prompt, render_prompt
 
@@ -80,74 +87,6 @@ def arm_fm_role_models(CONFIG: Configuration) -> tuple[str | None, str | None]:
     return CONFIG.generator_model, CONFIG.critic_model
 
 
-def generate_reward_machine(
-    task: str,
-    environment: EnvironmentDescription,
-    engine: object,
-    *,
-    critic_engine: object,
-    max_attempts: int,
-) -> tuple[PaperRewardMachine | None, str, list[StageAttempt]]:
-    """Generate and refine one paper Reward Machine, keeping the last parseable candidate."""
-    if not task.strip():
-        raise ValueError("Task must be nonempty")
-    labeling_api = environment.require_labeling_api()
-    attempts: list[StageAttempt] = []
-    machine: PaperRewardMachine | None = None
-    machine_text = ""
-    rm_history: list[str] = []
-
-    for attempt in range(1, max_attempts + 1):
-        try:
-            candidate = _request_text(
-                engine,
-                "rm_generator",
-                environment=environment.markdown,
-                task=task,
-                api=labeling_api,
-                history="\n\n".join(rm_history),
-            )
-            machine_text = _extract_artifact(candidate)
-            machine = parse_paper_reward_machine(
-                machine_text,
-                propositions=environment.proposition_ids,
-                require_final_states=True,
-            )
-
-            accepted, feedback, raw_response = _critic(
-                critic_engine,
-                "rm_critic",
-                environment=environment.markdown,
-                task=task,
-                candidate=machine_text,
-            )
-
-            attempt_record = StageAttempt(
-                "reward_machine",
-                attempt,
-                "accepted" if accepted else "rejected",
-                machine_text,
-                feedback,
-                "",
-                raw_response,
-            )
-
-            attempts.append(attempt_record)
-
-            if accepted:
-                break
-
-            rm_history.append(feedback)
-
-        except Exception as error:
-            attempts.append(
-                StageAttempt("reward_machine", attempt, "failed", machine_text, error=str(error))
-            )
-            rm_history.append(str(error))
-
-    return machine, machine_text, attempts
-
-
 def generate_baseline_bundle(
     task: str,
     environment: EnvironmentDescription,
@@ -163,8 +102,8 @@ def generate_baseline_bundle(
     """
     run = _Generation(task, environment, engine, critic_engine, rm_attempts=CONFIG.attempts)
     started = time.monotonic()
-    run.generate_reward_machine()
     try:
+        run.generate_reward_machine()
         run.require_accepted_reward_machine()
         run.generate_labeling()
         run.generate_descriptions()
@@ -228,12 +167,89 @@ class _Generation:
         return run
 
     def generate_reward_machine(self) -> None:
-        self.machine, self.machine_text, self.attempts = generate_reward_machine(
-            self.task,
-            self.environment,
-            self.engine,
-            critic_engine=self.critic_engine,
-            max_attempts=self.rm_attempts,
+        """Generate and refine one paper Reward Machine, keeping the last parseable candidate.
+
+        Every round is an attempt: accepted, rejected by the critic or failed on its content, as
+        in the compiler path. A provider outage (``RetryableEngineError``) runs the round again
+        without using one; after ``Configuration.OUTAGE_RETRIES`` reruns in a row the run ends
+        with that error. An ``ImmediateEngineError`` (authentication, bad request, or an exhausted
+        critic, ``CriticUnavailableError``) ends the run at once, as in the compiler path; when the
+        generator had already returned the round's candidate, it keeps its attempt as a failed
+        round, and when the generator itself failed it uses none. ``self.attempts`` holds every
+        round, also when an error leaves.
+        """
+        if not self.task.strip():
+            raise ValueError("Task must be nonempty")
+        rm_history: list[str] = []
+
+        attempt, outages = 1, 0
+        while attempt <= self.rm_attempts:
+            generated = False  # the generator returned a candidate in this round
+            try:
+                candidate = _request_text(
+                    self.engine,
+                    "rm_generator",
+                    environment=self.environment.markdown,
+                    task=self.task,
+                    api=self.labeling_api,
+                    history="\n\n".join(rm_history),
+                )
+                generated = True
+                self.machine_text = _extract_artifact(candidate)
+                self.machine = parse_paper_reward_machine(
+                    self.machine_text,
+                    propositions=self.environment.proposition_ids,
+                    require_final_states=True,
+                )
+
+                accepted, feedback, raw_response = _critic(
+                    self.critic_engine,
+                    "rm_critic",
+                    environment=self.environment.markdown,
+                    task=self.task,
+                    candidate=self.machine_text,
+                )
+
+                self.attempts.append(
+                    StageAttempt(
+                        "reward_machine",
+                        attempt,
+                        "accepted" if accepted else "rejected",
+                        self.machine_text,
+                        feedback,
+                        "",
+                        raw_response,
+                    )
+                )
+
+                if accepted:
+                    break
+
+                rm_history.append(feedback)
+
+            except RetryableEngineError as error:
+                outages += 1
+                if outages > Configuration.OUTAGE_RETRIES:
+                    raise RetryableEngineError(
+                        f"Reward Machine attempt {attempt}/{self.rm_attempts} failed "
+                        f"{Configuration.OUTAGE_RETRIES} reruns in a row. Last error: {error}"
+                    ) from error
+                continue
+            except ImmediateEngineError as error:
+                # A candidate that exists keeps its attempt, also when the critic fails for good
+                # (exhausted repeats, authentication); the generator's own failure uses none.
+                if generated:
+                    self._record_failed_round(attempt, error)
+                raise
+            except Exception as error:
+                self._record_failed_round(attempt, error)
+                rm_history.append(str(error))
+            attempt, outages = attempt + 1, 0
+
+    def _record_failed_round(self, attempt: int, error: Exception) -> None:
+        """Record the current candidate's round as failed with ``error``."""
+        self.attempts.append(
+            StageAttempt("reward_machine", attempt, "failed", self.machine_text, error=str(error))
         )
 
     def require_accepted_reward_machine(self) -> None:
@@ -446,7 +462,7 @@ def record_bundle_role_models(
 ) -> None:
     """Record the compiler role models, the attempt limit, the critic verdict and the switches.
 
-    ``max_attempts`` is the critic rejections the run allowed (``CONFIG.attempts``), the
+    ``max_attempts`` is the candidates the run allowed (``CONFIG.attempts``), the
     reward-machine limit that ``arm-fm`` bundles record under the same key.
     The critic verdict is whether a critic accepted the machine. A run without the critic
     records no critic validation: a recorded ``False`` would make
@@ -497,7 +513,8 @@ def rm_stage_counts(attempts: Iterable[Mapping[str, Any]]) -> dict[str, int]:
     """Count the ``arm-fm`` path's reward-machine attempts, critic rejections and failures.
 
     Every loop round is an attempt there, so a failed round counts as an attempt and a retry
-    (the ``farm`` path counts proposals and reruns; see ``record_bundle_stamp``).
+    (the ``farm`` path counts provider reruns as retries; see ``record_bundle_stamp``). A
+    provider outage reruns its round and leaves no record.
     """
     rm_attempts = [item for item in attempts if item["stage"] == "reward_machine"]
     return {
@@ -518,9 +535,10 @@ def record_bundle_stamp(
     ``run_stats`` holds the reward-machine stage's ``attempts``, ``critic_interventions`` and
     ``retries`` and the run's ``wall_time_s``. The labeling and description attempts in
     ``bundle.attempts`` add to the last two. A count the run did not report is null, never
-    estimated. The two arms count differently: ``farm`` attempts are proposals (a critic
-    rejection starts the next one) and its retries are reruns after provider or content
-    failures; ``arm-fm`` attempts are loop rounds and its retries the rounds that failed.
+    estimated. Both arms count an attempt for every new candidate (accepted, rejected by the
+    critic or invalid); their retries differ: ``farm`` retries are reruns after provider
+    outages and failed tagging requests, ``arm-fm`` retries the rounds that failed on their
+    content.
 
     ``dirty`` is whether any file under ``app/`` differs from the commit, untracked files
     included, so bundles written under ``outputs/`` or ``experiments/`` do not taint it. A git
@@ -735,12 +753,15 @@ def generate_compiler_labeling(
     def review(source: str) -> tuple[bool, str, str]:
         if critic_engine is None:
             return True, "", ""
-        verdict = critic_engine.review_labeling(
-            task=task,
-            candidate_rm=compiled.text,
-            api=labeling_api,
-            labeling=source,
-            **context,
+        verdict = retry_critic(
+            lambda: critic_engine.review_labeling(
+                task=task,
+                candidate_rm=compiled.text,
+                api=labeling_api,
+                labeling=source,
+                **context,
+            ),
+            getattr(critic_engine, "warn", None),
         )
         return verdict.accepted, verdict.feedback, ""
 
@@ -777,6 +798,8 @@ def _refine_labeling(
             if accepted:
                 return labeling_source
             history.append(feedback)
+        except CriticUnavailableError:
+            raise  # the critic never answered about this candidate: no new candidate
         except Exception as error:
             attempts.append(
                 StageAttempt("labeling", attempt, "failed", labeling_source, error=str(error))
@@ -851,16 +874,21 @@ def review_reward_machine(
 
 
 def _critic(engine: object, role: str, **values: str) -> tuple[bool, str, str]:
+    """Ask the critic about one candidate, repeating the request while it fails or is malformed."""
+    return retry_critic(lambda: _ask_critic(engine, role, **values), getattr(engine, "warn", None))
+
+
+def _ask_critic(engine: object, role: str, **values: str) -> tuple[bool, str, str]:
     response = _request_text(engine, role, **values)
     try:
         parsed = json.loads(_extract_artifact(response))
     except json.JSONDecodeError as error:
-        raise ValueError("ARM-FM critic returned invalid JSON") from error
+        raise CriticValidationError("ARM-FM critic returned invalid JSON") from error
     if not isinstance(parsed, dict) or not isinstance(parsed.get("accepted"), bool):
-        raise ValueError("ARM-FM critic must return boolean accepted")
+        raise CriticValidationError("ARM-FM critic must return boolean accepted")
     feedback = parsed.get("feedback")
     if not isinstance(feedback, str) or not feedback.strip():
-        raise ValueError("ARM-FM critic feedback must be nonempty")
+        raise CriticValidationError("ARM-FM critic feedback must be nonempty")
     return parsed["accepted"], feedback.strip(), response
 
 

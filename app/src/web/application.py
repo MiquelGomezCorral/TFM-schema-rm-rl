@@ -268,9 +268,7 @@ def _register_start_callback(app: Dash, controller: RunController) -> None:
             return "Every task row must contain text."
         if attempts not in Configuration.ATTEMPT_LIMITS:
             limits = Configuration.ATTEMPT_LIMITS
-            return (
-                f"Enter a whole number from {limits.start} to {limits.stop - 1} critic rejections."
-            )
+            return f"Enter a whole number of attempts from {limits.start} to {limits.stop - 1}."
         if reasoning not in REASONING_LEVELS:
             return "Choose a reasoning level."
         submitted_name = (output_filename or "").strip()
@@ -606,7 +604,7 @@ def _step_attempts(
     value: object,
     locked: bool | None,
 ) -> tuple[object, bool, bool]:
-    """Move the rejection limit one step and keep both buttons inside its bounds.
+    """Move the attempt limit one step and keep both buttons inside its bounds.
 
     A click on a button moves the value; a typed or pasted value is kept untouched, so only
     the two ``disabled`` flags are recomputed and the pair never freezes.

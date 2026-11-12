@@ -212,8 +212,9 @@ if __name__ == "__main__":
         choices=Configuration.ATTEMPT_LIMITS,
         default=Configuration.attempts,
         metavar="N",
-        help="Critic rejections allowed per task, 1 to 10; other failures retry for free "
-        "(default: %(default)s)",
+        help="Reward Machine attempts per task, 1 to 10 (every new candidate counts: accepted, "
+        "rejected by the critic or invalid; a provider outage or a failed critic request is "
+        "repeated without counting) (default: %(default)s)",
     )
     generate_parser.add_argument(
         "--labeling",
@@ -343,9 +344,9 @@ if __name__ == "__main__":
         choices=Configuration.ATTEMPT_LIMITS,
         default=Configuration.attempts,
         metavar="N",
-        help="Reward Machine attempts per task in both arms (compiler mode: critic rejections; "
-        "arm-fm mode: generate-and-critic rounds), 1 to 10; --mode paper ignores it and runs its "
-        "own three rounds (default: %(default)s)",
+        help="Reward Machine attempts per task in both arms (every new candidate counts: "
+        "accepted, rejected by the critic or invalid; a provider outage reruns without counting), "
+        "1 to 10; --mode paper ignores it and runs its own three rounds (default: %(default)s)",
     )
     larm_parser.add_argument(
         "--embeddings",

@@ -12,6 +12,12 @@ three arms (no RM, ARM-FM, FARM). Four MiniGrid cards, one per environment:
 
 All four are trained. The cards stay `draft` until the author approves them.
 
+Forced orders (card fix 2): each card lists in `forced` the clauses of `expect` that the world
+guarantees anyway (the key before the door, the door before the object, the ball before the door).
+Scoring treats them as optional extras: the stored clauses may keep or drop them, and the goal
+clause alone is a correct output. `base-blocked-unlock-pickup` now says the ball and the key may
+come in either order.
+
 Layouts: training resets draw new procedural layouts (`layout: procedural`). Evaluation keeps the fixed
 seeds `eval_seed_base + i`, the same for every run and arm. `layout_seed: 1` stays on the card only for
 the scripted plans, the trace records and the card checks; the trainer ignores it.

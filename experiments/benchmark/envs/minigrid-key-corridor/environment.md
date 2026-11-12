@@ -18,7 +18,7 @@ The target and matching key are determined from the current randomized mission a
 
 | id | kind | true when |
 |---|---|---|
-| `key_found` | latch, reading | the matching key's cell lies in the 7x7 box in front of the agent now (the agent's row or column and the 6 cells ahead, 3 cells to each side), walls ignored; or `key_found` was true at the previous step |
+| `key_found` | latch, reading | the agent sees the matching key now: the key lies in the 7x7 box in front of the agent (the agent's row or column and the 6 cells ahead, 3 cells to each side) and no wall or closed door hides it; or `key_found` was true at the previous step |
 | `has_matching_key` | condition | the agent carries a key of the locked door's color |
 | `target_door_open` | condition | the locked door is open; false again if toggled shut |
 | `target_room_entered` | latch, reading | the agent stands on the locked doorway or on a cell inside the target room now (the room's 6x6 block, door cell included); or `target_room_entered` was true at the previous step |
@@ -26,12 +26,12 @@ The target and matching key are determined from the current randomized mission a
 
 Readings:
 
-- `key_found`: the description does not say what "located" means. Walls are ignored: a key behind a closed door or a wall inside the box counts. In some layouts the key is already inside the box at reset, so `key_found` can be true at the first step.
+- `key_found`: the description does not say what "located" means. The key counts as located when the agent sees it, as the agent's own view shows it: a key behind a wall or a closed door does not count, even when it lies inside the box. In some layouts the key is already in view at reset, so `key_found` can be true at the first step.
 - `target_room_entered`: the description does not say whether the doorway is inside. The doorway counts as inside. The ball lies next to the doorway in some layouts, so picking it up from the doorway is a regular case.
 
 ## Constraints
 
-- `has_matching_key` cannot become true before `key_found`: the agent picks the key up from the cell in front of it, which lies in the box.
+- `has_matching_key` cannot become true before `key_found`: the agent picks the key up from the cell in front of it, which the agent always sees.
 - `target_door_open` cannot become true before `has_matching_key`: only toggling with the matching key unlocks the door.
 - `target_room_entered` cannot become true before `target_door_open`: the locked door is the room's only way in, because no door is added to a locked room.
 - `target_picked_up` cannot become true before `target_door_open`: same reason.
@@ -44,8 +44,8 @@ Readings:
 
 - Can: turn; move forward onto an empty cell or an open door; toggle any closed unlocked door open; pick up the key or the ball with empty hands; drop onto an empty cell in front.
 - Cannot: walk through a closed door before toggling it; open the locked door without the matching key; carry the key and the ball at once.
-- The agent's own view stops at walls and closed doors; `key_found` ignores that (reading above).
-- `key_found` turns true only on a turn or a move: the key does not move on its own, and toggle, pick up and drop leave the agent's cell and direction unchanged. Opening a door does not change the box.
+- The agent's own view stops at walls and closed doors; `key_found` follows that view (reading above).
+- `key_found` turns true when the agent's view changes to include the key: on a turn or a move, or on a toggle that opens a door with the key behind it. The key does not move on its own, and pick up and drop leave the agent's cell and direction unchanged.
 - After `target_door_open` the key must be dropped before the ball can be picked up.
 - `has_matching_key` and `target_door_open` can turn false again: the agent can drop the key and shut the door.
 - It is not known which left-column room and cell holds the key: the mission gives no hint. That the key is in the left column is known.

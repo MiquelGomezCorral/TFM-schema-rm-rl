@@ -309,7 +309,14 @@
       "train": true,
       "plans": {
         "solve": [{"do": "pickup", "obj": "key"}, {"do": "wait", "n": 3}],
-        "wrong": [{"breaks": [0], "why": "Never takes the key.", "steps": [{"do": "wait", "n": 1000}]}]
+        "wrong": [
+          {"breaks": [0], "why": "Never takes the key.", "steps": [{"do": "wait", "n": 1000}]},
+          {
+            "breaks": [0],
+            "why": "Picks up the key and stops there, so it is held on one step only.",
+            "steps": [{"do": "pickup", "obj": "key"}]
+          }
+        ]
       },
       "event_seeds": [],
       "paraphrases": [
@@ -317,7 +324,7 @@
         "Carry the key on at least two different moves.",
         "Have the key in your hands on at least two separate moves."
       ],
-      "notes": ""
+      "notes": "Changed in card fix 2: added the once-against-twice negative (the plan ends at the first pickup), which this trained counting card lacked."
     },
     {
       "id": "tpl-existence-two-2-goal",
@@ -389,14 +396,14 @@
         "wrong": [
           {
             "breaks": [0],
-            "why": "Picks up the key and drops it on the next move, so it is held on one step only.",
-            "steps": [{"do": "pickup", "obj": "key"}, {"do": "drop"}]
+            "why": "Picks up the key and stops there, so it is held on one step only.",
+            "steps": [{"do": "pickup", "obj": "key"}]
           }
         ]
       },
       "event_seeds": [],
       "paraphrases": [],
-      "notes": ""
+      "notes": "Changed in card fix 2: the once-against-twice negative now ends at the first pickup; the earlier drop step could walk and turn first, so on KeyCorridor seeds 14, 15 and 20 the key stayed in hand for several steps and the plan passed."
     },
     {
       "id": "tpl-existence-two-3-goal",
@@ -463,14 +470,14 @@
         "wrong": [
           {
             "breaks": [0],
-            "why": "Picks up the key and drops it on the next move, so it is held on one step only.",
-            "steps": [{"do": "pickup", "obj": "key"}, {"do": "drop"}]
+            "why": "Picks up the key and stops there, so it is held on one step only.",
+            "steps": [{"do": "pickup", "obj": "key"}]
           }
         ]
       },
       "event_seeds": [],
       "paraphrases": [],
-      "notes": ""
+      "notes": "Changed in card fix 2: the once-against-twice negative now ends at the first pickup; the earlier drop step could walk and turn first, so on UnlockPickup seeds 4, 8, 26 and 36 the key stayed in hand for several steps and the plan passed."
     },
     {
       "id": "tpl-absence-1-goal",
@@ -738,7 +745,7 @@
         "layout_seed": null,
         "observation": "symbolic"
       },
-      "task": "Never touch the switch on the wall.",
+      "task": "Never flip the wall switch.",
       "goal": false,
       "template": "Absence",
       "status": "draft",
@@ -758,7 +765,7 @@
       },
       "event_seeds": [1, 2, 3],
       "paraphrases": [],
-      "notes": "The siren rings, so the solving plan has to leave it ringing."
+      "notes": "The siren rings, so the solving plan has to leave it ringing. Changed in card fix 2: the wording is one action, flipping the switch (the clause observes toggling only), not touching or bumping its panel."
     },
     {
       "id": "tpl-response-1-goal",
@@ -771,7 +778,7 @@
         "layout_seed": 1,
         "observation": "symbolic"
       },
-      "task": "After you find the key, open the locked door. Then pick up the ball.",
+      "task": "Once you have found the key, the locked door must be open on the last step of the episode. Open it, then pick up the ball.",
       "goal": true,
       "template": "Response",
       "status": "draft",
@@ -808,11 +815,11 @@
       },
       "event_seeds": [],
       "paraphrases": [
-        "Once you find the key, you have to open the locked door afterwards; then take the ball.",
-        "Open the locked door after you find the key, and then pick up the ball.",
-        "When you find the key, open the locked door afterwards. Finally, pick up the ball."
+        "After you find the key, make sure the locked door is open when the episode ends. Open it and then take the ball.",
+        "From the moment you find the key, the locked door has to be open on the final step. Open it, and then pick up the ball.",
+        "When you find the key, the locked door must be open at the end of the episode; open it. Finally, pick up the ball."
       ],
-      "notes": "The response is the door, which stays open to the end (the key is dropped later). Known limit: Response on a state that can turn false (door shut again) needs the response at the trace end; a trace that opens then shuts the door fails this clause."
+      "notes": "The response is the door, checked on the last step (the key is dropped later). Changed in card fix 2: the trigger key_found stays true once set, so Response needs the door open on the final step of the trace, not all the way through. The task says exactly that and not 'keep it open': a run that shuts the door and opens it again satisfies the clause. `key_found` also needs a clear view of the key now."
     },
     {
       "id": "tpl-response-1-nogoal",
@@ -825,7 +832,7 @@
         "layout_seed": 1,
         "observation": "symbolic"
       },
-      "task": "After you move the ball away from the door, pick up the key.",
+      "task": "Whenever the ball is out of the way of the door, you must be holding the key at that moment or pick it up afterwards.",
       "goal": false,
       "template": "Response",
       "status": "draft",
@@ -845,11 +852,11 @@
       },
       "event_seeds": [],
       "paraphrases": [
-        "Once the ball is out of the way of the door, pick up the key.",
-        "Pick up the key after you have moved the ball away from the door.",
-        "When you have moved the ball away from the door, take the key afterwards."
+        "At every moment the ball is out of the way of the door, you have to be carrying the key then, or pick it up later.",
+        "If the ball has been moved away from the door, you must be holding the key at that point or at some later point.",
+        "Any time the ball is away from the door, the key must be in your hands at that moment or afterwards."
       ],
-      "notes": "Known limit: Response on a state that can turn false (key dropped again) needs the response at the trace end; once the ball has moved, a trace that takes the key then drops it (and does not take it again) fails this clause."
+      "notes": "Changed in card fix 2: the trigger blocker_moved is a condition, not a latch (false again when the ball is dropped back on its cell), so Response needs the key in hand at the last moment the ball was out of the way or later. The task says exactly that and not 'keep holding it': a run that puts the key down and takes it again, or restores the ball and then takes and drops the key, satisfies the clause."
     },
     {
       "id": "tpl-response-2-goal",
@@ -862,7 +869,7 @@
         "layout_seed": 1,
         "observation": "symbolic"
       },
-      "task": "Whenever you pick up the key, open the door afterwards, then reach the goal.",
+      "task": "Whenever you are holding the key, the door must be open at that moment or opened afterwards. Then reach the goal.",
       "goal": true,
       "template": "Response",
       "status": "draft",
@@ -895,7 +902,7 @@
       },
       "event_seeds": [],
       "paraphrases": [],
-      "notes": "No also_ok: Response and Precedence on a state that can turn false again are not equivalent. Known limit: Response on a state that can turn false (door shut again) needs the response at the trace end; a trace that opens then shuts the door fails this clause."
+      "notes": "No also_ok: Response and Precedence on a state that can turn false again are not equivalent. Changed in card fix 2: the trigger has_key stays true while the key is held, so the door must be open when the key was last held or later; the task now states that condition instead of the event reading, and a trace that opens then shuts the door while still holding the key fails by that wording."
     },
     {
       "id": "tpl-response-2-nogoal",
@@ -908,7 +915,7 @@
         "layout_seed": 1,
         "observation": "symbolic"
       },
-      "task": "After you pick up the key, open the door.",
+      "task": "Whenever you are holding the key, the door must be open at that moment or opened afterwards.",
       "goal": false,
       "template": "Response",
       "status": "draft",
@@ -928,7 +935,7 @@
       },
       "event_seeds": [],
       "paraphrases": [],
-      "notes": "Known limit: Response on a state that can turn false (door shut again) needs the response at the trace end; a trace that opens then shuts the door fails this clause."
+      "notes": "Changed in card fix 2: the trigger has_door_key stays true while the key is held, so the door must be open when the key was last held or later; the task now states that condition instead of the event reading, and a trace that opens then shuts the door while still holding the key fails by that wording."
     },
     {
       "id": "tpl-response-3-goal",
@@ -941,7 +948,7 @@
         "layout_seed": 1,
         "observation": "symbolic"
       },
-      "task": "After you take the key, open the door, and then pick up the box in the other room.",
+      "task": "Whenever you are holding the key, the door must be open at that moment or opened afterwards. Then pick up the box in the other room.",
       "goal": true,
       "template": "Response",
       "status": "draft",
@@ -976,7 +983,7 @@
       },
       "event_seeds": [],
       "paraphrases": [],
-      "notes": "Known limit: Response on a state that can turn false (door shut again) needs the response at the trace end; a trace that opens then shuts the door fails this clause."
+      "notes": "Changed in card fix 2: the trigger has_door_key stays true while the key is held, so the door must be open when the key was last held or later; the task now states that condition instead of the event reading, and a trace that opens then shuts the door while still holding the key fails by that wording."
     },
     {
       "id": "tpl-response-3-nogoal",
@@ -989,7 +996,7 @@
         "layout_seed": 1,
         "observation": "symbolic"
       },
-      "task": "After you find the key, open the locked door.",
+      "task": "Once you have found the key, the locked door must be open on the last step of the episode.",
       "goal": false,
       "template": "Response",
       "status": "draft",
@@ -1009,7 +1016,7 @@
       },
       "event_seeds": [],
       "paraphrases": [],
-      "notes": "Known limit: Response on a state that can turn false (door shut again) needs the response at the trace end; a trace that opens then shuts the door fails this clause."
+      "notes": "Changed in card fix 2: the trigger key_found stays true once set, so Response needs the door open on the final step of the trace, not all the way through. The task says exactly that and not 'leave it open': a run that shuts the door and opens it again satisfies the clause."
     },
     {
       "id": "tpl-precedence-1-goal",
@@ -1089,7 +1096,7 @@
         "layout_seed": null,
         "observation": "symbolic"
       },
-      "task": "Flip the switch before you go through the exit.",
+      "task": "If you reach the exit, you must have flipped the switch first.",
       "goal": false,
       "template": "Precedence",
       "status": "draft",
@@ -1109,11 +1116,11 @@
       },
       "event_seeds": [1, 2, 3],
       "paraphrases": [
-        "Before you go through the exit, flip the switch.",
-        "Do not go through the exit until you have flipped the switch.",
-        "Toggle the switch first, and only then go through the exit."
+        "You may only reach the exit after you have flipped the switch.",
+        "Do not reach the exit until you have flipped the switch.",
+        "Reaching the exit is allowed only once the switch has been flipped."
       ],
-      "notes": "The first ring comes at step 1-4 and the exit is at least 6 moves away, so the policy toggles first."
+      "notes": "The first ring comes at step 1-4 and the exit is at least 6 moves away, so the policy toggles first. Changed in card fix 2: one conditional reading in every wording (a run that never flips the switch and never reaches the exit also passes); the earlier imperative could be read as asking for both."
     },
     {
       "id": "tpl-precedence-2-goal",
@@ -1250,7 +1257,7 @@
         "layout_seed": 1,
         "observation": "symbolic"
       },
-      "task": "Move the ball away from the door before you take the key.",
+      "task": "Do not take the key until you have moved the ball away from the door.",
       "goal": false,
       "template": "Precedence",
       "status": "draft",
@@ -1270,7 +1277,7 @@
       },
       "event_seeds": [],
       "paraphrases": [],
-      "notes": ""
+      "notes": "Changed in card fix 2: the wording is the conditional ban (taking the key is allowed only after the ball has moved); a run that moves nothing and takes nothing also passes, so the earlier imperative no longer reads as a required action."
     },
     {
       "id": "tpl-chain-response-1-goal",
@@ -1283,13 +1290,14 @@
         "layout_seed": null,
         "observation": "symbolic"
       },
-      "task": "Whenever the box falls, pick it up again on your very next move, and then reach the exit.",
+      "task": "Carry the box to the exit. Whenever the box falls, pick it up again on your very next move.",
       "goal": true,
       "template": "ChainResponse",
       "status": "draft",
       "expect": [
         ["ChainResponse", ["box_fell", "holding_box"], "hard"],
-        ["Existence", ["at_exit"], "hard"]
+        ["Existence", ["at_exit"], "hard"],
+        ["Response", ["at_exit", "holding_box"], "hard"]
       ],
       "also_ok": [],
       "env_reward_matches": false,
@@ -1298,19 +1306,24 @@
         "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
         "wrong": [
           {
-            "breaks": [0],
-            "why": "Does not react to the fall and never picks the box up again.",
+            "breaks": [0, 2],
+            "why": "Does not react to the fall and reaches the exit without the box.",
             "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [2],
+            "why": "Walks straight to the exit and never touches the box.",
+            "steps": [{"do": "goto", "obj": "exit"}]
           }
         ]
       },
       "event_seeds": [1, 2, 3],
       "paraphrases": [
-        "Each time the box falls, pick it up on your very next move. Then reach the exit.",
-        "Go to the exit, and if the box falls, pick it up again on the very next move.",
-        "Reach the exit; every time the box falls, your very next move must pick it up again."
+        "Take the box to the exit. Each time the box falls, pick it up on your very next move.",
+        "Reach the exit with the box in your hands, and if the box falls, pick it up again on the very next move.",
+        "Get to the exit carrying the box; every time the box falls, your very next move must pick it up again."
       ],
-      "notes": "Event room only: box_fell is an event, so the judge table can hold. The next-step pickup works when the box lands on the free front cell (the first cell tried). The env require holding_box is deliberate: a fall only starts after a pickup."
+      "notes": "Event room only: box_fell is an event, so the judge table can hold. The next-step pickup works when the box lands on the free front cell (the first cell tried); the solving policy waits in place with the box until its falls are done. The env require holding_box is deliberate: a fall only starts after a pickup. Changed in card fix 2: the task asks to carry the box to the exit, checked at the exit step (Response(at_exit, holding_box)), so a direct exit no longer passes; the solving policy was fixed for wall-side falls."
     },
     {
       "id": "tpl-chain-response-1-nogoal",
@@ -1323,11 +1336,14 @@
         "layout_seed": null,
         "observation": "symbolic"
       },
-      "task": "Whenever the box falls, pick it up again on your very next move.",
+      "task": "Whenever the box falls, pick it up again on your very next move. If you reach the exit, you must be carrying the box.",
       "goal": false,
       "template": "ChainResponse",
       "status": "draft",
-      "expect": [["ChainResponse", ["box_fell", "holding_box"], "hard"]],
+      "expect": [
+        ["ChainResponse", ["box_fell", "holding_box"], "hard"],
+        ["Response", ["at_exit", "holding_box"], "hard"]
+      ],
       "also_ok": [],
       "env_reward_matches": false,
       "train": true,
@@ -1335,19 +1351,24 @@
         "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
         "wrong": [
           {
-            "breaks": [0],
-            "why": "Does not react to the fall and never picks the box up again.",
+            "breaks": [0, 1],
+            "why": "Does not react to the fall and reaches the exit without the box.",
             "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [1],
+            "why": "Walks straight to the exit and never touches the box.",
+            "steps": [{"do": "goto", "obj": "exit"}]
           }
         ]
       },
       "event_seeds": [1, 2, 3],
       "paraphrases": [
-        "Should the box fall, make your very next move the one that picks it back up.",
-        "Every time the box falls, your very next move must pick it up again.",
-        "After the box falls, the move right after it has to pick it up again."
+        "Should the box fall, make your very next move the one that picks it back up. If you get to the exit, you must have the box in your hands.",
+        "Every time the box falls, your very next move must pick it up again; and if you reach the exit, you must be carrying the box.",
+        "After the box falls, the move right after it has to pick it up again. Do not reach the exit without the box in your hands."
       ],
-      "notes": ""
+      "notes": "Changed in card fix 2: the exit is not required, but a run that reaches it must carry the box at that step (Response(at_exit, holding_box)), so a direct exit no longer passes; the solving policy was fixed for wall-side falls. Staying put still satisfies both clauses."
     },
     {
       "id": "tpl-chain-response-2-goal",
@@ -1360,30 +1381,36 @@
         "layout_seed": null,
         "observation": "symbolic"
       },
-      "task": "Reach the exit. Each time the box falls, your very next move must pick it up again.",
+      "task": "Carry the box to the exit. Each time the box falls, your very next move must pick it up again.",
       "goal": true,
       "template": "ChainResponse",
       "status": "draft",
       "expect": [
         ["ChainResponse", ["box_fell", "holding_box"], "hard"],
-        ["Existence", ["at_exit"], "hard"]
+        ["Existence", ["at_exit"], "hard"],
+        ["Response", ["at_exit", "holding_box"], "hard"]
       ],
       "also_ok": [],
       "env_reward_matches": false,
       "train": false,
       "plans": {
-        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "solve": [{"do": "policy", "name": "service_room", "ignore": ["siren"]}],
         "wrong": [
           {
-            "breaks": [0],
-            "why": "Does not react to the fall and never picks the box up again.",
+            "breaks": [0, 2],
+            "why": "Does not react to the fall and reaches the exit without the box.",
             "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [2],
+            "why": "Walks straight to the exit and never touches the box.",
+            "steps": [{"do": "goto", "obj": "exit"}]
           }
         ]
       },
       "event_seeds": [1, 2, 3],
       "paraphrases": [],
-      "notes": "The siren rings too; the task ignores it on purpose (distractor). The env require holding_box is deliberate: a fall only starts after a pickup."
+      "notes": "The siren rings too; the task ignores it on purpose (distractor), and the solving policy ignores it. The env require holding_box is deliberate: a fall only starts after a pickup. Changed in card fix 2: the task asks to carry the box to the exit, checked at the exit step (Response(at_exit, holding_box)), so a direct exit no longer passes; the solving policy was fixed for wall-side falls and the siren detour."
     },
     {
       "id": "tpl-chain-response-2-nogoal",
@@ -1396,27 +1423,35 @@
         "layout_seed": null,
         "observation": "symbolic"
       },
-      "task": "Each time the box falls, pick it up again on your very next move.",
+      "task": "Each time the box falls, pick it up again on your very next move. If you reach the exit, you must be carrying the box.",
       "goal": false,
       "template": "ChainResponse",
       "status": "draft",
-      "expect": [["ChainResponse", ["box_fell", "holding_box"], "hard"]],
+      "expect": [
+        ["ChainResponse", ["box_fell", "holding_box"], "hard"],
+        ["Response", ["at_exit", "holding_box"], "hard"]
+      ],
       "also_ok": [],
       "env_reward_matches": false,
       "train": false,
       "plans": {
-        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "solve": [{"do": "policy", "name": "service_room", "ignore": ["siren"]}],
         "wrong": [
           {
-            "breaks": [0],
-            "why": "Does not react to the fall and never picks the box up again.",
+            "breaks": [0, 1],
+            "why": "Does not react to the fall and reaches the exit without the box.",
             "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [1],
+            "why": "Walks straight to the exit and never touches the box.",
+            "steps": [{"do": "goto", "obj": "exit"}]
           }
         ]
       },
       "event_seeds": [1, 2, 3],
       "paraphrases": [],
-      "notes": "The siren rings too; the task ignores it on purpose (distractor)."
+      "notes": "The siren rings too; the task ignores it on purpose (distractor), and the solving policy ignores it. Changed in card fix 2: the exit is not required, but a run that reaches it must carry the box at that step (Response(at_exit, holding_box)), so a direct exit no longer passes; the solving policy was fixed for wall-side falls and the siren detour. Staying put still satisfies both clauses."
     },
     {
       "id": "tpl-chain-response-3-goal",
@@ -1429,13 +1464,14 @@
         "layout_seed": null,
         "observation": "symbolic"
       },
-      "task": "Get to the exit. If the box falls, pick it up again on your very next move.",
+      "task": "Carry the box to the exit. If the box falls, pick it up again on your very next move.",
       "goal": true,
       "template": "ChainResponse",
       "status": "draft",
       "expect": [
         ["ChainResponse", ["box_fell", "holding_box"], "hard"],
-        ["Existence", ["at_exit"], "hard"]
+        ["Existence", ["at_exit"], "hard"],
+        ["Response", ["at_exit", "holding_box"], "hard"]
       ],
       "also_ok": [],
       "env_reward_matches": false,
@@ -1444,15 +1480,20 @@
         "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
         "wrong": [
           {
-            "breaks": [0],
-            "why": "Does not react to the fall and never picks the box up again.",
+            "breaks": [0, 2],
+            "why": "Does not react to the fall and reaches the exit without the box.",
             "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [2],
+            "why": "Walks straight to the exit and never touches the box.",
+            "steps": [{"do": "goto", "obj": "exit"}]
           }
         ]
       },
       "event_seeds": [1, 2, 3],
       "paraphrases": [],
-      "notes": "The env require holding_box is deliberate: a fall only starts after a pickup."
+      "notes": "The env require holding_box is deliberate: a fall only starts after a pickup. Changed in card fix 2: the task asks to carry the box to the exit, checked at the exit step (Response(at_exit, holding_box)), so a direct exit no longer passes; the solving policy was fixed for wall-side falls."
     },
     {
       "id": "tpl-chain-response-3-nogoal",
@@ -1465,11 +1506,14 @@
         "layout_seed": null,
         "observation": "symbolic"
       },
-      "task": "If the box falls, the very next move must pick it up again.",
+      "task": "If the box falls, the very next move must pick it up again. If you reach the exit, you must be carrying the box.",
       "goal": false,
       "template": "ChainResponse",
       "status": "draft",
-      "expect": [["ChainResponse", ["box_fell", "holding_box"], "hard"]],
+      "expect": [
+        ["ChainResponse", ["box_fell", "holding_box"], "hard"],
+        ["Response", ["at_exit", "holding_box"], "hard"]
+      ],
       "also_ok": [],
       "env_reward_matches": false,
       "train": false,
@@ -1477,15 +1521,20 @@
         "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
         "wrong": [
           {
-            "breaks": [0],
-            "why": "Does not react to the fall and never picks the box up again.",
+            "breaks": [0, 1],
+            "why": "Does not react to the fall and reaches the exit without the box.",
             "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [1],
+            "why": "Walks straight to the exit and never touches the box.",
+            "steps": [{"do": "goto", "obj": "exit"}]
           }
         ]
       },
       "event_seeds": [1, 2, 3],
       "paraphrases": [],
-      "notes": ""
+      "notes": "Changed in card fix 2: the exit is not required, but a run that reaches it must carry the box at that step (Response(at_exit, holding_box)), so a direct exit no longer passes; the solving policy was fixed for wall-side falls. Staying put still satisfies both clauses."
     },
     {
       "id": "tpl-responded-existence-1-goal",
@@ -1539,7 +1588,7 @@
         "Finding the key means you must open the locked door too; finally, pick up the ball.",
         "Pick up the ball. If you find the key, you need to open the locked door as well."
       ],
-      "notes": "Order is free. The other clause is implied by the finish, so the env reward pays exactly when it is done."
+      "notes": "Order is free. The other clause is implied by the finish, so the env reward pays exactly when it is done. Changed in card fix 2: `key_found` needs a clear view of the key (no credit through a wall); the task text is unchanged."
     },
     {
       "id": "tpl-responded-existence-1-nogoal",
@@ -1642,7 +1691,7 @@
         "layout_seed": null,
         "observation": "symbolic"
       },
-      "task": "If the siren rings, you must flip the switch at some point.",
+      "task": "If the siren rings at any point in the run, you must flip the switch at least once somewhere in the run, before or after the ring.",
       "goal": false,
       "template": "RespondedExistence",
       "status": "draft",
@@ -1662,7 +1711,7 @@
       },
       "event_seeds": [1, 2, 3],
       "paraphrases": [],
-      "notes": ""
+      "notes": "Changed in card fix 2: the wording says one toggle anywhere in the run is enough when the siren rings, not one toggle after every ring (that is Response)."
     },
     {
       "id": "tpl-responded-existence-3-goal",
