@@ -11,6 +11,7 @@ from .generate_rm import generate_rm
 from .generate_suite import SuiteOptions, generate_suite
 from .import_paper_bundle import import_paper_bundle
 from .render_rm import render_rm
+from .repair_labeling import repair_labeling
 from .run_suite import run_suite
 from .test_rl import test_rl
 from .train_rl import train_rl
