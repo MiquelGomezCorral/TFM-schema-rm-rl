@@ -86,7 +86,7 @@ def generate_reward_machine(
     engine: object,
     *,
     critic_engine: object,
-    max_attempts: int = MAX_ATTEMPTS,
+    max_attempts: int,
 ) -> tuple[PaperRewardMachine | None, str, list[StageAttempt]]:
     """Generate and refine one paper Reward Machine, keeping the last parseable candidate."""
     if not task.strip():

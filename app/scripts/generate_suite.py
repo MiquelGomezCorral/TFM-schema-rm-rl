@@ -16,11 +16,7 @@ from src.config import Configuration
 
 MAIN = Path(__file__).resolve().parents[1] / "main.py"
 
-# Tries until the reward machine is accepted, the same counted budget in both arms: a FARM
-# attempt is a proposal the critic judges, an ARM-FM attempt is a loop round. Labeling and
-# descriptions keep their own limit. Not the same total tries: FARM also reruns a failed attempt
-# for free on provider or content failures (up to 10 reruns per attempt, ``generate_rm.py``),
-# while ARM-FM counts every failed round. See ``experiments/benchmark/REPRODUCE.md``.
+# Counted Reward Machine tries in both arms; what one try counts differs, see REPRODUCE.md.
 RM_ATTEMPTS = 10
 
 # The ``generate-larm`` flags of each arm; ARM-FM judges with the critic model, as FARM does.

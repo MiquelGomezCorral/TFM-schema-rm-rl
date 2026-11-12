@@ -236,9 +236,9 @@ them into conjunctive clauses, each an IBM DECLARE template with declared propos
 The command displays timed progress for every task attempt and stage. One critic runs by
 default after the Reward Machine is built; `--no-critic` disables it for a controlled fallback
 run, prints a warning, and then accepts the compiler's first result for each task. Each task
-has up to three attempts by default (`--attempts N` sets 1 to 10; the benchmark uses 10; ARM-FM's
-Reward Machine stage reads it too), and no output is written unless every task is accepted. The stages
-are structured proposal generation, DECLARE/LTLf materialization, FL-AT/MONA DFA compilation,
+has up to three attempts by default (`--attempts N` sets 1 to 10; the benchmark's setting is in
+`experiments/benchmark/REPRODUCE.md`; ARM-FM's Reward Machine stage reads it too), and no
+output is written unless every task is accepted. The stages are structured proposal generation, DECLARE/LTLf materialization, FL-AT/MONA DFA compilation,
 Reward Machine construction (FL-AT's product plus the reward layer), the critic, state
 descriptions, and optional labeling and embeddings. State descriptions are written by default;
 `--no-state-descriptions` skips that stage, and `--labeling` and `--embeddings` require it.

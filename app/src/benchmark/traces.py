@@ -145,7 +145,7 @@ def write_json(path: Path, value: object, indent: int | None = None) -> Path:
 
 
 def as_object(value: object) -> dict[str, Any]:
-    """``value`` when it is a JSON object, else ``{}``: a malformed manifest field counts as missing."""
+    """``value`` when it is a JSON object, else ``{}``: a malformed manifest field is missing."""
     return value if isinstance(value, dict) else {}
 
 
