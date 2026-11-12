@@ -1,9 +1,7 @@
 """Service room: a fixed MiniGrid room whose events come from a seeded schedule.
 
 ``gym.make("MiniGrid-ServiceRoom-v0", siren=..., box=..., require=[...], max_steps=200)``.
-The 8x8 room (6x6 inside) never changes: the agent starts at ``START``, the exit (a ``Goal``) is
-at ``EXIT_POS``, and the optional box and wall switch sit at ``BOX_POS`` and ``SWITCH_POS``. The
-reset seed sets only the event schedule, so one seed always plays the same events.
+The reset seed sets only the event schedule, so one seed always plays the same events.
 
 The rules (schedule, step order, reward) are in ``environment.md`` and the code-side facts in
 ``environment-code.md``, both in ``experiments/benchmark/envs/service-room/``.
@@ -27,6 +25,7 @@ from minigrid.utils.rendering import fill_coords, point_in_rect
 
 ENV_ID = "MiniGrid-ServiceRoom-v0"
 SIZE = 8
+FIRST_RING_LAST = 4  # the first ring comes at a step from 1 to this
 START, START_DIR = (1, 1), 0  # top-left corner, facing right
 BOX_POS = (4, 2)
 SWITCH_POS = (0, 5)  # in the west wall; the agent toggles it from (1, 5) facing left
@@ -68,10 +67,8 @@ class ClosedBox(Box):
 class ServiceRoomEnv(MiniGridEnv):
     """The fixed room with a seeded siren and falling box.
 
-    Public state for labeling: ``siren_ringing``, ``events_this_step`` (``ring``, ``toggle`` and
-    ``fall`` names of this step), ``event_counts`` (``planned``, ``fired`` and ``skipped`` for
-    the kinds ``ring`` and ``fall``) and MiniGrid's ``carrying``. A plain room (no siren, no box,
-    nothing required) is the default.
+    The state that labeling reads is listed under ``## Labeling API`` in ``environment-code.md``.
+    A plain room (no siren, no box, nothing required) is the default.
 
     Raises:
         ValueError: If ``require`` names an unknown condition, or asks for the box without it.
@@ -101,6 +98,9 @@ class ServiceRoomEnv(MiniGridEnv):
         self.siren_ringing = False
         self.events_this_step: list[str] = []
         self.event_counts: dict[str, dict[str, int]] = {}
+        self._ring_steps: list[int] = []
+        self._fall_delays: list[int] = []
+        self._fall_steps: list[int] = []  # absolute steps, set by pickups
 
     @staticmethod
     def _gen_mission() -> str:
@@ -117,9 +117,9 @@ class ServiceRoomEnv(MiniGridEnv):
         self.agent_pos, self.agent_dir = START, START_DIR
 
     def _reward(self) -> float:
-        silent = not (self.siren_ringing and "siren_silent" in self.require)
-        held = self.carrying is not None or "holding_box" not in self.require
-        return super()._reward() if silent and held else 0.0
+        siren_ok = not (self.siren_ringing and "siren_silent" in self.require)
+        box_ok = self.carrying is not None or "holding_box" not in self.require
+        return super()._reward() if siren_ok and box_ok else 0.0
 
     # ============================== episode ==============================
 
@@ -133,16 +133,17 @@ class ServiceRoomEnv(MiniGridEnv):
 
     def _plan_events(self, rng: np.random.Generator) -> None:
         """Draw the whole schedule; every draw happens whatever the flags."""
-        first_ring = int(rng.integers(1, 5))
+        first_ring = int(rng.integers(1, FIRST_RING_LAST + 1))
         second_ring = first_ring + int(rng.integers(8, 31))
         has_second_ring = rng.random() < 0.5
         fall_delays = [int(rng.integers(2, 7)), int(rng.integers(2, 7))]
         has_second_fall = rng.random() < 0.5
 
-        self._ring_steps = ([first_ring] + [second_ring] * has_second_ring) if self.siren else []
-        self._fall_delays = (fall_delays[: 1 + has_second_fall]) if self.box else []
-        self._fall_steps: list[int] = []  # absolute steps, set by pickups
-        self._pickups = 0
+        rings = [first_ring, second_ring] if has_second_ring else [first_ring]
+        falls = fall_delays[: 2 if has_second_fall else 1]
+        self._ring_steps = rings if self.siren else []
+        self._fall_delays = falls if self.box else []
+        self._fall_steps = []
         self.siren_ringing = False
         self.events_this_step = []
         self.event_counts = {
@@ -174,9 +175,9 @@ class ServiceRoomEnv(MiniGridEnv):
 
     def _schedule_fall(self) -> None:
         """The n-th pickup of the box schedules the n-th planned fall."""
-        self._pickups += 1
-        if self._pickups <= len(self._fall_delays):
-            self._fall_steps.append(self.step_count + self._fall_delays[self._pickups - 1])
+        scheduled = len(self._fall_steps)
+        if scheduled < len(self._fall_delays):
+            self._fall_steps.append(self.step_count + self._fall_delays[scheduled])
 
     def _fire_due_events(self) -> None:
         if self.step_count in self._ring_steps:

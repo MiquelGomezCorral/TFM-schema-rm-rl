@@ -55,7 +55,7 @@ The siren cannot start, and the box cannot fall, on the step that ends the episo
 
 ## Example trace
 
-A real episode in a setup with siren and box, both required at the exit: 28 steps, reward 0.874.
+A real episode in a setup with siren and box, both required at the exit.
 
 1. step 1, a move: no proposition changes
 2. step 2, a move: `siren_ringing` true, the siren starts by itself

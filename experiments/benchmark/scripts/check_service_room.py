@@ -29,6 +29,7 @@ from src.arm_fm.environments import make_environment
 from src.arm_fm.runtime import load_labeling_functions
 from src.arm_fm.service_room import (
     ENV_ID,
+    FIRST_RING_LAST,
     RINGING_COLOR,
     SILENT_COLOR,
     START,
@@ -49,14 +50,13 @@ CONFIGS = {
     "both": {"siren": True, "box": True, "require": ["siren_silent", "holding_box"]},
     "neither": {"siren": False, "box": False, "require": []},
 }
+COUNT_KEYS = ("planned", "fired", "skipped")
 GIFS_PER_CONFIG = 2
 MIN_EXIT_MOVES = 6
 EXIT_MOVES = 10  # layout pin: START to EXIT_POS in the plain room; a layout change must update it
-LAST_FIRST_RING = 4  # the first ring is drawn from steps 1-4
 TABLE_SEEDS = 3  # scripted episodes whose every step the truth table is compared on
 RANDOM_LIMITS = (8, 8, 60, 60, 60)  # step limits of the seeded random-action episodes; 8 cuts early
 UNSEEDED_EPISODES = 5
-IN_MEMORY_ONLY = ("actions", "labels")  # long per-step lists: kept for replay and GIFs, not saved
 
 
 # ======================================================================================
@@ -105,11 +105,6 @@ def run_episode(
         toggles=toggles,
     )
     return episode
-
-
-def persisted(episodes: list[dict]) -> list[dict]:
-    """The episodes as saved in summary.json, without the long per-step lists."""
-    return [{k: v for k, v in e.items() if k not in IN_MEMORY_ONLY} for e in episodes]
 
 
 def _box_is_adjacent(base) -> bool:
@@ -165,9 +160,6 @@ def summarise(episodes: list[dict]) -> dict:
     }
 
 
-COUNT_KEYS = ("planned", "fired", "skipped")
-
-
 def shows_a_reaction(episode: dict, kwargs: dict) -> bool:
     """A ring answered by a toggle and/or a fall followed by a new pickup, as the config allows."""
     flat = [name for events in episode["events"] for name in events]
@@ -198,7 +190,7 @@ class Report:
 
 def check_config(name: str, kwargs: dict, seeds: range, report: Report, out: Path) -> dict:
     episodes = [run_episode(kwargs, seed) for seed in seeds]
-    summary = {"kwargs": kwargs, "scripted": summarise(episodes), "episodes": persisted(episodes)}
+    summary = {"kwargs": kwargs, "scripted": summarise(episodes)}
     scripted, counts = summary["scripted"], summary["scripted"]["event_counts"]
     for kind, enabled in (("ring", kwargs["siren"]), ("fall", kwargs["box"])):
         fired, planned = counts[kind]["fired"], counts[kind]["planned"]
@@ -224,9 +216,10 @@ def check_config(name: str, kwargs: dict, seeds: range, report: Report, out: Pat
     )
     replays = [run_episode(kwargs, e["seed"]) for e in episodes]
     different = [
-        a["seed"] for a, b in zip(episodes, replays, strict=True)
+        a["seed"]
+        for a, b in zip(episodes, replays, strict=True)
         if (a["actions"], a["labels"]) != (b["actions"], b["labels"])
-    ]  # fmt: skip
+    ]
     summary["determinism"] = {"replayed": len(replays), "different_seeds": different}
     report.expect(f"{name}: the same seed twice gives identical actions and labels", not different)
 
@@ -240,17 +233,25 @@ def check_config(name: str, kwargs: dict, seeds: range, report: Report, out: Pat
 
 def check_wrong_trace(name: str, kwargs: dict, seeds: range, reaction: str, report: Report) -> dict:
     episodes = [run_episode(kwargs, seed, (reaction,)) for seed in seeds]
-    summary = {"summary": summarise(episodes), "episodes": persisted(episodes)}
+    summary = summarise(episodes)
     if reaction == "siren":  # the first ring comes before the exit can be reached
         wrong = [e["seed"] for e in episodes if e["reward"] != 0]
-        ok, detail = not wrong, f"seeds with reward > 0: {wrong}"
+        check, ok, detail = (
+            f"{name}: ignore='siren' earns reward 0 in every episode",
+            not wrong,
+            f"seeds with reward > 0: {wrong}",
+        )
     else:  # a fall that fired leaves the box behind; a fall that did not changes nothing
         wrong = [
             e["seed"] for e in episodes if (e["reward"] == 0) != (e["counts"]["fall"]["fired"] > 0)
         ]
-        fired = summary["summary"]["event_counts"]["fall"]["fired"]
-        ok, detail = not wrong and fired > 0, f"{fired} falls fired, inconsistent seeds {wrong}"
-    report.expect(f"{name}: ignore={reaction!r} earns reward 0", ok, detail)
+        fired = summary["event_counts"]["fall"]["fired"]
+        check, ok, detail = (
+            f"{name}: ignore='box_fall' earns reward 0 exactly when a fall fired, and a fall fired",
+            not wrong and fired > 0,
+            f"{fired} falls fired, inconsistent seeds {wrong}",
+        )
+    report.expect(check, ok, detail)
     return summary
 
 
@@ -270,14 +271,14 @@ def write_gifs(name: str, kwargs: dict, episodes: list[dict], out: Path, report:
 
 
 def check_observation(report: Report) -> dict:
-    """L3.2: the switch cell the agent faces is encoded differently while the siren rings."""
+    """The switch cell the agent faces is encoded differently while the siren rings."""
     env = ImgObsWrapper(make_environment(ENV_ID, siren=True, require=["siren_silent"]))
     env.reset(seed=1)
     base = env.unwrapped
     base.agent_pos, base.agent_dir = (SWITCH_POS[0] + 1, SWITCH_POS[1]), 2  # facing the switch
     silent = env.observation(base.gen_obs())
     ringing = silent  # stays equal to the silent view if the siren never starts
-    for _ in range(LAST_FIRST_RING):
+    for _ in range(FIRST_RING_LAST):
         observation, *_, info = env.step(Actions.done)
         if "ring" in info["events"]:
             ringing = observation
@@ -334,7 +335,8 @@ def check_truth_table(report: Report, code_text: str) -> dict:
         while not done:
             _, _, terminated, truncated, _ = env.step(choose(env))
             table = {label: bool(read(env.unwrapped)) for label, read in labeling.items()}
-            steps, done = steps + 1, terminated or truncated
+            steps += 1
+            done = terminated or truncated
             seen |= {label for label, value in table.items() if value}
             if table != reference_labels(env):
                 mismatches.append((name, env.unwrapped.step_count))
@@ -376,7 +378,8 @@ def _pick_drop_pick(late: int) -> tuple[list, int, int]:
     base = env.unwrapped
     for action in [Actions.forward] * 3 + [Actions.right, Actions.pickup]:  # face the box, take it
         env.step(action)
-    due = base.step_count + base._fall_delays[0]  # the check pins the due step through the draw
+    # The due step is not public: the pickup sets it to this step plus the first drawn delay.
+    due = base.step_count + base._fall_delays[0]
     env.step(Actions.drop)
     while base.step_count < due + late - 1:
         env.step(Actions.done)
