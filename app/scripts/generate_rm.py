@@ -204,12 +204,12 @@ class _Pipeline:
         error, the only way out besides the critic's verdict.
         """
         reruns = self.CONFIG.UNCOUNTED_RETRIES
-        for tries in range(1, reruns + 2):
+        for tries in range(reruns + 1):
             self.progress.check_cancelled()
             try:
                 return self._attempt(task, history)
             except _RerunError as failure:
-                if tries <= reruns:  # the last failure is followed by no rerun
+                if tries < reruns:  # the last failure is followed by no rerun
                     self.reruns += 1
                 last_error = failure
         raise RetryableEngineError(

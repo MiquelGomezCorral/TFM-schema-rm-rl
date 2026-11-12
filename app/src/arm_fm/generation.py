@@ -84,13 +84,12 @@ def generate_reward_machine(
     environment: EnvironmentDescription,
     engine: object,
     *,
+    critic_engine: object,
     max_attempts: int = MAX_ATTEMPTS,
-    critic_engine: object | None = None,
 ) -> tuple[PaperRewardMachine | None, str, list[StageAttempt]]:
     """Generate and refine one paper Reward Machine, keeping the last parseable candidate."""
     if not task.strip():
         raise ValueError("Task must be nonempty")
-    critic_engine = engine if critic_engine is None else critic_engine
     labeling_api = environment.require_labeling_api()
     attempts: list[StageAttempt] = []
     machine: PaperRewardMachine | None = None

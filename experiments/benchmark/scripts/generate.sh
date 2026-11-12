@@ -10,9 +10,9 @@
 #   skipped by that suite's later call.
 #
 # Everything but smoke is refused while experiments/benchmark/prompt-budget.md is undecided
-# (R49): missing, a line starting "decision: pending", or no line starting "decision:". The
-# full suites wait for the user's prompt-budget decision. A dry run still lists the refused
-# commands, marked "# refused".
+# (the prompt-budget gate): missing, a line starting "decision: pending", or no line starting
+# "decision:". The full suites wait for the user's prompt-budget decision. A dry run still
+# lists the refused commands, marked "# refused".
 #
 # Run it from anywhere with the RM_RL_env Python first on PATH (or set PYTHON), the provider
 # variables in .env, and the embedding server up (see REPRODUCE.md).
@@ -51,7 +51,7 @@ pending() {
   [ ! -f "$BUDGET" ] || grep -q '^decision: pending' "$BUDGET" || ! grep -q '^decision:' "$BUDGET"
 }
 
-# The spending caps of one generate-suite call; the smoke defaults are the L6.1 live test's.
+# The spending caps of one generate-suite call; the smoke defaults are the smoke live test's.
 caps() {
   if [ "$1" = smoke ]; then
     echo "--parallel ${PARALLEL:-3} --max-calls ${MAX_CALLS:-60} --deadline-min ${DEADLINE_MIN:-20}"

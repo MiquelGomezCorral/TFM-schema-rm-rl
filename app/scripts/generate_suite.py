@@ -61,7 +61,7 @@ class Job:
 def generate_suite(options: SuiteOptions) -> None:
     """Generate the missing bundles of one suite and one arm, then embed them one at a time.
 
-    A card is skipped when its status is ``complete``, or ``pipeline-failed`` without
+    A card is skipped when its bundle is complete, or its status is ``pipeline-failed`` without
     ``retry_failed``; ``provider-error`` and ``incomplete`` cards run again. A bundle whose
     generation finished but has no embeddings only runs the embedding pass. Launching stops
     when the calls of the ``generate-larm`` runs this call made reach ``max_calls``, or when
@@ -135,9 +135,8 @@ def _load_jobs(options: SuiteOptions) -> list[Job]:
             for number, paraphrase in enumerate(card.get("paraphrases", []), start=1):
                 jobs.append(Job(f"{card_id}~p{number}", environment, paraphrase))
     if options.only:
-        unknown = (
-            set(options.only) - {job.id.split("~")[0] for job in jobs} - {job.id for job in jobs}
-        )
+        known = {job.id for job in jobs} | {job.id.split("~")[0] for job in jobs}
+        unknown = set(options.only) - known
         if unknown:
             raise ValueError(f"--only names unknown card(s): {', '.join(sorted(unknown))}")
         jobs = [job for job in jobs if {job.id, job.id.split("~")[0]} & set(options.only)]
