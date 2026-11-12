@@ -8,7 +8,9 @@ import dotenv
 from maikol_utils.other_utils import args_to_dataclass
 
 from scripts import (
+    OFF_CHOICES,
     SuiteOptions,
+    ablate_rm,
     aggregate_suite,
     cross_critic,
     embed_larm,
@@ -77,6 +79,13 @@ def cmd_embed_larm(args: argparse.Namespace) -> None:
     """Embed validated ARM-FM state descriptions with the local server or the Qwen loader."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
     embed_larm(CONFIG)
+
+
+def cmd_ablate_rm(args: argparse.Namespace) -> None:
+    """Rebuild a compiler bundle's Reward Machine with one reward part switched off."""
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    if not ablate_rm(CONFIG, args.off, args.destination):
+        sys.exit(1)
 
 
 def cmd_import_paper_bundle(args: argparse.Namespace) -> None:
@@ -407,6 +416,36 @@ if __name__ == "__main__":
         "(default: built-in Qwen loader)",
     )
     embed_parser.set_defaults(func=cmd_embed_larm)
+
+    # ======================================================================================
+    #                                       ablate-rm
+    # ======================================================================================
+    ablate_parser = subparsers.add_parser(
+        "ablate-rm",
+        help="Rebuild a compiler bundle's Reward Machine with one reward part switched off",
+    )
+    ablate_parser.add_argument(
+        "--bundle",
+        required=True,
+        type=Path,
+        help="Source bundle made by generate-larm --mode compiler; it must store its clauses",
+    )
+    ablate_parser.add_argument(
+        "--off",
+        required=True,
+        choices=OFF_CHOICES,
+        help="Reward part that pays 0 in the copy; none rebuilds the source unchanged",
+    )
+    ablate_parser.add_argument(
+        "--output",
+        dest="destination",
+        required=True,
+        type=Path,
+        metavar="DIR",
+        help="Bundle folder to write",
+    )
+    ablate_parser.add_argument("--overwrite", action="store_true")
+    ablate_parser.set_defaults(func=cmd_ablate_rm)
 
     # ======================================================================================
     #                                   import-paper-bundle

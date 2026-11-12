@@ -1,5 +1,6 @@
 """Command implementations."""
 
+from .ablate_rm import OFF_CHOICES, ablate_rm
 from .aggregate_suite import aggregate_suite
 from .cross_critic import cross_critic
 from .embed_larm import embed_larm

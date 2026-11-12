@@ -9,9 +9,9 @@ import itertools
 from collections import defaultdict, deque
 from collections.abc import Collection, Iterable, Sequence
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, replace
 from enum import StrEnum
-from typing import NamedTuple
+from typing import NamedTuple, Self
 
 import networkx as nx
 from flat_tool import automatas_to_rm
@@ -78,19 +78,45 @@ class RewardLayerResult:
     inert_soft_clauses: tuple[int, ...]
 
 
+@dataclass(frozen=True)
+class RewardSwitches:
+    """Which reward parts the machine pays; a part switched off pays 0.
+
+    The defaults are the ``Configuration`` class defaults, and the field names are its field
+    names. Completion is never switched off. The recurrent soft penalty changes the machine's
+    structure (see ``_rearm_violated``); the other switches only change the rewards (and, for the
+    end judgment, the machine's end lines).
+    """
+
+    reward_progress: bool = Configuration.reward_progress
+    reward_well: bool = Configuration.reward_well
+    reward_soft_break: bool = Configuration.reward_soft_break
+    reward_soft_pending: bool = Configuration.reward_soft_pending
+    reward_end_judgment: bool = Configuration.reward_end_judgment
+    recurrent_soft_penalty: bool = Configuration.recurrent_soft_penalty
+
+    @classmethod
+    def from_config(cls, CONFIG: Configuration) -> Self:
+        """The switches a run's configuration sets."""
+        return cls(**{item.name: getattr(CONFIG, item.name) for item in fields(cls)})
+
+
 def build_reward_machine(
-    dfas: Sequence[dict], soft: Sequence[bool], *, recurrent_soft_penalty: bool = True
+    dfas: Sequence[dict], soft: Sequence[bool], switches: RewardSwitches | None = None
 ) -> RewardLayerResult:
     """Compile the clause DFAs into one Reward Machine with hard pruning and rewards.
 
     ``soft[i]`` marks clause ``i`` soft; the others are hard. With ``recurrent_soft_penalty`` a
     soft rule's violated state takes the start state's edges, so each new break pays again
     instead of once per episode. Without a hard goal clause the machine has no final
-    state (a rule-only task) and progress aims at the states where no clause is pending. Every
-    machine carries an end judgment for the promises still open where the environment ends
-    the episode.
+    state (a rule-only task) and progress aims at the states where no clause is pending. With
+    ``reward_end_judgment`` the machine carries an end judgment for the promises still open where
+    the environment ends the episode; without it the runtime pays the flat time-limit penalty on
+    a truncated step that did not terminate, and nothing on a termination. The other
+    ``switches`` default to the ``Configuration`` class defaults.
     Raises ``ValueError`` on a non-total DFA, conflicting clauses, or a positive reward cycle.
     """
+    switches = switches or RewardSwitches()
     if len(dfas) != len(soft):
         raise ValueError(
             f"Expected one DFA per clause, got {len(dfas)} DFAs for {len(soft)} clauses"
@@ -103,12 +129,14 @@ def build_reward_machine(
     soft_clauses = [index for index, is_soft in enumerate(soft) if is_soft]
     hard_goal = any(_is_goal(dfas[index]) for index in hard_clauses)
 
-    rearm = [recurrent_soft_penalty and is_soft for is_soft in soft]
+    rearm = [switches.recurrent_soft_penalty and is_soft for is_soft in soft]
     product = _clause_product(dfas, rearm)
     edges, finals = _prune_by_hard_clauses(product, hard_clauses, hard_goal)
     initial, edges = _drop_pre_step_start(edges, product, finals)
-    priced, paying = _price_edges(edges, product, finals, soft_clauses)
+    priced, paying = _price_edges(edges, product, finals, soft_clauses, switches)
     machine = _structure(initial, priced, finals, product, soft_clauses)
+    if not switches.reward_end_judgment:
+        machine = replace(machine, judgment=None)
     if _has_positive_cycle(machine):
         raise ValueError("Reward Machine has a positive reward cycle")
 
@@ -372,16 +400,20 @@ def _price_edges(
     product: _Product,
     finals: set[str],
     soft_clauses: Sequence[int],
+    switches: RewardSwitches,
 ) -> tuple[list[tuple[_Edge, float]], set[int]]:
     """Reward each edge from its destination's clause labels; also return the soft clauses paid.
 
     An edge into the well pays the well reward plus the end charge of the state it leaves, so a
     break always costs more than timing out there. Progress pays a soft clause where the clause
     starts or stops waiting. That is a proxy, approximate both ways: it can call a clause paid
-    that changes nothing, or inert when it changes rewards.
+    that changes nothing, or inert when it changes rewards. It follows the ``switches``: a part
+    switched off pays 0, so a soft clause that only that part paid counts as inert.
     """
     labels = product.labels
-    progress = _progress(edges, product, finals)
+    progress = (
+        _progress(edges, product, finals) if switches.reward_progress else dict.fromkeys(edges, 0.0)
+    )
     paying: set[int] = set()
     priced = []
     for edge in edges:
@@ -389,8 +421,11 @@ def _price_edges(
             hard, soft = _open_promises(labels[edge.source], soft_clauses)
             charge = (
                 hard * Configuration.HARD_FAILED_REWARD + soft * Configuration.SOFT_FAILED_REWARD
+                if switches.reward_end_judgment
+                else 0.0
             )
-            priced.append((edge, round(Configuration.WELL_REWARD + charge, 9)))
+            well = Configuration.WELL_REWARD if switches.reward_well else 0.0
+            priced.append((edge, round(well + charge, 9)))
             continue
 
         finishing = edge.destination in finals
@@ -399,7 +434,7 @@ def _price_edges(
             reward += Configuration.TASK_COMPLETION_REWARD
         for clause in soft_clauses:
             before, after = labels[edge.source][clause], labels[edge.destination][clause]
-            term = _soft_term(before, after, finishing)
+            term = _soft_term(before, after, finishing, switches)
             waits = (before is ClauseState.PENDING) != (after is ClauseState.PENDING)
             if term or (waits and progress[edge]):
                 paying.add(clause)
@@ -408,11 +443,13 @@ def _price_edges(
     return priced, paying
 
 
-def _soft_term(before: ClauseState, after: ClauseState, finishing: bool) -> float:
+def _soft_term(
+    before: ClauseState, after: ClauseState, finishing: bool, switches: RewardSwitches
+) -> float:
     """A soft clause pays when it breaks, and how it ends when the task finishes."""
     broke = before is not ClauseState.VIOLATED and after is ClauseState.VIOLATED
-    term = Configuration.SOFT_BREAK_REWARD if broke else 0.0
-    if finishing:
+    term = Configuration.SOFT_BREAK_REWARD if broke and switches.reward_soft_break else 0.0
+    if finishing and switches.reward_soft_pending:
         term += _FINISH_REWARD[after]
     return term
 

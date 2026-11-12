@@ -461,7 +461,7 @@ REWARD_FUNCTION:
         environment = EnvironmentDescription.from_markdown(DEMO_MARKDOWN, source="demo.md")
         compiled = SimpleNamespace(
             environment=environment,
-            proposal=SimpleNamespace(task="finish"),
+            proposal=SimpleNamespace(task="finish", clauses=()),
             text="numeric",
             state_descriptions=(),
             labeling_source="",
@@ -491,7 +491,7 @@ REWARD_FUNCTION:
         """Minimal accepted compiler result shared by compiler-bundle checks."""
         values = {
             "environment": EnvironmentDescription.from_markdown(DEMO_MARKDOWN, source="demo.md"),
-            "proposal": SimpleNamespace(task="finish"),
+            "proposal": SimpleNamespace(task="finish", clauses=()),
             "text": "numeric",
             "state_descriptions": ("start", "finished"),
             "labeling_source": "def done(env):\n    return True\n",
