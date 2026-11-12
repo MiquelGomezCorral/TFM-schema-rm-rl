@@ -57,7 +57,7 @@ class OpenAIEngine(GenericEngine):
         self,
         environment: EnvironmentDescription,
         model: str | None,
-        reasoning: str = "none",
+        reasoning: str = Configuration.reasoning,
     ) -> None:
         model = _required_model(model, "OpenAI")
         self._client = OpenAI(api_key=_required_env("OPENAI_API_KEY"), max_retries=0)
@@ -89,6 +89,7 @@ class OpenAIEngine(GenericEngine):
             },
             reasoning={"effort": _OPENAI_EFFORT.get(self.reasoning, self.reasoning)},
         )
+        self.reported_model = getattr(response, "model", None)
         return responses_text(response)
 
     def _request_responses_text(self, model: str, system: str, user: str) -> str:
@@ -100,6 +101,7 @@ class OpenAIEngine(GenericEngine):
             ],
             reasoning={"effort": _OPENAI_EFFORT.get(self.reasoning, self.reasoning)},
         )
+        self.reported_model = getattr(response, "model", None)
         return responses_text(response)
 
 
@@ -110,7 +112,7 @@ class OpenCodeEngine(GenericEngine):
         self,
         environment: EnvironmentDescription,
         model: str | None,
-        reasoning: str = "none",
+        reasoning: str = Configuration.reasoning,
     ) -> None:
         model = _required_model(model, "OpenCode")
         if model == OPENCODE_GO_MODEL:
@@ -158,6 +160,7 @@ class OpenCodeEngine(GenericEngine):
                 "json_schema": {"name": name, "strict": True, "schema": schema},
             },
         )
+        self.reported_model = getattr(response, "model", None)
         return completion_text(response)
 
     def _request_chat_completions_text(self, model: str, system: str, user: str) -> str:
@@ -168,6 +171,7 @@ class OpenCodeEngine(GenericEngine):
                 {"role": "user", "content": user},
             ],
         )
+        self.reported_model = getattr(response, "model", None)
         return completion_text(response)
 
     def _create_completion(self, **request: Any) -> ChatCompletion:

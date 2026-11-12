@@ -28,10 +28,13 @@ from .evaluation import (
 )
 from .generation import (
     adapt_compilation_result,
+    arm_fm_role_models,
     generate_baseline_bundle,
     generate_compiler_bundle,
     record_bundle_embeddings,
     record_bundle_role_models,
+    record_compiler_failure,
+    review_reward_machine,
 )
 from .paper_profile import (
     PAPER_REFERENCE_SHA,

@@ -1,8 +1,10 @@
 """Generate one Reward Machine per critic-validated natural-language task."""
 
+import time
 from collections.abc import Sequence
 from dataclasses import asdict, replace
 from pathlib import Path
+from typing import Any
 
 from src.arm_fm.evaluation import (
     SERVER_EMBEDDING_EXTRACTION,
@@ -14,7 +16,9 @@ from src.arm_fm.evaluation import (
 from src.arm_fm.generation import (
     MAX_ATTEMPTS,
     LabelingError,
+    call_records,
     clauses_json,
+    clear_call_records,
     generate_compiler_labeling,
     pair_state_descriptions,
     state_identifiers,
@@ -61,12 +65,14 @@ def generate_rm(
     hooks: GenerationHooks | None = None,
     *,
     write_outputs: bool = True,
+    run_stats: list[dict[str, Any]] | None = None,
 ) -> bool:
     """Propose, review, compile, and write one RM per task.
 
     Returns True when every task was accepted and written, and False after an expected
     generation failure, which is also delivered through ``hooks.failure``. Unexpected errors
-    raise.
+    raise. ``run_stats``, when given, receives one entry per task that ran, accepted or failed
+    (its provider request records, attempt counts and wall time), before any output is written.
     """
     hooks = attach_step_trace(CONFIG, hooks or GenerationHooks())
     progress = Progress(hooks, CONFIG.LOGS_PATH)
@@ -76,7 +82,7 @@ def generate_rm(
             progress(f"Run log: {progress.log_path}")
         progress(f"Recurrent soft rules: {'on' if CONFIG.recurrent_soft_penalty else 'off'}")
 
-        _run_pipeline(CONFIG, hooks, progress, write_outputs=write_outputs)
+        _run_pipeline(CONFIG, hooks, progress, write_outputs=write_outputs, run_stats=run_stats)
         return True
 
     except RunCancelled:
@@ -103,17 +109,23 @@ def _run_pipeline(
     progress: Progress,
     *,
     write_outputs: bool = True,
+    run_stats: list[dict[str, Any]] | None = None,
 ) -> None:
     """Run every task through its bounded proposal attempts, then write the outputs."""
     output_paths = prepare_outputs(CONFIG, progress)
     if write_outputs:
         preflight_paths(output_paths, overwrite=CONFIG.overwrite, kind="Output file(s)")
     pipeline = _Pipeline(CONFIG, progress)
-    results = tuple(pipeline.run_task(index, task) for index, task in enumerate(CONFIG.tasks))
+    try:
+        results = tuple(pipeline.run_task(index, task) for index, task in enumerate(CONFIG.tasks))
+    finally:
+        # A failed run reports its requests too; the caller needs them for the failure bundle.
+        if run_stats is not None:
+            run_stats.extend(pipeline.run_stats)
 
     if write_outputs:
         progress("Writing Reward Machine outputs.")
-        results = write_run_outputs(results, output_paths, CONFIG, progress)
+        results = write_run_outputs(results, output_paths, CONFIG, progress, pipeline.run_stats)
         progress("Writing outputs complete.")
     hooks.notify_completion(results, output_paths)
 
@@ -130,6 +142,9 @@ class _Pipeline:
     def __init__(self, CONFIG: Configuration, progress: Progress) -> None:
         self.CONFIG = CONFIG
         self.progress = progress
+        self.reruns = 0  # provider or content failures rerun inside the current task
+        # One entry per task that ran: its request records, stage counts and wall time.
+        self.run_stats: list[dict[str, Any]] = []
         self.environment, self.generator_engine, self.critic_engine = setup_environment_and_engines(
             CONFIG, progress
         )
@@ -145,22 +160,40 @@ class _Pipeline:
         """Return the accepted result for one task, or raise after the last critic rejection.
 
         Only a critic rejection uses up an attempt; a provider or content failure reruns the
-        same attempt (see ``_run_attempt``).
+        same attempt (see ``_run_attempt``). The task's run record joins ``run_stats`` whether
+        it is accepted or fails, so a failed task's requests are still counted.
         """
         attempts = self.CONFIG.attempts
         history: list[dict[str, object]] = []
-        for attempt in range(1, attempts + 1):
-            self.progress.begin_attempt(task_index, attempt, attempts)
-            compiled = self._run_attempt(task_index, task, history)
-            if compiled is not None:
-                self.progress(f"Task {task_index + 1}: attempt {attempt}/{attempts} accepted.")
-                return compiled
+        engines = (self.generator_engine, self.critic_engine)
+        clear_call_records(*engines)
+        started = time.monotonic()
+        self.reruns = 0
+        attempt = rejections = 0
+        try:
+            for attempt in range(1, attempts + 1):
+                self.progress.begin_attempt(task_index, attempt, attempts)
+                compiled = self._run_attempt(task_index, task, history)
+                if compiled is not None:
+                    self.progress(f"Task {task_index + 1}: attempt {attempt}/{attempts} accepted.")
+                    return compiled
+                rejections += 1
 
-        last_failure = history[-1]
-        raise RetryableEngineError(
-            f"Task {task_index + 1} was not accepted within {attempts} attempts. "
-            f"Last {last_failure['source']} feedback: {last_failure['feedback']}"
-        )
+            last_failure = history[-1]
+            raise RetryableEngineError(
+                f"Task {task_index + 1} was not accepted within {attempts} attempts. "
+                f"Last {last_failure['source']} feedback: {last_failure['feedback']}"
+            )
+        finally:
+            self.run_stats.append(
+                {
+                    "calls": call_records(*engines),
+                    "attempts": attempt,
+                    "critic_interventions": rejections,
+                    "retries": self.reruns,
+                    "wall_time_s": round(time.monotonic() - started, 1),
+                }
+            )
 
     def _run_attempt(
         self, task_index: int, task: str, history: list[dict[str, object]]
@@ -176,6 +209,7 @@ class _Pipeline:
             try:
                 return self._attempt(task, history)
             except _RerunError as failure:
+                self.reruns += 1
                 last_error = failure
         raise RetryableEngineError(
             f"Task {task_index + 1} attempt {self.progress.current_attempt}/"
@@ -293,6 +327,7 @@ class _Pipeline:
                 )
             except (RetryableEngineError, ProposalValidationError) as error:
                 last_error = error
+                self.reruns += 1
                 self.progress.warn(
                     f"state tagging request {tagging_attempt}/{attempts} failed: {error}"
                 )

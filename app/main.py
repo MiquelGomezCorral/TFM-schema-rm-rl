@@ -8,10 +8,13 @@ import dotenv
 from maikol_utils.other_utils import args_to_dataclass
 
 from scripts import (
+    SuiteOptions,
+    cross_critic,
     embed_larm,
     evaluate_larm,
     generate_larm,
     generate_rm,
+    generate_suite,
     import_paper_bundle,
     render_rm,
     test_rl,
@@ -38,6 +41,30 @@ def cmd_generate_larm(args: argparse.Namespace) -> None:
     """Generate one baseline or compiler-adapted ARM-FM bundle."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
     generate_larm(CONFIG)
+
+
+def cmd_generate_suite(args: argparse.Namespace) -> None:
+    """Generate the bundles of one task card file for one arm."""
+    only = tuple(item for item in (args.only or "").split(",") if item)
+    generate_suite(
+        SuiteOptions(
+            tasks=args.tasks,
+            arm=args.arm,
+            output=args.output.resolve(),  # the child processes run in the repository root
+            only=only,
+            paraphrases=args.paraphrases,
+            parallel=args.parallel,
+            max_calls=args.max_calls,
+            deadline_min=args.deadline_min,
+            retry_failed=args.retry_failed,
+        )
+    )
+
+
+def cmd_cross_critic(args: argparse.Namespace) -> None:
+    """Judge generated machines with the other pipeline's critic."""
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    cross_critic(CONFIG, args.bundles, args.direction, args.max_calls, args.parallel)
 
 
 def cmd_embed_larm(args: argparse.Namespace) -> None:
@@ -276,7 +303,73 @@ if __name__ == "__main__":
         default=False,
         help="Prefix each description with its task context before embedding (default: disabled)",
     )
+    larm_parser.add_argument(
+        "--arm-fm-critic",
+        action="store_true",
+        help="arm-fm mode only: the critic calls use the critic model and the generator calls the "
+        "generator model (default: one model for every role)",
+    )
     larm_parser.set_defaults(func=cmd_generate_larm)
+
+    # ======================================================================================
+    #                                       generate-suite
+    # ======================================================================================
+    suite_parser = subparsers.add_parser(
+        "generate-suite",
+        help="Generate one bundle per task card for one arm, with a status file per card",
+    )
+    suite_parser.add_argument("--tasks", required=True, type=Path, help="Task card file")
+    suite_parser.add_argument("--arm", required=True, choices=("farm", "arm-fm"))
+    suite_parser.add_argument(
+        "--output", required=True, type=Path, help="Folder that receives <card-id>/ bundles"
+    )
+    suite_parser.add_argument("--only", help="Comma-separated card ids to run (default: all)")
+    suite_parser.add_argument(
+        "--paraphrases",
+        action="store_true",
+        help="Also generate each card's paraphrases as <card-id>~p<k>",
+    )
+    suite_parser.add_argument(
+        "--parallel", type=int, default=10, help="Bundles generated at once (default: %(default)s)"
+    )
+    suite_parser.add_argument(
+        "--max-calls",
+        type=int,
+        help="Stop launching bundles once finished bundles used this many model calls",
+    )
+    suite_parser.add_argument(
+        "--deadline-min", type=float, help="Stop launching bundles after this many minutes"
+    )
+    suite_parser.add_argument(
+        "--retry-failed",
+        action="store_true",
+        help="Run bundles whose status is pipeline-failed again (default: they stay skipped)",
+    )
+    suite_parser.set_defaults(func=cmd_generate_suite)
+
+    # ======================================================================================
+    #                                       cross-critic
+    # ======================================================================================
+    cross_parser = subparsers.add_parser(
+        "cross-critic", help="Judge generated machines with the other pipeline's critic"
+    )
+    cross_parser.add_argument(
+        "--bundles", required=True, type=Path, help="Folder of <card-id>/ bundles of one arm"
+    )
+    cross_parser.add_argument(
+        "--critic",
+        dest="direction",
+        required=True,
+        choices=("farm", "arm-fm"),
+        help="farm judges ARM-FM bundles; arm-fm judges FARM bundles",
+    )
+    cross_parser.add_argument(
+        "--max-calls", type=int, help="Stop launching judgments after this many model calls"
+    )
+    cross_parser.add_argument(
+        "--parallel", type=int, default=10, help="Bundles judged at once (default: %(default)s)"
+    )
+    cross_parser.set_defaults(func=cmd_cross_critic)
 
     # ======================================================================================
     #                                       embed-larm

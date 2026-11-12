@@ -204,6 +204,9 @@ class Configuration:
     mona_executable: str | None = None
     overwrite: bool = False
     critic: bool = True
+    # generate-larm --mode arm-fm: the critic calls use the critic model instead of one model
+    # for every role.
+    arm_fm_critic: bool = False
     # A soft rule's -0.5 is paid at every new break (on) or once per episode (off).
     recurrent_soft_penalty: bool = True
     reasoning: str = "none"

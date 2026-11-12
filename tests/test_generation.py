@@ -35,9 +35,12 @@ class GenerationTests(unittest.TestCase):
 
     def test_bundle_records_critic_validation_only_when_a_critic_ran(self):
         for critic in (True, False):
-            manifest = SimpleNamespace(validation={"structural": True}, effective_settings={})
+            manifest = SimpleNamespace(
+                validation={"structural": True}, effective_settings={}, provenance={}
+            )
             record_bundle_role_models(
-                SimpleNamespace(manifest=manifest), Configuration(critic=critic)
+                SimpleNamespace(manifest=manifest, attempts=[], raw_responses=[]),
+                Configuration(critic=critic),
             )
             self.assertEqual(manifest.validation.get("critic"), True if critic else None)
 
