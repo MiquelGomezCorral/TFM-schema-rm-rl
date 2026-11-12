@@ -178,7 +178,8 @@ class OpenCodeEngine(GenericEngine):
         """Send one chat completion, resending at once with ``low`` if the model refuses ``none``.
 
         The switch is kept for the engine's later requests and warned once. The resend is not a
-        provider repeat; a refusal that survives ``low`` raises like any other 400.
+        provider repeat; a refusal that survives ``low`` raises like any other 400. The refused
+        send is counted in ``resends`` so the request's records include it.
         """
         try:
             return self._client.chat.completions.create(**request, reasoning_effort=self.reasoning)
@@ -198,6 +199,7 @@ class OpenCodeEngine(GenericEngine):
             if self.reasoning != "none" or not (about_reasoning and cannot_disable):
                 raise
         self.reasoning = "low"
+        self.resends += 1
         if self.warn is not None:
             self.warn(
                 f'model {self.model} does not accept reasoning "none"; '

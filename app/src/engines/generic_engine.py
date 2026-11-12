@@ -51,9 +51,11 @@ class GenericEngine:
         self._request = requester
         self._request_text = text_requester
         # One record per request sent, for the bundle's raw_responses. Adapters whose reply
-        # names a model set ``reported_model`` while the request runs.
+        # names a model set ``reported_model`` while the request runs; one that sends again
+        # inside a request after a refusal counts each refused send in ``resends``.
         self.calls: list[dict[str, str | None]] = []
         self.reported_model: str | None = None
+        self.resends = 0
         # The latest reply as the provider sent it, for callers that keep the raw text.
         self.last_reply: str | None = None
 
@@ -184,6 +186,7 @@ class GenericEngine:
         repeats = 0
         while True:
             self.reported_model = None
+            self.resends = 0
             try:
                 self.last_reply = request(self.model, *arguments)
                 return self.last_reply
@@ -197,15 +200,15 @@ class GenericEngine:
             except Exception as error:
                 raise classify_provider_error(error) from error
             finally:
-                self.calls.append(
-                    {
-                        "stage": stage,
-                        # Every critic request is named ``critic`` or ``<something>_critic``.
-                        "role": "critic" if stage.endswith("critic") else "generator",
-                        "model_requested": self.model,
-                        "model_reported": self.reported_model,
-                    }
-                )
+                sent = {
+                    "stage": stage,
+                    # Every critic request is named ``critic`` or ``<something>_critic``.
+                    "role": "critic" if stage.endswith("critic") else "generator",
+                    "model_requested": self.model,
+                }
+                # A refused send got no reply, so it names no model.
+                for reported in [None] * self.resends + [self.reported_model]:
+                    self.calls.append({**sent, "model_reported": reported})
 
     def _check_stopped(self) -> None:
         """Abort the retry loop instead of retrying again once the run was stopped."""
