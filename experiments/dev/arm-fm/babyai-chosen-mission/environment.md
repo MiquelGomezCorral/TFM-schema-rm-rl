@@ -66,7 +66,7 @@ Moving any other object, or leaving the object where it already was, does not ma
 - Can: turn; `forward` onto an empty cell or an open door; `pickup` the ball, key or a box with empty hands; `drop` onto an empty cell in front; `toggle` the door (open or shut) or a box (destroys it).
 - Cannot: walk through a closed door; carry two objects; drop onto an occupied cell, a door cell included; make an event true without dropping the object.
 - An event is true only on a `drop` step, never on two steps in a row, and needs the matching `carrying_*` true on the step before.
-- No event is true at the first step: an event needs the previous valuation, and the first step has none.
+- No event is true at the first step: an event needs the previous valuation, and at the first step every proposition is false in it.
 - Events can repeat: pick the object up again and drop it again.
 - In missions 1 and 3 any object may start in either room, so no order with `green_door_open` is forced: `carrying_blue_box` can come before `green_door_open`.
 - `toggle` on a box removes it for good (the box holds nothing). After that its `carrying_*` and event can never become true, and a mission that needs that box can no longer succeed.

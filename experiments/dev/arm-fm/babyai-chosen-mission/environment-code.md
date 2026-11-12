@@ -11,7 +11,7 @@ Addition to `environment.md`; read both. Facts live there; this file says where 
 
 ## Truth conditions in code
 
-`prev = env.episode_memory["previous_valuation"]`; it is empty at the first step, so an event is false there. Objects and cells are `env.grid.get(x, y)`; scans guard `None`. An object found on the grid is not carried. Objects sit inside the border wall, so neighbor reads stay in range.
+`prev = env.episode_memory["previous_valuation"]`; at the first step every proposition is false in it, so an event is false there. Objects and cells are `env.grid.get(x, y)`; scans guard `None`. An object found on the grid is not carried. Objects sit inside the border wall, so neighbor reads stay in range.
 
 - `green_door_open`: `any(c is not None and c.type == "door" and c.color == "green" and c.is_open for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)])`
 - `carrying_yellow_ball`: `env.carrying is not None and env.carrying.type == "ball" and env.carrying.color == "yellow"`. `carrying_blue_box` and `carrying_purple_box` are the same with `box` and `blue` or `purple`.
