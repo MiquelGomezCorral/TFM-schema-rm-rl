@@ -23,6 +23,7 @@ from torch import Tensor, nn
 from src.compiler import RuntimeValidationError
 from src.config import Configuration
 
+from . import service_room  # noqa: F401  registers MiniGrid-ServiceRoom-v0
 from .artifacts import ArtifactBundle, load_bundle
 from .runtime import RewardMachineEnvironment, RewardMachineRuntime, load_labeling_functions
 
