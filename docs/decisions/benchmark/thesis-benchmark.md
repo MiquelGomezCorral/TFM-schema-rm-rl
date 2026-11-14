@@ -130,7 +130,10 @@ thing whichever arm produced it.
   holding the matching key, and `drop` does nothing on the first step). The environment enforces the
   trigger, not the machine; the forced cards keep the wording, clause, paraphrases and `train` flags of
   their originals, and the originals stay as they are. Only cards whose rule seed 1 showed untested get a
-  forced version.
+  forced version. The forced cards give the trigger at reset, so they test keeping an obligation, not
+  reacting to an event. Of the forced runs, only `tpl-response-1-nogoal-forced` seed 1 trains (3 arms),
+  labeled "trigger given"; the runs that had not started were dropped (user, 2026-11-14). Reactive cards,
+  where the trigger happens during the episode, are proposed as the real test of conditional rules.
 
 ## Protected invariants
 
@@ -228,6 +231,11 @@ and a restart is easier to trust.
   untested; enforce the trigger in the environment, not the machine; `MiniGrid-BlockedUnlockPickup-Cleared-v0`
   and `MiniGrid-UnlockPickup-KeyHeld-v0`, `experiments/benchmark/forced-start/`, `envs/minigrid-*-cleared`
   and `envs/minigrid-*-key-held`; testing program slice `forced-cards`).
+- 2026-11-14: Forced runs cut to one (user): the forced cards give the trigger at reset, so they test
+  keeping an obligation, not reacting; only `tpl-response-1-nogoal-forced` seed 1 trains (3 arms),
+  labeled "trigger given", and reactive cards are proposed as the real test of conditional rules.
+- 2026-11-14: Cannot-start exception confirmed (user): the judge's rule that reads the run's own machine,
+  its episode end and its labeling at reset is needed.
 - 2026-11-14: Labeling vocabulary and accepted-steps rules added (user: "the labeling function generations only
   worry about those used by the reward machine"; "we do always keep all the steps that have been
   accepted"); testing program slice `lf-code`.
