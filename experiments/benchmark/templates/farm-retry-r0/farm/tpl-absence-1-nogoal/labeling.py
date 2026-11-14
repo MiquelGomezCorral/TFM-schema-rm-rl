@@ -1,0 +1,2 @@
+def target_door_open(env):
+    return any(env.grid.get(env.width - 6, y) is not None and env.grid.get(env.width - 6, y).type == "door" and env.grid.get(env.width - 6, y).is_open for y in range(5 * max([y2 for x in range(env.width) for y2 in range(env.height) for c in [env.grid.get(x, y2)] if c is not None and c.type == "ball"], default=env.agent_pos[1]) // 5, 5 * max([y2 for x in range(env.width) for y2 in range(env.height) for c in [env.grid.get(x, y2)] if c is not None and c.type == "ball"], default=env.agent_pos[1]) // 5 + 6))

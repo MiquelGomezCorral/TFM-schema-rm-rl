@@ -1,0 +1,38 @@
+{
+  "bundle": "farm/base-key-corridor",
+  "rm_sha256": "e9805c60cdc2b3b541ae07ef45df8da9b23ace2631e812877229b1be6f5c7170",
+  "attempts": [
+    {
+      "stage": "labeling",
+      "attempt": 1,
+      "status": "accepted",
+      "candidate": "def key_found(env):\n    return bool(env.episode_memory[\"previous_valuation\"] and env.episode_memory[\"previous_valuation\"][\"key_found\"]) or any(cell[0] == 5 for col in env.gen_obs()[\"image\"] for cell in col)\n\n\ndef has_matching_key(env):\n    return bool(env.carrying is not None and env.carrying.type == \"key\" and env.carrying.color == max([c.color for y in range(5 * (max([y for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)] if c is not None and c.type == \"ball\"], default=env.agent_pos[1]) // 5), 5 * (max([y for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)] if c is not None and c.type == \"ball\"], default=env.agent_pos[1]) // 5) + 6) for c in [env.grid.get(env.width - 6, y)] if c is not None and c.type == \"door\"], default=None))\n\n\ndef target_door_open(env):\n    return any(c is not None and c.type == \"door\" and c.is_open for y in range(5 * (max([y for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)] if c is not None and c.type == \"ball\"], default=env.agent_pos[1]) // 5), 5 * (max([y for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)] if c is not None and c.type == \"ball\"], default=env.agent_pos[1]) // 5) + 6) for c in [env.grid.get(env.width - 6, y)])\n\n\ndef target_room_entered(env):\n    return bool(env.episode_memory[\"previous_valuation\"] and env.episode_memory[\"previous_valuation\"][\"target_room_entered\"]) or (env.agent_pos[0] >= env.width - 6 and 0 <= env.agent_pos[1] - 5 * (max([y for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)] if c is not None and c.type == \"ball\"], default=env.agent_pos[1]) // 5) <= 5)\n\n\ndef target_picked_up(env):\n    return bool(env.carrying is not None and env.carrying.type == \"ball\" and env.mission == \"pick up the \" + str(env.carrying.color) + \" ball\")\n",
+      "feedback": "NO CHANGES NEEDED. All five declared propositions are covered exactly, with names matching identifiers and each predicate taking only `env`. Expression-only bodies are used throughout, with no assignments, conditionals, loops, or forbidden builtins. `key_found` correctly compares with the previous valuation for the latch behavior and stays false on the first step since the previous valuation is false for every proposition then. `has_matching_key` guards the carried object against `None` before reading attributes. `target_door_open` guards each cell with `c is not None` before reading type and `is_open`, and finds the door by place in the target room's left wall rather than by `is_locked`. `target_room_entered` correctly uses the previous valuation latch and checks the agent's position within the room's 6x6 block including the doorway column. `target_picked_up` guards `carrying` and matches the mission string. No invented API attributes, no mutation of env or memory, and no recursive history beyond the permitted `previous_valuation` reads.",
+      "error": "",
+      "raw_response": ""
+    }
+  ],
+  "previous": {
+    "labeling": "",
+    "attempts": [
+      {
+        "attempt": 1,
+        "candidate": "",
+        "error": "Labeling generation failed after 3 requests: CHANGES REQUIRED: `has_matching_key` is wrong. It compares the carried key's color against the color of any door found on the target room's left-wall column (column `env.width - 6`) across the ball's room row span, but that column contains other doors in general — the environment states that in most layouts another door shares the locked door's color, and the side-room/hallway doors of various colors can also lie on that column. Color-matching against an arbitrary door on that wall does not identify the matching key. The matching key's color is the color of the door that starts locked on that wall; fix the predicate so the carried key's color equals the color of the locked door at that location (selecting the door at `env.grid.get(env.width - 6, door_y)` for the door cell within the ball's room-row span, e.g. the unique door cell on that wall segment), not just any door color found there. Also verify the door-cell y-range used to locate the wall: the left wall of the target room spans the room's 6 rows, so scanning exactly that span is correct, but only door cells should contribute — currently any non-door, non-None cell is filtered by `c.type == 'door'` which is fine; the defect is that the wall may hold multiple doors and the max picks the wrong one. Restrict to the door that starts locked (the door in that wall segment — there is exactly one door on the locked room's left wall per the layout).",
+        "feedback": "",
+        "raw_response": "",
+        "stage": "labeling",
+        "status": "failed"
+      }
+    ],
+    "stage_status": "failed",
+    "check_record": {}
+  },
+  "models": [
+    "deepseek-v4.1-flash",
+    "glm-5.3-flash"
+  ],
+  "calls": 2,
+  "wall_time_s": 13.0,
+  "outcome": "accepted"
+}

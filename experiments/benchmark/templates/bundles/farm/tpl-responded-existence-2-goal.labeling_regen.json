@@ -1,0 +1,103 @@
+{
+  "bundle": "farm/tpl-responded-existence-2-goal",
+  "rm_sha256": "ea8d702323ee60a16955322f2db2ac3d569ca1ef704f36e832ffbfc23593e6d5",
+  "attempts": [
+    {
+      "stage": "labeling",
+      "attempt": 1,
+      "status": "rejected",
+      "candidate": "def blocker_moved(env):\n    return not any(c is not None and c.type == \"ball\" for x in range(env.width) for y in range(env.height) for d in [env.grid.get(x, y)] for c in [env.grid.get(d[0] - 1, d[1])] if d is not None and d.type == \"door\")\n\ndef has_door_key(env):\n    return env.carrying is not None and env.carrying.type == \"key\" and any(c is not None and c.type == \"door\" and c.color == env.carrying.color for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)])\n\ndef target_picked_up(env):\n    return env.carrying is not None and env.carrying.type == \"box\" and env.mission == f\"pick up the {env.carrying.color} box\"\n",
+      "feedback": "CHANGES REQUIRED: The `blocker_moved` predicate is wrong. It scans the whole grid for any door, then checks the cell one step before it via `env.grid.get(d[0] - 1, d[1])` where `d` is the grid cell object at `(x, y)` — but `d` is a Door object, not a coordinate tuple, so `d[0]` and `d[1]` would fail (doors are not indexable). This invents an API usage and also ignores that the door may be on any side of a room, in which case 'one to the left' is not the blocking cell. The documented approach finds the single door cell `(dx, dy)` by scanning the grid for an object of type 'door', then checks whether the cell at `(dx - 1, dy)` holds a ball: `blocker_moved` should return true exactly when no ball is on the cell immediately to the left of the door (per the code notes, the ball starts at `(dx - 1, dy)`), with a ball in hand counting as moved since it is not on the grid. Rewrite `blocker_moved` to scan the grid once for the door cell, guard `None` cells, and check the ball only at that cell's left neighbor, without reading any door object attributes other than `type`. The other two predicates (`has_door_key`, `target_picked_up`) match the documented truth conditions and are fine.",
+      "error": "",
+      "raw_response": ""
+    },
+    {
+      "stage": "labeling",
+      "attempt": 2,
+      "status": "rejected",
+      "candidate": "def blocker_moved(env):\n    return not any(cell is not None and cell.type == \"door\" and env.grid.get(x - 1, y) is not None and env.grid.get(x - 1, y).type == \"ball\" for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\n\ndef has_door_key(env):\n    return env.carrying is not None and env.carrying.type == \"key\" and any(cell is not None and cell.type == \"door\" and cell.color == env.carrying.color for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\n\ndef target_picked_up(env):\n    return env.carrying is not None and env.carrying.type == \"box\" and env.mission == \"pick up the \" + str(env.carrying.color) + \" box\"\n",
+      "feedback": "CHANGES REQUIRED: The `blocker_moved` predicate is wrong. It scans for any door with a ball in front, but the environment has one door plus the shared wall and walls are grid cells; also reading `env.grid.get(x-1, y)` inside the loop without knowing (x,y) is the door cell means the check does not match the specified truth condition. Per the code notes, `blocker_moved` should be: the cell in front of the door, i.e. `(dx-1, dy)` where `(dx, dy)` is the door's cell, holds no ball, and a ball in hand counts as moved (carrying the ball also makes it true). Fix it to locate the door by type, then check that `env.grid.get(door_x - 1, door_y)` holds no ball, guarding empty cells with `cell is not None` before reading attributes. `has_door_key` and `target_picked_up` are consistent with the grounding and need no changes.",
+      "error": "",
+      "raw_response": ""
+    },
+    {
+      "stage": "labeling",
+      "attempt": 3,
+      "status": "failed",
+      "candidate": "def blocker_moved(env):\n    return not any(cell is not None and cell.type == \"door\" and not (trigger is not None and trigger.type == \"ball\") for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)] for trigger in [env.grid.get(x - 1, y) if x - 1 >= 0 else None]) and any(cell is not None and cell.type == \"door\" for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\ndef has_door_key(env):\n    return env.carrying is not None and env.carrying.type == \"key\" and any(cell is not None and cell.type == \"door\" and cell.color == env.carrying.color for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\ndef target_picked_up(env):\n    return env.carrying is not None and env.carrying.type == \"box\" and env.mission == \"pick up the \" + str(env.carrying.color) + \" box\"\n",
+      "feedback": "",
+      "error": "Labeling code may only access public environment attributes",
+      "raw_response": ""
+    }
+  ],
+  "previous": {
+    "labeling": "def blocker_moved(env):\n    return (env.carrying is not None and env.carrying.type == \"ball\") or any(cell is not None and cell.type == \"door\" and not (env.grid.get(x - 1, y) is not None and env.grid.get(x - 1, y).type == \"ball\") for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\ndef has_door_key(env):\n    return env.carrying is not None and env.carrying.type == \"key\" and any(cell is not None and cell.type == \"door\" and cell.color == env.carrying.color for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\ndef door_open(env):\n    return any(cell is not None and cell.type == \"door\" and cell.is_open for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\ndef target_picked_up(env):\n    return env.carrying is not None and env.carrying.type == \"box\" and env.mission == \"pick up the \" + str(env.carrying.color) + \" box\"\n\ndef key_lost(env):\n    return env.episode_memory[\"previous_valuation\"] and env.episode_memory[\"previous_valuation\"][\"has_door_key\"] and not (env.carrying is not None and env.carrying.type == \"key\" and any(cell is not None and cell.type == \"door\" and cell.color == env.carrying.color for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])) and not any(cell is not None and cell.type == \"door\" and cell.is_open for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n",
+    "attempts": [
+      {
+        "attempt": 1,
+        "candidate": "def blocker_moved(env):\n    return not any(cell is not None and cell.type == \"ball\" for x, y in [(dx - 1, dy)] for dx, dy in [(x, y) for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)] if c is not None and c.type == \"door\"] for cell in [env.grid.get(x, y)])\n\ndef door_open(env):\n    return any(cell is not None and cell.type == \"door\" and cell.is_open for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\ndef has_door_key(env):\n    return env.carrying is not None and env.carrying.type == \"key\" and any(cell is not None and cell.type == \"door\" and cell.color == env.carrying.color for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\ndef target_picked_up(env):\n    return env.carrying is not None and env.carrying.type == \"box\" and env.mission == \"pick up the \" + str(env.carrying.color) + \" box\"\n\ndef key_lost(env):\n    return bool(env.episode_memory[\"previous_valuation\"]) and env.episode_memory[\"previous_valuation\"][\"has_door_key\"] and not (env.carrying is not None and env.carrying.type == \"key\" and any(cell is not None and cell.type == \"door\" and cell.color == env.carrying.color for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])) and not any(cell is not None and cell.type == \"door\" and cell.is_open for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n",
+        "error": "Labeling code references unknown name 'dx'",
+        "feedback": "",
+        "raw_response": "",
+        "stage": "labeling",
+        "status": "failed"
+      },
+      {
+        "attempt": 2,
+        "candidate": "def blocker_moved(env):\n    return not any(cell is not None and cell.type == \"ball\" for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)] for door in [cell] if door is not None and door.type == \"door\" for bx in [x - 1] for by in [y] for bc in [env.grid.get(bx, by)]) or not any(cell is not None and cell.type == \"ball\" for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)] if cell is not None and cell.type == \"door\" for bx in [x - 1] for by in [y] for bc in [env.grid.get(bx, by)] if bc is not None and bc.type == \"ball\")\n\ndef has_door_key(env):\n    return env.carrying is not None and env.carrying.type == \"key\" and any(cell is not None and cell.type == \"door\" and cell.color == env.carrying.color for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\ndef door_open(env):\n    return any(cell is not None and cell.type == \"door\" and cell.is_open for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\ndef target_picked_up(env):\n    return env.carrying is not None and env.carrying.type == \"box\" and env.mission == f\"pick up the {env.carrying.color} box\"\n\ndef key_lost(env):\n    return bool(env.episode_memory[\"previous_valuation\"]) and env.episode_memory[\"previous_valuation\"][\"has_door_key\"] and not (env.carrying is not None and env.carrying.type == \"key\" and any(cell is not None and cell.type == \"door\" and cell.color == env.carrying.color for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])) and not any(cell is not None and cell.type == \"door\" and cell.is_open for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n",
+        "error": "",
+        "feedback": "CHANGES REQUIRED: `blocker_moved` is wrong. It currently scans the whole grid trying to pair every door with a ball one cell to its left (x-1) and adds a nonsensical duplicate disjunct that references `door` instead of `cell`. Per the semantics, `blocker_moved` must be true when the single cell in front of the door (on the start side, i.e., the cell adjacent to the door inside the starting room — for example the cell one step in the direction of the start room) does not hold a ball, and a ball carried in hand also counts as moved. The fix: locate the door with `any(...)`, get the door cell, and check the neighbor cell on the start-room side (x - 1 for a left-room start layout as documented) for a ball; additionally, if `env.carrying` is a ball, the blocker counts as moved. Rewrite `blocker_moved` as a single expression that (a) returns True when `env.carrying` is not None and `env.carrying.type == 'ball'`, or (b) checks the grid: find the cell holding a door, then verify `env.grid.get(x - 1, y)` (the adjacent cell in the start room) is not a ball. The current nested-generator structure also produces an empty-generator truthiness error path and should be replaced with this simpler guarded scan.",
+        "raw_response": "",
+        "stage": "labeling",
+        "status": "rejected"
+      },
+      {
+        "attempt": 3,
+        "candidate": "def blocker_moved(env):\n    return (env.carrying is not None and env.carrying.type == \"ball\") or any(cell is not None and cell.type == \"door\" and not (env.grid.get(x - 1, y) is not None and env.grid.get(x - 1, y).type == \"ball\") for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\ndef has_door_key(env):\n    return env.carrying is not None and env.carrying.type == \"key\" and any(cell is not None and cell.type == \"door\" and cell.color == env.carrying.color for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\ndef door_open(env):\n    return any(cell is not None and cell.type == \"door\" and cell.is_open for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\ndef target_picked_up(env):\n    return env.carrying is not None and env.carrying.type == \"box\" and env.mission == \"pick up the \" + str(env.carrying.color) + \" box\"\n\ndef key_lost(env):\n    return env.episode_memory[\"previous_valuation\"] and env.episode_memory[\"previous_valuation\"][\"has_door_key\"] and not (env.carrying is not None and env.carrying.type == \"key\" and any(cell is not None and cell.type == \"door\" and cell.color == env.carrying.color for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])) and not any(cell is not None and cell.type == \"door\" and cell.is_open for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n",
+        "error": "",
+        "feedback": "NO CHANGES NEEDED. Each declared proposition has exactly one predicate with an expression-only body taking `env` and using only the documented API plus `previous_valuation`. `blocker_moved` correctly reads whether the cell in front of a door holds no ball (allowing a carried ball), `has_door_key` checks the carried key's color against a door, `door_open` scans for an open door, `target_picked_up` matches the carried box against `env.mission`, and `key_lost` is a proper event comparing current state to the previous valuation, false on the first step via the truthiness guard on the memory map, and reads no other forbidden attributes. Persistent propositions use only the current observation.",
+        "raw_response": "",
+        "stage": "labeling",
+        "status": "accepted"
+      }
+    ],
+    "stage_status": "complete",
+    "check_record": {
+      "bundle": "farm/tpl-responded-existence-2-goal",
+      "arm": "farm",
+      "card_id": "tpl-responded-existence-2-goal",
+      "environment": "MiniGrid-BlockedUnlockPickup-v0",
+      "rm_sha256": "ea8d702323ee60a16955322f2db2ac3d569ca1ef704f36e832ffbfc23593e6d5",
+      "initial": {
+        "kind": "ok",
+        "evidence": [],
+        "coverage": {
+          "compared": {
+            "blocker_moved": 1180,
+            "door_open": 1180,
+            "has_door_key": 1180,
+            "key_lost": 1180,
+            "target_picked_up": 1180
+          },
+          "of": 5,
+          "not_in_reference": []
+        }
+      },
+      "failed": false,
+      "labeling_original": "def blocker_moved(env):\n    return (env.carrying is not None and env.carrying.type == \"ball\") or any(cell is not None and cell.type == \"door\" and not (env.grid.get(x - 1, y) is not None and env.grid.get(x - 1, y).type == \"ball\") for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\ndef has_door_key(env):\n    return env.carrying is not None and env.carrying.type == \"key\" and any(cell is not None and cell.type == \"door\" and cell.color == env.carrying.color for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\ndef door_open(env):\n    return any(cell is not None and cell.type == \"door\" and cell.is_open for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\ndef target_picked_up(env):\n    return env.carrying is not None and env.carrying.type == \"box\" and env.mission == \"pick up the \" + str(env.carrying.color) + \" box\"\n\ndef key_lost(env):\n    return env.episode_memory[\"previous_valuation\"] and env.episode_memory[\"previous_valuation\"][\"has_door_key\"] and not (env.carrying is not None and env.carrying.type == \"key\" and any(cell is not None and cell.type == \"door\" and cell.color == env.carrying.color for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])) and not any(cell is not None and cell.type == \"door\" and cell.is_open for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n",
+      "labeling_sha256": "4acbe2e6693ed780acaabc8d7c3d84dd0bf3dbe056b50ddac3a067bcdb09b6ea",
+      "outcome": "ok",
+      "generator_model": "deepseek-v4.1-flash",
+      "rounds": [],
+      "calls": 0,
+      "wall_time_s": 0.0
+    }
+  },
+  "models": [
+    "deepseek-v4.1-flash",
+    "glm-5.3-flash"
+  ],
+  "calls": 5,
+  "wall_time_s": 24.9,
+  "outcome": "failed"
+}

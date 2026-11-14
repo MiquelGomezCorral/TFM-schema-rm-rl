@@ -1,0 +1,82 @@
+{
+  "api_definitions": {
+    "labeling": "- `env.mission`: the mission string, for example `pick up the grey box`. Mission targets\n  come from it: do not assume a fixed color or object, match the designated one.\n- `env.agent_pos`: the agent position as `(x, y)`.\n- `env.agent_dir`: the facing direction as `0` right, `1` down, `2` left, `3` up.\n- `env.grid.get(x, y)`: the object at that cell, or `None` when the cell is empty. Grid\n  coordinates use `0 <= x < env.width` and `0 <= y < env.height`.\n- Object attributes: `type` (for example `key`, `door`, `box`, `ball`, `wall`, `goal`),\n  `color`, and `is_open` and `is_locked` on doors. Door openness and lock state come from\n  them.\n- `env.carrying`: the carried object, or `None`; it exposes `type` and `color`. Carry state\n  comes from it.\n- `env.width`, `env.height`: grid size.\n\nObject classes cannot be imported. To scan the grid, guard empty cells with\n`cell is not None` before reading an attribute. This expression checks whether any cell holds\na given object type:\n\n    any(cell is not None and cell.type == \"<type>\" for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])"
+  },
+  "bundle_version": 1,
+  "effective_settings": {
+    "critic_model": "glm-5.3-flash",
+    "generator_model": "deepseek-v4.1-flash",
+    "max_attempts": 10,
+    "mode": "compiler",
+    "recurrent_soft_penalty": true,
+    "reward_end_judgment": true,
+    "reward_progress": true,
+    "reward_soft_break": true,
+    "reward_soft_pending": true,
+    "reward_well": true
+  },
+  "environment": "experiments/benchmark/envs/minigrid-blocked-unlock-pickup-cleared/environment.md",
+  "errors": [
+    "Labeling code may not call 'next'",
+    "Compiler generation failed at the labeling stage after the machine was accepted: Labeling generation failed after 3 requests: CHANGES REQUIRED: `blocker_moved` is wrong. It must check the single cell directly in front of the door using `env.agent_pos` and `env.agent_dir` (the reachable cell the door is toggled from), i.e. true when that specific cell holds no ball (and a ball in"
+  ],
+  "generation": {
+    "attempt": 1,
+    "attempt_classification": "incomplete",
+    "clause_texts": [
+      "As long as the blocker is moved (the ball is away from the door), the agent has the door key."
+    ],
+    "clauses": [
+      [
+        "Response",
+        [
+          "blocker_moved",
+          "has_door_key"
+        ],
+        "hard"
+      ]
+    ],
+    "compiler_text": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES:\nACCEPTING_STATES: u0\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, blocker_moved&!has_door_key) -> u1\n(u1, has_door_key) -> u0\nREWARD_FUNCTION:\n(u0, blocker_moved&!has_door_key, u1) -> -0.1\n(u1, has_door_key, u0) -> 0.1\nPENDING_PROMISES:\nu1: hard 1, soft 0\n",
+    "first_attempt": false,
+    "labeling_api": "- `env.mission`: the mission string, for example `pick up the grey box`. Mission targets\n  come from it: do not assume a fixed color or object, match the designated one.\n- `env.agent_pos`: the agent position as `(x, y)`.\n- `env.agent_dir`: the facing direction as `0` right, `1` down, `2` left, `3` up.\n- `env.grid.get(x, y)`: the object at that cell, or `None` when the cell is empty. Grid\n  coordinates use `0 <= x < env.width` and `0 <= y < env.height`.\n- Object attributes: `type` (for example `key`, `door`, `box`, `ball`, `wall`, `goal`),\n  `color`, and `is_open` and `is_locked` on doors. Door openness and lock state come from\n  them.\n- `env.carrying`: the carried object, or `None`; it exposes `type` and `color`. Carry state\n  comes from it.\n- `env.width`, `env.height`: grid size.\n\nObject classes cannot be imported. To scan the grid, guard empty cells with\n`cell is not None` before reading an attribute. This expression checks whether any cell holds\na given object type:\n\n    any(cell is not None and cell.type == \"<type>\" for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])",
+    "refined": false
+  },
+  "inputs": {
+    "environment_markdown": "# MiniGrid BlockedUnlockPickup, ball already moved\n\n## Environment\n\nTwo rooms are connected by a locked door. A matching key is in the starting room, and the mission's target box is in the other room. A ball is in the starting room too, but it starts away from the door: it does not block anything. The key must be acquired and the door unlocked before the target can be collected. Colors and positions vary between resets. The agent has seven actions: turn left, turn right, move forward, pick up, drop, toggle, and done. Done does nothing.\n\nLayout: two 6x6 rooms, one locked door of random color in the shared wall. The agent starts with empty hands. A ball of random color lies on a floor cell of the start room at least two steps away from the cell directly in front of the door, so the door is free to approach and `blocker_moved` is already true at the first step. The cell in front of the door is the only reachable cell the agent can toggle the door from. The key, in the door's color, lies in the start room and is reachable without moving the ball. One box of random color lies in the right room. The mission names the box: \"pick up the <color> box\".\n\n## Objective and episode boundary\n\nThe mission is complete when the agent picks up the designated target box. The environment ends the episode on that pickup and cuts it at the step limit.\n\nThe step limit is 16 times 6 squared, 576 steps. Only picking up the mission's box ends the episode.\n\n## Proposition semantics\n\nThe propositions denote observable task progress, independent of the raw action used to cause it.\n\n| id | kind | true when |\n|---|---|---|\n| `blocker_moved` | condition, reading | the cell in front of the door holds no ball; a ball in the agent's hand counts as moved; false again if the ball is dropped back there; true at the first step, because the ball starts away from that cell |\n| `has_door_key` | condition | the agent carries a key whose color equals the door's color |\n| `door_open` | condition | the door is open; false again if toggled shut |\n| `target_picked_up` | condition, last step only | the agent carries the box the mission names |\n| `key_lost` | event, reading | `has_door_key` was true at the previous step, is false now, and `door_open` is false now; false on every other step |\n\nReadings: the descriptions of `blocker_moved` and `key_lost` leave open how they behave over time.\n\n- `blocker_moved` is a condition, not a latch: it is false again if the ball is dropped back on that cell.\n- `key_lost` is an event. It differs from a lingering reading only after the key is dropped: the event is true for that one step, not until the key is picked up again.\n\n## Constraints\n\n- `door_open` cannot become true before `blocker_moved`: the ball starts away from the door, so `blocker_moved` is already true at the first step.\n- `door_open` cannot become true before `has_door_key`: only toggling with the matching key unlocks the door.\n- `target_picked_up` cannot become true before `door_open`: the box room has no other entrance.\n- `has_door_key` and `target_picked_up` never hold together: the agent holds one object, so pick up does nothing with the key in hand.\n- `key_lost` and `has_door_key` never hold together: the event requires the key not carried.\n- `key_lost` and `door_open` never hold together: the event requires the door not open.\n- `key_lost` and `target_picked_up` never hold together: `key_lost` needs a drop step and `target_picked_up` a pick-up step.\n\n## What the agent can and cannot do\n\n- Can: turn; move forward onto an empty cell or an open door; pick up the ball, key or box with empty hands; drop onto an empty cell in front; toggle the door in front.\n- Cannot: push or walk through the ball; unlock without the matching key; carry two objects; drop onto an occupied cell; relock a door.\n- Only pick up and drop move the ball: toggle and move forward leave it in place. The agent never has to touch the ball: `blocker_moved` is true from the first step. With the ball in hand, picking up the key does nothing, so a ball taken must be dropped before the key is picked up.\n- The key may be dropped again, and that drop fires `key_lost` while the door is closed.\n- `blocker_moved` turns false only if the agent picks up the ball and drops it on the cell in front of the door.\n\n## Example trace\n\nA real episode, mission \"pick up the purple box\": 18 steps, reward 0.972.\n\n1. 1 turn (step 1): `blocker_moved` true, already true at the first step\n2. 1 turn or move, no proposition changes\n3. `pickup` (step 3): `has_door_key` true\n4. 7 turns and moves, no proposition changes\n5. `toggle` (step 11): `door_open` true\n6. 1 turn or move, no proposition changes\n7. `drop` (step 13): `has_door_key` false\n8. 4 turns and moves, no proposition changes\n9. `pickup` (step 18): `target_picked_up` true [episode terminated]\n\nThe agent never touches the ball. The `drop` at step 13 frees the hands for the box; `key_lost` stays false because the door is open.\n\n## Propositions\n- `blocker_moved`: The blocking ball no longer prevents access to the locked door.\n- `has_door_key`: The agent is currently carrying the key matching the locked door.\n- `door_open`: The door leading to the target room is currently unlocked and open.\n- `target_picked_up`: The agent is currently carrying the mission's designated box.\n- `key_lost`: The matching key was acquired and then lost before the door was opened.\n\n## Example tasks\n\n- Eventually pick up the target box.\n- Move the blocker before opening the door.\n- Acquire the matching key before opening the door.\n\n\n# MiniGrid BlockedUnlockPickup, ball already moved: code notes\n\nAddition to `environment.md`; read both. Facts live there; this file says where they come from and how code reads them. It is the plain level of `../minigrid-blocked-unlock-pickup/` with one change: the ball starts away from the door. The rest of that folder's notes (rules, constraints, evidence) apply.\n\n## Source and runtime\n\n- Source: `app/src/arm_fm/forced_starts.py:BlockedUnlockPickupClearedEnv`, a subclass of MiniGrid's `BlockedUnlockPickupEnv`. Importing `src.arm_fm.environments` registers the id.\n- Gymnasium ID: `MiniGrid-BlockedUnlockPickup-Cleared-v0`. The plain id `MiniGrid-BlockedUnlockPickup-v0` is untouched.\n- The ball moves after the plain `_gen_grid`, to a free floor cell of the start room at least 2 steps (Manhattan) from the cell in front of the door, drawn from the reset seed after every plain draw. The same seed gives the plain level's door, key, box and agent.\n- Runtime: `minigrid==3.1.0`, `gymnasium==1.3.0`, pinned in `requirements.txt`.\n- `[code: file:function]` is MiniGrid 3.1.0 source (`minigrid/...`) or `forced_starts.py`. `[run: check_forced_starts.py]` is `experiments/benchmark/scripts/check_forced_starts.py` on the real environment, reset seeds 1 to 20, and a scripted solve over seeds 1 to 300.\n\n## Truth conditions in code\n\n`prev` is `env.episode_memory[\"previous_valuation\"]`; at the first step every proposition is false in it. `K` and `D` stand for the `has_door_key` and `door_open` expressions. There is one door, so a scan by type finds it; `(dx, dy)` is its cell. The ball starts away from `(dx - 1, dy)` [code: forced_starts.py:BlockedUnlockPickupClearedEnv._gen_grid].\n\n| id | expression |\n|---|---|\n| `blocker_moved` | `not any(c is not None and c.type == \"ball\" for c in [env.grid.get(dx - 1, dy)])` (a ball in hand is not on the grid, so it counts as moved) |\n| `has_door_key` | `env.carrying is not None and env.carrying.type == \"key\" and any(c is not None and c.type == \"door\" and c.color == env.carrying.color for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)])` |\n| `door_open` | `any(c is not None and c.type == \"door\" and c.is_open for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)])` |\n| `target_picked_up` | `env.carrying is not None and env.carrying.type == \"box\" and env.mission == f\"pick up the {env.carrying.color} box\"` |\n| `key_lost` | `prev[\"has_door_key\"] and not K and not D` (event: previous step against the current state) |\n\n## Evidence\n\nWhat this level changes, against the plain level for the same reset seed [run: check_forced_starts.py, seeds 1 to 20, 20/20 on every line]:\n\n- Layout and mission text: equal to the plain level's (agent cell and direction, door, key, box, mission) except the ball, which lies on a floor cell of the start room at least 2 steps from the cell in front of the door. Hands empty, door locked, key in the door's color [code: forced_starts.py:BlockedUnlockPickupClearedEnv._gen_grid].\n- `blocker_moved` start: true at the first step, and true on every one of 100 idle steps; the rule `Response(blocker_moved, has_door_key)` fails on that idle episode.\n- Key and door reachable without moving the ball: a scripted agent that takes the key, opens the door and takes the box ends with reward above 0 on seeds 1 to 300 (an earlier version that allowed the ball beside the front cell failed 2 of 200 seeds in the plan player's drop rule, so that cell and its neighbours are excluded).\n- Example trace: seed 1, scripted solver (`pickup` key, `toggle` door, `drop`, `pickup` box) [run: check_forced_starts.py].\n\nEverything else is the plain level's code, with the evidence in `../minigrid-blocked-unlock-pickup/environment-code.md`: the readings of `blocker_moved` and `key_lost`, the constraints (`door_open` after `has_door_key`, `target_picked_up` after `door_open`, the pairs that never hold together), what the agent can and cannot do, and the step limit `16 * 6**2 = 576` [code: BlockedUnlockPickupEnv.__init__, minigrid_env.py:step].\n\n## Labeling API\n\n- `env.mission`: the mission string, for example `pick up the grey box`. Mission targets\n  come from it: do not assume a fixed color or object, match the designated one.\n- `env.agent_pos`: the agent position as `(x, y)`.\n- `env.agent_dir`: the facing direction as `0` right, `1` down, `2` left, `3` up.\n- `env.grid.get(x, y)`: the object at that cell, or `None` when the cell is empty. Grid\n  coordinates use `0 <= x < env.width` and `0 <= y < env.height`.\n- Object attributes: `type` (for example `key`, `door`, `box`, `ball`, `wall`, `goal`),\n  `color`, and `is_open` and `is_locked` on doors. Door openness and lock state come from\n  them.\n- `env.carrying`: the carried object, or `None`; it exposes `type` and `color`. Carry state\n  comes from it.\n- `env.width`, `env.height`: grid size.\n\nObject classes cannot be imported. To scan the grid, guard empty cells with\n`cell is not None` before reading an attribute. This expression checks whether any cell holds\na given object type:\n\n    any(cell is not None and cell.type == \"<type>\" for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n",
+    "task": "Any time the ball is away from the door, the key must be in your hands at that moment or afterwards."
+  },
+  "proposition_semantics": {
+    "blocker_moved": "The blocking ball no longer prevents access to the locked door.",
+    "door_open": "The door leading to the target room is currently unlocked and open.",
+    "has_door_key": "The agent is currently carrying the key matching the locked door.",
+    "key_lost": "The matching key was acquired and then lost before the door was opened.",
+    "target_picked_up": "The agent is currently carrying the mission's designated box."
+  },
+  "provenance": {
+    "generator": "compiler-adaptation",
+    "stamp": {
+      "attempts": 2,
+      "commit": "b332ecfa442e680e743749ea56965b6c3ee750a7",
+      "critic_interventions": 3,
+      "critic_model": "glm-5.3-flash",
+      "dirty": false,
+      "generator_model": "deepseek-v4.1-flash",
+      "provisional": false,
+      "reasoning": "none",
+      "retries": 1,
+      "wall_time_s": 47.8
+    },
+    "status": "failed"
+  },
+  "rm_mode": "compiler",
+  "stage_status": {
+    "descriptions": "complete",
+    "labeling": "failed",
+    "reward_machine": "complete"
+  },
+  "task": "Any time the ball is away from the door, the key must be in your hands at that moment or afterwards.",
+  "validation": {
+    "critic": true,
+    "structural": true
+  }
+}

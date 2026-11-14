@@ -1,0 +1,38 @@
+{
+  "bundle": "farm/tpl-responded-existence-1-goal",
+  "rm_sha256": "746aeb608d6f92af91da2af932035c9a1ea4c8d68a875c365846318269a92e69",
+  "attempts": [
+    {
+      "stage": "labeling",
+      "attempt": 1,
+      "status": "accepted",
+      "candidate": "def key_found(env):\n    return (env.episode_memory[\"previous_valuation\"] and env.episode_memory[\"previous_valuation\"][\"key_found\"]) or any(cell[0] == 5 for col in env.gen_obs()[\"image\"] for cell in col)\n\ndef target_door_open(env):\n    return any(c is not None and c.type == \"door\" and c.is_open for y in range(5 * (max([y for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)] if c is not None and c.type == \"ball\"], default=env.agent_pos[1]) // 5), 5 * (max([y for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)] if c is not None and c.type == \"ball\"], default=env.agent_pos[1]) // 5) + 6) for c in [env.grid.get(env.width - 6, y)])\n\ndef target_picked_up(env):\n    return env.carrying is not None and env.carrying.type == \"ball\" and env.mission == f\"pick up the {env.carrying.color} ball\"\n",
+      "feedback": "NO CHANGES NEEDED. Exactly one predicate per declared proposition (key_found, target_door_open, target_picked_up), names and signatures match, bodies are single expressions using only allowed builtins. key_found reads only the current view with the previous-valuation latch and is correctly false on the first step (previous_valuation is an empty/false map at the start, and the guard checks presence before indexing). target_door_open correctly locates the target door by place (ball's room row, left wall column width-6) rather than is_locked, and guards each cell for None. target_picked_up matches the carried object against the mission string, avoiding a hard-coded color. No state descriptions, RM states, or rewards are consulted; no invented API attributes.",
+      "error": "",
+      "raw_response": ""
+    }
+  ],
+  "previous": {
+    "labeling": "",
+    "attempts": [
+      {
+        "attempt": 1,
+        "candidate": "",
+        "error": "Labeling generation failed after 3 requests: CHANGES REQUIRED: `has_matching_key` compares the carried key's color to the locked door's color by scanning the locked door column, but the candidate uses `max(...)` over door colors, which fails when the door color string is not the max of the scanned list (e.g., multiple doors or string ordering) — the color match must be by equality to the door found at that column, not an ordering comparison. Fix `has_matching_key` to test `env.carrying.color == <locked door color>` where the locked door is found by place (column `env.width - 6` within the ball's room row), not by any aggregate of scanned colors. Additionally, `target_room_entered` does not include the doorway: it tests `agent_pos[0] >= env.width - 6` only, but the doorway is the locked door cell on the room's left wall, which counts as inside per the semantics; extend the predicate to also accept standing on that door cell (x == env.width - 6 and the ball-room row) when the proposition requires.",
+        "feedback": "",
+        "raw_response": "",
+        "stage": "labeling",
+        "status": "failed"
+      }
+    ],
+    "stage_status": "failed",
+    "check_record": {}
+  },
+  "models": [
+    "deepseek-v4.1-flash",
+    "glm-5.3-flash"
+  ],
+  "calls": 4,
+  "wall_time_s": 10.8,
+  "outcome": "accepted"
+}

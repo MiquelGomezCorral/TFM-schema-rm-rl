@@ -1,0 +1,218 @@
+[
+  {
+    "attempt": 1,
+    "candidate": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES: u1\nTRANSITION_FUNCTION:\n(u0, target_door_open) -> u1\n(u0, else) -> u0\n(u1, else) -> u1\nREWARD_FUNCTION:\n(u0, target_door_open, u1) -> 1.0",
+    "error": "",
+    "feedback": "The reward machine encodes the opposite of the task: the task is to NOT open the locked door, yet the RM grants a terminal reward of 1.0 on the `target_door_open` transition — rewarding exactly the forbidden behavior. Fix by rewarding only staying in u0 (no `target_door_open`/`target_picked_up` events) at episode end, e.g. make u0 the accepting state with a per-step or terminal reward conditioned on the door remaining shut, and ensure `target_door_open` (and any predecessor event) leads to no reward or a terminal/zero-reward sink. Also add explicit self-loops for all other events (`key_found`, `has_matching_key`, `target_room_entered`, `target_picked_up`) — the current `else` loops cover them syntactically, but the reward structure must make opening the door unreachable-without-penalty, not the goal.",
+    "raw_response": "{\"accepted\": false, \"feedback\": \"The reward machine encodes the opposite of the task: the task is to NOT open the locked door, yet the RM grants a terminal reward of 1.0 on the `target_door_open` transition — rewarding exactly the forbidden behavior. Fix by rewarding only staying in u0 (no `target_door_open`/`target_picked_up` events) at episode end, e.g. make u0 the accepting state with a per-step or terminal reward conditioned on the door remaining shut, and ensure `target_door_open` (and any predecessor event) leads to no reward or a terminal/zero-reward sink. Also add explicit self-loops for all other events (`key_found`, `has_matching_key`, `target_room_entered`, `target_picked_up`) — the current `else` loops cover them syntactically, but the reward structure must make opening the door unreachable-without-penalty, not the goal.\"}",
+    "stage": "reward_machine"
+  },
+  {
+    "attempt": 2,
+    "candidate": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES: u0\nTRANSITION_FUNCTION:\n(u0, target_door_open) -> u1\n(u0, else) -> u0\n(u1, else) -> u1\nREWARD_FUNCTION:\n(u0, target_picked_up, u0) -> 1.0\n(u0, key_found, u0) -> 0.1\n(u0, has_matching_key, u0) -> 0.2\n(u0, target_room_entered, u0) -> 0.3",
+    "error": "Reward refers to nonexistent transition (u0, has_matching_key, u0)",
+    "feedback": "",
+    "raw_response": "",
+    "stage": "reward_machine"
+  },
+  {
+    "attempt": 3,
+    "candidate": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nTRANSITION_FUNCTION:\n(u0, key_found) -> u0\n(u0, has_matching_key & !target_door_open) -> u0\n(u0, target_room_entered & !target_door_open) -> u0\n(u0, target_picked_up & !target_door_open) -> u0\n(u0, target_door_open) -> u1\n(u0, else) -> u0\n(u1, else) -> u1\n(u2, else) -> u2\n(u3, else) -> u3\nREWARD_FUNCTION:\n(u0, key_found, u0) -> 0.1\n(u0, has_matching_key & !target_door_open, u0) -> 0.2\n(u0, target_picked_up & !target_door_open, u0) -> 0.3\n(u0, target_room_entered & !target_door_open, u0) -> 0.2\n(u0, target_door_open, u1) -> -1.0",
+    "error": "",
+    "feedback": "The reward machine violates the task 'Do not open the locked door' on several grounds. (1) Wrong objective: the machine rewards key_found, has_matching_key and target_room_entered with positive rewards and treats picking up the target (u0 -> target_picked_up event rewards 0.3) as progress, but the task is only to never open the locked door — no reward should be given for key/key/target-room progress, and the machine even rewards target_room_entered despite it being reachable only after target_door_open (contradictory: transition (u0, target_room_entered & !target_door_open) is unreachable given the environment constraints). (2) No terminal success state for task completion: FINAL_STATES declares u3, but no transition ever reaches u3 (u1 has only else->u1, u2 is unreachable, and nothing moves to u3), so the accepting state is dead code and the task 'avoid opening the locked door' is never positively terminated/rewarded. (3) The forbidden event target_door_open is treated as the only negative (-1.0 to u1), which is fine, but after that the agent sits in u1/u2 forever with zero further shaping and no absorbing accepting state; there is no positive final reward for completing the episode without ever opening the door. (4) Ordered transition coverage: the paper-style format expects transitions covering relevant per-state events; u2 is declared but unreachable and u3 is declared accepting but unreachable — states must be declared AND reachable AND accepting for the task. Rewrite so that completion of the episode with target_door_open never true leads to an accepting state with positive reward, target_door_open leads to a penalized non-accepting sink, and spurious key/room pickups give no reward. Reject.",
+    "raw_response": "```json\n{\"accepted\": false, \"feedback\": \"The reward machine violates the task 'Do not open the locked door' on several grounds. (1) Wrong objective: the machine rewards key_found, has_matching_key and target_room_entered with positive rewards and treats picking up the target (u0 -> target_picked_up event rewards 0.3) as progress, but the task is only to never open the locked door — no reward should be given for key/key/target-room progress, and the machine even rewards target_room_entered despite it being reachable only after target_door_open (contradictory: transition (u0, target_room_entered & !target_door_open) is unreachable given the environment constraints). (2) No terminal success state for task completion: FINAL_STATES declares u3, but no transition ever reaches u3 (u1 has only else->u1, u2 is unreachable, and nothing moves to u3), so the accepting state is dead code and the task 'avoid opening the locked door' is never positively terminated/rewarded. (3) The forbidden event target_door_open is treated as the only negative (-1.0 to u1), which is fine, but after that the agent sits in u1/u2 forever with zero further shaping and no absorbing accepting state; there is no positive final reward for completing the episode without ever opening the door. (4) Ordered transition coverage: the paper-style format expects transitions covering relevant per-state events; u2 is declared but unreachable and u3 is declared accepting but unreachable — states must be declared AND reachable AND accepting for the task. Rewrite so that completion of the episode with target_door_open never true leads to an accepting state with positive reward, target_door_open leads to a penalized non-accepting sink, and spurious key/room pickups give no reward. Reject.\"}\n```",
+    "stage": "reward_machine"
+  },
+  {
+    "attempt": 4,
+    "candidate": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: u2\nTRANSITION_FUNCTION:\n(u0, target_door_open) -> u1\n(u0, else) -> u0\n(u1, else) -> u1\n(u2, else) -> u2\nREWARD_FUNCTION:\n(u0, target_picked_up, u2) -> 1.0\n(u0, target_door_open, u1) -> -1.0",
+    "error": "Reward refers to nonexistent transition (u0, target_picked_up, u2)",
+    "feedback": "",
+    "raw_response": "",
+    "stage": "reward_machine"
+  },
+  {
+    "attempt": 5,
+    "candidate": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: u2\nTRANSITION_FUNCTION:\n(u0, target_door_open) -> u1\n(u0, target_picked_up) -> u2\n(u0, else) -> u0\n(u1, else) -> u1\n(u2, else) -> u2\nREWARD_FUNCTION:\n(u0, target_picked_up, u2) -> 1.0\n(u0, else, u0) -> 0.05\n(u1, else, u1) -> 0.0",
+    "error": "",
+    "feedback": "The task is 'Do not open the locked door', an avoidance/safety task, but the candidate RM rewards opening-related progress and even gives reward 1.0 for target_picked_up, which is the opposite of the intent (and the episode terminates on pickup, so it can never fire as a non-terminal event anyway). The candidate appears to be a template for the pickup task, not the constraint task. It also omits ordered transition coverage for the natural progression (key_found -> has_matching_key -> target_door_open), has no regression transitions (target_door_open can turn false when the door is toggled shut), no per-state explicit handling of irrelevant events like key_found/has_matching_key/target_room_entered (u1's else self-loop lumps all events together, so door-shut regressions cannot be detected), and the FINAL_STATES declaration u2 is unreachable in a way that matches the task semantics. Provide a machine whose states distinguish locked-door status (with explicit regression transitions on !target_door_open), keep dense but bounded step rewards, make irrelevant events covered by else self-loops per state, and encode avoidance as staying in safe states, with any terminal acceptance consistent with not opening the locked door.",
+    "raw_response": "{\"accepted\": false, \"feedback\": \"The task is 'Do not open the locked door', an avoidance/safety task, but the candidate RM rewards opening-related progress and even gives reward 1.0 for target_picked_up, which is the opposite of the intent (and the episode terminates on pickup, so it can never fire as a non-terminal event anyway). The candidate appears to be a template for the pickup task, not the constraint task. It also omits ordered transition coverage for the natural progression (key_found -> has_matching_key -> target_door_open), has no regression transitions (target_door_open can turn false when the door is toggled shut), no per-state explicit handling of irrelevant events like key_found/has_matching_key/target_room_entered (u1's else self-loop lumps all events together, so door-shut regressions cannot be detected), and the FINAL_STATES declaration u2 is unreachable in a way that matches the task semantics. Provide a machine whose states distinguish locked-door status (with explicit regression transitions on !target_door_open), keep dense but bounded step rewards, make irrelevant events covered by else self-loops per state, and encode avoidance as staying in safe states, with any terminal acceptance consistent with not opening the locked door.\"}",
+    "stage": "reward_machine"
+  },
+  {
+    "attempt": 6,
+    "candidate": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES: u0\nTRANSITION_FUNCTION:\n(u0, target_door_open) -> u1\n(u0, target_picked_up) -> u0\n(u0, else) -> u0\n(u1, else) -> u1\nREWARD_FUNCTION:\n(u1, target_door_open, u1) -> -1.0\n(u0, target_picked_up, u0) -> 1.0",
+    "error": "Reward refers to nonexistent transition (u1, target_door_open, u1)",
+    "feedback": "",
+    "raw_response": "",
+    "stage": "reward_machine"
+  },
+  {
+    "attempt": 7,
+    "candidate": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: u2\nTRANSITION_FUNCTION:\n(u0, target_door_open) -> u1\n(u0, target_picked_up) -> u2\n(u0, else) -> u0\n(u1, else) -> u1\n(u2, else) -> u2\nREWARD_FUNCTION:\n(u0, target_picked_up, u2) -> 1.0\n(u0, target_door_open, u1) -> -1.0",
+    "error": "",
+    "feedback": "Task 'Do not open the locked door' is violated by this RM: it rewards reaching the door-open state and even treats target_picked_up as accepting. FINAL_STATES header present but u2 accepts the wrong outcome (task forbids opening the locked door; success means never opening it, i.e. avoiding target_door_open entirely). The u0->u1 transition on target_door_open should either be a hard failure state with negative reward and no accepting final states via that path, or irrelevant events (key_found, has_matching_key, target_room_entered) should be covered — key_found and target_room_entered currently fall through the generic else self-loops, which is acceptable for predicate-only coverage, but the accepting condition is semantically wrong for this negative-constraint task. Reward design also lacks any positive progress signal consistent with the task; -1.0 on door open is correct as a penalty but then u1 should be terminal/failure, not a stepping stone to reward +1.0 on pickup (which is impossible after opening the door anyway since pickup requires the door open, making the u0->u2 pickup transition unreachable — dead transition). Rewrite required.",
+    "raw_response": "```json\n{\"accepted\": false, \"feedback\": \"Task 'Do not open the locked door' is violated by this RM: it rewards reaching the door-open state and even treats target_picked_up as accepting. FINAL_STATES header present but u2 accepts the wrong outcome (task forbids opening the locked door; success means never opening it, i.e. avoiding target_door_open entirely). The u0->u1 transition on target_door_open should either be a hard failure state with negative reward and no accepting final states via that path, or irrelevant events (key_found, has_matching_key, target_room_entered) should be covered — key_found and target_room_entered currently fall through the generic else self-loops, which is acceptable for predicate-only coverage, but the accepting condition is semantically wrong for this negative-constraint task. Reward design also lacks any positive progress signal consistent with the task; -1.0 on door open is correct as a penalty but then u1 should be terminal/failure, not a stepping stone to reward +1.0 on pickup (which is impossible after opening the door anyway since pickup requires the door open, making the u0->u2 pickup transition unreachable — dead transition). Rewrite required.\"}\n```",
+    "stage": "reward_machine"
+  },
+  {
+    "attempt": 8,
+    "candidate": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: u2\nTRANSITION_FUNCTION:\n(u0, target_door_open) -> u1\n(u0, target_picked_up) -> u2\n(u0, else) -> u0\n(u1, else) -> u1\n(u2, else) -> u2\nREWARD_FUNCTION:\n(u0, target_door_open, u1) -> -1.0\n(u0, target_picked_up, u2) -> 1.0\n(u0, else, u0) -> 0.01",
+    "error": "",
+    "feedback": "The reward machine contradicts the task 'Do not open the locked door': it awards positive reward for opening the door (u0->u1 gives -1.0, acceptable) but, critically, it also rewards target_picked_up from u0 with +1.0, and reaching u2 as an accepting final state. Picking up the target requires opening the locked door (target_room_entered and target_picked_up cannot occur before target_door_open), so accepting u2 on target_picked_up rewards trajectories that violate the task's prohibition. Since target_picked_up implies target_door_open held earlier, any pickup path necessarily opens the door; the RM's accepting state therefore encodes exactly the forbidden behavior. The only way to satisfy both the task and the environment is to never trigger target_door_open (or any transition out of u0 toward acceptance), meaning u2 should be unreachable via any permitted event sequence consistent with the constraint ordering; instead the candidate makes u2 reachable. Additionally: (1) the candidate omits explicit regressions—target_door_open can turn false again if the door is toggled shut, and the RM's u1 has only a self-loop else, failing to distinguish persistent from event propositions; (2) FINAL_STATES is present (good) and states are declared, but u2 as the sole accepting state is wrong for this task—there is no natural terminal accepting state for an avoidance task, and if u2 must exist it should represent sustained non-violation, not pickup. The RM must instead penalize target_door_open (and thus any path to pickup) heavily and reward reaching non-violating outcomes, with per-state else self-loops covering irrelevant events and explicit transitions for propositions that can revert.",
+    "raw_response": "{\"accepted\": false, \"feedback\": \"The reward machine contradicts the task 'Do not open the locked door': it awards positive reward for opening the door (u0->u1 gives -1.0, acceptable) but, critically, it also rewards target_picked_up from u0 with +1.0, and reaching u2 as an accepting final state. Picking up the target requires opening the locked door (target_room_entered and target_picked_up cannot occur before target_door_open), so accepting u2 on target_picked_up rewards trajectories that violate the task's prohibition. Since target_picked_up implies target_door_open held earlier, any pickup path necessarily opens the door; the RM's accepting state therefore encodes exactly the forbidden behavior. The only way to satisfy both the task and the environment is to never trigger target_door_open (or any transition out of u0 toward acceptance), meaning u2 should be unreachable via any permitted event sequence consistent with the constraint ordering; instead the candidate makes u2 reachable. Additionally: (1) the candidate omits explicit regressions—target_door_open can turn false again if the door is toggled shut, and the RM's u1 has only a self-loop else, failing to distinguish persistent from event propositions; (2) FINAL_STATES is present (good) and states are declared, but u2 as the sole accepting state is wrong for this task—there is no natural terminal accepting state for an avoidance task, and if u2 must exist it should represent sustained non-violation, not pickup. The RM must instead penalize target_door_open (and thus any path to pickup) heavily and reward reaching non-violating outcomes, with per-state else self-loops covering irrelevant events and explicit transitions for propositions that can revert.\"}",
+    "stage": "reward_machine"
+  },
+  {
+    "attempt": 9,
+    "candidate": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: u1, u2\nTRANSITION_FUNCTION:\n(u0, key_found) -> u0\n(u0, has_matching_key) -> u0\n(u0, target_room_entered) -> u0\n(u0, target_picked_up) -> u2\n(u0, target_door_open) -> u2\n(u0, else) -> u0\n(u1, target_door_open) -> u2\n(u1, target_picked_up) -> u2\n(u1, else) -> u1\n(u2, else) -> u2\nREWARD_FUNCTION:\n(u0, key_found, u0) -> 0.0\n(u0, has_matching_key, u0) -> 0.0\n(u0, target_room_entered, u0) -> 0.0\n(u0, target_picked_up, u2) -> -1.0\n(u0, target_door_open, u2) -> -1.0\n(u1, target_door_open, u2) -> -1.0\n(u1, target_picked_up, u2) -> -1.0\n(u2, else, u2) -> 0.0",
+    "error": "",
+    "feedback": "The machine's structure is mostly sound (self-loops on irrelevant events, sink state u2, compact), but it penalizes the forbidden event in the wrong place and lets the agent escape the penalty. The task is 'do not open the locked door.' In u0, a `target_door_open` event sends the machine to u2 with reward -1.0; but if the agent has not yet seen the key (`key_found` false, u1 not reached), the trace ends. More importantly, in u0 and u1 both `target_door_open` and `target_picked_up` go to the absorbing terminal u2. Since u2 is a FINAL/accepting state with all subsequent rewards 0.0, the RM treats the episode as successfully terminated the moment the forbidden event occurs — the -1.0 penalty is collected, but the machine then sits in an accepting state, which is wrong for a task where the violation should make the episode a failure (or at minimum keep the agent penalized/at a non-accepting sink). Also, `target_picked_up` is reachable without ever opening the locked door? No — constraints say pickup requires the door open, so every pickup implies a door opening already occurred; but in u0 a pickup can jump straight to u2 without the door-open event being separately rewarded, hiding the violation. Two fixes needed: (1) `target_picked_up` from u0 should route to the failure sink directly since pickup implies `target_door_open` was true, which was already violated; (2) states u1/u2 reached by violating the constraint should not be accepting 'success' states — a violation sink should be non-accepting or the task semantics of FINAL_STATES should distinguish success (never opening the door, i.e., surviving to step limit without `target_door_open`) from failure. There is no transition for time-step termination without violation, so the machine has no way to reward 'successfully never opened the door' — the success condition for this task is vacuously satisfied by just staying in u0/u1 to episode end, which the current FINAL_STATES (u1, u2) conflates with the violation sink u2. Split u2 into a distinct violation sink (non-final or heavily penalized) and keep u0/u1 as the success regions; otherwise the -1 penalty is a one-shot cost and the machine accepts violating traces as final.",
+    "raw_response": "{\"accepted\": false, \"feedback\": \"The machine's structure is mostly sound (self-loops on irrelevant events, sink state u2, compact), but it penalizes the forbidden event in the wrong place and lets the agent escape the penalty. The task is 'do not open the locked door.' In u0, a `target_door_open` event sends the machine to u2 with reward -1.0; but if the agent has not yet seen the key (`key_found` false, u1 not reached), the trace ends. More importantly, in u0 and u1 both `target_door_open` and `target_picked_up` go to the absorbing terminal u2. Since u2 is a FINAL/accepting state with all subsequent rewards 0.0, the RM treats the episode as successfully terminated the moment the forbidden event occurs — the -1.0 penalty is collected, but the machine then sits in an accepting state, which is wrong for a task where the violation should make the episode a failure (or at minimum keep the agent penalized/at a non-accepting sink). Also, `target_picked_up` is reachable without ever opening the locked door? No — constraints say pickup requires the door open, so every pickup implies a door opening already occurred; but in u0 a pickup can jump straight to u2 without the door-open event being separately rewarded, hiding the violation. Two fixes needed: (1) `target_picked_up` from u0 should route to the failure sink directly since pickup implies `target_door_open` was true, which was already violated; (2) states u1/u2 reached by violating the constraint should not be accepting 'success' states — a violation sink should be non-accepting or the task semantics of FINAL_STATES should distinguish success (never opening the door, i.e., surviving to step limit without `target_door_open`) from failure. There is no transition for time-step termination without violation, so the machine has no way to reward 'successfully never opened the door' — the success condition for this task is vacuously satisfied by just staying in u0/u1 to episode end, which the current FINAL_STATES (u1, u2) conflates with the violation sink u2. Split u2 into a distinct violation sink (non-final or heavily penalized) and keep u0/u1 as the success regions; otherwise the -1 penalty is a one-shot cost and the machine accepts violating traces as final.\"}",
+    "stage": "reward_machine"
+  },
+  {
+    "attempt": 10,
+    "candidate": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES: u0\nTRANSITION_FUNCTION:\n(u0, target_door_open) -> u1\n(u0, else) -> u0\n(u1, else) -> u1\nREWARD_FUNCTION:\n(u0, else, u0) -> 0.1\n(u0, target_door_open, u1) -> -1.0\n(u1, else, u1) -> 0.0",
+    "error": "",
+    "feedback": "Valid. FINAL_STATES header present; u0 is declared and accepting (never opening the locked door keeps the agent in u0). Sparse negative reward at target_door_open is reachability-safe and correctly shapes against the forbidden action; u1 absorbing trap with 0 reward. Ordered coverage fine: u0 else-loop covers all non-target_door_open events; u1 else self-loop covers irrelevant events afterward. No dense-progress requirement violated (bounded 0.1 per step would be... note: (u0, else, u0) -> 0.1 gives +0.1 per non-opening step, bounded and non-exploitable since the episode ends only on pickup or time limit; not rewarding the forbidden event). Predicate-only events, all five propositions are labelable per the code notes. Minor: rewarding survival +0.1 could encourage stalling over task completion, but with the constraint 'do not open the locked door' the RM matches the stated task.",
+    "raw_response": "{\"accepted\": true, \"feedback\": \"Valid. FINAL_STATES header present; u0 is declared and accepting (never opening the locked door keeps the agent in u0). Sparse negative reward at target_door_open is reachability-safe and correctly shapes against the forbidden action; u1 absorbing trap with 0 reward. Ordered coverage fine: u0 else-loop covers all non-target_door_open events; u1 else self-loop covers irrelevant events afterward. No dense-progress requirement violated (bounded 0.1 per step would be... note: (u0, else, u0) -> 0.1 gives +0.1 per non-opening step, bounded and non-exploitable since the episode ends only on pickup or time limit; not rewarding the forbidden event). Predicate-only events, all five propositions are labelable per the code notes. Minor: rewarding survival +0.1 could encourage stalling over task completion, but with the constraint 'do not open the locked door' the RM matches the stated task.\"}",
+    "stage": "reward_machine"
+  },
+  {
+    "attempt": 1,
+    "candidate": "def key_found(env):\n    return (env.episode_memory[\"previous_valuation\"] and env.episode_memory[\"previous_valuation\"][\"key_found\"]) or any(cell[0] == 5 for col in env.gen_obs()[\"image\"] for cell in col)\n\ndef has_matching_key(env):\n    return env.carrying is not None and env.carrying.type == \"key\"\n\ndef target_door_open(env):\n    return any(cell is not None and cell.type == \"door\" and cell.is_open for y in range(5 * (max([y2 for x in range(env.width) for y2 in range(env.height) for c in [env.grid.get(x, y2)] if c is not None and c.type == \"ball\"], default=env.agent_pos[1]) // 5), 5 * (max([y2 for x in range(env.width) for y2 in range(env.height) for c in [env.grid.get(x, y2)] if c is not None and c.type == \"ball\"], default=env.agent_pos[1]) // 5) + 6) for cell in [env.grid.get(env.width - 6, y)])\n\ndef target_room_entered(env):\n    return (env.episode_memory[\"previous_valuation\"] and env.episode_memory[\"previous_valuation\"][\"target_room_entered\"]) or (env.agent_pos[0] >= env.width - 6 and 0 <= env.agent_pos[1] - 5 * (max([y for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)] if c is not None and c.type == \"ball\"], default=env.agent_pos[1]) // 5) <= 5)\n\ndef target_picked_up(env):\n    return env.carrying is not None and env.carrying.type == \"ball\" and env.mission == f\"pick up the {env.carrying.color} ball\"\n",
+    "error": "",
+    "feedback": "All five declared propositions are implemented and no extras exist. `key_found` and `target_room_entered` correctly latch via the read-only previous valuation plus the documented view reading (object index 5 in the 7x7 gen_obs image, iterated with builtin `any`, no NumPy methods) and the doorway-inclusive room block. `target_door_open` locates the target door by place (target room row from the ball, door column `width - 6`), which matches the documented code notes since locking state cannot be carried across steps. `has_matching_key` and `target_picked_up` are pure carry-state conditions with the mission-string check for the ball. No imports, actions, or mutations; syntax is valid; semantics align with the environment facts and the 'do not open the locked door' task.",
+    "raw_response": "{\"accepted\": true, \"feedback\": \"All five declared propositions are implemented and no extras exist. `key_found` and `target_room_entered` correctly latch via the read-only previous valuation plus the documented view reading (object index 5 in the 7x7 gen_obs image, iterated with builtin `any`, no NumPy methods) and the doorway-inclusive room block. `target_door_open` locates the target door by place (target room row from the ball, door column `width - 6`), which matches the documented code notes since locking state cannot be carried across steps. `has_matching_key` and `target_picked_up` are pure carry-state conditions with the mission-string check for the ball. No imports, actions, or mutations; syntax is valid; semantics align with the environment facts and the 'do not open the locked door' task.\"}",
+    "stage": "labeling"
+  },
+  {
+    "attempt": 1,
+    "candidate": "{\"u0\": \"The locked target door is still closed, so the agent is satisfying the instruction not to open it. Continue exploring, finding the key, or otherwise acting in the environment while avoiding any toggle that would unlock or open the locked door; the next objective is to keep the door closed and never transition into the penalized state.\", \"u1\": \"The locked target door has been opened, violating the instruction not to open it. This state is absorbing and penalized, so the task has failed; the agent should recognize that further actions cannot return to compliance and that the negative reward has already been incurred.\"}",
+    "error": "",
+    "feedback": "",
+    "raw_response": "",
+    "stage": "descriptions"
+  },
+  {
+    "model_reported": "deepseek-v4.1-flash",
+    "model_requested": "deepseek-v4.1-flash",
+    "role": "generator",
+    "stage": "rm_generator"
+  },
+  {
+    "model_reported": "deepseek-v4.1-flash",
+    "model_requested": "deepseek-v4.1-flash",
+    "role": "generator",
+    "stage": "rm_generator"
+  },
+  {
+    "model_reported": "deepseek-v4.1-flash",
+    "model_requested": "deepseek-v4.1-flash",
+    "role": "generator",
+    "stage": "rm_generator"
+  },
+  {
+    "model_reported": "deepseek-v4.1-flash",
+    "model_requested": "deepseek-v4.1-flash",
+    "role": "generator",
+    "stage": "rm_generator"
+  },
+  {
+    "model_reported": "deepseek-v4.1-flash",
+    "model_requested": "deepseek-v4.1-flash",
+    "role": "generator",
+    "stage": "rm_generator"
+  },
+  {
+    "model_reported": "deepseek-v4.1-flash",
+    "model_requested": "deepseek-v4.1-flash",
+    "role": "generator",
+    "stage": "rm_generator"
+  },
+  {
+    "model_reported": "deepseek-v4.1-flash",
+    "model_requested": "deepseek-v4.1-flash",
+    "role": "generator",
+    "stage": "rm_generator"
+  },
+  {
+    "model_reported": "deepseek-v4.1-flash",
+    "model_requested": "deepseek-v4.1-flash",
+    "role": "generator",
+    "stage": "rm_generator"
+  },
+  {
+    "model_reported": "deepseek-v4.1-flash",
+    "model_requested": "deepseek-v4.1-flash",
+    "role": "generator",
+    "stage": "rm_generator"
+  },
+  {
+    "model_reported": "deepseek-v4.1-flash",
+    "model_requested": "deepseek-v4.1-flash",
+    "role": "generator",
+    "stage": "rm_generator"
+  },
+  {
+    "model_reported": "deepseek-v4.1-flash",
+    "model_requested": "deepseek-v4.1-flash",
+    "role": "generator",
+    "stage": "labeling_generator"
+  },
+  {
+    "model_reported": "deepseek-v4.1-flash",
+    "model_requested": "deepseek-v4.1-flash",
+    "role": "generator",
+    "stage": "description_generator"
+  },
+  {
+    "model_reported": "glm-5.3-flash",
+    "model_requested": "glm-5.3-flash",
+    "role": "critic",
+    "stage": "rm_critic"
+  },
+  {
+    "model_reported": "glm-5.3-flash",
+    "model_requested": "glm-5.3-flash",
+    "role": "critic",
+    "stage": "rm_critic"
+  },
+  {
+    "model_reported": "glm-5.3-flash",
+    "model_requested": "glm-5.3-flash",
+    "role": "critic",
+    "stage": "rm_critic"
+  },
+  {
+    "model_reported": "glm-5.3-flash",
+    "model_requested": "glm-5.3-flash",
+    "role": "critic",
+    "stage": "rm_critic"
+  },
+  {
+    "model_reported": "glm-5.3-flash",
+    "model_requested": "glm-5.3-flash",
+    "role": "critic",
+    "stage": "rm_critic"
+  },
+  {
+    "model_reported": "glm-5.3-flash",
+    "model_requested": "glm-5.3-flash",
+    "role": "critic",
+    "stage": "rm_critic"
+  },
+  {
+    "model_reported": "glm-5.3-flash",
+    "model_requested": "glm-5.3-flash",
+    "role": "critic",
+    "stage": "rm_critic"
+  },
+  {
+    "model_reported": "glm-5.3-flash",
+    "model_requested": "glm-5.3-flash",
+    "role": "critic",
+    "stage": "labeling_critic"
+  }
+]

@@ -1,0 +1,38 @@
+{
+  "bundle": "farm/tpl-not-co-existence-1-goal~p1",
+  "rm_sha256": "eea8511949e1e108e6848335759fb2b05c9398c4605c716b7c2078d37a6d2460",
+  "attempts": [
+    {
+      "stage": "labeling",
+      "attempt": 1,
+      "status": "accepted",
+      "candidate": "def door_open(env):\n    return any(cell is not None and cell.type == \"door\" and cell.is_open for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\ndef has_door_key(env):\n    return env.carrying is not None and env.carrying.type == \"key\" and any(cell is not None and cell.type == \"door\" and cell.color == env.carrying.color for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\ndef key_lost(env):\n    return env.episode_memory[\"previous_valuation\"] and env.episode_memory[\"previous_valuation\"][\"has_door_key\"] and not (env.carrying is not None and env.carrying.type == \"key\" and any(cell is not None and cell.type == \"door\" and cell.color == env.carrying.color for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])) and not any(cell is not None and cell.type == \"door\" and cell.is_open for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\ndef target_picked_up(env):\n    return env.carrying is not None and env.carrying.type == \"box\" and env.mission == f\"pick up the {env.carrying.color} box\"\n",
+      "feedback": "NO CHANGES NEEDED. All four declared propositions are covered exactly once with matching names, each predicate takes only env and uses an expression-only return with no assignments or sibling calls. Allowed builtins only (any, range). door_open and has_door_key read only the current observation with proper None guards. key_lost is a correct event: it reads env.episode_memory['previous_valuation'] read-only (no .get), is false on the first step, and recomputes the current has_door_key and door_open inline instead of calling siblings, so the previous step had the key, it is not carried now, and the door is not open now. target_picked_up matches the mission-designated box via env.mission without assuming a fixed color. No invented API attributes, no mutation of env, and no reliance on RM state or rewards.",
+      "error": "",
+      "raw_response": ""
+    }
+  ],
+  "previous": {
+    "labeling": "",
+    "attempts": [
+      {
+        "attempt": 1,
+        "candidate": "",
+        "error": "Labeling generation failed after 3 requests: CHANGES REQUIRED — blocker_moved: the predicate scans for any door and checks the cell to its left (cell_x - 1), which does not correctly identify the ball blocking the door. In this environment the ball sits on the cell directly in front of the door on the start side, and the door's orientation determines which adjacent cell is 'in front of' the door; a fixed offset of -1 in x is an invented environment fact and can point to a cell that is not the door's front cell (or outside the room layout). The necessary fix: determine the ball-blocking condition by checking the correct cell adjacent to the locked door in its front direction, rather than hardcoding a left-neighbor offset. Recheck the geometry so that blocker_moved is true exactly when the cell directly in front of the locked door holds no ball (counting a carried ball as moved, and turning false again if the ball is dropped back there).",
+        "feedback": "",
+        "raw_response": "",
+        "stage": "labeling",
+        "status": "failed"
+      }
+    ],
+    "stage_status": "failed",
+    "check_record": {}
+  },
+  "models": [
+    "deepseek-v4.1-flash",
+    "glm-5.3-flash"
+  ],
+  "calls": 2,
+  "wall_time_s": 7.5,
+  "outcome": "accepted"
+}

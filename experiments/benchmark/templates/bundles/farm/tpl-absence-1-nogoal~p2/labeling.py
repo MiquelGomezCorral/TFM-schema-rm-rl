@@ -1,0 +1,2 @@
+def target_door_open(env):
+    return any(cell is not None and cell.type == "door" and cell.is_open for y in range(5 * (max([y for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)] if c is not None and c.type == "ball"], default=env.agent_pos[1]) // 5), 5 * (max([y for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)] if c is not None and c.type == "ball"], default=env.agent_pos[1]) // 5) + 6) for cell in [env.grid.get(env.width - 6, y)])

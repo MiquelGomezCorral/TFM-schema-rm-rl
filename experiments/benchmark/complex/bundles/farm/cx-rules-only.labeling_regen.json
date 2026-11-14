@@ -1,0 +1,38 @@
+{
+  "bundle": "farm/cx-rules-only",
+  "rm_sha256": "e20718bd8295ecc5a49978bcffb543e628f119cfa7dbd16de3a59131d88dbc0f",
+  "attempts": [
+    {
+      "stage": "labeling",
+      "attempt": 1,
+      "status": "accepted",
+      "candidate": "def door_open(env):\n    return any(cell is not None and cell.type == \"door\" and cell.is_open for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\ndef has_door_key(env):\n    return env.carrying is not None and env.carrying.type == \"key\" and any(cell is not None and cell.type == \"door\" and cell.color == env.carrying.color for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\ndef key_lost(env):\n    return bool(env.episode_memory[\"previous_valuation\"] and env.episode_memory[\"previous_valuation\"][\"has_door_key\"]) and not (env.carrying is not None and env.carrying.type == \"key\" and any(cell is not None and cell.type == \"door\" and cell.color == env.carrying.color for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])) and not any(cell is not None and cell.type == \"door\" and cell.is_open for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\ndef target_picked_up(env):\n    return env.carrying is not None and env.carrying.type == \"box\" and env.mission == f\"pick up the {env.carrying.color} box\"\n",
+      "feedback": "NO CHANGES NEEDED. All four declared propositions are covered exactly once with matching names, expression-only bodies, allowed builtins, and correct guarding of grid cells. `door_open`, `has_door_key`, and `target_picked_up` read only the current observation. `key_lost` is an event comparing the previous valuation's `has_door_key` against the current carry state and door state, is false on the first step (previous valuation empty/false), and correctly includes the `not door_open` requirement. No invented API, no mutation, no sibling-predicate calls or recursion.",
+      "error": "",
+      "raw_response": ""
+    }
+  ],
+  "previous": {
+    "labeling": "",
+    "attempts": [
+      {
+        "attempt": 1,
+        "candidate": "",
+        "error": "Labeling generation failed after 3 requests: CHANGES REQUIRED: `blocker_moved` checks the wrong cell — it inverts a scan for a ball and derives offsets from the agent's position/facing, but 'the cell in front of the door' is a fixed cell adjacent to the door, independent of where the agent currently stands or which way it faces. The predicate must locate the door on the grid, compute the cell in front of it, and return true only when that cell does not hold a ball (a carried ball counts as moved, i.e. `env.carrying` a ball also satisfies it). As written, it can return true whenever no ball exists anywhere reachable from the agent-relative cell, and false when the agent faces away, contradicting the documented semantics. Fix: find the door cell, take the single cell directly in front of it, and test `that cell holds no ball` OR `env.carrying is a ball`; keep all other predicates unchanged.",
+        "feedback": "",
+        "raw_response": "",
+        "stage": "labeling",
+        "status": "failed"
+      }
+    ],
+    "stage_status": "failed",
+    "check_record": {}
+  },
+  "models": [
+    "deepseek-v4.1-flash",
+    "glm-5.3-flash"
+  ],
+  "calls": 3,
+  "wall_time_s": 10.5,
+  "outcome": "accepted"
+}

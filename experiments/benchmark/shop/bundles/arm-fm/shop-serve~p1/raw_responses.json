@@ -1,0 +1,124 @@
+[
+  {
+    "attempt": 1,
+    "candidate": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6, u7, u8, u9\nINITIAL_STATE: u0\nFINAL_STATES: u0\nTRANSITION_FUNCTION:\n(u0, client_arrived) -> u1\n(u0, food_fell) -> u7\n(u0, else) -> u0\n(u1, order_taken) -> u2\n(u1, food_fell) -> u7\n(u1, else) -> u1\n(u2, holding_food & food_prepared) -> u4\n(u2, holding_food) -> u3\n(u2, food_fell) -> u7\n(u2, else) -> u2\n(u3, food_prepared) -> u4\n(u3, food_fell) -> u7\n(u3, holding_food) -> u3\n(u3, else) -> u3\n(u4, order_served) -> u5\n(u4, food_fell) -> u7\n(u4, holding_food) -> u4\n(u4, else) -> u4\n(u5, client_arrived) -> u1\n(u5, food_fell) -> u7\n(u5, else) -> u5\n(u7, holding_food) -> u8\n(u7, else) -> u7\n(u8, order_taken) -> u2\n(u8, holding_food & food_prepared) -> u4\n(u8, food_prepared) -> u4\n(u8, order_served) -> u6\n(u8, food_fell) -> u7\n(u8, client_arrived) -> u1\n(u8, else) -> u8\n(u6, client_arrived) -> u1\n(u6, food_fell) -> u7\n(u6, else) -> u6\nREWARD_FUNCTION:\n(u6, order_served, u5) -> 0.1\n(u5, order_served, u5) -> 1.0\n(u0, client_arrived, u1) -> 0.05\n(u1, order_taken, u2) -> 0.1\n(u2, holding_food & food_prepared, u4) -> 0.2\n(u3, food_prepared, u4) -> 0.2\n(u7, holding_food, u8) -> 0.1\n(u8, order_served, u6) -> 1.0",
+    "error": "Reward refers to nonexistent transition (u5, order_served, u5)",
+    "feedback": "",
+    "raw_response": "",
+    "stage": "reward_machine"
+  },
+  {
+    "attempt": 2,
+    "candidate": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6\nINITIAL_STATE: u0\nFINAL_STATES: u6\nTRANSITION_FUNCTION:\n(u0, client_arrived) -> u1\n(u0, else) -> u0\n(u1, order_taken) -> u2\n(u1, else) -> u1\n(u2, holding_food) -> u3\n(u2, else) -> u2\n(u3, food_prepared) -> u4\n(u3, food_fell) -> u5\n(u3, else) -> u3\n(u4, order_served) -> u6\n(u4, food_fell) -> u5\n(u4, else) -> u4\n(u5, holding_food) -> u3\n(u5, else) -> u5\n(u6, client_arrived) -> u1\n(u6, else) -> u6\nREWARD_FUNCTION:\n(u1, order_taken, u2) -> 0.2\n(u2, holding_food, u3) -> 0.2\n(u3, food_prepared, u4) -> 0.2\n(u4, order_served, u6) -> 1.0\n(u3, food_fell, u5) -> -0.1\n(u4, food_fell, u5) -> -0.1\n(u5, holding_food, u3) -> 0.3",
+    "error": "",
+    "feedback": "Several issues. (1) Compactness: u3 and u5 are equivalent (both wait for holding_food to proceed and then go to u3, since after pickup in u5 the food is not yet prepared) — u5 can be eliminated by letting food_fell from u3/u4 self-loop back to u3 with the penalty on the (u3,u3)/(u4,u4) transitions. (2) Regression handling: the slip-and-recover path from u5 correctly returns to u3 (raw) but recovery after preparation (fall from u4) also routes to u5 then u3 — food that falls after preparation... actually the code notes: slipping after preparation — the prepared food stays prepared? Per environment, a slip empties the hands and picking up raw/prepared food: a fallen prepared portion picked up... the RM treats post-prepare fall identically to pre-prepare fall, forcing a re-fetch from u3 (holding_food in u3 fires into u3 again, but then it awaits food_prepared which requires raw food; a fallen prepared food picked up would transition u3→u3 via holding_food with the 0.2 pickup reward spuriously granted, then stall in u3 since food_prepared can't fire without re-preparing — if the env keeps the prepared state, the RM is unreachable to u6 after a post-prepare fall, contradicting reachability). Verify semantics: if picking up a fallen prepared portion still counts as prepared (holding green food, stove does nothing), the machine deadlocks in u3 waiting for food_prepared; order_served from u3/u4 is impossible. This must be modeled (e.g. u3 handles holding_food distinguishing raw vs prepared, or u4 recovery). (3) Dense progress rewards are bounded but the 0.3 pickup recovery reward is larger than the earlier 0.2 fetch reward, inverting monotone progress; consider equalizing. (4) Ordered transition coverage: transitions (u0,switch_toggled), (u0,food_fell), (u0,order_served), (u1,client_arrived), (u1,food_prepared), (u2,order_taken), (u3,order_served), (u4,order_taken) etc. are covered by else self-loops — good — but `served_while_ringing` and `switch_toggled` events never appear in any transition; they are only covered via per-state else self-loops, which is acceptable coverage, though the task's penalty structure (late serve while ringing) could optionally be shaped. (5) Reward safety: total positive chain 0.2+0.2+0.2+1.0 rewards partial progress densely and bounded, fine; but with the post-prepare-fall deadlock the terminal state u6 becomes unreachable on some episodes, breaking the objective. Fix the u4→u5 recovery path (prepared food should return to a state expecting order_served directly after pickup, not requiring re-preparation) and merge u3/u5 for compactness.",
+    "raw_response": "{\"accepted\": false, \"feedback\": \"Several issues. (1) Compactness: u3 and u5 are equivalent (both wait for holding_food to proceed and then go to u3, since after pickup in u5 the food is not yet prepared) — u5 can be eliminated by letting food_fell from u3/u4 self-loop back to u3 with the penalty on the (u3,u3)/(u4,u4) transitions. (2) Regression handling: the slip-and-recover path from u5 correctly returns to u3 (raw) but recovery after preparation (fall from u4) also routes to u5 then u3 — food that falls after preparation... actually the code notes: slipping after preparation — the prepared food stays prepared? Per environment, a slip empties the hands and picking up raw/prepared food: a fallen prepared portion picked up... the RM treats post-prepare fall identically to pre-prepare fall, forcing a re-fetch from u3 (holding_food in u3 fires into u3 again, but then it awaits food_prepared which requires raw food; a fallen prepared food picked up would transition u3→u3 via holding_food with the 0.2 pickup reward spuriously granted, then stall in u3 since food_prepared can't fire without re-preparing — if the env keeps the prepared state, the RM is unreachable to u6 after a post-prepare fall, contradicting reachability). Verify semantics: if picking up a fallen prepared portion still counts as prepared (holding green food, stove does nothing), the machine deadlocks in u3 waiting for food_prepared; order_served from u3/u4 is impossible. This must be modeled (e.g. u3 handles holding_food distinguishing raw vs prepared, or u4 recovery). (3) Dense progress rewards are bounded but the 0.3 pickup recovery reward is larger than the earlier 0.2 fetch reward, inverting monotone progress; consider equalizing. (4) Ordered transition coverage: transitions (u0,switch_toggled), (u0,food_fell), (u0,order_served), (u1,client_arrived), (u1,food_prepared), (u2,order_taken), (u3,order_served), (u4,order_taken) etc. are covered by else self-loops — good — but `served_while_ringing` and `switch_toggled` events never appear in any transition; they are only covered via per-state else self-loops, which is acceptable coverage, though the task's penalty structure (late serve while ringing) could optionally be shaped. (5) Reward safety: total positive chain 0.2+0.2+0.2+1.0 rewards partial progress densely and bounded, fine; but with the post-prepare-fall deadlock the terminal state u6 becomes unreachable on some episodes, breaking the objective. Fix the u4→u5 recovery path (prepared food should return to a state expecting order_served directly after pickup, not requiring re-preparation) and merge u3/u5 for compactness.\"}",
+    "stage": "reward_machine"
+  },
+  {
+    "attempt": 3,
+    "candidate": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5\nINITIAL_STATE: u0\nFINAL_STATES: u5\nTRANSITION_FUNCTION:\n(u0, client_arrived) -> u1\n(u0, else) -> u0\n(u1, order_taken) -> u2\n(u1, else) -> u1\n(u2, food_prepared) -> u5\n(u2, holding_food) -> u3\n(u2, else) -> u2\n(u3, food_fell) -> u3\n(u3, food_prepared) -> u5\n(u3, holding_food) -> u3\n(u3, else) -> u3\n(u4, order_served) -> u0\n(u4, else) -> u4\n(u5, order_served) -> u4\n(u5, food_fell) -> u5\n(u5, else) -> u5\nREWARD_FUNCTION:\n(u0, client_arrived, u1) -> 0.25\n(u1, order_taken, u2) -> 0.25\n(u2, holding_food, u3) -> 0.25\n(u3, food_prepared, u5) -> 0.25\n(u2, food_prepared, u5) -> 0.25\n(u3, food_fell, u3) -> -0.05\n(u5, food_fell, u5) -> -0.05\n(u5, order_served, u4) -> 1.0",
+    "error": "",
+    "feedback": "Rejected. (1) **State machine never resets to the initial state after serving:** serving goes u5 -> u4, and u4 only transitions back to u0 on a later `order_served`, which cannot occur since the client left. So after the first serve the machine is stuck in u4/u5; a second `client_arrived` is consumed by u4's `else` self-loop and never produces the u0->u1 progress reward. The serve transition must return to the initial state (or u4 must return to u0 on the step after serving). (2) **Serve is rewarded only if it goes through u5 (via `food_prepared`):** a trace where food is dropped/re-fetched or where the slip/pickup alternation skips the modeled holding path can reach `order_served` while in u2 or u3; in u3 `order_served` is not in the transition list, so a legitimate serve dead-ends the machine with no reward and no reset. Add an (u3, order_served) -> u0 transition and reward. (3) **The 'pick it up on the very next move' clause is not modeled:** `food_fell` self-loops in u3/u5 impose only a fixed penalty; nothing requires `holding_food` one step after `food_fell`. Since the fall turns the agent toward the food and pickup on the due/next step is possible, a sub-state or transition-conditioned reward enforcing pickup on the next step is needed (e.g., penalty unless `holding_food` follows `food_fell` immediately). Note also `holding_food` is a persistent condition, not an event, and is used as a transition event in u2->u3 — acceptable only if you intend that reading, but combined with `food_fell` (which implies `holding_food` is false) the u3 self-loops on both `holding_food` and `food_fell` are mutually consistent yet the next-step pickup obligation is lost. (4) **Missing coverage:** u2/u3 have no transition on `order_served`, and u4 never returns to u0, so the per-state `else` self-loops cover irrelevant events but the serve/reset path is broken as noted. (5) **Reward safety:** the small +0.25 shaping steps and the -0.05 slip penalty are bounded and dense, which is fine, but a serve that bypasses u5 yields no terminal reward at all — see (2).",
+    "raw_response": "{\"accepted\": false, \"feedback\": \"Rejected. (1) **State machine never resets to the initial state after serving:** serving goes u5 -> u4, and u4 only transitions back to u0 on a later `order_served`, which cannot occur since the client left. So after the first serve the machine is stuck in u4/u5; a second `client_arrived` is consumed by u4's `else` self-loop and never produces the u0->u1 progress reward. The serve transition must return to the initial state (or u4 must return to u0 on the step after serving). (2) **Serve is rewarded only if it goes through u5 (via `food_prepared`):** a trace where food is dropped/re-fetched or where the slip/pickup alternation skips the modeled holding path can reach `order_served` while in u2 or u3; in u3 `order_served` is not in the transition list, so a legitimate serve dead-ends the machine with no reward and no reset. Add an (u3, order_served) -> u0 transition and reward. (3) **The 'pick it up on the very next move' clause is not modeled:** `food_fell` self-loops in u3/u5 impose only a fixed penalty; nothing requires `holding_food` one step after `food_fell`. Since the fall turns the agent toward the food and pickup on the due/next step is possible, a sub-state or transition-conditioned reward enforcing pickup on the next step is needed (e.g., penalty unless `holding_food` follows `food_fell` immediately). Note also `holding_food` is a persistent condition, not an event, and is used as a transition event in u2->u3 — acceptable only if you intend that reading, but combined with `food_fell` (which implies `holding_food` is false) the u3 self-loops on both `holding_food` and `food_fell` are mutually consistent yet the next-step pickup obligation is lost. (4) **Missing coverage:** u2/u3 have no transition on `order_served`, and u4 never returns to u0, so the per-state `else` self-loops cover irrelevant events but the serve/reset path is broken as noted. (5) **Reward safety:** the small +0.25 shaping steps and the -0.05 slip penalty are bounded and dense, which is fine, but a serve that bypasses u5 yields no terminal reward at all — see (2).\"}",
+    "stage": "reward_machine"
+  },
+  {
+    "attempt": 4,
+    "candidate": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6\nINITIAL_STATE: u0\nFINAL_STATES: u6\nTRANSITION_FUNCTION:\n(u0, client_arrived) -> u1\n(u0, else) -> u0\n(u1, order_taken) -> u2\n(u1, client_arrived) -> u1\n(u1, else) -> u1\n(u2, holding_food & food_fell) -> u3\n(u2, holding_food) -> u3\n(u2, client_arrived) -> u2\n(u2, else) -> u2\n(u3, food_fell) -> u3\n(u3, order_served) -> u0\n(u3, client_arrived) -> u3\n(u3, order_taken) -> u3\n(u3, else) -> u3\n(u4, holding_food) -> u5\n(u4, order_served) -> u0\n(u4, client_arrived) -> u4\n(u4, order_taken) -> u4\n(u4, else) -> u4\n(u5, order_served) -> u6\n(u5, food_fell) -> u4\n(u5, client_arrived) -> u5\n(u5, order_taken) -> u5\n(u5, else) -> u5\n(u6, client_arrived) -> u1\n(u6, order_taken) -> u6\n(u6, else) -> u6\nREWARD_FUNCTION:\n(u0, client_arrived, u1) -> 0.1\n(u1, order_taken, u2) -> 0.2\n(u2, holding_food, u3) -> 0.2\n(u2, holding_food & food_fell, u3) -> -0.1\n(u3, food_fell, u3) -> -0.1\n(u3, order_served, u0) -> 0.5\n(u4, holding_food, u5) -> 0.2\n(u4, food_fell, u4) -> -0.1\n(u5, order_served, u6) -> 1.0\n(u5, food_fell, u5) -> -0.1\n(u6, client_arrived, u1) -> 0.1",
+    "error": "Reward refers to nonexistent transition (u4, food_fell, u4)",
+    "feedback": "",
+    "raw_response": "",
+    "stage": "reward_machine"
+  },
+  {
+    "attempt": 5,
+    "candidate": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6, u7\nINITIAL_STATE: u0\nFINAL_STATES: u7\nTRANSITION_FUNCTION:\n(u0, client_arrived) -> u1\n(u0, else) -> u0\n(u1, order_taken) -> u2\n(u1, else) -> u1\n(u2, holding_food) -> u3\n(u2, else) -> u2\n(u3, food_prepared) -> u4\n(u3, food_fell) -> u5\n(u3, else) -> u3\n(u4, order_served) -> u6\n(u4, food_fell) -> u5\n(u4, else) -> u4\n(u5, holding_food) -> u6\n(u5, else) -> u5\n(u6, order_served) -> u7\n(u6, food_prepared) -> u7\n(u6, food_fell) -> u5\n(u6, else) -> u6\n(u7, client_arrived) -> u1\n(u7, else) -> u7\nREWARD_FUNCTION:\n(u0, client_arrived, u1) -> 0.1\n(u1, order_taken, u2) -> 0.2\n(u2, holding_food, u3) -> 0.2\n(u3, food_prepared, u4) -> 0.2\n(u4, order_served, u6) -> 0.5\n(u6, order_served, u7) -> 1.0\n(u6, food_prepared, u7) -> 1.0\n(u3, food_fell, u5) -> -0.2\n(u4, food_fell, u5) -> -0.2\n(u6, food_fell, u5) -> -0.2\n(u5, holding_food, u6) -> 0.2",
+    "error": "",
+    "feedback": "Well-formed: FINAL_STATES (u7) present and declared/accepting; all listed states declared; INIT u0. Ordered transition coverage is correct: u0→u1 on client_arrived; u1→u2 order_taken (never co-occurs with client_arrived, so no missed ordering); u2 requires holding_food (obtained via pickup, a condition event not otherwise modeled — correct since pickup is not a proposition); u3 prepared; u4 served. Food_fell handling respects 'food_fell and holding_food never hold together': u3/u4 on fall → u5, which waits for holding_food (re-pickup) → u6, then order_served → u7 — the required next-move pickup path is rewarded, and the -0.2 slips are bounded and act as the required regression. However, check u6: from u6 (after re-pickup in state u5→u6 holding_food), transitions to u7 via order_served (1.0) or food_prepared (1.0) — but food_prepared cannot occur while already prepared? Actually after a slip the food is raw again? No — dropped food retains state in this env (carrying box color changes only at stove; a fallen prepared food stays green? The env doesn't state food reverts). If fallen prepared food stays prepared, serving works via order_served; food_prepared at u6 is unreachable/harmless. Minor concerns, not disqualifying: (1) u6→u7 via food_prepared gives 1.0 for preparing, which could double-credit if food were somehow re-prepared — but the env forbids preparing twice, so this branch is dead or at most unreachable reward; safe. (2) 'food_prepared' in u6 with 1.0 could be earned by preparing before the slip's re-pickup? No, u6 is only reached after re-pickup; stove toggle with raw food and waiting client yields food_prepared — if the fallen food is raw again this is legitimate progress. Either way reward is dense, bounded, no dangerous amounts. Irrelevant events (switch_toggled, served_while_ringing, siren_ringing) are covered by else self-loops in every state. u7 self-loops on else and restarts on client_arrived — correct cyclic task. No predicate-only event used as machine event in a way violating semantics: holding_food (condition) used as trigger is acceptable in ARM-FM where condition propositions can gate transitions. Accepted.",
+    "raw_response": "{\"accepted\": true, \"feedback\": \"Well-formed: FINAL_STATES (u7) present and declared/accepting; all listed states declared; INIT u0. Ordered transition coverage is correct: u0→u1 on client_arrived; u1→u2 order_taken (never co-occurs with client_arrived, so no missed ordering); u2 requires holding_food (obtained via pickup, a condition event not otherwise modeled — correct since pickup is not a proposition); u3 prepared; u4 served. Food_fell handling respects 'food_fell and holding_food never hold together': u3/u4 on fall → u5, which waits for holding_food (re-pickup) → u6, then order_served → u7 — the required next-move pickup path is rewarded, and the -0.2 slips are bounded and act as the required regression. However, check u6: from u6 (after re-pickup in state u5→u6 holding_food), transitions to u7 via order_served (1.0) or food_prepared (1.0) — but food_prepared cannot occur while already prepared? Actually after a slip the food is raw again? No — dropped food retains state in this env (carrying box color changes only at stove; a fallen prepared food stays green? The env doesn't state food reverts). If fallen prepared food stays prepared, serving works via order_served; food_prepared at u6 is unreachable/harmless. Minor concerns, not disqualifying: (1) u6→u7 via food_prepared gives 1.0 for preparing, which could double-credit if food were somehow re-prepared — but the env forbids preparing twice, so this branch is dead or at most unreachable reward; safe. (2) 'food_prepared' in u6 with 1.0 could be earned by preparing before the slip's re-pickup? No, u6 is only reached after re-pickup; stove toggle with raw food and waiting client yields food_prepared — if the fallen food is raw again this is legitimate progress. Either way reward is dense, bounded, no dangerous amounts. Irrelevant events (switch_toggled, served_while_ringing, siren_ringing) are covered by else self-loops in every state. u7 self-loops on else and restarts on client_arrived — correct cyclic task. No predicate-only event used as machine event in a way violating semantics: holding_food (condition) used as trigger is acceptable in ARM-FM where condition propositions can gate transitions. Accepted.\"}",
+    "stage": "reward_machine"
+  },
+  {
+    "attempt": 1,
+    "candidate": "def siren_ringing(env):\n    return env.siren_ringing\n\ndef holding_food(env):\n    return env.carrying is not None and env.carrying.type == \"box\"\n\ndef switch_toggled(env):\n    return \"toggle\" in env.events_this_step\n\ndef client_arrived(env):\n    return \"arrive\" in env.events_this_step\n\ndef order_taken(env):\n    return \"order\" in env.events_this_step\n\ndef food_prepared(env):\n    return \"prepare\" in env.events_this_step\n\ndef order_served(env):\n    return \"serve\" in env.events_this_step\n\ndef food_fell(env):\n    return \"fall\" in env.events_this_step\n\ndef served_while_ringing(env):\n    return \"serve_ringing\" in env.events_this_step\n",
+    "error": "",
+    "feedback": "All nine environment-declared propositions are defined exactly once with matching kinds and semantics; event propositions read env.events_this_step, persistent ones read current state (siren_ringing, carrying). No imports, actions, side effects, or extra functions. Syntax is valid.",
+    "raw_response": "{\"accepted\": true, \"feedback\": \"All nine environment-declared propositions are defined exactly once with matching kinds and semantics; event propositions read env.events_this_step, persistent ones read current state (siren_ringing, carrying). No imports, actions, side effects, or extra functions. Syntax is valid.\"}",
+    "stage": "labeling"
+  },
+  {
+    "attempt": 1,
+    "candidate": "{\n  \"u0\": \"No client is currently waiting and no order is in progress. The siren may ring at any time and should be silenced by walking to the switch and toggling it. Next objective: watch for a client to arrive at the counter; upon client_arrived, move to take their order.\",\n  \"u1\": \"A client is waiting at the counter but their order has not been taken. Navigate to a floor cell next to the counter facing the client and toggle to take the order. Optionally silence the siren first if it rings.\",\n  \"u2\": \"The waiting client's order is taken, and the agent does not yet hold food. Go to the pantry, face it and pick up a raw portion of food; the first pickup is guaranteed to slip soon, so be ready to recover it.\",\n  \"u3\": \"The agent is carrying raw food for the order that has been taken. Carry it to the stove, face it and toggle to prepare it; keep an eye out for the food slipping, in which case switch to recovery and pick it up on the very next move.\",\n  \"u4\": \"The agent is carrying prepared food for the waiting client. Navigate to the counter and toggle while facing the client to serve the order. If the food slips first, recover it immediately and take it back to the stove.\",\n  \"u5\": \"The food has slipped out of the agent's hands and lies on a nearby floor cell; the agent now faces it. Next objective: move forward or pick up to regain the food on the very next move, then resume carrying it to the stove (if raw) or to the client (if prepared).\",\n  \"u6\": \"An order was just served and the agent's hands are now empty; this is a transition state heading back to the idle loop. Check for a ringing siren and silence it if needed, then wait for the next client_arrived to begin a new order.\",\n  \"u7\": \"Terminal success state: the most recent client's order was fully completed (either served or the prepared-food step closed the cycle) and the agent is idle awaiting the next client. Continue handling any ringing siren; if a new client arrives, transition to taking their order.\"\n}",
+    "error": "",
+    "feedback": "",
+    "raw_response": "",
+    "stage": "descriptions"
+  },
+  {
+    "model_reported": "deepseek-v4.1-flash",
+    "model_requested": "deepseek-v4.1-flash",
+    "role": "generator",
+    "stage": "rm_generator"
+  },
+  {
+    "model_reported": "deepseek-v4.1-flash",
+    "model_requested": "deepseek-v4.1-flash",
+    "role": "generator",
+    "stage": "rm_generator"
+  },
+  {
+    "model_reported": "deepseek-v4.1-flash",
+    "model_requested": "deepseek-v4.1-flash",
+    "role": "generator",
+    "stage": "rm_generator"
+  },
+  {
+    "model_reported": "deepseek-v4.1-flash",
+    "model_requested": "deepseek-v4.1-flash",
+    "role": "generator",
+    "stage": "rm_generator"
+  },
+  {
+    "model_reported": "deepseek-v4.1-flash",
+    "model_requested": "deepseek-v4.1-flash",
+    "role": "generator",
+    "stage": "rm_generator"
+  },
+  {
+    "model_reported": "deepseek-v4.1-flash",
+    "model_requested": "deepseek-v4.1-flash",
+    "role": "generator",
+    "stage": "labeling_generator"
+  },
+  {
+    "model_reported": "deepseek-v4.1-flash",
+    "model_requested": "deepseek-v4.1-flash",
+    "role": "generator",
+    "stage": "description_generator"
+  },
+  {
+    "model_reported": "glm-5.3-flash",
+    "model_requested": "glm-5.3-flash",
+    "role": "critic",
+    "stage": "rm_critic"
+  },
+  {
+    "model_reported": "glm-5.3-flash",
+    "model_requested": "glm-5.3-flash",
+    "role": "critic",
+    "stage": "rm_critic"
+  },
+  {
+    "model_reported": "glm-5.3-flash",
+    "model_requested": "glm-5.3-flash",
+    "role": "critic",
+    "stage": "rm_critic"
+  },
+  {
+    "model_reported": "glm-5.3-flash",
+    "model_requested": "glm-5.3-flash",
+    "role": "critic",
+    "stage": "labeling_critic"
+  }
+]

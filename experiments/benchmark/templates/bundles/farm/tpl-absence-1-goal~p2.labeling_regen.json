@@ -1,0 +1,38 @@
+{
+  "bundle": "farm/tpl-absence-1-goal~p2",
+  "rm_sha256": "5d39c6592e3a943bbabd431728b5c16272a4bdd89914096b5209f4bfe3ca370f",
+  "attempts": [
+    {
+      "stage": "labeling",
+      "attempt": 1,
+      "status": "accepted",
+      "candidate": "def door_open(env):\n    return any(c is not None and c.type == \"door\" and c.is_open for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)])\n\ndef has_door_key(env):\n    return env.carrying is not None and env.carrying.type == \"key\" and any(c is not None and c.type == \"door\" and c.color == env.carrying.color for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)])\n\ndef key_lost(env):\n    return env.episode_memory[\"previous_valuation\"] and env.episode_memory[\"previous_valuation\"][\"has_door_key\"] and not (env.carrying is not None and env.carrying.type == \"key\" and any(c is not None and c.type == \"door\" and c.color == env.carrying.color for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)])) and not any(c is not None and c.type == \"door\" and c.is_open for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)])\n\ndef target_picked_up(env):\n    return env.carrying is not None and env.carrying.type == \"box\" and env.mission == \"pick up the \" + str(env.carrying.color) + \" box\"\n",
+      "feedback": "NO CHANGES NEEDED. The candidate covers exactly the four declared propositions with one expression-only predicate each. `door_open` and `has_door_key` match the documented grid-scan pattern with proper `cell is not None` guards. `key_lost` correctly reads `env.episode_memory[previous_valuation]` as a read-only map, stays false on the first step (the mapping is falsy), and requires the previous step to have the key, the current step not to have it, and the door not open, matching the event semantics. `target_picked_up` matches carrying a box against the mission string without assuming a color. No forbidden builtins, no mutation, no invented attributes, no reliance on RM state or descriptions.",
+      "error": "",
+      "raw_response": ""
+    }
+  ],
+  "previous": {
+    "labeling": "",
+    "attempts": [
+      {
+        "attempt": 1,
+        "candidate": "",
+        "error": "Labeling generation failed after 3 requests: CHANGES REQUIRED: `blocker_moved` is wrong. It must be true exactly when the cell directly in front of the door holds no ball (a ball in the agent's hand counts as moved). Instead, the predicate scans the whole grid and its second disjunct tests whether some arbitrary door has no ball at an unrelated adjacent cell `(x-1, y)`, which is unrelated to the front-of-door cell and has nothing to do with the mission's ball. This makes the predicate essentially always true (any cell next to any door lacking a ball), and it never checks the ball's actual position relative to the (mission's) door. Necessary fix in plain language: locate the mission's door (or the door the ball blocks), compute the single cell directly in front of it using `env.agent_dir`-relative geometry or the documented `env.grid.get`, and return true iff (a) the agent is carrying a ball, or (b) that one specific front-of-door cell is empty or holds something other than a ball. The guard `cell is not None` before reading `.type` is otherwise fine; keep using that pattern.",
+        "feedback": "",
+        "raw_response": "",
+        "stage": "labeling",
+        "status": "failed"
+      }
+    ],
+    "stage_status": "failed",
+    "check_record": {}
+  },
+  "models": [
+    "deepseek-v4.1-flash",
+    "glm-5.3-flash"
+  ],
+  "calls": 2,
+  "wall_time_s": 8.2,
+  "outcome": "accepted"
+}
