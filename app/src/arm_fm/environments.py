@@ -30,6 +30,7 @@ from . import (
 )
 from .artifacts import ArtifactBundle, load_bundle
 from .runtime import RewardMachineEnvironment, RewardMachineRuntime, load_labeling_functions
+from .transfer import embedding_permutation
 
 
 @dataclass(frozen=True)
@@ -58,21 +59,22 @@ def make_environment(environment_id: str, **kwargs: Any) -> Any:
     return gym.make(environment_id, **kwargs)
 
 
-def make_run_environment(CONFIG: Configuration) -> RunEnvironment:
+def make_run_environment(CONFIG: Configuration, index: int = 0) -> RunEnvironment:
     """Build a fresh run environment from ``CONFIG``; ``reward_source: env`` adds no RM wrapper.
 
     Every call owns its own RM runtime and labeling memory, so train and eval
     environments never share RM state.
 
     With ``task_bundles`` it builds one such environment per task and returns them as one
-    ``MultiTaskEnvironment``. With ``success: rm`` an episode counts as a success only when it
-    ends on RM acceptance.
+    ``MultiTaskEnvironment``; ``index`` is this env's place among a vector env's, which
+    ``task_draw: alternate`` uses to start each env on a different task. With ``success: rm`` an
+    episode counts as a success only when it ends on RM acceptance.
 
     Raises:
         ValueError: If the family, observation, gym id or RM inputs are missing or unknown.
     """
     if CONFIG.task_bundles:
-        return _multi_task_run(CONFIG)
+        return _multi_task_run(CONFIG, index)
     if not CONFIG.gym_id:
         raise ValueError("train-rl needs gym_id in the run config")
     adapter = ENVIRONMENT_FAMILIES.get(CONFIG.env_family)
@@ -278,12 +280,18 @@ def _reward_machine_inputs(
 ) -> tuple[ArtifactBundle, dict[str, Callable[[object], bool]]]:
     """Load the RM bundle and its labeling, optionally from ``labeling_bundle``.
 
-    The RM, state descriptions and embeddings always come from ``bundle``.
+    The RM, state descriptions and embeddings always come from ``bundle``; with
+    ``shuffle_embeddings_seed`` the embeddings are permuted among the states (a control).
     """
     if CONFIG.bundle is None:
         raise ValueError("reward_source rm or both needs a bundle in the run config")
     bundle = load_bundle(CONFIG.bundle)
     bundle.validate(require_complete=True)
+    if CONFIG.shuffle_embeddings_seed is not None:
+        permutation = embedding_permutation(bundle.embeddings, CONFIG.shuffle_embeddings_seed)
+        bundle.embeddings = {
+            state: bundle.embeddings[source] for state, source in permutation.items()
+        }
 
     labeling_bundle = CONFIG.labeling_bundle or CONFIG.bundle
     source = bundle.labeling_source
@@ -315,10 +323,19 @@ class MultiTaskEnvironment(gym.Env):
     Each task keeps its own env, RM, labeling, embeddings and success rule, so the policy
     sees only the shared observation. ``reset`` draws the task from a RNG of its own, seeded
     from the run seed, unless ``options={"task": index}`` names one (evaluation cycles them).
+    With ``alternate`` the draw is a cycle instead: this env's k-th episode runs task
+    ``(offset + k) mod n``, so envs given different offsets train on different tasks at once.
     ``info["task"]`` carries the current task's name.
     """
 
-    def __init__(self, runs: Mapping[str, RunEnvironment], seed: int) -> None:
+    def __init__(
+        self,
+        runs: Mapping[str, RunEnvironment],
+        seed: int,
+        *,
+        alternate: bool = False,
+        offset: int = 0,
+    ) -> None:
         self.names = tuple(runs)
         self.runs = tuple(runs.values())
         first = self.runs[0].env
@@ -335,6 +352,9 @@ class MultiTaskEnvironment(gym.Env):
         self.action_space = first.action_space
         self._seed = seed
         self._task_rng = random.Random(f"tasks-{seed}")
+        self._alternate = alternate
+        self._offset = offset
+        self._cycle = offset  # the next task of an alternating env, before the modulo
         self._started: set[int] = set()
         self._index = 0
         self._stepped = 0
@@ -350,12 +370,13 @@ class MultiTaskEnvironment(gym.Env):
 
     @contextmanager
     def keep_task_draws(self) -> Iterator[None]:
-        """Restore the task-draw generator on exit, so extra episodes leave later draws unchanged."""
-        state = self._task_rng.getstate()
+        """Restore the task draws on exit, so extra episodes leave later draws unchanged."""
+        state, cycle = self._task_rng.getstate(), self._cycle
         try:
             yield
         finally:
             self._task_rng.setstate(state)
+            self._cycle = cycle
 
     def is_success(self, terminated: bool, env_reward: float) -> bool:
         # The task that ran the last step: PPO's SAME_STEP autoreset may already have drawn the next one.
@@ -363,13 +384,24 @@ class MultiTaskEnvironment(gym.Env):
 
     def reset(self, *, seed: int | None = None, options: dict | None = None):
         task = (options or {}).get("task")
+        if task is None and self._alternate:
+            task = self._cycle % len(self.runs)
+            self._cycle += 1
         self._index = self._task_rng.randrange(len(self.runs)) if task is None else task
         # A task's first reset needs a seed, or its layouts would not be reproducible.
         if seed is None and self._index not in self._started:
-            seed = self._seed + self._index
+            seed = self._first_seed(self._index)
         self._started.add(self._index)
         observation, info = self.runs[self._index].env.reset(seed=seed)
         return observation, {**info, "task": self.current_task}
+
+    def _first_seed(self, index: int) -> int:
+        """The seed of task ``index``'s first reset when the caller gave none."""
+        if not self._alternate:
+            return self._seed + index  # the random draw keeps its draws
+        # Keyed on the (run seed, env place, task) triple, not on their sum: run seed s with env i
+        # and seed s+k with env i-k must not replay one layout or event stream on the same card.
+        return random.Random(f"task-seed-{self._seed}-{self._offset}-{index}").randrange(2**31)
 
     def step(self, action):
         self._stepped = self._index
@@ -377,7 +409,7 @@ class MultiTaskEnvironment(gym.Env):
         return observation, reward, terminated, truncated, {**info, "task": self.current_task}
 
 
-def _multi_task_run(CONFIG: Configuration) -> RunEnvironment:
+def _multi_task_run(CONFIG: Configuration, index: int) -> RunEnvironment:
     """One ``MultiTaskEnvironment`` over ``CONFIG.task_bundles``, each built like a single task."""
     names = [task_name(entry) for entry in CONFIG.task_bundles]
     if len(set(names)) != len(names):
@@ -386,7 +418,9 @@ def _multi_task_run(CONFIG: Configuration) -> RunEnvironment:
         name: make_run_environment(_task_config(CONFIG, entry))
         for name, entry in zip(names, CONFIG.task_bundles, strict=True)
     }
-    env = MultiTaskEnvironment(runs, CONFIG.seed)
+    env = MultiTaskEnvironment(
+        runs, CONFIG.seed, alternate=CONFIG.task_draw == "alternate", offset=index
+    )
     return RunEnvironment(env, runs[names[0]].make_encoder, env.is_success)
 
 

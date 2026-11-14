@@ -33,7 +33,7 @@ from pathlib import Path
 
 from cycles import positive_cycles
 
-from scripts.aggregate_suite import judge_columns
+from scripts.aggregate_suite import eval_rows, judge_columns
 from scripts.run_suite import RUNS_PATH
 from src.benchmark.declare_judge import ltlf_of
 from src.compiler.rm_format import parse_paper_reward_machine
@@ -98,8 +98,11 @@ def laps(path: str) -> bool:
 
 
 def first_step_at(path: Path, column: str) -> int | None:
-    """The first training step at which ``column`` of `eval.csv` reaches `SUCCESS_LEVEL`."""
-    for row in read_rows(path):
+    """The first training step at which ``column`` of `eval.csv` reaches `SUCCESS_LEVEL`.
+
+    Only the overall rows count: a multi-task run's per-task rows are skipped, as in `aggregate_suite`.
+    """
+    for row in eval_rows(path.parent):
         value = number(row.get(column))
         if value is not None and value >= SUCCESS_LEVEL:
             return int(float(row["global_step"]))

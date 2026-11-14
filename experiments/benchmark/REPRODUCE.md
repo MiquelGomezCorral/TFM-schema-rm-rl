@@ -383,3 +383,140 @@ rule breaks, flags (too simple, cannot start, positive cycle, farming, shared ru
 the new judge changed against `judge.v1.json`, the cards that do not learn, and each card's NL task,
 LTLf and machine files. `--results` is the JSONL of section 6.9 and only names the runs whose judge
 crashed. It reads only; rerun it whenever runs or judges change.
+
+### 6.12 Transfer tools: one policy, several machines
+
+The ARM-FM paper (Fig. 10 and 17) trains one policy on the embedding of the RM state and tests it on
+a machine it never saw. These steps train on several machines, test on another machine, fine-tune,
+and check the states. One command per step; run them from the repository root with the embedding
+server up (the product build needs it). Everything below is evaluation or opt-in training; no
+existing run, default or output changes.
+
+**1. Train one policy on several machines.** In a suite's `runs.yaml`, add `mixes:` (each entry
+`{id, cards: [card ids, at least two]}`). Each mix expands to one run per arm that has a bundle (ARM-FM
+and FARM; no-RM has none) and seed, named `bench__<suite>__<mix id>__<arm>__<learner>`. The cards must
+share the environment, observation and layout, and their machines must give the same observation size
+(the same embedding model). The run trains on all cards, one task per episode, with
+`task_draw: alternate`: each of the 16 envs starts at another card and cycles through them, so the
+cards share episodes equally, **not steps**: a card whose episodes run longer takes more steps.
+`summary.json` holds `task_split`, the completed episodes each card got and their steps (an episode
+still open when training stops is not counted, so the steps fall a little short of the total). Report
+`task_split` with every mix result; the proof run (100k steps) split 477 siren and 481 box episodes
+into 64,022 and 37,238 steps. `eval.csv` gets one row per card (`task` column) beside the combined row;
+`aggregate-suite`, `results_table.py` and the PPO diagnostic read only the combined row. Give the mix
+the same total steps as the full card's run for the comparison.
+
+```bash
+python app/main.py run-suite --suite experiments/benchmark/complex/mixes-example.yaml --dry-run
+python app/main.py run-suite --suite experiments/benchmark/complex/mixes-example.yaml --parallel 2
+```
+
+`mixes-example.yaml` is the suite to copy: the `siren-box` mix on the two ServiceRoom cards, ARM-FM and
+FARM. It also lists each card alone, as the baselines to compare the mix with, because a suite cannot
+hold mixes alone (an empty `only` means every card with `train: true`). Six runs; `--dry-run` shows
+`no-data` when the bundles are not in the checkout.
+
+Outside `run-suite`, set `task_bundles` and `task_draw: alternate` in a `train-rl --config` yaml
+(`task_draw` needs `task_bundles` and is `null` by default, which keeps the seeded random draw). The
+mix run folder holds `members/<card id>.json`. `judge_runs.py` does not judge a mix run (it needs one
+card, `task_bundles` is refused); use step 2 for each card instead.
+
+**2. Test a saved policy on another machine, judged per card.**
+
+```bash
+python app/main.py test-rl --run outputs/runs/<mix run>/seed1-<stamp> \
+    --bundle experiments/benchmark/complex/bundles/arm-fm/cx-siren \
+    --judge outputs/runs/<mix run>/members/cx-siren.json --episodes 100
+```
+
+`--bundle` plays that bundle's machine, labeling and state embeddings with the saved weights (no
+training); it needs `--judge` (the card gives the environment settings and the rules). It stops with a
+clear message when the observation or action space differs from the training one (for example another
+embedding size, a different environment or a different number of propositions). Results go to
+`<run>/transfer/<bundle folder>-<bundle name>/` (`test.json`, `judge.json`, `agent-traces/`); the
+run's own `test.json` and `judge.json` stay as they are. `judge.json` has the per-rule pass rates in
+`rule_pass_rates` (the share of episodes where that rule holds, in the card's `expect` order) beside
+the usual summary.
+
+**3. Fine-tune from a saved policy.** Add `init_from: <saved run folder>` to a `train-rl --config`
+yaml (a PPO run; DQN refuses it). It loads `agent.pt` into the new run before the first rollout and
+fails with a clear message when the sizes differ. Only the weights come over: the optimizer (Adam
+moments), the annealed learning rate and the step counters start fresh, because the new run is a new
+training schedule; PPO keeps no observation or reward normalization, so there is none to restore.
+`parameter_change_norm` in `summary.json` counts from the loaded weights. For the comparison, run the
+same yaml without `init_from` and the same `total_timesteps` (the fresh control).
+
+```bash
+python app/main.py train-rl --config <yaml with init_from and total_timesteps>
+```
+
+**4. Shuffled-meaning control.** Permutes which state embedding goes with which state (a seeded
+permutation that moves every state), so the policy sees the same kind of vectors with the wrong
+meaning. It works on its own (the run's own machine) or with `--bundle`:
+
+```bash
+python app/main.py test-rl --run outputs/runs/<run>/seed1-<stamp> --shuffle-embeddings 1 \
+    --bundle <bundle> --judge <card.json> --episodes 100
+```
+
+The mapping is written in `test.json` (`transfer.shuffled_embeddings`); the folder name ends in
+`-shuffled-s<seed>`. A machine with fewer than two states cannot be shuffled.
+
+**5. Product of two machines (evaluation only).** The combined machine has one state per reachable
+pair of states. Each pair's description is the two descriptions joined and is embedded with the
+settings the bundles share; the labeling is one bundle's, or both merged (a FARM bundle labels only its
+own propositions). Works for ARM-FM and for FARM machines, two of the same arm. The rules, as the
+runtime reads them:
+
+- A pair is rejecting when either part is, final when both are. Both end the episode. A part that
+  reached a final state stays there while the other goes on. A rejecting pair ends the episode with no
+  end charge, so the other part's open promises are not charged, as in a single run that ends on
+  rejecting.
+- FARM end judgment: when the environment ends an episode the machine did not, the runtime charges the
+  failed rewards of the promises open in the state. The product charges the same for a pair: the hard
+  and soft counts of both parts add up (a final part has none open), as if both machines had run on the
+  episode. A pair with no promise open in either part is accepting. This needs both machines to have a
+  judgment with the same failed rewards.
+
+It refuses one machine with a judgment and one without (an ARM-FM with a FARM machine), differing failed
+or default rewards, bundles of different environments, embedding settings or proposition meanings, a
+labeling function defined differently in the two bundles or covering neither, and more than 14
+propositions.
+
+```bash
+python app/main.py product-rm \
+    --first experiments/benchmark/complex/bundles/arm-fm/cx-siren \
+    --second experiments/benchmark/complex/bundles/arm-fm/cx-box \
+    --first-card <cx-siren card.json> --second-card <cx-box card.json> \
+    --output outputs/product/cx-siren-box
+python app/main.py test-rl --run outputs/runs/<mix run>/seed1-<stamp> \
+    --bundle outputs/product/cx-siren-box --judge outputs/product/cx-siren-box/card.json
+```
+
+`product.json` names the pair of every product state; `card.json` (written with both cards) joins the
+tasks and rules and merges the environment settings, and must pass the card contract. A product
+bundle also works as a training bundle for the fine-tune of step 3 (`bundle:` in the yaml). Use
+`--overwrite` to rebuild a folder.
+
+**6. State check before a zero-shot test.**
+
+```bash
+python app/main.py state-check \
+    --train experiments/benchmark/complex/bundles/arm-fm/cx-siren \
+    --train experiments/benchmark/complex/bundles/arm-fm/cx-box \
+    --product outputs/product/cx-siren-box --output outputs/state-check/cx-siren-box
+```
+
+Writes `state-check.json` (every number), `state-check.md` (state counts, each test state's
+description and its nearest training state by cosine similarity, next to the spread of the training
+states' own nearest-other cosines) and `state-check.html` (the 2-D PCA of all states, one file that
+opens alone). It lists a problem when the embedding settings differ (the same keys `product-rm`
+compares) or a test machine has more states than any training machine, and refuses a bundle given as
+both a training and a test machine. Read the cosines against the training spread: the embedding model
+puts all states in a high range. `--test <bundle>` adds a test machine; `--product` is the same with a
+product bundle.
+
+Not covered here: `aggregate-suite` and `results_table.py` were not run on mix runs; the transfer
+outputs live under each run's `transfer/` folder and no table reads them yet. Retry: each command
+fails before writing when its input is wrong; fix it and run it again (`product-rm` needs
+`--overwrite` for a non-empty output folder).

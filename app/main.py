@@ -20,6 +20,7 @@ from scripts import (
     generate_suite,
     generation_table,
     import_paper_bundle,
+    product_rm,
     regenerate_labeling,
     render_rm,
     repair_labeling,
@@ -27,6 +28,7 @@ from scripts import (
     restore_farm,
     rm_facts,
     run_suite,
+    state_check,
     test_rl,
     trace_bank,
     train_rl,
@@ -117,6 +119,17 @@ def cmd_test_rl(args: argparse.Namespace) -> None:
     """Test finished runs on unseen maps and render GIFs."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
     test_rl(CONFIG, args.gifs, args.judge)
+
+
+def cmd_product_rm(args: argparse.Namespace) -> None:
+    """Build the product of two bundles' machines, for evaluation only."""
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    product_rm(CONFIG, args.first, args.second, args.folder, (args.first_card, args.second_card))
+
+
+def cmd_state_check(args: argparse.Namespace) -> None:
+    """Compare a test machine's states with the training machines' states."""
+    state_check(args.train, args.test, args.product, args.output)
 
 
 def cmd_trace_bank(args: argparse.Namespace) -> None:
@@ -594,7 +607,63 @@ if __name__ == "__main__":
         help="Task card (card.json) to judge the test episodes with: writes agent-traces/ep<k>.json "
         "and judge.json in each run folder",
     )
+    test_parser.add_argument(
+        "--bundle",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="Play this bundle's machine, labeling and state embeddings instead of the run's own "
+        "(needs --judge; the policy is not retrained). Writes <run>/transfer/<name>/",
+    )
+    test_parser.add_argument(
+        "--shuffle-embeddings",
+        dest="shuffle_embeddings_seed",
+        type=int,
+        default=None,
+        metavar="SEED",
+        help="Control: permute the state embeddings among the machine's states with this seed",
+    )
     test_parser.set_defaults(func=cmd_test_rl)
+
+    # ======================================================================================
+    #                                       product-rm
+    # ======================================================================================
+    product_parser = subparsers.add_parser(
+        "product-rm", help="Build the product of two bundles' machines to test a policy on"
+    )
+    product_parser.add_argument("--first", required=True, type=Path, help="First bundle")
+    product_parser.add_argument("--second", required=True, type=Path, help="Second bundle")
+    product_parser.add_argument(
+        "--output", dest="folder", required=True, type=Path, help="Product bundle folder to write"
+    )
+    product_parser.add_argument("--first-card", type=Path, help="Card of the first bundle")
+    product_parser.add_argument(
+        "--second-card",
+        type=Path,
+        help="Card of the second bundle; with --first-card, writes <output>/card.json",
+    )
+    product_parser.add_argument("--overwrite", action="store_true")
+    product_parser.set_defaults(func=cmd_product_rm)
+
+    # ======================================================================================
+    #                                      state-check
+    # ======================================================================================
+    check_parser = subparsers.add_parser(
+        "state-check", help="Compare test machines' states with the training machines' states"
+    )
+    check_parser.add_argument(
+        "--train", action="append", required=True, type=Path, help="Training bundle (repeatable)"
+    )
+    check_parser.add_argument(
+        "--test", action="append", default=[], type=Path, help="Test bundle (repeatable)"
+    )
+    check_parser.add_argument(
+        "--product", action="append", default=[], type=Path, help="Product bundle (repeatable)"
+    )
+    check_parser.add_argument(
+        "--output", required=True, type=Path, help="Folder for state-check.json, .md and .html"
+    )
+    check_parser.set_defaults(func=cmd_state_check)
 
     # ======================================================================================
     #                                       trace-bank

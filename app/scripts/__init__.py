@@ -11,10 +11,12 @@ from .generate_rm import generate_rm
 from .generate_suite import SuiteOptions, generate_suite
 from .generation_table import generation_table
 from .import_paper_bundle import import_paper_bundle
+from .product_rm import product_rm
 from .regenerate_labeling import regenerate_labeling
 from .render_rm import render_rm
 from .repair_labeling import repair_labeling
 from .restore_farm import restore_farm
 from .run_suite import run_suite
+from .state_check import state_check
 from .test_rl import test_rl
 from .train_rl import train_rl

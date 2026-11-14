@@ -96,6 +96,8 @@ RUN_SETTINGS = (
     "algorithm",
     "success",
     "task_bundles",
+    "task_draw",
+    "init_from",
     "total_timesteps",
     "learning_rate",
     "buffer_size",
@@ -229,6 +231,8 @@ def _check_settings(CONFIG: Configuration) -> None:
         raise ValueError("learning_starts must not be negative")
     if CONFIG.algorithm != "dqn":
         raise ValueError(f"train_dqn trains algorithm: dqn, not {CONFIG.algorithm!r}")
+    if CONFIG.init_from is not None:
+        raise ValueError("init_from starts a PPO run from saved weights; DQN does not support it")
     if CONFIG.task_bundles:
         _check_task_bundles(CONFIG)
 
@@ -574,6 +578,11 @@ def evaluate(
     episodes = [
         _evaluation_episode(run, q_network, CONFIG.eval_epsilon, reset, rng) for reset in resets
     ]
+    return evaluation_row_with_tasks(episodes)
+
+
+def evaluation_row_with_tasks(episodes: list[EpisodeTracker]) -> dict[str, object]:
+    """``evaluation_row``, plus ``tasks`` (one row per task) when the episodes ran several."""
     row = evaluation_row(episodes)
     tasks = list(dict.fromkeys(episode.task for episode in episodes))
     if len(tasks) > 1:
@@ -660,6 +669,7 @@ class RunRecorder:
         self.directory = directory
         self.started = time.monotonic()
         self.episode_count = 0
+        self.task_split: dict[str, dict[str, int]] = {}  # per task of a multi-task run
         self.steps_to_success: int | None = None
         self.success_modes: dict[str, str] = {}
         self.columns = {**CSV_COLUMNS, "train.csv": train_columns}
@@ -694,6 +704,10 @@ class RunRecorder:
 
     def write_episode(self, env_steps: int, episode: EpisodeTracker, epsilon: float) -> None:
         self.episode_count += 1
+        if episode.task is not None:
+            share = self.task_split.setdefault(episode.task, {"episodes": 0, "steps": 0})
+            share["episodes"] += 1
+            share["steps"] += episode.length
         self._append(
             "episodes.csv",
             {
@@ -760,12 +774,16 @@ class RunRecorder:
     ) -> None:
         """Write ``summary.json``; ``learner_fields`` are the learner's own entries.
 
-        A run where any task counts RM acceptance as success names how each task defines it.
+        A run where any task counts RM acceptance as success names how each task defines it. A
+        multi-task run gives ``task_split``: the completed episodes each task got and their steps.
+        An episode still open when training stops is not counted, so the steps fall a little
+        short of ``total_env_steps``.
         """
         summary = {
             "total_env_steps": CONFIG.total_timesteps,
             "total_training_episodes": self.episode_count,
             "wall_seconds": self.wall_seconds,
+            **({"task_split": self.task_split} if self.task_split else {}),
             **learner_fields,
             "steps_to_success": self.steps_to_success,
             "success_threshold": CONFIG.success_threshold,

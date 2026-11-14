@@ -59,7 +59,7 @@ from src.config import Configuration
 from .dqn import (
     EpisodeTracker,
     RunRecorder,
-    evaluation_row,
+    evaluation_row_with_tasks,
     layout_seed,
     rm_embedding_branch,
 )
@@ -86,7 +86,7 @@ TRAIN_COLUMNS = (
     "update_seconds",
 )
 POSITIVE_SETTINGS = ("total_timesteps", "eval_frequency", "eval_episodes", "final_eval_episodes")
-STEP_INFO_KEYS = ("env_reward", "rm_reward", "rm_state", "rm_accept")
+STEP_INFO_KEYS = ("env_reward", "rm_reward", "rm_state", "rm_accept", "task")
 HIDDEN_FEATURES = 512
 LOG_EVERY_ITERATIONS = 10
 
@@ -121,7 +121,7 @@ def train_ppo(CONFIG: Configuration) -> Path:
     # Every env registers its close as soon as it exists, so a failure while building env k, or
     # later in the run, still closes envs 0..k-1 (and each close runs even if another raises).
     with ExitStack() as cleanup:
-        runs = [_open_run(CONFIG, cleanup) for _ in range(CONFIG.ppo_num_envs)]
+        runs = [_open_run(CONFIG, cleanup, index) for index in range(CONFIG.ppo_num_envs)]
         eval_run = _open_run(CONFIG, cleanup)
         envs = SyncVectorEnv(
             [partial(_training_env, CONFIG, run) for run in runs],
@@ -157,8 +157,8 @@ def training_reset_seeds(CONFIG: Configuration) -> list[int]:
     return [CONFIG.seed * CONFIG.ppo_num_envs + index for index in range(CONFIG.ppo_num_envs)]
 
 
-def _open_run(CONFIG: Configuration, cleanup: ExitStack) -> RunEnvironment:
-    run = make_run_environment(CONFIG)
+def _open_run(CONFIG: Configuration, cleanup: ExitStack, index: int = 0) -> RunEnvironment:
+    run = make_run_environment(CONFIG, index)
     cleanup.callback(run.env.close)
     return run
 
@@ -201,6 +201,17 @@ def load_ppo_agent(path: Path, run: RunEnvironment, device: torch.device) -> PPO
     return agent.to(device)
 
 
+def _load_initial_weights(agent: PPOAgent, path: Path, device: torch.device) -> None:
+    """Load a saved run's ``agent.pt`` into ``agent``; a different space is a clear error."""
+    try:
+        agent.load_state_dict(torch.load(path, map_location=device))
+    except RuntimeError as error:
+        raise ValueError(
+            f"{path} does not fit this run's observation or action space (image size, RM "
+            f"embedding size or action count differ): {error}"
+        ) from error
+
+
 def _check_settings(CONFIG: Configuration) -> None:
     """Reject settings that would crash mid-run, before the run folder exists."""
     if CONFIG.algorithm != "ppo":
@@ -219,6 +230,10 @@ def _check_settings(CONFIG: Configuration) -> None:
         raise ValueError(
             f"seed {CONFIG.seed} gives training env seeds that reach eval_seed_base "
             f"{CONFIG.eval_seed_base}; use a smaller seed or a larger eval_seed_base"
+        )
+    if CONFIG.init_from is not None and not (CONFIG.init_from / "agent.pt").is_file():
+        raise ValueError(
+            f"init_from {CONFIG.init_from} has no agent.pt: name a saved PPO run folder"
         )
 
 
@@ -547,6 +562,11 @@ class PPOLearner:
     ) -> PPOLearner:
         action_count = int(run.env.action_space.n)
         agent = PPOAgent(run.make_encoder(), observation_space, action_count).to(device)
+        if CONFIG.init_from is not None:
+            _load_initial_weights(agent, CONFIG.init_from / "agent.pt", device)
+        # A fine-tune start restores weights only: PPO keeps no observation or reward
+        # normalization statistics, and the optimizer (Adam moments, annealed learning rate)
+        # restarts, because the saved run's schedule ended and the new task is a new problem.
         optimizer = optim.Adam(agent.parameters(), lr=CONFIG.ppo_learning_rate, eps=1e-5)
         initial = nn.utils.parameters_to_vector(agent.parameters()).detach().clone()
         shuffler = np.random.default_rng(CONFIG.seed)
@@ -748,12 +768,13 @@ def evaluate(
     likely one. Sampling draws come from a fresh generator seeded with the run seed, never from
     the training streams. Resets follow ``evaluation_resets``: only a fixed layout with a greedy
     policy assigns the tasks of a multi-task env; in every other case the env draws its own task.
+    A row over several tasks gains ``tasks``, one row per task, as DQN's does.
     """
     greedy = CONFIG.eval_greedy if greedy is None else greedy
     generator = torch.Generator().manual_seed(CONFIG.seed)
     resets = evaluation_resets(CONFIG, run, episode_count, greedy)
     episodes = [_evaluation_episode(run, agent, reset, generator, greedy) for reset in resets]
-    return evaluation_row(episodes)
+    return evaluation_row_with_tasks(episodes)
 
 
 def evaluate_with_sampled(
