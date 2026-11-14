@@ -24,6 +24,7 @@ from scripts import (
     render_rm,
     repair_labeling,
     replay_traces,
+    restore_farm,
     rm_facts,
     run_suite,
     test_rl,
@@ -148,6 +149,12 @@ def cmd_repair_labeling(args: argparse.Namespace) -> None:
     """Check bundles' labeling against a trace bank and repair the failed ones."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
     repair_labeling(CONFIG, args.traces, args.bundles, tuple(args.only or ()), args.check_only)
+
+
+def cmd_restore_farm(args: argparse.Namespace) -> None:
+    """Rebuild FARM failure bundles from their generation logs."""
+    if not restore_farm(args.bundles, tuple(args.only or ())):
+        sys.exit(1)
 
 
 def cmd_run_suite(args: argparse.Namespace) -> None:
@@ -701,6 +708,24 @@ if __name__ == "__main__":
         help="Most bundles repaired at once (default: %(default)s)",
     )
     repair_parser.set_defaults(func=cmd_repair_labeling)
+
+    # ======================================================================================
+    #                                      restore-farm
+    # ======================================================================================
+    restore_parser = subparsers.add_parser(
+        "restore-farm",
+        help="Rebuild FARM failure bundles that hold no machine from their generation logs",
+    )
+    restore_parser.add_argument(
+        "--bundles", required=True, type=Path, help="Folder of FARM bundles (<name>/, <name>.log)"
+    )
+    restore_parser.add_argument(
+        "--only",
+        nargs="+",
+        metavar="NAME",
+        help="Only these bundle names; one that cannot be restored is an error",
+    )
+    restore_parser.set_defaults(func=cmd_restore_farm)
 
     # ======================================================================================
     #                                       run-suite

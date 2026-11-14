@@ -143,7 +143,7 @@ def _ablate(CONFIG: Configuration, off: str, destination: Path) -> str:
         "source_revision": (source.manifest.provenance.get("stamp") or {}).get("commit"),
         "no_op": no_op,
     }
-    unchanged = _skeleton(machine) == _skeleton(source.reward_machine)
+    unchanged = skeleton(machine) == skeleton(source.reward_machine)
     embedded = bool(source.embeddings)
     if not unchanged:
         _redescribe(CONFIG, source, bundle, result)
@@ -244,7 +244,7 @@ def _ablated_bundle(
     return bundle
 
 
-def _skeleton(machine: PaperRewardMachine) -> tuple:
+def skeleton(machine: PaperRewardMachine) -> tuple:
     """What the state descriptions and embeddings depend on: states and their transitions."""
     return (
         set(machine.states),
