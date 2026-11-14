@@ -547,3 +547,26 @@ machines).
 `MiquelGomezCorral/tp-x2-dqn-crm`.
 
 **Code.** The learner change, commit `236dda1` on that branch (not merged at the freeze).
+
+### Generation table, ARM-FM against FARM (`generation-table/`), 2026-11-14
+
+**What it shows.** Per suite and arm, how often each generation step was accepted and what it cost,
+for every suite (base, complex, templates, box-carry, forced-start, pilot). On the 124 main-suite
+bundles FARM got its machine accepted 124 times in 1.23 tries on average (6.6 calls per bundle);
+ARM-FM 121 times in 2.42 tries (8.5 calls). After repair 123 of 124 FARM and 124 of 124 ARM-FM
+labelings pass the check. One model pair (`deepseek-v4.1-flash` writer, `glm-5.3-flash` critic), one
+run per bundle: a count, not a rate.
+
+**Evidence.** The output of the `generation-table` command, calls per bundle from the status files,
+and the 150 cards behind it with NL task and expected LTLf. The caveats are in the entry: 3 FARM
+bundles keep a labeling written before the RM-only rule, FARM `tpl-existence-2-nogoal` has an accepted
+machine and no labeling, 27 FARM bundles were restored from logs, and the 18 ablation bundles are
+derived, not generated.
+
+**Files.** `README.md`, `generation-table.md` and `.json`, `calls-table.md`, `cards.md`,
+`check/calls_table.py`, `check/cards_list.py`.
+
+**Rerun** (no LLM call, from the main checkout that holds the bundles): the three commands in the
+entry's README; the first is `generation-table --root experiments/benchmark --output <file>.json`.
+
+**Code.** `app/scripts/generation_table.py` at `b332ecf` (`experiments/benchmark/REPRODUCE.md` 6.4).
