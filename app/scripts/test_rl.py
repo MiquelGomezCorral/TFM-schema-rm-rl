@@ -34,6 +34,7 @@ import yaml
 from PIL import Image, ImageDraw, ImageFont
 
 from src.arm_fm import make_run_environment
+from src.arm_fm.artifacts import load_bundle
 from src.arm_fm.dqn import (
     QNetwork,
     evaluation_resets,
@@ -41,19 +42,25 @@ from src.arm_fm.dqn import (
     select_action,
 )
 from src.arm_fm.dqn import evaluate as evaluate_dqn
-from src.arm_fm.environments import RunEnvironment, make_environment
+from src.arm_fm.environments import RewardMachineObservation, RunEnvironment, make_environment
 from src.arm_fm.ppo import evaluate as evaluate_ppo
 from src.arm_fm.ppo import evaluation_resets as evaluation_resets_ppo
 from src.arm_fm.ppo import fixed_layout, load_ppo_agent
+from src.arm_fm.runtime import RewardMachineRuntime
 from src.benchmark import (
     RM_RETURN_DEFINITION,
+    START_SHARE_STRICT,
     CardError,
     NoReferenceLabelerError,
     Rollout,
     card_header,
+    episode_cannot_start,
+    expected_length,
     judge_trace,
     labeler_for,
+    length_header,
     load_card,
+    machine_header,
     make_record,
     write_json,
 )
@@ -72,15 +79,33 @@ FIXED_LAYOUT_NOTES = {
 FRAME_MS, LAST_FRAME_MS = 180, 2000
 # The per-episode judge fields ``judge.json`` averages.
 JUDGE_MEANS = (
+    "raw_judged_success",
     "judged_success",
+    "non_empty_success",
+    "cannot_start",
+    "cannot_start_5pct",
     "env_success",
     "hard_breaks",
     "soft_breaks",
     "hard_open",
     "soft_open",
     "env_return",
+    "env_return_positive",
+    "env_return_negative",
     "rm_return",
+    "rm_return_positive",
+    "rm_return_negative",
     "length",
+)
+CANNOT_START_DEFINITION = (
+    "cannot_start: the machine ended the episode in a final state, the environment did not, and "
+    "the episode lasted at most max(1, ceil(0.10 * expected_length)) steps; such an episode is "
+    "judged failed. raw_judged_success is the judge's value before that rule; mean_cannot_start "
+    "is the share of episodes affected (mean_cannot_start_5pct: the 5% threshold, not applied)."
+)
+RETURN_SPLIT_DEFINITION = (
+    "<env|rm>_return_positive and _negative sum the positive and the negative step rewards of an "
+    "episode (the negative part is <= 0); their sum is <env|rm>_return. rm_* is null without an RM."
 )
 # A long episode keeps its first steps, a thinning sample of the middle, and its last steps.
 HEAD_FRAMES, MIDDLE_FRAMES, TAIL_FRAMES = 40, 14, 6
@@ -328,6 +353,17 @@ class GifRecorder:
 # ======================================================================================
 
 
+@dataclass(frozen=True)
+class Played:
+    """A judged test episode: its rollout and RM rewards, whether the machine ended it in a final
+    state, and the labeling's valuation at reset (None without an RM)."""
+
+    rollout: Rollout
+    rm_rewards: list[float]
+    machine_final: bool
+    start_labels: dict[str, bool] | None
+
+
 class JudgeRecorder:
     """Replay a run's test episodes, save each as an agent trace record and judge it on a card.
 
@@ -348,6 +384,8 @@ class JudgeRecorder:
         self.run = run
         self.policy = policy
         self.suite, self.card = load_card(card_path)
+        self.machine = load_bundle(config.bundle).reward_machine if config.bundle else None
+        self.expected = expected_length(self.card)
         if config.task_bundles:
             raise CardError(
                 f"{card_path}: the judge does not take a task_bundles run: one card judges one task"
@@ -377,25 +415,41 @@ class JudgeRecorder:
 
     def write(self, directory: Path, count: int) -> None:
         """Save the episodes to ``<directory>/agent-traces/ep<k>.json``, verdicts to ``judge.json``."""
-        episodes = []
+        episodes, start_labels = [], {}
         act = self.policy.new_act()
         # Epsilon-random actions draw from the action space, which evaluation leaves unseeded.
         self.run.env.action_space.seed(self.config.seed)
         for index, reset in enumerate(self.policy.resets(count)[:count]):
-            rollout, rm_return = self._rollout(act, reset)
+            played = self._rollout(act, reset)
+            rollout, rm_rewards = played.rollout, played.rm_rewards
+            if played.start_labels is not None:
+                start_labels[rollout.reset_seed] = played.start_labels
             record = make_record(self.suite, self.card, "agent", "agent", rollout)
             name = f"agent-traces/ep{index}.json"
             write_json(directory / name, record.to_dict())
             verdict = judge_trace(self.card.expect, rollout.labels).to_dict()
+            # The machine ended the episode in a final state before the agent could act on the
+            # task: the clauses are not tested, so the episode fails whatever they say.
+            length = len(rollout.actions)
+            ended = rollout.rm_stopped and played.machine_final
+            expected = self.expected
+            cannot_start = episode_cannot_start(length, ended, expected)
+            raw_success, raw_non_empty = verdict.pop("success"), verdict.pop("non_empty_success")
             episodes.append(
                 {
                     "file": name,
                     "reset_seed": rollout.reset_seed,
-                    "judged_success": verdict.pop("success"),
+                    "raw_judged_success": raw_success,
+                    "judged_success": raw_success and not cannot_start,
+                    "non_empty_success": raw_non_empty and not cannot_start,
+                    "cannot_start": cannot_start,
+                    "cannot_start_5pct": episode_cannot_start(
+                        length, ended, expected, START_SHARE_STRICT
+                    ),
                     **verdict,
                     "env_success": record.env_success,
-                    "env_return": sum(rollout.env_rewards),
-                    "rm_return": rm_return,
+                    **_return_split("env", rollout.env_rewards),
+                    **_return_split("rm", rm_rewards),
                     "length": len(rollout.actions),
                 }
             )
@@ -405,38 +459,78 @@ class JudgeRecorder:
             "rm_bundle": str(self.config.bundle) if self.config.bundle else None,
             "episodes": len(episodes),
             "rm_return_definition": RM_RETURN_DEFINITION,
+            "return_split_definition": RETURN_SPLIT_DEFINITION,
+            "cannot_start_definition": CANNOT_START_DEFINITION,
+            **length_header(self.expected),
+            **machine_header(self.machine, start_labels or None),
             **judge_means(episodes),
+            "activated_share": activated_share(episodes),
             "per_episode": episodes,
         }
         write_json(directory / "judge.json", summary, indent=2)
 
-    def _rollout(
-        self, act: Callable[[Any], int], reset: dict[str, object]
-    ) -> tuple[Rollout, float | None]:
-        """One test episode with the reference labels after every step and the RM return."""
+    def _rollout(self, act: Callable[[Any], int], reset: dict[str, object]) -> Played:
+        """One test episode: the reference labels after every step, the RM rewards, whether the
+        machine ended in a final state (``rm_accept`` of the last step), and the labeling's
+        valuation at reset (None without an RM)."""
         env = self.run.env
         base = env.unwrapped
         self.labeler.reset()
         observation, reset_info = env.reset(**reset)
         # An env that draws its own episode seed (the service room) reports it as ``event_seed``.
         rollout = Rollout(reset_seed=int((reset_info or {}).get("event_seed", reset["seed"])))
-        rm_return, done = None, False
+        start_labels = _start_labels(env)
+        rm_rewards, done, machine_final = [], False, False
         while not done:
             action = act(observation)
             observation, reward, terminated, truncated, info = env.step(action)
+            machine_final = bool(info.get("rm_accept"))
             env_reward = float(info.get("env_reward", reward))
             rollout.actions.append(int(action))
             rollout.labels.append(self.labeler.labels(base))
             rollout.env_rewards.append(env_reward)
             if "rm_reward" in info:
-                rm_return = (rm_return or 0.0) + float(info["rm_reward"])
+                rm_rewards.append(float(info["rm_reward"]))
             # The RM wrapper folds the machine's stop into ``terminated`` and reports the env's own
             # flag as ``env_terminated``; without a wrapper the two are the same.
             rollout.terminated = bool(info.get("env_terminated", terminated))
             rollout.truncated = bool(truncated)
             rollout.rm_stopped = bool(terminated) and not rollout.terminated
             done = bool(terminated) or bool(truncated)
-        return rollout, rm_return
+        return Played(rollout, rm_rewards, machine_final, start_labels)
+
+
+def _start_labels(env: gym.Env) -> dict[str, bool] | None:
+    """The RM labeling's valuation of the just-reset env, read on a fresh runtime so the live
+    episode's labeling memory is untouched; None when the env has no RM wrapper."""
+    while env is not None and not isinstance(env, RewardMachineObservation):
+        env = getattr(env, "env", None)
+    if env is None:
+        return None
+    adapter = env.reward_machine
+    runtime = RewardMachineRuntime(adapter.runtime.machine)
+    return runtime.evaluate_labeling(adapter.environment, adapter.labeling)
+
+
+def _return_split(prefix: str, rewards: list[float]) -> dict[str, float | None]:
+    """``<prefix>_return`` and its positive and negative parts; null without rewards (no RM)."""
+    if not rewards:
+        return dict.fromkeys(
+            (f"{prefix}_return", f"{prefix}_return_positive", f"{prefix}_return_negative")
+        )
+    return {
+        f"{prefix}_return": sum(rewards),
+        f"{prefix}_return_positive": sum(reward for reward in rewards if reward > 0),
+        f"{prefix}_return_negative": sum(reward for reward in rewards if reward < 0),
+    }
+
+
+def activated_share(episodes: list[dict[str, Any]]) -> list[float | None]:
+    """Per clause, the share of episodes that activated it; null for a clause with no trigger."""
+    return [
+        None if None in flags else fmean(flags)
+        for flags in zip(*(episode["activated"] for episode in episodes), strict=True)
+    ]
 
 
 def judge_means(episodes: list[dict[str, Any]]) -> dict[str, float | None]:

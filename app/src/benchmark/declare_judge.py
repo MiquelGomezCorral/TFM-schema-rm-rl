@@ -132,6 +132,39 @@ def _not_co_existence(a: Sequence[bool], b: Sequence[bool]) -> Verdict:
     return BROKEN, max(first_a, first_b) + 1
 
 
+# Activation: did the event that gives the clause something to check happen? A clause that holds
+# without being activated is an empty pass (a conditional rule whose trigger never fired).
+# Existence templates are activated by their own event, so they never pass empty; Absence is a
+# pure prohibition with no trigger (None: not applicable) and a do-nothing agent passes it.
+
+
+def _activated_by_a(a: Sequence[bool], _b: Sequence[bool]) -> bool | None:
+    return any(a)
+
+
+def _activated_by_b(_a: Sequence[bool], b: Sequence[bool]) -> bool | None:
+    return any(b)  # Precedence guards b: a trace with no b has nothing to check
+
+
+def _activated_by_either(a: Sequence[bool], b: Sequence[bool]) -> bool | None:
+    return any(a) or any(b)  # NotCoExistence is symmetric: both a and b are the guarded events
+
+
+def _no_trigger(_a: Sequence[bool], _b: Sequence[bool]) -> bool | None:
+    return None
+
+
+ACTIVATION: dict[str, Callable[[Sequence[bool], Sequence[bool]], bool | None]] = {
+    "Existence": _activated_by_a,
+    "ExistenceTwo": _activated_by_a,
+    "Absence": _no_trigger,
+    "RespondedExistence": _activated_by_a,
+    "Response": _activated_by_a,
+    "Precedence": _activated_by_b,
+    "ChainResponse": _activated_by_a,
+    "NotCoExistence": _activated_by_either,
+}
+
 RULES: dict[str, Callable[[Sequence[bool], Sequence[bool]], Verdict]] = {
     "Existence": _existence,
     "ExistenceTwo": _existence_two,
@@ -151,11 +184,15 @@ RULES: dict[str, Callable[[Sequence[bool], Sequence[bool]], Verdict]] = {
 
 @dataclass(frozen=True)
 class ClauseVerdict:
-    """One clause's verdict on one trace; ``step`` is the 1-based step of a break."""
+    """One clause's verdict on one trace; ``step`` is the 1-based step of a break.
+
+    ``activated`` is whether the clause's trigger happened (None: the template has none).
+    """
 
     clause: Clause
     status: str
     step: int | None = None
+    activated: bool | None = None
 
     @property
     def text(self) -> str:
@@ -176,6 +213,13 @@ class Judgment:
     def success(self) -> bool:
         return all(v.status == HOLDS for v in self.verdicts if v.clause[2] == HARD)
 
+    @property
+    def non_empty_success(self) -> bool:
+        """Success where every hard clause with a trigger was activated (no empty pass)."""
+        return self.success and all(
+            v.activated is not False for v in self.verdicts if v.clause[2] == HARD
+        )
+
     def count(self, status: str, priority: str) -> int:
         return sum(1 for v in self.verdicts if v.status == status and v.clause[2] == priority)
 
@@ -186,7 +230,9 @@ class Judgment:
     def to_dict(self) -> dict[str, object]:
         return {
             "success": self.success,
+            "non_empty_success": self.non_empty_success,
             "verdicts": [verdict.text for verdict in self.verdicts],
+            "activated": [verdict.activated for verdict in self.verdicts],
             "hard_breaks": self.count(BROKEN, HARD),
             "soft_breaks": self.count(BROKEN, SOFT),
             "hard_open": self.count(OPEN_AT_END, HARD),
@@ -200,7 +246,7 @@ def judge_clause(clause: Clause, labels: Sequence[Mapping[str, bool]]) -> Clause
     a = [bool(step.get(propositions[0], False)) for step in labels]
     b = [bool(step.get(propositions[1], False)) for step in labels] if len(propositions) > 1 else []
     status, step = RULES[template](a, b)
-    return ClauseVerdict(clause, status, step)
+    return ClauseVerdict(clause, status, step, ACTIVATION[template](a, b))
 
 
 def judge_trace(clauses: Sequence[Clause], labels: Sequence[Mapping[str, bool]]) -> Judgment:

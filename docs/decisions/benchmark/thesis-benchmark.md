@@ -22,6 +22,37 @@ thing whichever arm produced it.
   DECLARE templates, on reference labels computed from the environment, never on a pipeline's own
   labeling. Judged success (every hard clause holds) is the primary task metric for every card and
   arm; environment success is reported beside it.
+- **Empty pass.** Each clause has an activation: whether its trigger happened in the episode
+  (`a` for Existence, ExistenceTwo, RespondedExistence, Response and ChainResponse; `b` for
+  Precedence; `a` or `b` for NotCoExistence; none for Absence, a pure prohibition). A conditional
+  clause that holds without its trigger is an empty pass. `judge.json` records the activations per
+  episode and the share of episodes that activated each clause, and reports non-empty judged
+  success (judged success and every hard clause with a trigger activated) beside judged success,
+  which keeps its definition. Judged episodes also report the positive and the negative part of
+  the machine reward and of the environment reward, beside the total.
+- **Episodes that cannot start.** A machine whose start state is final, or reaches a final state
+  from the start, ends every episode after the first action, so its rules pass untested
+  (`machine_too_simple`, with the reason, in `judge.json`; a rejecting state stops the walk). The
+  judge walks the machine with the labeling's valuation at reset held fixed, once per test reset
+  seed, and flags the run when any seed reaches a final state (the reason names the seeds); the
+  static scan of machine files, with no layout, follows only `else` and always-true guards.
+  `judge.json` says which form ran (`machine_too_simple_check`). A test episode the machine ended in a final state, with the environment not done, within
+  `max(1, ceil(0.10 * expected))` steps cannot start, where `expected` is the median length of the
+  card's solving plan over its reset seeds: that episode is judged failed whatever its clauses say.
+  `raw_judged_success` keeps the judge's value before this rule, `mean_judged_success` and
+  non-empty success follow the corrected one, and a run is flagged when more than half of its test
+  episodes cannot start. The 5% limit is reported beside, not applied. Same rule for every arm
+  (user, 2026-11-14).
+- **Shared no-RM run.** The no-RM agent never sees the card text, so one no-RM run is trained per
+  identical training configuration (the `train-rl` config without the name, and the seed) and
+  judged against every card sharing it, whatever suite asks. The owner of a key is, in order: a
+  finished run under the runs root whose *saved* `config.yaml` (minus the name) and seed match
+  (last night's closed-set runs count), a run another driver has claimed, or the first open card,
+  claimed in a file per key. A follower waits for a claimed owner; while the owner is stopped
+  (timed out, interrupted, failed) the follower's row names the owner, its state and exit code.
+  Each card still has its own run folder, linked to the owner's files, so results are read per
+  card. Any config difference (environment options, events, required items, timesteps, learner)
+  is a separate run. A run with an undecided learner (`TBD`) is never grouped.
 - **Statuses.** A bundle is `complete`, `pipeline-failed` (final: its runs are `no-data`),
   `provider-error` or `incomplete` (both retried on the next run). A run is `finished` (skipped on
   rerun), `interrupted` (restarted from zero), `timed-out` (kept; retried only on request) or
@@ -78,6 +109,14 @@ thing whichever arm produced it.
 - `carry` defaults to off: the original service-room cards and runs behave exactly as before, and a
   carry card's clauses never ask for the first pickup of the box. A carry episode never skips its first
   fall by dropping the box.
+- Judged success keeps its definition (every hard clause holds); the empty-pass check is reported
+  beside it, never folded into it.
+- An episode the machine ended in a final state at once (the rule above) never counts as judged
+  success, and the judge's raw value stays recorded beside the corrected one.
+- A shared no-RM run is only shared between cards whose training configuration is identical,
+  checked against the owner's saved configuration, never against the request that found it.
+- One no-RM training per configuration and seed across suites and existing runs; two drivers never
+  train the same key.
 - A pipeline failure stays "no data": no arm gets a human fix or retries the others do not get; both
   get the same attempt limit (up to 10).
 - Both pipelines receive the same card wording, environment file, generator and critic.
@@ -100,7 +139,12 @@ and a restart is easier to trust.
 
 ## Enforcement
 
-- `app/src/benchmark/declare_judge.py` with `tests/test_declare_judge.py`: the judge rules.
+- `app/src/benchmark/declare_judge.py` with `tests/test_declare_judge.py`: the judge rules and the
+  activation of each template.
+- `app/src/benchmark/early_end.py` with `tests/test_early_end.py`, called by `test-rl --judge`:
+  the too-simple machine, the expected length and the cannot-start rule.
+- `share_owners`, `find_owner` and `link_shared` in `app/scripts/run_suite.py`: who owns each no-RM
+  training and the link; `owner_note` in `app/scripts/aggregate_suite.py`: the owner's state on followers.
 - `trace-bank`, `replay-traces`, `rm-facts` and `test-rl --judge`: card checks and judged results.
 - `generate-suite` and `run-suite`: statuses, skip and retry rules, arm settings, call caps.
 - `ablate-rm`: which term each switch owns, and no-op detection.
@@ -119,6 +163,19 @@ and a restart is easier to trust.
   paraphrases claim clause identity and only generate; a card miss counts only when its expected result
   is confirmed. The progress-ablation control and the -0.5 sensitivity run are dropped (no record
   listed them as planned).
+- 2026-11-14: Empty-pass check, positive/negative reward split and shared no-RM run added (user,
+  after FARM's `tpl-chain-response-1-nogoal` runs 200 steps with reward 0 and judged 1.00; testing
+  program slice `judge-metrics`).
+- 2026-11-14: Shared no-RM run corrected after review: saved-config check, one owner across suites and
+  existing runs, claims, owner state on followers (testing program slice `judge-metrics`, correction 1).
+- 2026-11-14: Cannot-start rule added (user: ARM-FM's `tpl-absence-1-nogoal` machine has its start
+  state final, so every episode ends after one action and judged 1.00 tested nothing); a waiting
+  driver now claims and trains an owner whose other driver died (testing program slice
+  `judge-metrics`, correction 2).
+- 2026-11-14: Too-simple check walks the machine with the labels true at reset, per test reset
+  seed, instead of treating every proposition as false: a `!door_locked` guard on a locked door is
+  no longer flagged, an `in_room_a` guard true in the start room is; the static scan keeps only
+  `else` and always-true guards (testing program slice `judge-metrics`, correction 3).
 - 2026-11-12: Labeling repair rule added with the `repair-labeling` command (testing program slice
   `labeling-repair`).
 - 2026-11-14: Box-carry cards added (user request: enforce the pickup in the environment, not in the

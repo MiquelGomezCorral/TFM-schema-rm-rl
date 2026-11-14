@@ -12,7 +12,13 @@ folder to ``<folder>.<status>`` and restarts it from zero (a ``timed-out`` run o
 ``--retry-timed-out``), and never trains a run whose bundle lacks a file training needs, has
 status ``pipeline-failed`` or is an ablation no-op (``no-data``, with the reason). A bundle with
 status ``provider-error`` or ``incomplete`` is retried by bundle generation, not here: its runs
-stay ``pending``. The driver writes ``resources.json`` into each run folder. Linux only: it reads
+stay ``pending``. The no-RM arm trains once per identical training config and seed, across
+suites: the owner is a finished run under the runs root whose saved config matches, else a run
+another driver claimed (``.share-claims/``), else the first open card here. The other cards
+(``share`` in the plan) get a run folder of symlinks to the owner's run once it is
+``finished``, with ``shared-run.json`` naming it, and are judged from its model with
+``test-rl --run <exp_name> --judge <card.json>``. The driver writes ``resources.json`` into
+each run folder. Linux only: it reads
 ``/proc``. One driver per suite: a second one exits at once (lock
 ``outputs/runs/bench__<suite>.lock``); ``--dry-run`` takes no lock. If the driver dies, its
 children get SIGTERM (``PR_SET_PDEATHSIG``).
@@ -20,14 +26,16 @@ children get SIGTERM (``PR_SET_PDEATHSIG``).
 
 import ctypes
 import fcntl
+import hashlib
 import json
 import os
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from functools import partial
 from itertools import product
@@ -36,6 +44,7 @@ from typing import IO
 
 import yaml
 
+from src.arm_fm.dqn import RUN_SETTINGS, layout_seed
 from src.benchmark.traces import NO_PART, ablation_settings, read_json
 from src.config import Configuration
 
@@ -74,6 +83,12 @@ BUNDLE_FILES = (
 )
 # Bundle statuses (`<card-id>.status.json`): generation retries these, so their runs wait.
 BUNDLE_RETRIED = ("provider-error", "incomplete")
+# A shared no-RM run is linked into each card's folder (see ``link_shared``); the card's own
+# test and judge results are written there as real files, so they are never linked.
+SHARED_FILE = "shared-run.json"
+CARD_OWN_FILES = ("test.json", "judge.json", "agent-traces", "gifs", SHARED_FILE)
+SHARE_IGNORED = ("yaml_config_name", "exp_name")  # the rest of RUN_SETTINGS decides sharing
+LINK_POLL_SECONDS = 30  # how often a driver looks for a shared owner it waits for
 OMP_THREADS = "2"
 POLL_SECONDS = 3
 KILL_GRACE_SECONDS = 30  # SIGTERM first; SIGKILL after this long
@@ -106,6 +121,10 @@ class Run:
     @property
     def exp_dir(self) -> Path:
         return RUNS_PATH / self.exp_name
+
+    @property
+    def key(self) -> tuple[str, int]:
+        return self.exp_name, self.seed
 
 
 def bundle_path(spec: dict, card_id: str, arm: str, variant: str | None) -> Path | None:
@@ -333,6 +352,184 @@ def run_config(run: Run, spec: dict) -> dict:
     return config
 
 
+# ======================================================================================
+#                                  SHARED NO-RM RUNS
+# ======================================================================================
+# The no-RM agent never sees the card text, so one training serves every card whose ``train-rl``
+# settings and seed are identical, whatever suite asks. Its owner is, in this order: (a) a
+# finished run under the runs root whose *saved* settings match, (b) a run another driver has
+# claimed for that key, (c) the first open card of this suite, claimed here. A claim is a file
+# per key under the runs root, written under one lock, so two drivers never train one key.
+
+
+@dataclass(frozen=True)
+class Owner:
+    """The run a no-RM card gets its model from: ``run`` is set when this suite trains it."""
+
+    exp_name: str
+    state: str
+    folder: Path | None = None
+    run: Run | None = None
+
+
+def settings_key(settings: dict) -> str:
+    """The training settings a run records in its ``config.yaml`` (minus its name), comparable."""
+    wanted = {name: settings.get(name) for name in RUN_SETTINGS if name not in SHARE_IGNORED}
+    return json.dumps(wanted, sort_keys=True, default=str)
+
+
+def requested_key(run: Run, spec: dict) -> str:
+    """``settings_key`` of what ``train-rl`` would record for this run, defaults included."""
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "run-config.yaml"
+        path.write_text(yaml.safe_dump(run_config(run, spec)), encoding="utf-8")
+        config = Configuration(yaml_config_name=str(path), seed=run.seed)
+    settings = {name: getattr(config, name) for name in RUN_SETTINGS}
+    settings["layout_seed"] = layout_seed(config)
+    return settings_key(settings)
+
+
+def finished_runs() -> dict[str, Path]:
+    """Every finished real run folder under the runs root, by its saved ``settings_key``.
+
+    A linked folder (``shared-run.json``) is not a run of its own; later names win a tie.
+    """
+    found = {}
+    for summary in sorted(RUNS_PATH.glob("*/seed*-*/summary.json")):
+        folder = summary.parent
+        if "." in folder.name or (folder / SHARED_FILE).exists():
+            continue
+        try:
+            saved = yaml.safe_load((folder / "config.yaml").read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError):
+            continue
+        if isinstance(saved, dict):
+            found[settings_key(saved)] = folder
+    return found
+
+
+def share_groups(runs: list[Run], spec: dict) -> dict[str, list[Run]]:
+    """The suite's no-RM runs by requested training key; undecided learners (TBD) stay out."""
+    groups: dict[str, list[Run]] = {}
+    for run in runs:
+        if run.arm == "no-rm" and run.learner in spec["learners"]:
+            groups.setdefault(requested_key(run, spec), []).append(run)
+    return groups
+
+
+def claim_path(key: str) -> Path:
+    return RUNS_PATH / ".share-claims" / f"{hashlib.sha256(key.encode()).hexdigest()}.json"
+
+
+def driver_alive(pid: int) -> bool:
+    try:
+        return b"run-suite" in Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return False
+
+
+def held_claim(key: str, template: Run, CONFIG: Configuration) -> Run | None:
+    """The run that holds the key's claim, or None when there is none or it went stale.
+
+    A claim holds while its driver lives, its run is running, or its run timed out and no
+    retry was asked (the owner then stays stopped, and its followers say so).
+    """
+    record = read_json(claim_path(key))
+    if not record:
+        return None
+    holder = replace(
+        template, suite=record["suite"], card={"id": record["card_id"]}, learner=record["learner"]
+    )
+    state = run_state(holder)[0]
+    alive = record["driver_pid"] == os.getpid() or driver_alive(record["driver_pid"])
+    stopped_for_good = state == TIMED_OUT and not CONFIG.suite_retry_timed_out
+    # A finished holder whose settings did not match is no owner: it never reaches ``finished``.
+    return holder if state != FINISHED and (alive or state == RUNNING or stopped_for_good) else None
+
+
+def find_owner(
+    key: str, members: list[Run], finished: dict[str, Path], CONFIG: Configuration, claim: bool
+) -> Owner | None:
+    """Who trains for this key, or None when every card of the group finished on its own.
+
+    With ``claim`` (a real run, under the claims lock) a newly chosen owner is claimed.
+    """
+    if key in finished:
+        return Owner(finished[key].parent.name, FINISHED, finished[key])
+
+    holder = held_claim(key, members[0], CONFIG)
+    if holder is not None:
+        own = next((member for member in members if member.exp_name == holder.exp_name), None)
+        state, folder, _ = run_state(holder)
+        return Owner(holder.exp_name, state, folder, own)
+
+    states = {member.key: run_state(member) for member in members}
+    open_members = [member for member in members if states[member.key][0] != FINISHED]
+    if not open_members:
+        return None
+    running = [member for member in open_members if states[member.key][0] == RUNNING]
+    trainer = (running or open_members)[0]
+    if claim:
+        record = {
+            "suite": trainer.suite,
+            "card_id": trainer.card["id"],
+            "learner": trainer.learner,
+            "driver_pid": os.getpid(),
+        }
+        claim_path(key).parent.mkdir(parents=True, exist_ok=True)
+        write_atomic(claim_path(key), json.dumps(record, indent=2) + "\n")
+    state, folder, _ = states[trainer.key]
+    return Owner(trainer.exp_name, state, folder, trainer)
+
+
+def share_owners(
+    runs: list[Run], spec: dict, CONFIG: Configuration, claim: bool = False
+) -> dict[tuple[str, int], Owner]:
+    """The owner of every no-RM run that has one (the run it trains for itself maps to itself)."""
+    finished = finished_runs()
+    owners = {}
+    for key, members in share_groups(runs, spec).items():
+        owner = find_owner(key, members, finished, CONFIG, claim)
+        if owner is not None:
+            owners.update({member.key: owner for member in members})
+    return owners
+
+
+def claimed_owners(
+    runs: list[Run], spec: dict, CONFIG: Configuration
+) -> dict[tuple[str, int], Owner]:
+    """``share_owners`` that claims the keys it newly gives to this driver, one driver at a time."""
+    RUNS_PATH.mkdir(parents=True, exist_ok=True)
+    with (RUNS_PATH / ".share-claims.lock").open("a", encoding="utf-8") as claims_lock:
+        fcntl.flock(claims_lock, fcntl.LOCK_EX)
+        return share_owners(runs, spec, CONFIG, claim=True)
+
+
+def link_shared(runs: list[Run], owners: dict[tuple[str, int], Owner], spec: dict) -> None:
+    """Give each unfinished no-RM run a run folder that links its owner's finished run.
+
+    The folder holds symlinks to the owner's files, except the ones a card writes itself
+    (``CARD_OWN_FILES``), and ``shared-run.json`` naming the owner; ``summary.json`` goes in
+    last, so the run is ``finished`` only when the folder is complete. The owner's saved
+    settings were matched against the request when it was found, so a model trained with other
+    settings is never linked.
+    """
+    for run in runs:
+        owner = owners.get(run.key)
+        if owner is None or owner.state != FINISHED or run_state(run)[0] == FINISHED:
+            continue
+        write_run_files(run, spec)
+        folder = run.exp_dir / owner.folder.name
+        folder.mkdir(exist_ok=True)
+        record = {"owner_exp_name": owner.exp_name, "owner_folder": str(owner.folder)}
+        write_atomic(folder / SHARED_FILE, json.dumps(record, indent=2) + "\n")
+        for item in sorted(owner.folder.iterdir(), key=lambda path: path.name == "summary.json"):
+            link = folder / item.name
+            if item.name not in CARD_OWN_FILES and not link.is_symlink():
+                link.symlink_to(item)
+        log(f"{run.exp_name} seed {run.seed} shares the run of {owner.exp_name}")
+
+
 def write_run_files(run: Run, spec: dict) -> Path:
     """Write the run's ``card.json`` and ``run-config.yaml``; return the config path."""
     run.exp_dir.mkdir(parents=True, exist_ok=True)
@@ -492,10 +689,21 @@ class Child:
 class Driver:
     """Start queued runs while slots and RAM allow, sample them, and settle the ended ones."""
 
-    def __init__(self, CONFIG: Configuration, spec: dict, queue: list[tuple[Run, str]]) -> None:
+    def __init__(
+        self,
+        CONFIG: Configuration,
+        spec: dict,
+        queue: list[tuple[Run, str]],
+        runs: list[Run],
+    ) -> None:
         self.CONFIG = CONFIG
         self.spec = spec
         self.queue = queue
+        self.runs = runs
+        self.handled = {run.key for run, _ in queue}  # owners this driver already queued
+        self.waiting = False  # a no-RM run waits for an owner another driver trains
+        self.relink = True
+        self.last_link = float("-inf")
         self.active: list[Child] = []
         self.failed = 0
         self.last_wait_log = float("-inf")
@@ -509,7 +717,9 @@ class Driver:
         leaves that to the kernel.
         """
         try:
-            while self.queue or self.active:
+            while self.relink or self.queue or self.active or self.waiting:
+                if self.relink or (time.monotonic() - self.last_link >= LINK_POLL_SECONDS):
+                    self.link_ready()
                 self.start_ready()
                 time.sleep(POLL_SECONDS)
                 self.poll()
@@ -523,6 +733,39 @@ class Driver:
                 child.settle()
             self.active.clear()
         return self.failed == 0
+
+    def link_ready(self) -> None:
+        """Link the no-RM runs whose owner has finished; note whether any still waits for one.
+
+        A run that waited for another driver's owner and becomes its own group's owner (that
+        driver died) is claimed and queued here, once, so this driver does not end without it.
+        """
+        owners = share_owners(self.runs, self.spec, self.CONFIG)
+        if any(
+            owner.run is run and run.key not in self.handled
+            for run in self.runs
+            if (owner := owners.get(run.key))
+        ):
+            owners = claimed_owners(self.runs, self.spec, self.CONFIG)
+            for run in self.runs:
+                owner = owners.get(run.key)
+                if owner is None or owner.run is not run or run.key in self.handled:
+                    continue
+                self.handled.add(run.key)
+                action, _ = decide(run, self.CONFIG)
+                if action in ("start", "restart"):
+                    log(f"{run.exp_name} seed {run.seed} takes over its group's training")
+                    self.queue.append((run, action))
+        link_shared(self.runs, owners, self.spec)
+        self.waiting = any(
+            owner.run is None
+            and owner.state in (RUNNING, PENDING)
+            and run_state(run)[0] != FINISHED
+            for run in self.runs
+            if (owner := owners.get(run.key))
+        )
+        self.relink = False
+        self.last_link = time.monotonic()
 
     def ram_reason(self, run: Run) -> str | None:
         """Why the run must wait for RAM, or None when it fits."""
@@ -592,6 +835,7 @@ class Driver:
                 child.write_resources(TIMED_OUT, None)  # first: a driver dying now still leaves it
                 child.stop(TIMED_OUT)
             self.failed += child.settle()
+            self.relink = True  # an owner may have finished
             self.active.remove(child)
 
 
@@ -604,11 +848,24 @@ def _raise_interrupt(_signal: int, _frame: object) -> None:
     raise KeyboardInterrupt
 
 
-def plan(runs: list[Run], CONFIG: Configuration) -> list[tuple[Run, str]]:
-    """Print what happens to each run; return the runs to train, with ``start`` or ``restart``."""
+def plan(
+    runs: list[Run], CONFIG: Configuration, owners: dict[tuple[str, int], Owner]
+) -> list[tuple[Run, str]]:
+    """Print what happens to each run; return the runs to train, with ``start`` or ``restart``.
+
+    A no-RM run whose owner is another run (``share_owners``) is not trained: ``share`` until
+    its owner has finished and the run is linked, then ``skip``. The note says who owns it and
+    what state that run is in.
+    """
     queue, counts = [], Counter()
     for run in runs:
-        action, note = decide(run, CONFIG)
+        owner = owners.get(run.key)
+        if owner is not None and owner.run is not run:
+            status = run_state(run)[0]
+            action = "skip" if status == FINISHED else "share"
+            note = status if status == FINISHED else f"owner {owner.exp_name} is {owner.state}"
+        else:
+            action, note = decide(run, CONFIG)
         print(f"{action:<8} {run.exp_name} seed {run.seed} ({note})")
         counts[action] += 1
         if action in ("start", "restart"):
@@ -639,7 +896,7 @@ def run_suite(CONFIG: Configuration) -> bool:
         raise ValueError("--parallel must be at least 1")
 
     if CONFIG.suite_dry_run:
-        plan(runs, CONFIG)
+        plan(runs, CONFIG, share_owners(runs, spec, CONFIG))
         return True
 
     # The lock is held while this file is open: it ends with the driver, however it ends.
@@ -654,10 +911,8 @@ def run_suite(CONFIG: Configuration) -> bool:
             )
             return False
 
-        queue = plan(runs, CONFIG)
-        if not queue:
-            return True
+        queue = plan(runs, CONFIG, claimed_owners(runs, spec, CONFIG))
         signal.signal(signal.SIGTERM, _raise_interrupt)
         if signal.getsignal(signal.SIGHUP) == signal.SIG_DFL:  # under nohup it is ignored: keep it
             signal.signal(signal.SIGHUP, _raise_interrupt)
-        return Driver(CONFIG, spec, queue).loop()
+        return Driver(CONFIG, spec, queue, runs).loop()
