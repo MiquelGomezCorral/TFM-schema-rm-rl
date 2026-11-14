@@ -36,7 +36,10 @@ thing whichever arm produced it.
   judge walks the machine with the labeling's valuation at reset held fixed, once per test reset
   seed, and flags the run when any seed reaches a final state (the reason names the seeds); the
   static scan of machine files, with no layout, follows only `else` and always-true guards.
-  `judge.json` says which form ran (`machine_too_simple_check`). A test episode the machine ended in a final state, with the environment not done, within
+  `judge.json` says which form ran (`machine_too_simple_check`). A guard that needs a proposition
+  the labels at reset do not give is unknown: it does not fire (neither `a` nor `!a`) and
+  `machine_too_simple_unknown` names it; the check never crashes a run. A test episode the machine
+  ended in a final state, with the environment not done, within
   `max(1, ceil(0.10 * expected))` steps cannot start, where `expected` is the median length of the
   card's solving plan over its reset seeds: that episode is judged failed whatever its clauses say.
   `raw_judged_success` keeps the judge's value before this rule, `mean_judged_success` and
@@ -121,7 +124,9 @@ thing whichever arm produced it.
 ## Protected invariants
 
 - RM arms never train on the environment reward, and the no-RM arm never uses an RM.
-- The judge never reads a pipeline's labeling or RM and never calls `nl2ltl`.
+- The judge's clause verdicts never read a pipeline's labeling or RM, and the judge never calls
+  `nl2ltl`. Only the cannot-start rule reads the run's own machine, its episode end and its
+  labeling at reset.
 - `carry` defaults to off: the original service-room cards and runs behave exactly as before, and a
   carry card's clauses never ask for the first pickup of the box. A carry episode never skips its first
   fall by dropping the box.
@@ -195,6 +200,11 @@ and a restart is easier to trust.
   seed, instead of treating every proposition as false: a `!door_locked` guard on a locked door is
   no longer flagged, an `in_room_a` guard true in the start room is; the static scan keeps only
   `else` and always-true guards (testing program slice `judge-metrics`, correction 3).
+- 2026-11-14: Hotfix: a guard that needs a proposition missing from the labels at reset is unknown
+  and does not fire, named in `machine_too_simple_unknown`, after the walk crashed 9 of 77 RM
+  runs. The invariant "the judge never reads a pipeline's labeling or RM" now covers the clause
+  verdicts only, following the user's 12:00 cannot-start rule, which reads the run's machine and
+  labeling at reset (testing program slice `judge-metrics`, hotfix 1).
 - 2026-11-12: Labeling repair rule added with the `repair-labeling` command (testing program slice
   `labeling-repair`).
 - 2026-11-14: Box-carry cards added (user request: enforce the pickup in the environment, not in the

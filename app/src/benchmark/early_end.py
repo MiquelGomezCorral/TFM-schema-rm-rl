@@ -15,7 +15,6 @@ from math import ceil
 from statistics import median
 from typing import Any
 
-from src.arm_fm.runtime import RewardMachineRuntime
 from src.compiler.reward_machine import evaluate_boolean_guard, parse_boolean_guard
 from src.compiler.rm_format import PaperRewardMachine
 
@@ -49,11 +48,8 @@ def machine_too_simple(
         return None if path is None else f"{' -> '.join(path)} needs no proposition"
     reached: dict[str, list[int]] = {}
     for seed, labels in start_labels.items():
-        runtime = RewardMachineRuntime(machine)
-        values = {name: bool(labels[name]) for name in machine.propositions}
-        path = _walk(
-            machine, lambda _state, runtime=runtime, values=values: runtime.step(values).destination
-        )
+        values = {name.lower(): bool(value) for name, value in labels.items()}
+        path = _walk(machine, lambda state, values=values: _labeled_step(machine, state, values))
         if path is not None:
             reached.setdefault(" -> ".join(path), []).append(seed)
     if not reached:
@@ -76,6 +72,41 @@ def _walk(machine: PaperRewardMachine, step: Callable[[str], str]) -> list[str] 
     return None
 
 
+def unknown_propositions(
+    machine: PaperRewardMachine, start_labels: Mapping[int, Mapping[str, bool]]
+) -> list[str]:
+    """The propositions the machine's guards use that a seed's labels at reset do not give."""
+    return [
+        name
+        for name in machine.used_propositions
+        if any(
+            name.lower() not in {key.lower() for key in labels} for labels in start_labels.values()
+        )
+    ]
+
+
+def _labeled_step(machine: PaperRewardMachine, state: str, values: Mapping[str, bool]) -> str:
+    """Where the machine goes from ``state`` with the labels ``values``, as the runtime picks.
+
+    A guard that names a proposition missing from ``values`` does not fire, neither ``a`` nor
+    ``!a``; the first ``else`` is the fallback, and the machine stays put without one.
+    """
+    rows = [row for row in machine.transitions if row.source == state]
+    for row in rows:
+        names = _guard_names(machine, row.condition)
+        if row.is_else or not all(name.lower() in values for name in names):
+            continue
+        if evaluate_boolean_guard(parse_boolean_guard(row.condition, machine.propositions), values):
+            return row.destination
+    return next((row.destination for row in rows if row.is_else), state)
+
+
+def _guard_names(machine: PaperRewardMachine, condition: str) -> list[str]:
+    """The propositions a guard names."""
+    words = re.findall(r"\w+", condition.lower())
+    return [name for name in machine.propositions if name.lower() in words]
+
+
 def _free_step(machine: PaperRewardMachine, state: str) -> str:
     """Where the machine goes from ``state`` with no proposition needed.
 
@@ -91,11 +122,7 @@ def _free_step(machine: PaperRewardMachine, state: str) -> str:
 def _always_true(machine: PaperRewardMachine, condition: str) -> bool:
     """Whether the guard holds under every valuation of the propositions it names."""
     guard = parse_boolean_guard(condition, machine.propositions)
-    names = [
-        name
-        for name in machine.propositions
-        if name.lower() in re.findall(r"\w+", condition.lower())
-    ]
+    names = _guard_names(machine, condition)
     return all(
         evaluate_boolean_guard(
             guard,
@@ -152,7 +179,11 @@ def length_header(expected: int | None) -> dict[str, Any]:
 def machine_header(
     machine: PaperRewardMachine | None, start_labels: Mapping[int, Mapping[str, bool]] | None
 ) -> dict[str, Any]:
-    """The ``judge.json`` fields of the too-simple check: flag, reason, and which form ran."""
+    """The ``judge.json`` fields of the too-simple check.
+
+    The flag, its reason, which form ran, and the guard propositions the labels at reset did not
+    give (the walk treats a guard that needs one as not fired).
+    """
     if machine is None:
         return {"machine_too_simple": None, "machine_too_simple_reason": None}
     reason = machine_too_simple(machine, start_labels)
@@ -165,4 +196,7 @@ def machine_header(
         "machine_too_simple": reason is not None,
         "machine_too_simple_reason": reason,
         "machine_too_simple_check": check,
+        "machine_too_simple_unknown": (
+            None if start_labels is None else unknown_propositions(machine, start_labels)
+        ),
     }

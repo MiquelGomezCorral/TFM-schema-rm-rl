@@ -508,7 +508,9 @@ def _start_labels(env: gym.Env) -> dict[str, bool] | None:
     if env is None:
         return None
     adapter = env.reward_machine
-    runtime = RewardMachineRuntime(adapter.runtime.machine)
+    runtime = RewardMachineRuntime(
+        adapter.runtime.machine, propositions=adapter.runtime.propositions
+    )
     return runtime.evaluate_labeling(adapter.environment, adapter.labeling)
 
 
