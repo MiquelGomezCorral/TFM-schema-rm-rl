@@ -27,6 +27,11 @@ and still breaks the rule.
 
 Learner: PPO s07, chosen by the user for every thesis run on 2026-11-12.
 
+Training: because the trigger is given at reset, these cards test keeping an obligation, not reacting
+to an event. The user dropped the runs that had not started (2026-11-14). Only
+`tpl-response-1-nogoal-forced` seed 1 trains (3 arms), labeled "trigger given". Reactive cards, where
+the trigger happens during the episode, are proposed as the real test of conditional rules.
+
 ## Contents
 
 - `tasks.json`: the cards.

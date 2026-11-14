@@ -50,7 +50,13 @@ not a rate.
   regenerated with the RM-only vocabulary rule (118 accepted). For `cx-goal-many-rules~p2`,
   `tpl-not-co-existence-1-nogoal` and `tpl-responded-existence-2-goal` the regeneration failed twice and
   a failed loop leaves a complete bundle as it was, so each keeps the labeling written before the rule
-  (full vocabulary). All three pass the check. Two more (`tpl-precedence-1-goal~p1`,
+  (full vocabulary). All three pass the check. All three are BlockedUnlockPickup cards, and each failed
+  3 tries twice, always on `blocker_moved` (the cell in front of the door holds no ball): the writer
+  sent code the sandbox refuses (syntax error, unknown name, private attributes), logic the critic
+  rejects (any ball on the grid instead of the one cell), or left a proposition out. The old labeling
+  passed review and the check, so it stays. The narrower prompt made the same model behave
+  differently, so labeling-function generation is not robust either and needs attention, but the paper
+  does not test it. Two more (`tpl-precedence-1-goal~p1`,
   `tpl-not-co-existence-1-nogoal~p3`) hold a labeling the repair loop wrote after the regeneration
   failed. The old attempts stay in each `<name>.labeling_regen.json` beside the bundle.
 - **One FARM bundle has no labeling: `tpl-existence-2-nogoal`.** Its machine was accepted, the labeling
