@@ -263,7 +263,7 @@ class _Generation:
 
     def generate_labeling(self) -> None:
         self.labeling_source = _refine_labeling(
-            self.environment.proposition_ids,
+            self.environment.labeling_propositions(self.machine.used_propositions),
             lambda history: _request_text(
                 self.engine,
                 "labeling_generator",
@@ -308,8 +308,8 @@ class _Generation:
             },
             stage_status={
                 "reward_machine": "complete" if self.machine is not None else "failed",
-                "labeling": "complete" if self.labeling_source else "pending",
-                "descriptions": "complete" if self.descriptions else "pending",
+                "labeling": _stage_status(self.attempts, "labeling", self.labeling_source),
+                "descriptions": _stage_status(self.attempts, "descriptions", self.descriptions),
             },
             inputs={
                 "task": self.task.strip(),
@@ -333,6 +333,31 @@ class _Generation:
             raw_responses=[_raw_response(item) for item in self.attempts]
             + call_records(self.engine, self.critic_engine),
         )
+
+
+def regenerate_baseline_labeling(
+    bundle: ArtifactBundle,
+    environment: EnvironmentDescription,
+    engine: object,
+    critic_engine: object | None,
+) -> tuple[str, list[StageAttempt]]:
+    """Run the ``arm-fm`` labeling loop again on the machine ``bundle`` accepted.
+
+    The machine text is the one its critic accepted. Returns the accepted source and every try;
+    a loop that accepts nothing raises :class:`LabelingError`, which holds the tries.
+    """
+    run = _Generation(bundle.manifest.task, environment, engine, critic_engine)
+    run.machine = bundle.reward_machine
+    run.machine_text = next(
+        (
+            item["candidate"]
+            for item in reversed(bundle.attempts)
+            if item["stage"] == "reward_machine" and item["status"] == "accepted"
+        ),
+        serialize_paper_reward_machine(bundle.reward_machine),
+    )
+    run.generate_labeling()
+    return run.labeling_source, run.attempts
 
 
 def request_state_descriptions(
@@ -502,6 +527,11 @@ def record_bundle_role_models(
         }
     )
     bundle.raw_responses.extend(run_stats.get("calls", ()))
+    refused = _refused_attempts(run_stats)
+    bundle.attempts = refused + [
+        {**item, "attempt": len(refused) + 1} if item["stage"] == "compiler" else item
+        for item in bundle.attempts
+    ]
     record_bundle_stamp(bundle, CONFIG, (generator_model, critic_model), run_stats)
 
 
@@ -511,13 +541,37 @@ def record_compiler_failure(
     """Give a failed compiler run's bundle the request records and the stamp of that run.
 
     ``run_stats`` is empty when the run failed before it made a request; the counts are null.
+    Its refused compiler candidates become compiler attempts with the critic's reason.
     The interventions and retries are null in any case: its labeling and description attempts
     are not in the failure bundle, so a number would be short.
     """
     bundle.raw_responses.extend(run_stats.get("calls", ()))
+    bundle.attempts.extend(_refused_attempts(run_stats))
     bundle.manifest.effective_settings["max_attempts"] = CONFIG.attempts
     stats = {**run_stats, "critic_interventions": None, "retries": None}
     record_bundle_stamp(bundle, CONFIG, _compiler_role_models(CONFIG), stats)
+
+
+def _refused_attempts(run_stats: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The compiler candidates a run refused, in order, as attempts of the ``compiler`` stage.
+
+    A critic rejection keeps the critic's reason as feedback; an invalid candidate keeps its
+    error. Each used up one of the run's attempts, so a bundle's attempt count is real.
+    """
+    refused = []
+    for number, entry in enumerate(run_stats.get("history", ()), start=1):
+        critic = entry.get("pipeline_step") == "critic"
+        refused.append(
+            {
+                "stage": "compiler",
+                "attempt": number,
+                "status": "rejected" if critic else "failed",
+                "candidate": entry.get("compiled_rm", ""),
+                "feedback": entry["feedback"] if critic else "",
+                "error": "" if critic else entry["feedback"],
+            }
+        )
+    return refused
 
 
 def _compiler_role_models(CONFIG: Configuration) -> tuple[str | None, str | None]:
@@ -597,6 +651,27 @@ def _git(*arguments: str) -> str | None:
         cwd=Configuration.WORKSPACE_PATH,
     )
     return completed.stdout.strip() if completed.returncode == 0 else None
+
+
+def failed_compiler_bundle(
+    result: CompilationResult, failed_stage: str, error: str, attempts: Sequence[StageAttempt]
+) -> ArtifactBundle:
+    """The bundle of a run that failed after the critic accepted its machine.
+
+    It keeps everything accepted before ``failed_stage`` (``descriptions``, ``labeling`` or
+    ``embeddings``): the machine, its clauses, the state descriptions and the labeling tries made
+    (``attempts``). The stage status says the machine was accepted and which stage failed.
+    """
+    bundle = build_compiler_bundle(
+        result,
+        labeling_source=result.labeling_source,
+        state_descriptions=pair_state_descriptions(result, result.state_descriptions),
+        attempts=attempts,
+    )
+    bundle.manifest.provenance["status"] = "failed"
+    bundle.manifest.stage_status[failed_stage] = "failed"
+    bundle.manifest.errors.append(error)
+    return bundle
 
 
 def record_bundle_embeddings(
@@ -732,8 +807,15 @@ def generate_compiler_labeling(
     compiled: CompilationResult,
     engine: object,
     critic_engine: object | None,
-) -> tuple[str, list[StageAttempt]]:
-    """Generate labeling source for one accepted compiler result, with every attempt.
+    attempts: list[StageAttempt],
+) -> str:
+    """Generate labeling source for one accepted compiler result.
+
+    Every try is appended to ``attempts``, which the caller owns so that it keeps them when
+    this raises.
+
+    The labeling covers the propositions the machine's guards mention and what their facts-page
+    definitions read, nothing else: the prompt lists them and the coverage check asks for them.
 
     Generation uses the compiler prompts on ``engine`` with the grounded artifact context;
     ``critic_engine``'s structured reviewer judges each candidate, or ``None`` skips the
@@ -741,13 +823,20 @@ def generate_compiler_labeling(
     accepted.
     """
     labeling_api = compiled.environment.require_labeling_api()
-    attempts: list[StageAttempt] = []
+    machine = compiler_machine_to_paper(
+        compiled.reward_machine, compiled.environment.proposition_ids
+    )
+    covered = compiled.environment.labeling_propositions(machine.used_propositions)
     context = {
         "clauses_json": clauses_json(compiled.proposal.clauses),
         "state_descriptions_json": descriptions_json(compiled),
         "nodes_json": json.dumps(list(state_identifiers(compiled).values())),
         "propositions_json": json.dumps(
-            {item.identifier: item.description for item in compiled.environment.propositions},
+            {
+                item.identifier: item.description
+                for item in compiled.environment.propositions
+                if item.identifier in covered
+            },
             indent=2,
             sort_keys=True,
         ),
@@ -781,8 +870,7 @@ def generate_compiler_labeling(
         )
         return verdict.accepted, verdict.feedback, ""
 
-    propositions = tuple(compiled.environment.proposition_ids)
-    return _refine_labeling(propositions, request, review, attempts), attempts
+    return _refine_labeling(covered, request, review, attempts)
 
 
 def _refine_labeling(

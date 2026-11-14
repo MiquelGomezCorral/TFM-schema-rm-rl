@@ -9,7 +9,9 @@ from .evaluate_larm import evaluate_larm
 from .generate_larm import generate_larm
 from .generate_rm import generate_rm
 from .generate_suite import SuiteOptions, generate_suite
+from .generation_table import generation_table
 from .import_paper_bundle import import_paper_bundle
+from .regenerate_labeling import regenerate_labeling
 from .render_rm import render_rm
 from .repair_labeling import repair_labeling
 from .run_suite import run_suite

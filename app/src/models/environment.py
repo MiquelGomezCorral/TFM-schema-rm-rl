@@ -1,6 +1,7 @@
 """Environment Markdown parsing."""
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,6 +11,9 @@ SECTION_END = re.compile(r"^#{1,2}\s+")
 LABELING_API_HEADING = "## Labeling API"
 CODE_FILE_NAME = "environment-code.md"
 RESERVED_IDENTIFIERS = {"true", "false"}
+# A row of the facts page's semantics table: ``| `id` | kind | true when ... |``.
+SEMANTICS_ROW = re.compile(r"^\|\s*`([^`]+)`\s*\|[^|]*\|(.*)$")
+BACKTICKED = re.compile(r"`([^`]+)`")
 
 
 class EnvironmentValidationError(ValueError):
@@ -56,6 +60,42 @@ class EnvironmentDescription:
     def proposition_ids(self) -> tuple[str, ...]:
         """Return proposition identifiers in document order."""
         return tuple(proposition.identifier for proposition in self.propositions)
+
+    def reads(self) -> dict[str, tuple[str, ...]]:
+        """Per proposition, the other declared propositions its semantics-table row names.
+
+        The facts page owns these definitions: ``key_lost`` is true when ``has_door_key`` was true
+        at the previous step and ``door_open`` is false now, so its labeling reads both.
+        """
+        declared = set(self.proposition_ids)
+        reads: dict[str, tuple[str, ...]] = {}
+        for line in self.markdown.splitlines():
+            row = SEMANTICS_ROW.match(line)
+            if row is not None and row.group(1) in declared:
+                # Other tables repeat the id as a first cell; their rows add, never erase.
+                named = dict.fromkeys(
+                    (*reads.get(row.group(1), ()), *BACKTICKED.findall(row.group(2)))
+                )
+                reads[row.group(1)] = tuple(
+                    name for name in named if name in declared and name != row.group(1)
+                )
+        return reads
+
+    def labeling_propositions(self, used: Iterable[str]) -> tuple[str, ...]:
+        """The propositions a labeling covers: ``used`` plus, transitively, what their definitions read.
+
+        Declared order. The one vocabulary every labeling step (generation, check, runtime,
+        replay) works on.
+        """
+        reads = self.reads()
+        needed: set[str] = set()
+        pending = list(used)
+        while pending:
+            name = pending.pop()
+            if name not in needed:
+                needed.add(name)
+                pending.extend(reads.get(name, ()))
+        return tuple(name for name in self.proposition_ids if name in needed)
 
     @classmethod
     def from_file(cls, path: str | Path, *, code: bool = False) -> "EnvironmentDescription":

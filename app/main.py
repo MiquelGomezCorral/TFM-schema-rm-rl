@@ -18,7 +18,9 @@ from scripts import (
     generate_larm,
     generate_rm,
     generate_suite,
+    generation_table,
     import_paper_bundle,
+    regenerate_labeling,
     render_rm,
     repair_labeling,
     replay_traces,
@@ -129,6 +131,17 @@ def cmd_replay_traces(args: argparse.Namespace) -> None:
 def cmd_rm_facts(args: argparse.Namespace) -> None:
     """Write the machine, clause and generation facts of generated bundles."""
     rm_facts(args.bundles, args.tasks, args.replay, args.output)
+
+
+def cmd_generation_table(args: argparse.Namespace) -> None:
+    """Print how often each generation step was accepted, per arm and suite."""
+    generation_table(args.root, args.output)
+
+
+def cmd_regenerate_labeling(args: argparse.Namespace) -> None:
+    """Run the generation labeling loop again on bundles that have an accepted machine."""
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    regenerate_labeling(CONFIG, args.bundles, tuple(args.only or ()))
 
 
 def cmd_repair_labeling(args: argparse.Namespace) -> None:
@@ -615,6 +628,42 @@ if __name__ == "__main__":
     )
     facts_parser.add_argument("--output", required=True, type=Path, help="JSON file to write")
     facts_parser.set_defaults(func=cmd_rm_facts)
+
+    # ======================================================================================
+    #                                   generation-table
+    # ======================================================================================
+    table_parser = subparsers.add_parser(
+        "generation-table",
+        help="Print the generation acceptance table of a benchmark folder, per arm and suite",
+    )
+    table_parser.add_argument(
+        "--root", required=True, type=Path, help="Folder <suite>/bundles/<arm>/<name>/ of suites"
+    )
+    table_parser.add_argument("--output", type=Path, default=None, help="JSON file to write")
+    table_parser.set_defaults(func=cmd_generation_table)
+
+    # ======================================================================================
+    #                                  regenerate-labeling
+    # ======================================================================================
+    regenerate_parser = subparsers.add_parser(
+        "regenerate-labeling",
+        help="Run the generation labeling loop again on bundles with an accepted machine",
+    )
+    regenerate_parser.add_argument(
+        "--bundles", required=True, type=Path, help="Folder <arm>/<card-id>[~p<k>]/ of bundles"
+    )
+    regenerate_parser.add_argument(
+        "--only", nargs="+", metavar="ID", help="Only these card ids or bundle names"
+    )
+    regenerate_parser.add_argument(
+        "--parallel",
+        dest="repair_parallel",
+        type=int,
+        default=Configuration.repair_parallel,
+        metavar="N",
+        help="Most bundles at once (default: %(default)s)",
+    )
+    regenerate_parser.set_defaults(func=cmd_regenerate_labeling)
 
     # ======================================================================================
     #                                    repair-labeling

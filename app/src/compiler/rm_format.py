@@ -89,6 +89,12 @@ class PaperRewardMachine:
         object.__setattr__(self, "rejecting_states", rejecting)
         object.__setattr__(self, "propositions", proposition_names)
 
+    @property
+    def used_propositions(self) -> tuple[str, ...]:
+        """The propositions the guards mention, in ``propositions`` order: all a labeling must cover."""
+        mentioned = set(_guard_propositions(self.transitions))
+        return tuple(name for name in self.propositions if name.lower() in mentioned)
+
 
 def _check_states(
     states: tuple[str, ...],

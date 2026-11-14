@@ -9,8 +9,9 @@ predicates that turn an observation into the boolean valuation the RM consumes.
 ### Environment Markdown
 A Markdown document describing the environment and its declared propositions. Its
 Propositions section maps identifiers to meanings as `identifier`: description. The
-document owns the vocabulary: every declared identifier needs one predicate, whether or
-not the RM uses it. Distinguish persistent conditions from one-step events.
+document owns the meanings of the identifiers; write one predicate for each identifier under
+Declared propositions below, and none for the others. Distinguish persistent conditions from
+one-step events.
 
 ### Task given
 The original natural-language instruction. It explains the objective and the ordering
@@ -39,8 +40,8 @@ each node represents. These descriptions are auxiliary context about machine mem
 are not ground truth about the environment and must never decide a predicate's truth.
 
 ### Declared propositions
-A JSON object mapping each declared identifier to its meaning. It restates the
-vocabulary that the predicates must cover exactly.
+A JSON object mapping each proposition the machine's guards use to its meaning. The
+predicates must cover exactly these.
 
 ### Nodes
 The ordered node identifiers of the machine, for cross-checking the state descriptions.
@@ -50,7 +51,8 @@ The predicate receives one argument, `env`. The user prompt's Documented runtime
 section lists the environment surface it exposes, and it also exposes:
 
 - `env.episode_memory["previous_valuation"]`: a read-only mapping proposition to boolean
-  from the preceding environment step. On the first step every proposition is false in it.
+  from the preceding environment step. It holds only the propositions under Declared
+  propositions, no others. On the first step every proposition is false in it.
 
 No other attribute is documented. Do not import object classes or call methods not listed
 in that section or here. The predicate sandbox allows only these builtins: `abs`, `all`, `any`, `bool`,

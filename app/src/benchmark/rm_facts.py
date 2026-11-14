@@ -109,7 +109,7 @@ def machine_facts(bundle: ArtifactBundle) -> dict[str, Any]:
         "reward_signs": (
             "also negative" if any(r < 0 for r in [*rewards, *end_charges]) else "positive only"
         ),
-        "propositions": list(machine.propositions),
+        "propositions": list(bundle.labeling_propositions),
         "node_labels": dict(bundle.state_descriptions),
     }
 

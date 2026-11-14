@@ -43,6 +43,22 @@ thing whichever arm produced it.
   evidence. The Reward Machine is never touched. A bundle still failing after the loop is `unfixed`
   and goes to an outside agent step; if the agent changes the labeling and it then checks `ok`, the
   bundle is `fixed-by-agent` and still counts as failed.
+- **Labeling vocabulary.** In both pipelines a labeling covers the propositions the accepted
+  machine's guards mention (`PaperRewardMachine.used_propositions`) plus, transitively, the
+  propositions their facts-page definitions read: `key_lost` reads the previous `has_door_key` (or
+  `has_key`) and `door_open`, so an event used by a guard pulls those in
+  (`EnvironmentDescription.labeling_propositions`). The generation
+  coverage check, FARM's prompt and critic list, and every reader that loads a labeling (training,
+  replay, labeling check, judge inputs) use that set. The ARM-FM prompt wording is unchanged; only
+  what the code passes and checks changed. The paper is about Reward Machine generation, so the
+  labeling only has to be decent for the machine it serves.
+- **Accepted steps are kept.** A failure keeps every step a critic or check accepted. A FARM run that
+  fails after the critic accepted its machine saves the machine, clauses, compiler attempt, state
+  descriptions and the failed stage's tries; `stage_status` says which stage failed and `status.json`
+  stays `pipeline-failed` with a reason that names the stage. `repair-labeling` checks, repairs and
+  finishes such a bundle like an ARM-FM one, and `regenerate-labeling` reruns only the labeling loop on
+  it (old labeling and tries kept in a sidecar). A bundle rebuilt from a log is marked
+  `restored_from_log`.
 - **Prompts.** Each pipeline keeps its own prompts. ARM-FM runs as its authors ran it, without worked
   examples; FARM keeps its examples as part of the method. The paper states the asymmetry and any gain
   from the examples is a result to show. No control run.
@@ -75,6 +91,8 @@ thing whichever arm produced it.
   before the switches existed.
 - Labeling repair never edits a Reward Machine and never replaces the class recorded before repair.
   A repaired or agent-fixed bundle is still a failure in the failure rate.
+- A labeling is never asked to cover a proposition the machine does not use, and no pipeline throws away
+  an accepted machine because a later stage failed. Regenerating a labeling never changes the machine.
 
 ## Rationale and tradeoffs
 
@@ -95,6 +113,7 @@ and a restart is easier to trust.
 - `ablate-rm`: which term each switch owns, and no-op detection.
 - `repair-labeling` with `app/src/benchmark/labeling_repair.py`: the classes, the 10-round limit, the
   small-model gate, and the record beside each bundle (it keeps the machine's hash and the first class).
+- `regenerate-labeling` and `generation-table`: the labeling-only rerun and the per-arm acceptance table.
 - `aggregate-suite`: the asymmetry line on every table and per-direction cross-critic summaries.
 - Card approval, no human fixes, equal model pairs and the prompt-budget decision are Review-only:
   they are rules about how the experiment is run, which no check can observe.
@@ -110,3 +129,8 @@ and a restart is easier to trust.
   listed them as planned).
 - 2026-11-12: Labeling repair rule added with the `repair-labeling` command (testing program slice
   `labeling-repair`).
+- 2026-11-14: Labeling vocabulary and accepted-steps rules added (user: "the labeling function generations only
+  worry about those used by the reward machine"; "we do always keep all the steps that have been
+  accepted"); testing program slice `lf-code`.
+- 2026-11-14: Vocabulary widened to what the used propositions' definitions read (correction 1 of `lf-code`:
+  an RM-only labeling of `key_lost` crashed on the previous `has_door_key`).

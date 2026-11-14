@@ -13,9 +13,10 @@ from unittest.mock import Mock, patch
 from nl2ltl.declare.declare import Existence
 from pylogics.syntax.ltl import Atomic
 
+from scripts.generate_larm import generate_compiler
 from scripts.generate_rm import EMBEDDING_INSTRUCTION, generate_rm
 from src.compiler import CompilationResult, Proposal, RewardSwitches
-from src.compiler.reward_machine import RewardMachineStructure
+from src.compiler.reward_machine import RewardMachineStructure, Transition
 from src.config import Configuration, PriorityLevel
 from src.engines import (
     CriticResult,
@@ -56,7 +57,12 @@ def prop(task="finish"):
 
 
 def result(text="serialized-rm"):
-    return CompilationResult(ENV, prop(), RewardMachineStructure((0, 1), 0, 1, (), ()), text)
+    return CompilationResult(
+        ENV,
+        prop(),
+        RewardMachineStructure((0, 1), 0, 1, (), (Transition(0, 1, ("done",), 0.0),)),
+        text,
+    )
 
 
 class EmbeddingResponse:
@@ -723,6 +729,39 @@ class OrchestrationTests(unittest.TestCase):
         self.assertIn("Labeling generation failed after 3 requests", failures[-1])
         failed = [event for event in events if event.state is StepState.FAILED]
         self.assertEqual(failed[-1].step, PipelineStep.LABELING)
+
+    def test_description_failure_saves_the_accepted_machine(self):
+        self.critic.verdicts = [CriticResult(True, "ok")]
+        self.engine.tag_results = [RetryableEngineError("malformed descriptions")] * 3
+        with TemporaryDirectory() as directory:
+            CONFIG = Configuration(
+                environment="demo.md",
+                tasks=["finish"],
+                output="out.rm",
+                mode="compiler",
+                bundle=Path(directory) / "failed",
+            )
+            with (
+                patch(
+                    "scripts.generate_rm.setup_environment_and_engines",
+                    return_value=(ENV, self.engine, self.critic),
+                ),
+                patch(
+                    "src.utils.generation_pipeline.derive_output_paths",
+                    return_value=(Path("out.rm"),),
+                ),
+                patch("scripts.generate_rm.compile_dfas", return_value=()),
+                patch("scripts.generate_rm.build_compilation_result", return_value=result()),
+                self.assertRaisesRegex(RuntimeError, "descriptions stage"),
+            ):
+                generate_compiler(CONFIG, LABELING_ENV)
+            manifest = json.loads((CONFIG.bundle / "manifest.json").read_text(encoding="utf-8"))
+            self.assertIn("(u0, done) -> u1", (CONFIG.bundle / "reward_machine.txt").read_text())
+            self.assertEqual(
+                manifest["stage_status"],
+                {"reward_machine": "complete", "descriptions": "failed", "labeling": "pending"},
+            )
+            self.assertEqual(manifest["inputs"]["environment_markdown"], LABELING_ENV.markdown)
 
     def test_labeling_bundles_are_written_and_preflighted(self):
         self.critic.verdicts = [CriticResult(True, "ok")]

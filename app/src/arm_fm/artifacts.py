@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import warnings
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -16,6 +17,7 @@ from src.compiler import (
     serialize_paper_reward_machine,
 )
 from src.config import Configuration
+from src.models import EnvironmentDescription, EnvironmentValidationError
 
 from .runtime import load_labeling_functions
 
@@ -101,7 +103,7 @@ class ArtifactBundle:
         if set(expected_propositions) != set(self.reward_machine.propositions):
             diagnostics.append("RM propositions do not match the environment vocabulary")
         try:
-            load_labeling_functions(self.labeling_source, expected_propositions)
+            load_labeling_functions(self.labeling_source, self.labeling_propositions)
         except RuntimeValidationError as error:
             diagnostics.append(str(error))
         if set(self.state_descriptions) != set(self.reward_machine.states):
@@ -131,6 +133,32 @@ class ArtifactBundle:
             ):
                 diagnostics.append(f"{check} validation is incomplete")
         return diagnostics
+
+    @property
+    def labeling_propositions(self) -> tuple[str, ...]:
+        """What the labeling covers: the machine's used propositions and what they read.
+
+        The reads come from the facts page (`EnvironmentDescription.labeling_propositions`).
+
+        A paper bundle (a paper-profile draw, or an import) stores no facts page and covers the used
+        propositions only. For any bundle that stores a page, one that does not parse is a defect:
+        it warns, and the used propositions are all that can be covered (an event's reads would
+        be missing).
+        """
+        used = self.reward_machine.used_propositions
+        page = self.manifest.inputs.get("environment_markdown")
+        if not page or self.manifest.effective_settings.get("mode") == "paper":
+            return used
+        try:
+            environment = EnvironmentDescription.from_markdown(page)
+        except EnvironmentValidationError as error:
+            warnings.warn(
+                f"{self.manifest.task!r}: the stored environment page does not parse ({error}); "
+                "the labeling vocabulary lacks what event propositions read",
+                stacklevel=2,
+            )
+            return used
+        return environment.labeling_propositions(used)
 
     @property
     def complete(self) -> bool:
