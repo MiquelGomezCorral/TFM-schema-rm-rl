@@ -112,6 +112,26 @@ class TraceJudging(unittest.TestCase):
         judged = judge_trace([as_clause(["Absence", ["x"], "hard"])], [{"y": True}, {"y": True}])
         self.assertTrue(judged.success)
 
+    def test_a_pass_without_the_trigger_is_empty(self) -> None:
+        # (template, a, b, activated): the trigger is a, except Precedence (b) and NotCoExistence.
+        for template, a, b, activated in (
+            ("ChainResponse", "000", "000", False),
+            ("ChainResponse", "010", "001", True),
+            ("Response", "000", "000", False),
+            ("Precedence", "010", "000", False),
+            ("Precedence", "010", "001", True),
+            ("NotCoExistence", "000", "000", False),
+            ("NotCoExistence", "010", "000", True),
+            ("Absence", "000", "", None),
+        ):
+            clause = as_clause([template, ["a", "b"][: 1 if not b else 2], "hard"])
+            judged = judge_trace([clause], trace(a=a, b=b) if b else trace(a=a))
+            with self.subTest(template=template, a=a, b=b):
+                self.assertEqual(judged.verdicts[0].activated, activated)
+        empty = judge_trace([as_clause(["Response", ["a", "b"], "hard"])], trace(a="00", b="00"))
+        self.assertTrue(empty.success)
+        self.assertFalse(empty.non_empty_success)
+
     def test_a_clause_must_be_well_formed(self) -> None:
         for raw in (
             ["Nope", ["a"], "hard"],

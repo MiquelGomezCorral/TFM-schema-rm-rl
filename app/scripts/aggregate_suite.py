@@ -6,7 +6,13 @@ Usage:
 One row per run of the suite (``run_suite.expand_runs``), with the run's status, then a
 per-card table that sets the arms side by side. Judged success, hard and soft breaks and open
 at end are the episode means in the run's ``judge.json`` (``test-rl --judge``); open at end is
-the hard and soft clauses still open, added together. A run without one shows "not evaluated". Env
+the hard and soft clauses still open, added together. Non-empty judged success needs every hard
+clause with a trigger to have fired; the least activated hard clause is the lowest share of
+episodes that fired one (a low share with a high judged success is an empty pass). Untested rules
+lists each hard clause activated in fewer than half of the episodes, with its share: a run with
+high judged success and an untested rule is a likely empty pass. The "judged"
+env and RM return columns are the positive and negative reward parts of the judged episodes. A run
+without a ``judge.json`` shows "not evaluated". Env
 success, returns and episode length come from the last ``eval.csv`` row.
 An optional ``replay_summary:`` in the runs.yaml names a ``replay-traces`` summary JSON with a
 ``machine_check`` per bundle, keyed by the bundle path under the suite's ``bundles:`` folder
@@ -24,7 +30,18 @@ from pathlib import Path
 from src.benchmark.traces import read_json
 from src.config import Configuration
 
-from .run_suite import FINISHED, ROOT, TIMED_OUT, Run, expand_runs, load_suite, run_state
+from .run_suite import (
+    FINISHED,
+    ROOT,
+    SHARED_FILE,
+    TIMED_OUT,
+    Owner,
+    Run,
+    expand_runs,
+    load_suite,
+    run_state,
+    share_owners,
+)
 
 ASYMMETRY = (
     "Time-limit asymmetry: FARM machines charge open items at any end; "
@@ -32,10 +49,34 @@ ASYMMETRY = (
 )
 NOT_EVALUATED = "not evaluated"
 SEED_TARGET = 3
-JUDGE_KEYS = ("judged_success", "hard_breaks", "soft_breaks")  # open_at_end is built apart
+UNTESTED_BELOW = 0.5  # a hard clause activated in fewer test episodes than this is "untested"
+CANNOT_START_ABOVE = 0.5  # a run is flagged when more of its test episodes could not start
+JUDGE_KEYS = (  # open_at_end, the flags and min_hard_activated are built apart
+    "raw_judged_success",
+    "judged_success",
+    "non_empty_success",
+    "hard_breaks",
+    "soft_breaks",
+    "env_return_positive",
+    "env_return_negative",
+    "rm_return_positive",
+    "rm_return_negative",
+)
+FLAGS = (  # yes/no/unknown columns: a card shows yes if any seed does
+    "machine_wrong",
+    "machine_too_simple",
+    "cannot_start_flag",
+)
 # (table header, results key) of the metric columns, in table order.
 METRICS = (
     ("judged success", "judged_success"),
+    ("raw judged success", "raw_judged_success"),
+    ("machine too simple", "machine_too_simple"),
+    ("episodes cannot start", "episodes_cannot_start"),
+    ("cannot-start flag", "cannot_start_flag"),
+    ("non-empty judged success", "non_empty_success"),
+    ("least activated hard clause", "min_hard_activated"),
+    ("untested rules", "untested_rules"),
     ("env success", "env_success"),
     ("hard breaks", "hard_breaks"),
     ("soft breaks", "soft_breaks"),
@@ -43,7 +84,11 @@ METRICS = (
     ("first env success", "first_env_success_step"),
     ("last-3 eval success", "eval_success_last3"),
     ("env return", "env_return"),
+    ("judged env return +", "env_return_positive"),
+    ("judged env return -", "env_return_negative"),
     ("RM return", "rm_return"),
+    ("judged RM return +", "rm_return_positive"),
+    ("judged RM return -", "rm_return_negative"),
     ("episode length", "episode_length"),
     ("wall s", "wall_time_s"),
     ("peak GB", "peak_rss_gb"),
@@ -111,6 +156,8 @@ def judge_columns(folder: Path) -> dict:
 
     ``judge.json`` holds the episode means (``mean_*``, see ``test_rl.JUDGE_MEANS``). Open at end
     is the mean number of clauses still open, hard and soft together; a missing mean stays empty.
+    The least activated hard clause is the lowest ``activated_share`` among the hard clauses that
+    have a trigger (low: the judged success may be an empty pass).
     """
     judge = read_json(folder / "judge.json")
     if not judge:
@@ -118,6 +165,25 @@ def judge_columns(folder: Path) -> dict:
     columns = {key: judge.get(f"mean_{key}") for key in JUDGE_KEYS}
     hard_open, soft_open = judge.get("mean_hard_open"), judge.get("mean_soft_open")
     columns["open_at_end"] = None if None in (hard_open, soft_open) else hard_open + soft_open
+    hard = [
+        (item["clause"], share)
+        for item, share in zip(
+            judge.get("expect", []), judge.get("activated_share", []), strict=False
+        )
+        if item["clause"][2] == "hard" and share is not None
+    ]
+    # Old judge.json files have neither: both stay unknown. The judge already counted such
+    # episodes as failed in ``judged_success``; ``raw_judged_success`` keeps its old value.
+    share = judge.get("mean_cannot_start")
+    columns["episodes_cannot_start"] = share
+    columns["cannot_start_flag"] = None if share is None else share > CANNOT_START_ABOVE
+    columns["machine_too_simple"] = judge.get("machine_too_simple")
+    columns["min_hard_activated"] = min((share for _, share in hard), default=None)
+    columns["untested_rules"] = "; ".join(
+        f"{template}({', '.join(props)}) {share:.2f}"
+        for (template, props, _), share in hard
+        if share < UNTESTED_BELOW
+    )
     return columns
 
 
@@ -134,9 +200,22 @@ def machine_wrong(bundle: Path | None, bundles: Path, replay: dict | None) -> bo
     return None if passed is None else not passed
 
 
-def run_row(run: Run, bundles: Path, replay: dict | None) -> dict:
-    """The results row of one run; ``bundles`` is the suite's bundles folder."""
+def owner_note(owner: Owner) -> str:
+    """Whose model a shared no-RM run waits for, in what state, and the exit code if known."""
+    code = read_json(owner.folder / "resources.json").get("exit_code") if owner.folder else None
+    reason = f", exit {code}" if code not in (None, 0) else ""
+    return f"shared no-RM run of {owner.exp_name}: {owner.state}{reason}"
+
+
+def run_row(run: Run, bundles: Path, replay: dict | None, owner: Owner | None) -> dict:
+    """The results row of one run; ``bundles`` is the suite's bundles folder.
+
+    ``owner`` is the run a shared no-RM run gets its model from (``share_owners``): while the
+    run has no finished folder of its own, its note says what state that owner is in.
+    """
     status, folder, note = run_state(run)
+    if owner is not None and owner.run is not run and status != FINISHED:
+        note = owner_note(owner)
     row = dict.fromkeys(COLUMNS)
     row.update(
         exp_name=run.exp_name,
@@ -157,9 +236,11 @@ def run_row(run: Run, bundles: Path, replay: dict | None) -> dict:
 
     resources = read_json(folder / "resources.json")
     summary = read_json(folder / "summary.json")
+    shared = read_json(folder / SHARED_FILE).get("owner_exp_name")
     row.update(
         judge_columns(folder),
         **eval_columns(run.card, eval_rows(folder), status),
+        note=f"shared no-RM run of {shared}" if shared else note,
         wall_time_s=resources.get("wall_time_s", summary.get("wall_seconds")),
         peak_rss_gb=resources.get("peak_rss_gb"),
         machine_wrong=machine_wrong(run.bundle, bundles, replay),
@@ -194,10 +275,11 @@ def group_rows(rows: list[dict]) -> list[dict]:
         cells = {
             key: mean_cell([member[key] for member in members])
             for _, key in METRICS
-            if key != "machine_wrong"
+            if key not in FLAGS
         }
-        checks = [m["machine_wrong"] for m in members if m["machine_wrong"] is not None]
-        cells["machine_wrong"] = any(checks) if checks else None  # unknown stays unknown
+        for flag in FLAGS:
+            checks = [m[flag] for m in members if m[flag] is not None]
+            cells[flag] = any(checks) if checks else None  # unknown stays unknown
         result.append(
             {
                 "card": card,
@@ -258,6 +340,11 @@ def card_section(card: dict, groups: list[dict]) -> str:
     )
 
 
+def status_cell(row: dict) -> str:
+    """The run's status, with its note (a bundle problem, or a shared owner's state) after it."""
+    return f"{row['status']} ({row['note']})" if row["note"] else row["status"]
+
+
 def results_markdown(spec: dict, rows: list[dict], groups: list[dict]) -> str:
     seeds = spec["seeds"]
     verdict = (
@@ -268,7 +355,7 @@ def results_markdown(spec: dict, rows: list[dict], groups: list[dict]) -> str:
     run_table = markdown_table(
         ["card", "arm", "learner", "variant", "seed", "status", *(h for h, _ in METRICS)],
         [
-            [r["card"], r["arm"], r["learner"], r["variant"], r["seed"], r["status"]]
+            [r["card"], r["arm"], r["learner"], r["variant"], r["seed"], status_cell(r)]
             + [r[key] for _, key in METRICS]
             for r in rows
         ],
@@ -302,7 +389,9 @@ def aggregate_suite(CONFIG: Configuration) -> None:
     if spec.get("replay_summary"):  # written once: a missing or bad file raises, not "unknown"
         replay = json.loads((ROOT / spec["replay_summary"]).read_text(encoding="utf-8"))
     bundles = Path(spec["bundles"])
-    rows = [run_row(run, bundles, replay) for run in expand_runs(spec)]
+    runs = expand_runs(spec)
+    owners = share_owners(runs, spec, CONFIG)
+    rows = [run_row(run, bundles, replay, owners.get(run.key)) for run in runs]
     groups = group_rows(rows)
 
     output = CONFIG.suite_output
