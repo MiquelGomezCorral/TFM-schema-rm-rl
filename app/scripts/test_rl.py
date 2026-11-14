@@ -10,6 +10,18 @@ Usage:
 and validation ``eval_seed_base``, so these maps are unseen. A fixed-layout run has one layout,
 so it is tested on its layout seed instead, and ``test.json`` says so.
 
+With ``--bundle DIR`` (needs ``--judge``) the saved policy plays another card's machine, labeling
+and state embeddings in the same environment, with no training:
+
+    python app/main.py test-rl --run <run folder> --bundle <bundle> --judge <card.json>
+
+The card gives the setup (``env_kwargs``) and the rules. The run is refused, before any test work,
+when the bundle's observation space (its embedding size) is not the one the policy trained on.
+``--shuffle-embeddings SEED`` permutes the embeddings among the machine's states (a control for
+"does the policy read what the state means"), with the bundle's own or, without ``--bundle``, the
+run's own machine. These tests write ``<run>/transfer/<name>/`` (``test.json``, ``judge.json``,
+traces, GIFs) and leave the run's own files alone.
+
 With ``--judge card.json`` the test episodes are also saved as agent trace records
 (``agent-traces/ep<k>.json``, reference labels included) and judged on the card's clauses into
 ``judge.json``. The card is checked first (its env, its propositions), before any test work. An
@@ -31,6 +43,7 @@ from typing import Any
 import gymnasium as gym
 import torch
 import yaml
+from gymnasium import spaces
 from PIL import Image, ImageDraw, ImageFont
 
 from src.arm_fm import make_run_environment
@@ -47,6 +60,7 @@ from src.arm_fm.ppo import evaluate as evaluate_ppo
 from src.arm_fm.ppo import evaluation_resets as evaluation_resets_ppo
 from src.arm_fm.ppo import fixed_layout, load_ppo_agent
 from src.arm_fm.runtime import RewardMachineRuntime
+from src.arm_fm.transfer import embedding_permutation
 from src.benchmark import (
     RM_RETURN_DEFINITION,
     START_SHARE_STRICT,
@@ -116,22 +130,30 @@ HEAD_FRAMES, MIDDLE_FRAMES, TAIL_FRAMES = 40, 14, 6
 # ======================================================================================
 
 
+class TransferError(ValueError):
+    """A saved policy cannot be tested with the machine asked for."""
+
+
 def test_rl(CONFIG: Configuration, gifs: int, judge: Path | None = None) -> None:
     """Test the runs named by ``CONFIG.exp_name`` and write each run's ``test.json``.
 
     ``CONFIG.final_eval_episodes`` is the number of test episodes and ``CONFIG.eval_seed_base``
     the first test seed. ``gifs`` is how many of those episodes are also rendered as GIFs. With
-    ``judge`` (a card file) the episodes are also saved as agent traces and judged.
+    ``judge`` (a card file) the episodes are also saved as agent traces and judged. With
+    ``CONFIG.bundle`` the policy plays that bundle's machine instead of its own, and with
+    ``CONFIG.shuffle_embeddings_seed`` the state embeddings are permuted; both write under
+    ``<run>/transfer/<name>/``.
 
     Raises:
         ValueError: If no finished run matches ``CONFIG.exp_name``.
-        SystemExit: If ``judge`` is not one card that fits the run's env and labels; the check
-            runs before any test work, so nothing is written.
+        SystemExit: If ``judge`` is not one card that fits the run's env and labels, or the
+            bundle's observation space differs from the policy's; the check runs before any
+            test work, so nothing is written.
     """
     for directory in _run_directories(CONFIG):
         try:
             row = _test_run(CONFIG, directory, gifs, judge)
-        except (CardError, NoReferenceLabelerError) as error:
+        except (CardError, NoReferenceLabelerError, TransferError) as error:
             raise SystemExit(f"error: {error}") from error
         print(f"{directory.parent.name}/{directory.name}: test exit_rate {row['exit_rate']:.2f}")
 
@@ -172,22 +194,30 @@ def _test_run(
     CONFIG: Configuration, directory: Path, gifs: int, judge: Path | None
 ) -> dict[str, object]:
     saved = yaml.safe_load((directory / "config.yaml").read_text(encoding="utf-8"))
-    config = _run_config(saved, CONFIG.eval_seed_base)
+    trained = _run_config(saved, CONFIG.eval_seed_base)
+    config, transfer = trained, None
+    if CONFIG.bundle is not None or CONFIG.shuffle_embeddings_seed is not None:
+        config, transfer = _transferred_config(CONFIG, saved, judge)
+    out = directory / "transfer" / transfer["name"] if transfer else directory
     run = make_run_environment(config)
     try:
+        if transfer and CONFIG.bundle is not None:
+            _check_same_spaces(trained, run, CONFIG.bundle)
         policy = _load_policy(config, run, directory)
         # Built first: a card that does not fit the run fails before any test work.
         judge_recorder = JudgeRecorder(config, run, policy, judge) if judge is not None else None
+        out.mkdir(parents=True, exist_ok=True)
         row = policy.evaluate(CONFIG.final_eval_episodes)
         recorder = GifRecorder(config, run, policy, run_method(saved))
         # A fixed layout evaluates fewer episodes than asked: GIFs replay evaluated ones only.
-        records = recorder.write(directory, min(gifs, row["episodes"]))
+        records = recorder.write(out, min(gifs, row["episodes"]))
         if judge_recorder is not None:
-            judge_recorder.write(directory, CONFIG.final_eval_episodes)
+            judge_recorder.write(out, CONFIG.final_eval_episodes)
     finally:
         run.env.close()
 
     test = {
+        **({"transfer": transfer} if transfer else {}),
         "settings": {
             "algorithm": config.algorithm,
             "layout": config.layout,
@@ -201,19 +231,116 @@ def _test_run(
     fixed = fixed_layout(config) if config.algorithm == "ppo" else config.layout == "fixed"
     if fixed:
         test["settings"]["note"] = FIXED_LAYOUT_NOTES[config.algorithm]
-    (directory / "test.json").write_text(json.dumps(test, indent=2) + "\n", encoding="utf-8")
+    (out / "test.json").write_text(json.dumps(test, indent=2) + "\n", encoding="utf-8")
     return row
 
 
-def _run_config(saved: dict[str, Any], seed_base: int) -> Configuration:
-    """The run's own settings, rebuilt from its ``config.yaml``, testing from ``seed_base``."""
+def _run_config(
+    saved: dict[str, Any], seed_base: int, overrides: dict[str, Any] | None = None
+) -> Configuration:
+    """The run's own settings, rebuilt from its ``config.yaml``, testing from ``seed_base``.
+
+    ``overrides`` replace saved settings (the transferred machine of ``test-rl --bundle``).
+    """
     if "use_rm" in saved:
         raise ValueError("This run predates reward_source (its config.yaml has use_rm); retrain it")
     names = {item.name for item in fields(Configuration)}
     settings = {key: value for key, value in saved.items() if key in names}
-    config = Configuration(**{**settings, "yaml_config_name": None})
+    config = Configuration(**{**settings, **(overrides or {}), "yaml_config_name": None})
     config.eval_seed_base = seed_base
     return config
+
+
+def _transferred_config(
+    CONFIG: Configuration, saved: dict[str, Any], judge: Path | None
+) -> tuple[Configuration, dict[str, Any]]:
+    """The run's config playing ``CONFIG.bundle``'s machine and/or with shuffled embeddings.
+
+    ``--bundle`` takes the card's setup (``env_kwargs``) and drops ``task_bundles``; the card is
+    how the test knows which env the machine belongs to, so ``--judge`` is required with it.
+
+    Returns:
+        The config to test with and the ``transfer`` record of ``test.json`` (its ``name`` is
+        the folder under ``<run>/transfer/``).
+
+    Raises:
+        TransferError: If ``--bundle`` comes without ``--judge`` or the run has no machine.
+    """
+    seed = CONFIG.shuffle_embeddings_seed
+    overrides: dict[str, Any] = {"shuffle_embeddings_seed": seed}
+    parts, card_id = [], None
+    if saved.get("reward_source", "env") == "env":
+        raise TransferError("the run has no Reward Machine (reward_source: env): nothing to swap")
+    if CONFIG.bundle is not None:
+        if judge is None:
+            raise TransferError(
+                "--bundle needs --judge: the card names the setup the machine runs in"
+            )
+        _, card = load_card(judge)
+        card_id = card.id
+        overrides |= {
+            "task_bundles": [],
+            "task_draw": None,
+            "bundle": CONFIG.bundle,
+            "labeling_bundle": None,
+            "env_kwargs": dict(card.env["env_kwargs"]),
+        }
+        parts.append(f"{CONFIG.bundle.parent.name}-{CONFIG.bundle.name}")
+    config = _run_config(saved, CONFIG.eval_seed_base, overrides)
+    if seed is not None:
+        parts.append(f"shuffled-s{seed}")
+    bundles = (
+        [config.bundle] if config.bundle else [entry["bundle"] for entry in config.task_bundles]
+    )
+    record = {
+        "name": "-".join(parts),
+        "trained_on": saved.get("bundle") or [entry["bundle"] for entry in saved["task_bundles"]],
+        "tested_bundle": str(CONFIG.bundle) if CONFIG.bundle else None,
+        "card": card_id,
+        "shuffle_embeddings_seed": seed,
+        # state -> the state whose embedding it was given, per tested bundle
+        "shuffled_embeddings": {
+            Path(bundle).name: embedding_permutation(load_bundle(bundle).embeddings, seed)
+            for bundle in bundles
+        }
+        if seed is not None
+        else None,
+    }
+    return config, record
+
+
+def _check_same_spaces(trained: Configuration, tested: RunEnvironment, bundle: Path) -> None:
+    """Refuse a bundle whose observations or actions differ from what the policy trained on.
+
+    The RM embedding size is part of the observation, so a bundle embedded with another model
+    fails here, in words, instead of as a weight-shape error.
+    """
+    reference = make_run_environment(trained)
+    try:
+        for name in ("observation_space", "action_space"):
+            seen, wanted = getattr(tested.env, name), getattr(reference.env, name)
+            if seen != wanted:
+                raise TransferError(
+                    f"{bundle} does not fit the policy ({name}): {_space_difference(wanted, seen)}"
+                )
+    finally:
+        reference.env.close()
+
+
+def _space_difference(trained: spaces.Space, tested: spaces.Space) -> str:
+    """What differs between two spaces, per key for a dict observation."""
+    if not (isinstance(trained, spaces.Dict) and isinstance(tested, spaces.Dict)):
+        return f"the policy trained on {trained}, the bundle gives {tested}"
+    return "; ".join(
+        f"{key}: the policy trained on {_shape(trained.spaces.get(key))}, "
+        f"the bundle gives {_shape(tested.spaces.get(key))}"
+        for key in sorted({*trained.spaces, *tested.spaces})
+        if trained.spaces.get(key) != tested.spaces.get(key)
+    )
+
+
+def _shape(space: spaces.Space | None) -> object:
+    return "missing" if space is None else getattr(space, "shape", space)
 
 
 def _load_policy(config: Configuration, run: RunEnvironment, directory: Path) -> Policy:
@@ -465,6 +592,7 @@ class JudgeRecorder:
             **machine_header(self.machine, start_labels or None),
             **judge_means(episodes),
             "activated_share": activated_share(episodes),
+            "rule_pass_rates": rule_pass_rates(episodes),
             "per_episode": episodes,
         }
         write_json(directory / "judge.json", summary, indent=2)
@@ -532,6 +660,14 @@ def activated_share(episodes: list[dict[str, Any]]) -> list[float | None]:
     return [
         None if None in flags else fmean(flags)
         for flags in zip(*(episode["activated"] for episode in episodes), strict=True)
+    ]
+
+
+def rule_pass_rates(episodes: list[dict[str, Any]]) -> list[float]:
+    """Per clause of the card, the share of episodes where it holds (same order as ``expect``)."""
+    return [
+        fmean(verdict == "holds" for verdict in verdicts)
+        for verdicts in zip(*(episode["verdicts"] for episode in episodes), strict=True)
     ]
 
 

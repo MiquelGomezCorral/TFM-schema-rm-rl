@@ -54,6 +54,7 @@ ALGORITHMS = ("dqn", "ppo")
 SUCCESS_MODES = ("env", "rm")
 REWARD_SOURCES = ("rm", "env", "both")
 TASK_BUNDLE_KEYS = ("bundle", "labeling_bundle", "env_kwargs", "success")
+TASK_DRAWS = ("alternate",)
 PPO_POSITIVE = (
     "ppo_num_envs",
     "ppo_num_steps",
@@ -79,6 +80,13 @@ def _is_finite_number(value: object) -> bool:
     return (
         isinstance(value, int | float) and not isinstance(value, bool) and abs(value) < float("inf")
     )
+
+
+def _check_task_draw(draw: str | None, has_tasks: bool) -> None:
+    if draw is not None and draw not in TASK_DRAWS:
+        raise ValueError(f"task_draw must be one of {', '.join(TASK_DRAWS)} or null")
+    if draw is not None and not has_tasks:
+        raise ValueError("task_draw needs task_bundles")
 
 
 def _check_env_kwargs(value: object, where: str) -> None:
@@ -294,6 +302,15 @@ class Configuration:
     # Several tasks in one run: entries of ``bundle`` plus optional ``labeling_bundle``,
     # ``env_kwargs`` and ``success``. Mutually exclusive with ``bundle``.
     task_bundles: list[dict] = field(default_factory=list)
+    # How a multi-task run picks each episode's task: None draws it from a seeded RNG, ``alternate``
+    # cycles the ``task_bundles`` in order, each training env starting one entry after the last.
+    task_draw: str | None = None
+    # Start a PPO run from a finished run's weights: that run's folder (it holds ``agent.pt``).
+    # The optimizer, schedules and counters start fresh; PPO keeps no normalization statistics.
+    init_from: Path | None = None
+    # Evaluation only (test-rl --shuffle-embeddings): permute the state embeddings of the machine
+    # among its states with this seed. Not a training setting, so a run's config.yaml omits it.
+    shuffle_embeddings_seed: int | None = None
 
     total_timesteps: int = 300_000
     learning_rate: float = 1e-4
@@ -427,6 +444,7 @@ class Configuration:
             raise ValueError("--output must be a file name without a directory")
         self.bundle = _optional_path(self.bundle)
         self.labeling_bundle = _optional_path(self.labeling_bundle)
+        self.init_from = _optional_path(self.init_from)
         self.task_manifest = _optional_path(self.task_manifest)
         self.rm_file = _optional_path(self.rm_file)
         self.reference = _optional_path(self.reference)
@@ -467,6 +485,7 @@ class Configuration:
         self.task_bundles = [
             _task_bundle(entry, index) for index, entry in enumerate(self.task_bundles)
         ]
+        _check_task_draw(self.task_draw, bool(self.task_bundles))
         self._validate_ppo()
 
     def _validate_ppo(self) -> None:

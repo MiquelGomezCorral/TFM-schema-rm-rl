@@ -128,6 +128,14 @@ Plotly.relayout(gd, update);
 # ======================================================================================
 
 
+def overall_rows(frame: pd.DataFrame) -> pd.DataFrame:
+    """The overall rows of an ``eval.csv``, as ``scripts.aggregate_suite.eval_rows`` keeps them.
+
+    A multi-task run also has per-task rows (a ``task`` value); runs from before it have no column.
+    """
+    return frame[frame["task"].isna()] if "task" in frame else frame
+
+
 def load_runs() -> list[dict]:
     """Every run folder of the diagnostic suites, with its CSVs and its final summary."""
     runs = []
@@ -148,7 +156,7 @@ def load_runs() -> list[dict]:
                     "seed": int(folder.name.split("-")[0].removeprefix("seed")),
                     "folder": folder,
                     "final": final,
-                    "eval": pd.read_csv(folder / "eval.csv"),
+                    "eval": overall_rows(pd.read_csv(folder / "eval.csv")),
                     "train": pd.read_csv(folder / "train.csv"),
                     "episodes": pd.read_csv(folder / "episodes.csv"),
                 }

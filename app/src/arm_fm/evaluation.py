@@ -23,6 +23,18 @@ from .artifacts import ArtifactBundle
 
 EMBEDDING_MODEL = "Qwen3-30B-A3B-Instruct-2507"
 SERVER_EMBEDDING_EXTRACTION = "server-mean-pooling-last-layer"
+# The settings that make two bundles' embeddings one space; transfer tools compare bundles by them.
+EMBEDDING_IDENTITY = (
+    "model",
+    "model_revision",
+    "tokenizer_revision",
+    "extraction",
+    "normalize",
+    "device",
+    "dimension",
+    "endpoint",
+    "context",
+)
 _JUDGE_SYSTEM_PROMPT = (
     "You are an independent ARM-FM artifact judge. "
     "Return JSON with rm_correct, labeling_correct, and reason."
