@@ -1,10 +1,13 @@
 """Service room: a fixed MiniGrid room whose events come from a seeded schedule.
 
-``gym.make("MiniGrid-ServiceRoom-v0", siren=..., box=..., require=[...], max_steps=200)``.
+``gym.make("MiniGrid-ServiceRoom-v0", siren=..., box=..., carry=..., require=[...], max_steps=200)``.
 The reset seed sets only the event schedule, so one seed always plays the same events.
+With ``carry`` the agent starts holding the box, which falls at a step drawn from the seed. It
+cannot put the box down before that fall, and the fall turns the agent to face the fallen box.
 
 The rules (schedule, step order, reward) are in ``environment.md`` and the code-side facts in
-``environment-code.md``, both in ``experiments/benchmark/envs/service-room/``.
+``environment-code.md``, both in ``experiments/benchmark/envs/service-room/``
+(carry: ``experiments/benchmark/envs/service-room-carry/``).
 
 Import nothing from ``src.arm_fm``: ``environments.py`` imports this module to register the id,
 and the scripted policy has its own small search instead of the one in ``probe.py``.
@@ -26,6 +29,9 @@ from minigrid.utils.rendering import fill_coords, point_in_rect
 ENV_ID = "MiniGrid-ServiceRoom-v0"
 SIZE = 8
 FIRST_RING_LAST = 4  # the first ring comes at a step from 1 to this
+# With ``carry`` the first fall comes at a step from the first to the last: after the agent has
+# moved, and long before it can reach the exit (10 moves away), so every episode meets it.
+CARRY_FALL_FIRST, CARRY_FALL_LAST = 2, 8
 START, START_DIR = (1, 1), 0  # top-left corner, facing right
 BOX_POS = (4, 2)
 SWITCH_POS = (0, 5)  # in the west wall; the agent toggles it from (1, 5) facing left
@@ -71,13 +77,15 @@ class ServiceRoomEnv(MiniGridEnv):
     A plain room (no siren, no box, nothing required) is the default.
 
     Raises:
-        ValueError: If ``require`` names an unknown condition, or asks for the box without it.
+        ValueError: If ``require`` names an unknown condition, or asks for the box without it,
+            or ``carry`` is set without ``box``.
     """
 
     def __init__(
         self,
         siren: bool = False,
         box: bool = False,
+        carry: bool = False,
         require: Sequence[str] = (),
         max_steps: int = 200,
         **kwargs,
@@ -87,6 +95,8 @@ class ServiceRoomEnv(MiniGridEnv):
             raise ValueError(f"unknown require {sorted(unknown)}; choose from {REQUIREMENTS}")
         if "holding_box" in require and not box:
             raise ValueError("require 'holding_box' needs box=True")
+        if carry and not box:
+            raise ValueError("carry=True needs box=True")
         super().__init__(
             mission_space=MissionSpace(mission_func=self._gen_mission),
             width=SIZE,
@@ -94,7 +104,7 @@ class ServiceRoomEnv(MiniGridEnv):
             max_steps=max_steps,
             **kwargs,
         )
-        self.siren, self.box, self.require = siren, box, tuple(require)
+        self.siren, self.box, self.carry, self.require = siren, box, carry, tuple(require)
         self.siren_ringing = False
         self.events_this_step: list[str] = []
         self.event_counts: dict[str, dict[str, int]] = {}
@@ -112,7 +122,7 @@ class ServiceRoomEnv(MiniGridEnv):
         self.grid.set(*EXIT_POS, Goal())
         if self.siren:
             self.grid.set(*SWITCH_POS, Switch())
-        if self.box:
+        if self.box and not self.carry:  # with carry the box starts in the hands
             self.grid.set(*BOX_POS, ClosedBox(BOX_COLOR))
         self.agent_pos, self.agent_dir = START, START_DIR
 
@@ -129,6 +139,11 @@ class ServiceRoomEnv(MiniGridEnv):
         # the info reports the seed used, so any episode can be replayed from it.
         event_seed = int(self.np_random.integers(2**31)) if seed is None else seed
         self._plan_events(np.random.default_rng(event_seed))
+        if self.carry:  # the start counts as the first pickup, at step 0
+            self.carrying = ClosedBox(BOX_COLOR)
+            self.carrying.cur_pos = np.array([-1, -1])
+            self._schedule_fall()
+            obs = self.gen_obs()
         return obs, {"events": [], "event_seed": event_seed}
 
     def _plan_events(self, rng: np.random.Generator) -> None:
@@ -138,6 +153,10 @@ class ServiceRoomEnv(MiniGridEnv):
         has_second_ring = rng.random() < 0.5
         fall_delays = [int(rng.integers(2, 7)), int(rng.integers(2, 7))]
         has_second_fall = rng.random() < 0.5
+        # Drawn last, so the draws above are the same with or without ``carry``.
+        carry_fall = int(rng.integers(CARRY_FALL_FIRST, CARRY_FALL_LAST + 1))
+        if self.carry:
+            fall_delays[0] = carry_fall  # delay after the start, which counts as the first pickup
 
         rings = [first_ring, second_ring] if has_second_ring else [first_ring]
         falls = fall_delays[: 2 if has_second_fall else 1]
@@ -154,6 +173,8 @@ class ServiceRoomEnv(MiniGridEnv):
     def step(self, action):
         self.events_this_step = []
         carried = self.carrying
+        if self.carry and action == Actions.drop and self._first_fall_pending():
+            action = Actions.done  # no dodging the first fall by putting the box down
         obs, reward, terminated, truncated, _ = super().step(action)
         if carried is None and self.carrying is not None:  # the box is the only pickable object
             self._schedule_fall()
@@ -179,6 +200,10 @@ class ServiceRoomEnv(MiniGridEnv):
         if scheduled < len(self._fall_delays):
             self._fall_steps.append(self.step_count + self._fall_delays[scheduled])
 
+    def _first_fall_pending(self) -> bool:
+        falls = self.event_counts["fall"]
+        return falls["fired"] + falls["skipped"] == 0
+
     def _fire_due_events(self) -> None:
         if self.step_count in self._ring_steps:
             self._ring()
@@ -202,6 +227,9 @@ class ServiceRoomEnv(MiniGridEnv):
             return
         self.grid.set(*landing, self.carrying)
         self.carrying.cur_pos = np.array(landing)
+        if self.carry:  # face the box, so the very next move can pick it up
+            offset = (landing[0] - self.agent_pos[0], landing[1] - self.agent_pos[1])
+            self.agent_dir = DIRECTIONS.index(offset)
         self.carrying = None
         counts["fired"] += 1
         self.events_this_step.append("fall")
