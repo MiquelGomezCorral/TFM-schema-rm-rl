@@ -5,7 +5,7 @@ Addition to `environment.md`; read both. Facts live there; this file says where 
 ## Source and runtime
 
 - Source: `app/src/arm_fm/service_room.py`, a MiniGrid environment written for this project on the Farama base <https://github.com/Farama-Foundation/Minigrid>. Importing `src.arm_fm.environments` registers it.
-- Gymnasium ID: `MiniGrid-ServiceRoom-v0`. Keyword arguments: `siren` (bool), `box` (bool), `require` (list from `siren_silent`, `holding_box`), `max_steps` (int, default 200). All defaults give the plain room: no siren, no box, nothing required.
+- Gymnasium ID: `MiniGrid-ServiceRoom-v0`. Keyword arguments: `siren` (bool), `box` (bool), `carry` (bool, starts holding the box; see `../service-room-carry/`), `require` (list from `siren_silent`, `holding_box`), `max_steps` (int, default 200). All defaults give the plain room: no siren, no box, nothing required.
 - Runtime: `minigrid==3.1.0`, `gymnasium==1.3.0`, pinned in `requirements.txt`.
 - `reset(seed=s)` seeds only the event schedule. Without a seed it draws one from the environment's own random stream. Either way `reset` returns the seed it used as `info["event_seed"]`, beside `info["events"]`. Trace records store it as `event_seed`, so an unseeded episode replays with `reset(seed=info["event_seed"])`.
 - `[code: file:function]` is `service_room.py` unless a MiniGrid path is given. `[run: script, check, data]` names a check of `experiments/benchmark/scripts/check_service_room.py` (written `check_service_room.py` in the tags) on the real environment, event seeds 1 to 50 over four setups (siren only, box only, both, neither).

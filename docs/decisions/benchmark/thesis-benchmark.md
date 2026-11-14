@@ -62,11 +62,22 @@ thing whichever arm produced it.
   `experiments/benchmark/` are committed; run folders, logs, checkpoints, Plotly HTML and GIFs are not.
 - **Event room.** `MiniGrid-ServiceRoom-v0` has fixed geometry; its seeded event schedule (the siren
   and the falling box) is its only randomness.
+- **Box-carry cards.** Trained agents never picked the box up on the box cards, so the box rule
+  never triggered and the card passed by doing nothing. The environment now provides the pickup:
+  the box-fall cards (`tpl-chain-response-{1,2,3}-{goal,nogoal}`, `cx-box`) also exist as carry
+  versions (`<id>-carry`, suite `box-carry`) in `MiniGrid-ServiceRoom-v0` with `carry=True`, where the
+  agent starts holding the box and it falls at a seeded step from 2 to 8, whatever the agent does: the
+  drop action does nothing before that fall, and the fall turns the agent to face the box.
+  The machine is not asked to reward the first pickup; the environment enforces it. The carry cards
+  keep the wording, clauses and `train` flags of their originals, and the originals stay as they are.
 
 ## Protected invariants
 
 - RM arms never train on the environment reward, and the no-RM arm never uses an RM.
 - The judge never reads a pipeline's labeling or RM and never calls `nl2ltl`.
+- `carry` defaults to off: the original service-room cards and runs behave exactly as before, and a
+  carry card's clauses never ask for the first pickup of the box. A carry episode never skips its first
+  fall by dropping the box.
 - A pipeline failure stays "no data": no arm gets a human fix or retries the others do not get; both
   get the same attempt limit (up to 10).
 - Both pipelines receive the same card wording, environment file, generator and critic.
@@ -110,3 +121,5 @@ and a restart is easier to trust.
   listed them as planned).
 - 2026-11-12: Labeling repair rule added with the `repair-labeling` command (testing program slice
   `labeling-repair`).
+- 2026-11-14: Box-carry cards added (user request: enforce the pickup in the environment, not in the
+  machine; `carry` option, `experiments/benchmark/box-carry/`, `envs/service-room-carry/`).

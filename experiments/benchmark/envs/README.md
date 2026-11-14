@@ -12,6 +12,7 @@ Rule: `environment.md` holds facts; implementation is in `environment-code.md`.
 | `minigrid-blocked-unlock-pickup` | `MiniGrid-BlockedUnlockPickup-v0` | |
 | `minigrid-key-corridor` | `MiniGrid-KeyCorridorS6R3-v0` | |
 | `service-room` | `MiniGrid-ServiceRoom-v0` | `siren_ringing`, `switch_toggled`, `holding_box`, `box_fell`, `at_exit` |
+| `service-room-carry` | `MiniGrid-ServiceRoom-v0` with `carry=True` | the same five; the agent starts holding the box (cards in `../box-carry`) |
 
 Propositions of the four MiniGrid envs live in each env's `environment.md`, section `## Propositions`; the service-room row lists them here because its folder is added by S3.
 
