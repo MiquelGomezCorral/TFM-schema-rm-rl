@@ -1,0 +1,62 @@
+suite 'complex': 6 cards, 26/26 plans ok, 0 cards with problems, 0 not run
+
+cx-sequence: Find the key, pick it up, open the locked door, go into the room, and then pick up the ball.
+  ['Precedence', ['key_found', 'has_matching_key'], 'hard']  (((~has_matching_key) U key_found) | (G (~has_matching_key)))
+  ['Precedence', ['has_matching_key', 'target_door_open'], 'hard']  (((~target_door_open) U has_matching_key) | (G (~target_door_open)))
+  ['Precedence', ['target_door_open', 'target_room_entered'], 'hard']  (((~target_room_entered) U target_door_open) | (G (~target_room_entered)))
+  ['Precedence', ['target_room_entered', 'target_picked_up'], 'hard']  (((~target_picked_up) U target_room_entered) | (G (~target_picked_up)))
+  ['Existence', ['target_picked_up'], 'hard']  (F target_picked_up)
+  solve-s1: ok  holds holds holds holds holds
+  wrong-0-s1: ok  holds holds holds holds open_at_end
+  wrong-1-s1: ok  holds holds holds holds open_at_end
+
+cx-rules-only: Stay off the goal. Try not to lose the key before the door is open, and if you pick up the key, try to open the door afterwards.
+  ['Absence', ['at_goal'], 'hard']  (~(F at_goal))
+  ['Absence', ['key_lost'], 'soft']  (~(F key_lost))
+  ['Response', ['has_key', 'door_open'], 'soft']  (G (has_key -> (F door_open)))
+  solve-s1: ok  holds holds holds
+  wrong-0-s1: ok  broken@19 holds holds
+  wrong-1-s1: ok  holds broken@9 holds
+  wrong-2-s1: ok  holds holds open_at_end
+
+cx-goal-one-rule: Open the door and then pick up the box in the other room, and try not to lose the key before the door is open.
+  ['Precedence', ['door_open', 'target_picked_up'], 'hard']  (((~target_picked_up) U door_open) | (G (~target_picked_up)))
+  ['Existence', ['target_picked_up'], 'hard']  (F target_picked_up)
+  ['Absence', ['key_lost'], 'soft']  (~(F key_lost))
+  solve-s1: ok  holds holds holds
+  wrong-0-s1: ok  holds holds broken@4
+  wrong-1-s1: ok  holds open_at_end holds
+
+cx-goal-many-rules: Move the ball away from the door before you take the key. Try not to drop the key before the door is open, and once you hold the key, try to open the door. Then pick up the box in the other room.
+  ['Precedence', ['blocker_moved', 'has_door_key'], 'hard']  (((~has_door_key) U blocker_moved) | (G (~has_door_key)))
+  ['Absence', ['key_lost'], 'soft']  (~(F key_lost))
+  ['Response', ['has_door_key', 'door_open'], 'soft']  (G (has_door_key -> (F door_open)))
+  ['Precedence', ['door_open', 'target_picked_up'], 'hard']  (((~target_picked_up) U door_open) | (G (~target_picked_up)))
+  ['Existence', ['target_picked_up'], 'hard']  (F target_picked_up)
+  solve-s1: ok  holds holds holds holds holds
+  wrong-0-s1: ok  broken@3 broken@4 holds holds holds
+  wrong-1-s1: ok  holds broken@14 holds holds holds
+  wrong-2-s1: ok  holds holds open_at_end holds open_at_end
+
+cx-siren: Go to the exit, and whenever the siren rings, turn it off.
+  ['Response', ['siren_ringing', 'switch_toggled'], 'hard']  (G (siren_ringing -> (F switch_toggled)))
+  ['Existence', ['at_exit'], 'hard']  (F at_exit)
+  solve-s1: ok  holds holds
+  wrong-0-s1: ok  open_at_end holds
+  solve-s2: ok  holds holds
+  wrong-0-s2: ok  open_at_end holds
+  solve-s3: ok  holds holds
+  wrong-0-s3: ok  open_at_end holds
+
+cx-box: Go to the exit, and whenever the box falls, pick it up again.
+  ['Response', ['box_fell', 'holding_box'], 'hard']  (G (box_fell -> (F holding_box)))
+  ['Existence', ['at_exit'], 'hard']  (F at_exit)
+  solve-s1: ok  holds holds
+  wrong-0-s1: ok  open_at_end holds
+  solve-s2: ok  holds holds
+  wrong-0-s2: ok  open_at_end holds
+  solve-s3: ok  holds holds
+  wrong-0-s3: ok  open_at_end holds
+
+ChainResponse cards to review: none
+summary: outputs/wave-tests/s4/complex/summary.json

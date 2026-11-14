@@ -8,9 +8,10 @@ hard clause open). The suite's run folders are redirected into the scratch folde
 import json
 import shutil
 import sys
+from pathlib import Path
 
 import yaml
-from _common import REVIEW, ROOT, save, work_dir
+from _common import ROOT, save, work_dir
 
 from scripts.aggregate_suite import aggregate_suite
 from src.config import Configuration
@@ -19,9 +20,10 @@ from src.config import Configuration
 run_suite = sys.modules["scripts.run_suite"]
 
 RUN_FILES = ("summary.json", "eval.csv", "resources.json")
+EVIDENCE = Path(__file__).resolve().parents[1] / "evidence"
 WRITER_RUNS = {  # arm -> (real finished run folder, judge file the aggregator must read)
-    "no-rm": (ROOT / "outputs/runs/li-l54-dqn", REVIEW / "aggregation/judge.json"),
-    "farm": (ROOT / "outputs/runs/li2-l54-dqn", None),
+    "no-rm": (EVIDENCE / "runs/li-l54-dqn", EVIDENCE / "judge-no-rm.json"),
+    "farm": (EVIDENCE / "runs/li2-l54-dqn", EVIDENCE / "judge-farm.json"),
 }
 
 work = work_dir("f1")
