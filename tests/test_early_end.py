@@ -5,7 +5,13 @@ Run with ``PYTHONPATH=app python -m unittest tests.test_early_end``.
 
 import unittest
 
-from src.benchmark.early_end import episode_cannot_start, machine_too_simple, start_limit
+from src.benchmark.early_end import (
+    episode_cannot_start,
+    machine_header,
+    machine_too_simple,
+    start_limit,
+    unknown_propositions,
+)
 from src.compiler.rm_format import parse_paper_reward_machine
 
 
@@ -69,6 +75,16 @@ class StartLabelsTest(unittest.TestCase):
         start_final = machine("u0", "(u0, a) -> u1\n(u0, else) -> u0\n(u1, else) -> u1", "u0, u1")
         self.assertIn("start state u0 is final", machine_too_simple(start_final))
         self.assertIn("start state u0 is final", machine_too_simple(start_final, {1: {"a": False}}))
+
+    def test_a_proposition_absent_from_the_labels_is_unknown_and_its_guard_does_not_fire(self):
+        task = machine("u1", "(u0, !key_lost) -> u1\n(u0, else) -> u0\n(u1, else) -> u1", "u0, u1")
+        labels = {1: {"other": True}}
+        self.assertIsNone(machine_too_simple(task, labels))  # neither key_lost nor !key_lost
+        self.assertEqual(unknown_propositions(task, labels), ["key_lost"])
+        header = machine_header(task, labels)
+        self.assertFalse(header["machine_too_simple"])
+        self.assertEqual(header["machine_too_simple_unknown"], ["key_lost"])
+        self.assertEqual(unknown_propositions(task, {1: {"key_lost": True}}), [])
 
     def test_a_rejecting_state_stops_the_walk(self):
         text = (
