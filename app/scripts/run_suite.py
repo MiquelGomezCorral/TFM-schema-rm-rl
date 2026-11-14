@@ -148,8 +148,9 @@ def load_suite(path: Path) -> dict:
     ids, in file order, replace the path, so ``spec["only"]`` is a list after this call.
 
     Raises:
-        ValueError: If a key, arm or learner entry is missing or unknown, or ``only`` is a path
-            that is not a card file with a non-empty ``cards`` list.
+        ValueError: If a key, arm or learner entry is missing or unknown, ``reward_source`` is
+            not ``rm`` or ``both``, or ``only`` is a path that is not a card file with a
+            non-empty ``cards`` list.
     """
     spec = yaml.safe_load(path.read_text(encoding="utf-8"))
     missing = [key for key in SUITE_KEYS if key not in spec]
@@ -158,6 +159,12 @@ def load_suite(path: Path) -> dict:
     bad_arms = [arm for arm in spec["arms"] if arm not in ARMS]
     if bad_arms:
         raise ValueError(f"{path}: unknown arms {', '.join(bad_arms)}; use {', '.join(ARMS)}")
+    source = spec.get("reward_source", "rm")
+    if source not in ("rm", "both"):
+        raise ValueError(
+            f"{path}: reward_source {source!r} is not allowed; bundle arms take rm or both "
+            "(no-RM arms always train on the env reward)"
+        )
     for name, learner in spec["learners"].items():
         absent = [key for key in LEARNER_KEYS if key not in learner]
         if absent:
@@ -405,7 +412,8 @@ def run_config(run: Run, spec: dict) -> dict:
             time_limit_penalty=0.0,
         )
     else:
-        config.update(reward_source="rm", bundle=str(run.bundle), time_limit_penalty=0.0)
+        source = spec.get("reward_source", "rm")  # "both" adds the env reward to the RM reward
+        config.update(reward_source=source, bundle=str(run.bundle), time_limit_penalty=0.0)
     return config
 
 

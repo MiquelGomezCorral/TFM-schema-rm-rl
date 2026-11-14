@@ -74,12 +74,17 @@ class ServiceRoomEnv(MiniGridEnv):
     """The fixed room with a seeded siren and falling box.
 
     The state that labeling reads is listed under ``## Labeling API`` in ``environment-code.md``.
-    A plain room (no siren, no box, nothing required) is the default.
+    A plain room (no siren, no box, nothing required) is the default. The class attributes
+    ``size`` and ``switch_pos`` and the instance flag ``face_fallen`` are the hooks the shop
+    (``shop.py``) overrides.
 
     Raises:
         ValueError: If ``require`` names an unknown condition, or asks for the box without it,
             or ``carry`` is set without ``box``.
     """
+
+    size = SIZE
+    switch_pos = SWITCH_POS
 
     def __init__(
         self,
@@ -99,12 +104,13 @@ class ServiceRoomEnv(MiniGridEnv):
             raise ValueError("carry=True needs box=True")
         super().__init__(
             mission_space=MissionSpace(mission_func=self._gen_mission),
-            width=SIZE,
-            height=SIZE,
+            width=self.size,
+            height=self.size,
             max_steps=max_steps,
             **kwargs,
         )
         self.siren, self.box, self.carry, self.require = siren, box, carry, tuple(require)
+        self.face_fallen = carry  # a fall turns the agent to face the fallen item
         self.siren_ringing = False
         self.events_this_step: list[str] = []
         self.event_counts: dict[str, dict[str, int]] = {}
@@ -121,7 +127,7 @@ class ServiceRoomEnv(MiniGridEnv):
         self.grid.wall_rect(0, 0, width, height)
         self.grid.set(*EXIT_POS, Goal())
         if self.siren:
-            self.grid.set(*SWITCH_POS, Switch())
+            self.grid.set(*self.switch_pos, Switch())
         if self.box and not self.carry:  # with carry the box starts in the hands
             self.grid.set(*BOX_POS, ClosedBox(BOX_COLOR))
         self.agent_pos, self.agent_dir = START, START_DIR
@@ -192,7 +198,7 @@ class ServiceRoomEnv(MiniGridEnv):
 
     def _set_siren(self, ringing: bool) -> None:
         self.siren_ringing = ringing
-        self.grid.get(*SWITCH_POS).color = RINGING_COLOR if ringing else SILENT_COLOR
+        self.grid.get(*self.switch_pos).color = RINGING_COLOR if ringing else SILENT_COLOR
 
     def _schedule_fall(self) -> None:
         """The n-th pickup of the box schedules the n-th planned fall."""
@@ -227,7 +233,7 @@ class ServiceRoomEnv(MiniGridEnv):
             return
         self.grid.set(*landing, self.carrying)
         self.carrying.cur_pos = np.array(landing)
-        if self.carry:  # face the box, so the very next move can pick it up
+        if self.face_fallen:  # face the item, so the very next move can pick it up
             offset = (landing[0] - self.agent_pos[0], landing[1] - self.agent_pos[1])
             self.agent_dir = DIRECTIONS.index(offset)
         self.carrying = None
@@ -351,7 +357,8 @@ def _plan(base: ServiceRoomEnv, reached: Callable[[int, int, int], bool]) -> lis
         (x, y, direction), actions = queue.popleft()
         if reached(x, y, direction):
             return actions
-        if (x, y) == EXIT_POS:  # stepping onto the exit ends the episode, so no path goes through
+        cell = base.grid.get(x, y)
+        if cell is not None and cell.type == "goal":  # stepping onto it ends the episode
             continue
         dx, dy = DIRECTIONS[direction]
         moves = [

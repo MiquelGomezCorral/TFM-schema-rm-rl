@@ -183,6 +183,9 @@ class Configuration:
     # (content failure). A provider outage uses none: the round runs again, this many times in a
     # row at most, and then the run ends as a provider error.
     TAGGING_ATTEMPTS: ClassVar[int] = 3
+    # A machine of more states is described in batches of at most this many states per request
+    # (the small generator model miscounts a longer list; every bundle so far has 20 or fewer).
+    TAGGING_BATCH_STATES: ClassVar[int] = 20
     OUTAGE_RETRIES: ClassVar[int] = 10
     ATTEMPT_LIMITS: ClassVar[range] = range(1, 11)
     # The only models that generate or repair benchmark labeling (the thesis' small pair).
