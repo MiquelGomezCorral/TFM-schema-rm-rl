@@ -120,6 +120,17 @@ thing whichever arm produced it.
   drop action does nothing before that fall, and the fall turns the agent to face the box.
   The machine is not asked to reward the first pickup; the environment enforces it. The carry cards
   keep the wording, clauses and `train` flags of their originals, and the originals stay as they are.
+- **Forced cards.** Seed-1 judging with the empty-pass check showed two trained cards whose rule never
+  triggered, so doing nothing passed: `tpl-response-1-nogoal` (`Response(blocker_moved, has_door_key)`,
+  no-RM judged 1.00, non-empty 0.00) and `tpl-responded-existence-1-nogoal`
+  (`RespondedExistence(has_door_key, door_open)`, no-RM judged 1.00, non-empty 0.00). Both also exist as
+  forced versions (`<id>-forced`, suite `forced-start`; the name is not the card field `forced`)
+  whose environment starts the episode with the trigger already true: `MiniGrid-BlockedUnlockPickup-Cleared-v0` (the ball starts away from the door, so
+  `blocker_moved` is true at the first step) and `MiniGrid-UnlockPickup-KeyHeld-v0` (the agent starts
+  holding the matching key, and `drop` does nothing on the first step). The environment enforces the
+  trigger, not the machine; the forced cards keep the wording, clause, paraphrases and `train` flags of
+  their originals, and the originals stay as they are. Only cards whose rule seed 1 showed untested get a
+  forced version.
 
 ## Protected invariants
 
@@ -130,6 +141,10 @@ thing whichever arm produced it.
 - `carry` defaults to off: the original service-room cards and runs behave exactly as before, and a
   carry card's clauses never ask for the first pickup of the box. A carry episode never skips its first
   fall by dropping the box.
+- The forced starts live in their own gym ids: `MiniGrid-BlockedUnlockPickup-v0` and
+  `MiniGrid-UnlockPickup-v0` build the same envs as before, so the original cards and runs are
+  unchanged. A forced episode never loses its trigger at the first step: the ball starts away from the
+  door and the key starts in the hands, and `drop` cannot put it down on the first step.
 - Judged success keeps its definition (every hard clause holds); the empty-pass check is reported
   beside it, never folded into it.
 - An episode the machine ended in a final state at once (the rule above) never counts as judged
@@ -209,6 +224,10 @@ and a restart is easier to trust.
   `labeling-repair`).
 - 2026-11-14: Box-carry cards added (user request: enforce the pickup in the environment, not in the
   machine; `carry` option, `experiments/benchmark/box-carry/`, `envs/service-room-carry/`).
+- 2026-11-14: Forced cards added (user rule: build forced versions only where seed 1 shows the rule
+  untested; enforce the trigger in the environment, not the machine; `MiniGrid-BlockedUnlockPickup-Cleared-v0`
+  and `MiniGrid-UnlockPickup-KeyHeld-v0`, `experiments/benchmark/forced-start/`, `envs/minigrid-*-cleared`
+  and `envs/minigrid-*-key-held`; testing program slice `forced-cards`).
 - 2026-11-14: Labeling vocabulary and accepted-steps rules added (user: "the labeling function generations only
   worry about those used by the reward machine"; "we do always keep all the steps that have been
   accepted"); testing program slice `lf-code`.
