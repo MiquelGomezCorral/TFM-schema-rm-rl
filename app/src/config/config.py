@@ -267,7 +267,7 @@ class Configuration:
 
     # ======================= Labeling repair (repair-labeling) =======================
     repair_iterations: int = 10  # repair rounds per bundle before it stays unfixed
-    repair_parallel: int = 10  # bundles repaired at once
+    repair_parallel: int = 10  # bundles repaired (or labeling-regenerated) at once
 
     # ============================== Training (train-rl) ==============================
     # A YAML run config overrides these; defaults follow ARM-FM Table 5.

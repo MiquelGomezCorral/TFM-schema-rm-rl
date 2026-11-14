@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -106,7 +107,13 @@ class ArmFMRuntimeTests(unittest.TestCase):
         self.assertEqual(runtime.state, "u1")
 
     def test_labeling_snapshot_is_shared_read_only_and_updated_after_success(self):
-        rm = PaperRewardMachine(("u0",), "u0", (), (), ("current", "event"))
+        rm = PaperRewardMachine(
+            ("u0",),
+            "u0",
+            (RuntimeTransition("u0", "current & event", "u0"),),
+            (),
+            ("current", "event"),
+        )
         runtime = RewardMachineRuntime(rm)
         snapshots = []
         labeling = {
@@ -130,7 +137,13 @@ class ArmFMRuntimeTests(unittest.TestCase):
         self.assertEqual(runtime.episode_memory, {})
 
     def test_first_step_previous_valuation_holds_every_proposition_false(self):
-        rm = PaperRewardMachine(("u0",), "u0", (), (), ("current", "event"))
+        rm = PaperRewardMachine(
+            ("u0",),
+            "u0",
+            (RuntimeTransition("u0", "current & event", "u0"),),
+            (),
+            ("current", "event"),
+        )
         runtime = RewardMachineRuntime(rm)
         read = []
         labeling = {
@@ -147,7 +160,9 @@ class ArmFMRuntimeTests(unittest.TestCase):
         self.assertEqual(read, [False, False, True, True, False, False])
 
     def test_labeling_failure_does_not_replace_previous_valuation(self):
-        rm = PaperRewardMachine(("u0",), "u0", (), (), ("value",))
+        rm = PaperRewardMachine(
+            ("u0",), "u0", (RuntimeTransition("u0", "value", "u0"),), (), ("value",)
+        )
         runtime = RewardMachineRuntime(rm)
         runtime.episode_memory["previous_valuation"] = {"value": True}
         with self.assertRaises(RuntimeError):
@@ -392,6 +407,28 @@ class ArmFMArtifactTests(unittest.TestCase):
                 "embeddings": "complete",
                 "validation": "complete",
             },
+        )
+
+    def test_labeling_vocabulary_warns_only_for_a_stored_page_that_does_not_parse(self):
+        def bundle(**inputs):
+            self.manifest.inputs = inputs
+            return ArtifactBundle(self.manifest, self.rm, "", {})
+
+        def vocabulary_and_warnings(**inputs):
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                return bundle(**inputs).labeling_propositions, [
+                    str(item.message) for item in caught
+                ]
+
+        # An imported paper bundle stores no facts page: the used set, no warning.
+        self.assertEqual(vocabulary_and_warnings(task="finish"), (("done",), []))
+        # An ARM-FM or FARM bundle stores its page; one that does not parse is a defect.
+        names, caught = vocabulary_and_warnings(environment_markdown="no page")
+        self.assertEqual((names, len(caught)), (("done",), 1))
+        self.assertIn("does not parse", caught[0])
+        self.assertEqual(
+            vocabulary_and_warnings(environment_markdown=DEMO_MARKDOWN), (("done",), [])
         )
 
     def test_incomplete_bundle_is_visible(self):

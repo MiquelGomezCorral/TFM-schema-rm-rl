@@ -29,6 +29,7 @@ from .evaluation import (
 from .generation import (
     adapt_compilation_result,
     arm_fm_role_models,
+    failed_compiler_bundle,
     generate_baseline_bundle,
     generate_compiler_bundle,
     record_bundle_embeddings,

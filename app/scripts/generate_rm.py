@@ -16,6 +16,7 @@ from src.arm_fm.evaluation import (
 from src.arm_fm.generation import (
     MAX_ATTEMPTS,
     LabelingError,
+    StageAttempt,
     call_records,
     clauses_json,
     clear_call_records,
@@ -148,6 +149,9 @@ class _Pipeline:
         self.reruns = 0  # provider outages rerun inside the current task
         self.rejections = 0  # critic rejections inside the current task
         self.generated = False  # the generator returned a candidate for the current attempt
+        # The critic-accepted result of the current attempt with every stage done so far, so a
+        # failed task keeps what was accepted; ``None`` while the critic has accepted nothing.
+        self.accepted: CompilationResult | None = None
         # One entry per task that ran: its request records, stage counts and wall time.
         self.run_stats: list[dict[str, Any]] = []
         self.environment, self.generator_engine, self.critic_engine = setup_environment_and_engines(
@@ -188,6 +192,7 @@ class _Pipeline:
                     counted += self.generated
                 if compiled is not None:
                     self.progress(f"Task {task_index + 1}: attempt {attempt}/{attempts} accepted.")
+                    self.accepted = None  # a finished task has no failure to keep
                     return compiled
 
             last_failure = history[-1]
@@ -202,7 +207,10 @@ class _Pipeline:
                     "attempts": counted,
                     "critic_interventions": self.rejections,
                     "retries": self.reruns,
+                    "history": list(history),  # every refused candidate, in order
                     "wall_time_s": round(time.monotonic() - started, 1),
+                    "accepted": self.accepted,
+                    "last_stage": self.progress.current_step,
                 }
             )
 
@@ -236,6 +244,7 @@ class _Pipeline:
         """
         proposal_text: str | None = None
         compiled: CompilationResult | None = None
+        self.accepted = None
         try:
             selections, proposal_text = self._generate_proposal(task, history)
             proposal = self._materialize_ltlf(task, selections)
@@ -244,8 +253,10 @@ class _Pipeline:
             if not self._review_candidate(task, proposal_text, compiled, history):
                 return None
 
+            self.accepted = self._kept(compiled)
             compiled = self._describe_states(task, compiled)
-            compiled = self._generate_labeling(task, compiled)
+            self.accepted = self._kept(compiled)
+            compiled = self.accepted = self._generate_labeling(task, compiled)
             return self._embed_states(compiled)
 
         except RetryableEngineError as error:
@@ -379,6 +390,15 @@ class _Pipeline:
 
         return critic.accepted
 
+    def _kept(self, compiled: CompilationResult) -> CompilationResult:
+        """The result a failure bundle keeps: it stores the page the labeling stage reads.
+
+        A bundle built from the facts-only page has no Labeling API, so it could not be saved.
+        """
+        if not self.CONFIG.labeling:
+            return compiled
+        return replace(compiled, environment=self.labeling_environment)
+
     def _generate_labeling(self, task: str, compiled: CompilationResult) -> CompilationResult:
         """Generate labeling predicates for one accepted RM, retrying locally."""
         if not self.CONFIG.labeling:
@@ -388,9 +408,10 @@ class _Pipeline:
 
         # The result keeps the text the labeling generator reads, so every bundle stores it.
         compiled = replace(compiled, environment=self.labeling_environment)
+        attempts: list[StageAttempt] = []
         try:
-            source, attempts = generate_compiler_labeling(
-                task, compiled, self.generator_engine, self.critic_engine
+            source = generate_compiler_labeling(
+                task, compiled, self.generator_engine, self.critic_engine, attempts
             )
         except LabelingError as error:
             last = error.attempts[-1] if error.attempts else None
@@ -398,6 +419,11 @@ class _Pipeline:
             raise ImmediateEngineError(
                 f"Labeling generation failed after {MAX_ATTEMPTS} requests: {detail or error}"
             ) from error
+        finally:
+            # The tries survive a failure: the failure bundle keeps them with the machine.
+            self.accepted = replace(
+                compiled, labeling_attempts=tuple(item.__dict__ for item in attempts)
+            )
 
         self.progress.artifact("Labeling source", source)
         self.progress.complete()

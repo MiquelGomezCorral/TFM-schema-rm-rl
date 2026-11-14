@@ -53,6 +53,7 @@ EVIDENCE_LIMIT = 5  # failures kept per check, and mismatching steps per proposi
 RECORD_SUFFIX = ".labeling_check.json"
 SUMMARY_FILE = "labeling_check.json"
 STATUS_SUFFIX = ".status.json"
+MACHINE_STAGES = ("reward_machine", "compiler")  # the attempt stage that accepts a machine, per arm
 BY_SMALL_MODEL, BY_AGENT = "small-model", "agent"  # who repaired the labeling of a finished bundle
 
 
@@ -72,11 +73,10 @@ class Check:
 
 def check_labeling(bundle: ArtifactBundle, records: Sequence[TraceRecord]) -> Check:
     """Class the bundle's labeling against the Reward Machine's propositions and the traces."""
-    machine = bundle.reward_machine
     if not bundle.labeling_source.strip():
         return Check(MISSING, [{"error": "the labeling is empty"}])
     try:
-        load_labeling_functions(bundle.labeling_source, machine.propositions)
+        load_labeling_functions(bundle.labeling_source, bundle.labeling_propositions)
     except Exception as error:  # generated code can fail in any way; that is the result
         return Check(LOAD, [{"error": f"{type(error).__name__}: {error}"}])
 
@@ -93,11 +93,11 @@ def check_labeling(bundle: ArtifactBundle, records: Sequence[TraceRecord]) -> Ch
     if crashes:
         return Check(CRASH, crashes[:EVIDENCE_LIMIT])
 
-    agreement = label_agreement(pairs, machine.propositions)
+    agreement = label_agreement(pairs, bundle.labeling_propositions)
     compared = agreement["propositions"]
     coverage = {
         "compared": {name: item["total"] for name, item in compared.items()},
-        "of": len(machine.propositions),
+        "of": len(bundle.labeling_propositions),
         "not_in_reference": agreement["unmatched_bundle"],
     }
     wrong = {name for name, item in compared.items() if item["agree"] < item["total"]}
@@ -335,22 +335,28 @@ def status_path(folder: Path) -> Path:
     return folder.with_name(folder.name + STATUS_SUFFIX)
 
 
-def needs_finish(bundle: ArtifactBundle, record: dict[str, Any], status: dict[str, Any]) -> bool:
-    """Whether generation stopped after an accepted Reward Machine and the labeling is now fixed.
-
-    The status ``pipeline-failed`` is what ``run-suite`` reads, so it gates the step and goes back
-    to ``complete`` only when the step ends. The record must say the labeling was repaired, and
-    the file must still be the one that passed the check. A machine the critic never accepted
-    stays failed: it is saved like a labeling-stage failure but its generation never got there.
-    """
-    accepted_machine = any(
-        item.get("stage") == "reward_machine" and item.get("status") == "accepted"
+def has_accepted_machine(bundle: ArtifactBundle) -> bool:
+    """Whether a critic accepted the bundle's machine: its attempts say so, in either arm."""
+    return any(
+        item.get("stage") in MACHINE_STAGES and item.get("status") == "accepted"
         for item in bundle.attempts
     )
+
+
+def needs_finish(bundle: ArtifactBundle, record: dict[str, Any], status: dict[str, Any]) -> bool:
+    """Whether generation stopped after an accepted Reward Machine and the labeling now checks out.
+
+    The status ``pipeline-failed`` is what ``run-suite`` reads, so it gates the step and goes back
+    to ``complete`` only when the step ends. The record must say the labeling passes (``ok``, as
+    after a regeneration, or repaired), and the file must still be the one that passed the check.
+    A machine the critic never accepted stays failed: it is saved like a labeling-stage failure
+    but its generation never got there. Both arms keep an accepted machine on a failure, so a
+    FARM failure bundle finishes like an ARM-FM one.
+    """
     return (
         status.get("status") == "pipeline-failed"
-        and accepted_machine
-        and record.get("outcome") in (FIXED, FIXED_BY_AGENT)
+        and has_accepted_machine(bundle)
+        and record.get("outcome") in DONE_OUTCOMES
         and record.get("labeling_sha256") == sha256(bundle.labeling_source)
     )
 
@@ -360,15 +366,16 @@ def finished_status(status: dict[str, Any], record: dict[str, Any]) -> dict[str,
 
     ``generation_status`` and ``generation_reason`` hold what the generation itself ended with, so a
     count of generation successes reads them and not ``status``. ``calls`` and ``wall_time_s`` stay
-    the generation's.
+    the generation's. ``labeling_repaired_by`` is set only for a labeling a repair changed.
     """
+    repaired_by = {FIXED: BY_SMALL_MODEL, FIXED_BY_AGENT: BY_AGENT}.get(record["outcome"])
     return {
         **status,
         "status": "complete",
         "reason": None,
         "generation_status": status["status"],
         "generation_reason": status.get("reason"),
-        "labeling_repaired_by": BY_AGENT if record["outcome"] == FIXED_BY_AGENT else BY_SMALL_MODEL,
+        "labeling_repaired_by": repaired_by,
     }
 
 

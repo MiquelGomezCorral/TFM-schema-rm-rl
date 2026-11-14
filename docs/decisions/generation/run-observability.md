@@ -54,6 +54,8 @@ diagnostics to reproduce a failed run without changing compilation semantics.
   An exhausted tagging stage retains its specific diagnostic through the failure hook.
 - Labeling retries likewise preserve the accepted RM and descriptions. Labeling or embedding
   failure retains its stage-specific diagnostic and does not restart proposal generation.
+- A failed compiler run keeps what its critic accepted: the machine, clauses, descriptions and the
+  tries of the failed stage are saved, and the failure reason names the failed stage.
 - Failure reporting must not parse logs, replace an available diagnostic with a
   generic failure message, add refinement attempts, or override a critic's rejection.
 - Warnings are a typed observer next to progress text: an uncounted rerun (a provider outage
@@ -106,3 +108,5 @@ keeps their association visible when a trace is reopened.
 - 2026-10-14: Attempt limit configurable; warnings became a typed hook surfaced on the CLI and in
   the web Run status (iteration 2).
 - 2026-10-23: Runs record whether the recurrent soft penalty was on (user decision).
+- 2026-11-14: A failed compiler run keeps its accepted machine and steps (user decision; testing program
+  slice `lf-code`).

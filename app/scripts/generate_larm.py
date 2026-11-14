@@ -12,6 +12,7 @@ from src.arm_fm import (
     PaperRun,
     arm_fm_role_models,
     clone_head,
+    failed_compiler_bundle,
     generate_baseline_bundle,
     generate_compiler_bundle,
     generate_draw,
@@ -22,11 +23,13 @@ from src.arm_fm import (
     record_bundle_role_models,
     record_compiler_failure,
 )
+from src.arm_fm.generation import StageAttempt
 from src.compiler import CompilationResult
 from src.config import Configuration
 from src.models import EnvironmentDescription
 from src.utils import (
     GenerationHooks,
+    PipelineStep,
     embedding_artifact_path,
     get_engine,
     preflight_paths,
@@ -35,6 +38,13 @@ from src.utils import (
 )
 
 from .generate_rm import generate_rm
+
+# The bundle's name for the pipeline stage that failed.
+_FAILED_STAGE = {
+    PipelineStep.STATE_DESCRIPTIONS: "descriptions",
+    PipelineStep.LABELING: "labeling",
+    PipelineStep.EMBEDDINGS: "embeddings",
+}
 
 
 def generate_larm(CONFIG: Configuration) -> None:
@@ -72,6 +82,7 @@ def generate_compiler(CONFIG: Configuration, environment: EnvironmentDescription
         preflight_paths([destination], overwrite=CONFIG.overwrite, kind="Embedding artifact(s)")
     accepted = []
     run_stats = []
+    failures = []
 
     def capture(results, _paths):
         accepted.extend(results)
@@ -79,17 +90,30 @@ def generate_compiler(CONFIG: Configuration, environment: EnvironmentDescription
     try:
         succeeded = generate_rm(
             CONFIG,
-            hooks=GenerationHooks(completion=capture, warning=print_warning),
+            hooks=GenerationHooks(
+                completion=capture, warning=print_warning, failure=failures.append
+            ),
             write_outputs=False,
             run_stats=run_stats,
         )
         if not succeeded or not accepted:
-            raise RuntimeError("Compiler generation failed without an accepted result")
+            raise RuntimeError(_failure_reason(run_stats, failures))
         bundle = _accepted_compiler_bundle(CONFIG, accepted[0], run_stats[0], destination)
     except Exception as error:
         _persist_compiler_failure(CONFIG, environment, str(error), run_stats)
         raise
     bundle.save(CONFIG.bundle, overwrite=CONFIG.overwrite)
+
+
+def _failure_reason(run_stats: list[dict], failures: list[str]) -> str:
+    """Why the run failed; it names the stage when the critic had accepted a machine first."""
+    stage = _FAILED_STAGE.get(run_stats[0].get("last_stage")) if run_stats else None
+    if stage is None or run_stats[0].get("accepted") is None or not failures:
+        return "Compiler generation failed without an accepted result"
+    detail = " ".join(failures[0].split())[:300]
+    return (
+        f"Compiler generation failed at the {stage} stage after the machine was accepted: {detail}"
+    )
 
 
 def _accepted_compiler_bundle(
@@ -197,13 +221,39 @@ def _persist_compiler_failure(
     error: str,
     run_stats: list[dict],
 ) -> None:
-    """Persist an inspectable compiler failure without inventing RM artifacts.
+    """Persist an inspectable compiler failure, keeping every stage accepted before it.
 
-    The failed run's request records and stamp go in with it (``run_stats`` is empty when the
-    run made no request); a save error is printed, not raised over the failure itself.
+    A run the critic had accepted keeps its machine, clauses, state descriptions and labeling
+    tries (``failed_compiler_bundle``); an earlier failure has no RM artifacts to keep. The
+    failed run's request records and stamp go in with it (``run_stats`` is empty when the run
+    made no request); a save error is printed, not raised over the failure itself.
     """
     if CONFIG.bundle is None:
         return
+    stats = run_stats[0] if run_stats else {}
+    accepted = stats.get("accepted")
+    stage = _FAILED_STAGE.get(stats.get("last_stage"))
+    bundle = None
+    if accepted is not None and stage is not None:
+        try:
+            attempts = [StageAttempt(**item) for item in accepted.labeling_attempts]
+            bundle = failed_compiler_bundle(accepted, stage, error, attempts)
+            record_bundle_role_models(bundle, CONFIG, stats)
+        except Exception as build_error:  # the failure itself must still leave a bundle
+            print_warning(f"could not keep the accepted machine: {build_error}")
+            bundle = None
+    if bundle is None:
+        bundle = _bare_failure_bundle(CONFIG, environment, error, stats)
+    try:
+        bundle.save(CONFIG.bundle, overwrite=CONFIG.overwrite)
+    except OSError as save_error:
+        print_warning(f"could not save the failed bundle: {save_error}")
+
+
+def _bare_failure_bundle(
+    CONFIG: Configuration, environment: EnvironmentDescription, error: str, stats: dict
+) -> ArtifactBundle:
+    """The failure bundle of a run the critic never accepted: no RM artifacts are invented."""
     manifest = BundleManifest(
         task=CONFIG.tasks[0],
         environment=str(environment.source),
@@ -227,11 +277,8 @@ def _persist_compiler_failure(
         rm_mode="compiler",
     )
     bundle = ArtifactBundle(manifest, None)
-    record_compiler_failure(bundle, CONFIG, run_stats[0] if run_stats else {})
-    try:
-        bundle.save(CONFIG.bundle, overwrite=CONFIG.overwrite)
-    except OSError as save_error:
-        print_warning(f"could not save the failed bundle: {save_error}")
+    record_compiler_failure(bundle, CONFIG, stats)
+    return bundle
 
 
 def generate_manifest(CONFIG: Configuration) -> None:

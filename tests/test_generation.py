@@ -11,6 +11,7 @@ from openai import BadRequestError
 
 from scripts import generate_rm
 from src.arm_fm import record_bundle_role_models
+from src.arm_fm.generation import _refused_attempts
 from src.config import Configuration
 from src.engines import AntigravityEngine, GenericEngine, RunCancelled
 from src.models import EnvironmentDescription
@@ -23,6 +24,39 @@ from src.utils import (
     get_engine,
     setup_environment_and_engines,
 )
+
+
+class LabelingVocabularyTests(unittest.TestCase):
+    def test_vocabulary_adds_what_an_event_definition_reads_transitively(self):
+        environment = EnvironmentDescription.from_markdown(
+            "# Demo\n\n| id | kind | true when |\n|---|---|---|\n"
+            "| `held` | condition | the agent carries the key |\n"
+            "| `open` | condition | the door is open |\n"
+            "| `lost` | event | `held` was true before, is false now and `open` is false now |\n"
+            '\n| id | code |\n|---|---|\n| `lost` | `prev["held"] and not K` (event) |\n\n'
+            "| `late` | event | `lost` was true at the previous step |\n"
+            "| `other` | condition | the agent stands on the goal |\n\n"
+            "## Propositions\n- `held`: Key carried\n- `open`: Door open\n- `lost`: Key lost\n"
+            "- `late`: Lost earlier\n- `other`: At goal\n",
+            source="demo.md",
+        )
+        self.assertEqual(
+            environment.labeling_propositions(["late"]), ("held", "open", "lost", "late")
+        )
+        self.assertEqual(environment.labeling_propositions(["other"]), ("other",))
+
+
+class RefusedAttemptsTests(unittest.TestCase):
+    def test_every_refused_candidate_becomes_an_attempt_with_its_reason(self):
+        history = [
+            {"pipeline_step": "critic", "compiled_rm": "rm1", "feedback": "wrong order"},
+            {"pipeline_step": "validation", "compiled_rm": "", "feedback": "bad pattern"},
+        ]
+        refused = _refused_attempts({"history": history})
+        self.assertEqual([item["status"] for item in refused], ["rejected", "failed"])
+        self.assertEqual(refused[0]["feedback"], "wrong order")
+        self.assertEqual(refused[1]["error"], "bad pattern")
+        self.assertEqual(_refused_attempts({}), [])
 
 
 class GenerationTests(unittest.TestCase):

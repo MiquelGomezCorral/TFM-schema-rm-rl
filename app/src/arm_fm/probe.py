@@ -70,7 +70,11 @@ def _probe_episode(
     try:
         # The probe plays on to the env goal, so the RM must not end the episode at a final.
         wrapped = RewardMachineEnvironment(
-            env, RewardMachineRuntime(machine), labeling_source, terminate_on_rm=False
+            # Paper machines only: no bundle, no facts page, so the vocabulary is the used set.
+            env,
+            RewardMachineRuntime(machine),
+            labeling_source,
+            terminate_on_rm=False,
         )
         wrapped.reset(seed=seed)
         episode.rm_path = [wrapped.runtime.state]

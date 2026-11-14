@@ -217,7 +217,10 @@ class RewardMachineObservation(gym.Wrapper):
         super().__init__(env)
         machine = bundle.reward_machine
         self.reward_machine = RewardMachineEnvironment(
-            env, RewardMachineRuntime(machine), labeling, reward_source=reward_source
+            env,
+            RewardMachineRuntime(machine, propositions=bundle.labeling_propositions),
+            labeling,
+            reward_source=reward_source,
         )
         self.reward_machine.time_limit_penalty = time_limit_penalty
         self.final_states = frozenset(machine.final_states)
@@ -284,7 +287,7 @@ def _reward_machine_inputs(
     if CONFIG.labeling_bundle is not None:
         source = (CONFIG.labeling_bundle / "labeling.py").read_text(encoding="utf-8")
     try:
-        labeling = load_labeling_functions(source, bundle.reward_machine.propositions)
+        labeling = load_labeling_functions(source, bundle.labeling_propositions)
     except RuntimeValidationError as error:
         raise ValueError(
             f"Labeling from {labeling_bundle} does not match the propositions of "

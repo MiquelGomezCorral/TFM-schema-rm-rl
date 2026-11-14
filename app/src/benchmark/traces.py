@@ -425,7 +425,10 @@ def replay_in_bundle(bundle: ArtifactBundle, record: TraceRecord) -> Replay:
     replay = Replay([machine.initial_state], [], [])
     try:
         wrapped = RewardMachineEnvironment(
-            env, RewardMachineRuntime(machine), bundle.labeling_source, terminate_on_rm=False
+            env,
+            RewardMachineRuntime(machine, propositions=bundle.labeling_propositions),
+            bundle.labeling_source,
+            terminate_on_rm=False,
         )
         wrapped.reset(seed=record.reset_seed)
         env_ended = False
@@ -622,9 +625,9 @@ def _replay_bundle(
         "arm": ref.arm,
         "card_id": ref.card_id,
         "rm_path": str(ref.rm_path),
-        "propositions": list(machine.propositions),
+        "propositions": list(bundle.labeling_propositions),
         "machine_check": machine_check(rows),
-        "label_agreement": label_agreement(pairs, machine.propositions),
+        "label_agreement": label_agreement(pairs, bundle.labeling_propositions),
     }, curves
 
 

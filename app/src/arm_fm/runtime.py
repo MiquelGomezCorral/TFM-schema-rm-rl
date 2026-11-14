@@ -63,14 +63,20 @@ class RuntimeStep:
 
 
 class RewardMachineRuntime:
-    """Execute one ordered RM transition per environment step."""
+    """Execute one ordered RM transition per environment step.
+
+    ``propositions`` is the vocabulary the labeling covers: the machine's used propositions plus
+    what their definitions read (``ArtifactBundle.labeling_propositions``); by default the used ones.
+    """
 
     def __init__(
         self,
         machine: PaperRewardMachine,
         warning_handler: Callable[[str], None] | None = None,
+        propositions: Sequence[str] | None = None,
     ) -> None:
         self.machine = machine
+        self.propositions = tuple(propositions or machine.used_propositions)
         self.warning_handler = warning_handler
         self.state = machine.initial_state
         self.episode_memory: dict[str, object] = {}
@@ -83,7 +89,7 @@ class RewardMachineRuntime:
 
     def step(self, valuation: Mapping[str, bool]) -> RuntimeStep:
         """Select and apply one transition from the old state."""
-        values = _complete_valuation(valuation, self.machine.propositions)
+        values = _complete_valuation(valuation, self.propositions)
         ordinary = [
             transition
             for transition in self.machine.transitions
@@ -127,14 +133,14 @@ class RewardMachineRuntime:
     ) -> dict[str, bool]:
         """Compute every proposition once from the live environment and remember the valuation."""
         # First step of an episode: every proposition counts as false, so `prev[p]` never raises.
-        first_step = dict.fromkeys(self.machine.propositions, False)
+        first_step = dict.fromkeys(self.propositions, False)
         previous = self.episode_memory.get("previous_valuation", first_step)
         snapshot = MappingProxyType(dict(previous) if isinstance(previous, Mapping) else first_step)
         context = _LabelingContext(
             env,
             MappingProxyType({**self.episode_memory, "previous_valuation": snapshot}),
         )
-        values = {name: bool(labeling[name](context)) for name in self.machine.propositions}
+        values = {name: bool(labeling[name](context)) for name in self.propositions}
         self.episode_memory["previous_valuation"] = dict(values)
         return values
 
@@ -175,7 +181,7 @@ class RewardMachineEnvironment:
             else frozenset()
         )
         self.judgment = runtime.machine.judgment
-        self.propositions = runtime.machine.propositions
+        self.propositions = runtime.propositions
         self.labeling = (
             load_labeling_functions(labeling, self.propositions)
             if isinstance(labeling, str)
