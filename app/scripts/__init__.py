@@ -14,6 +14,7 @@ from .import_paper_bundle import import_paper_bundle
 from .regenerate_labeling import regenerate_labeling
 from .render_rm import render_rm
 from .repair_labeling import repair_labeling
+from .restore_farm import restore_farm
 from .run_suite import run_suite
 from .test_rl import test_rl
 from .train_rl import train_rl

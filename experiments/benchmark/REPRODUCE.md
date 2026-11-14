@@ -1,8 +1,9 @@
 # Reproducing the benchmark
 
 Every command runs from the repository root inside the `RM_RL_env` Conda environment
-(Python 3.13) with `PYTHONPATH=app`. The scripts under `experiments/benchmark/scripts/` set
-`PYTHONPATH` themselves and take the interpreter from `PYTHON` (default `python`).
+(Python 3.13) with `PYTHONPATH=app`. The shell scripts under `experiments/benchmark/scripts/` set
+`PYTHONPATH` themselves and take the interpreter from `PYTHON` (default `python`); the Python
+scripts there (section 6) need `PYTHONPATH=app` on the command line.
 
 ## 1. Setup
 
@@ -182,3 +183,203 @@ means over the test episodes), steps to first environment success (`n/a` when th
 reward does not match the task), evaluation success over the last three evaluation points,
 environment return, RM return (within an arm only), episode length, wall time, peak RSS, and the
 `machine-wrong` flag.
+
+## 6. Testing-program runbook
+
+The steps that follow section 2's generation, in the order they ran. Each has one command, what it
+reads, what it writes, and how to retry it. `<suite>` is `base`, `complex`, `templates`, `pilot`
+(FARM only) or `box-carry`. A command that calls a provider runs through
+`dotenv -f .env run --no-override --` (shown once here, in front of the command); the embedding
+server of section 1 must answer for every step that writes embeddings. Every command is safe to
+rerun unless its step says otherwise. Scripts under `experiments/benchmark/scripts/` print a usage
+header with `--help`.
+
+`regenerate-labeling`, `repair-labeling` and `generation-table` read the folder that **holds the arm
+folders** (`experiments/benchmark/<suite>/bundles`, or `experiments/benchmark` for `--root`). Pointing
+them at `.../bundles/farm` finds no bundle. `restore-farm` is the exception: it takes the FARM folder.
+
+### 6.1 Restore FARM bundles that lost their machine
+
+```bash
+python app/main.py restore-farm --bundles experiments/benchmark/<suite>/bundles/farm
+```
+
+Needed only for bundles made before `generate-larm` kept accepted steps: a FARM run that failed at
+labeling or descriptions after the critic accepted a machine saved a bundle with no machine. A bundle
+made by today's `generate.sh` already keeps it. The command reads `<card>.status.json`, `<card>.log`
+and the bundle's manifest, rebuilds the machine from the log's clauses (FL-AT, MONA), and writes it
+into the bundle with its descriptions, the failed stage and `provenance.restored_from_log`. It
+refuses a machine that does not equal the log's accepted text byte for byte. The status file stays
+`pipeline-failed` with a reason naming the stage; a bundle that was `provider-error` becomes
+`pipeline-failed` and keeps the old status as `original_status`, so `repair-labeling` can finish it.
+The "labeling tries" of a restored bundle are `unknown`, and `generation-table` leaves them out of its
+mean. Retry: run it again. A restored bundle is no longer a failure bundle and is skipped. `--only
+<name> ...` restores the named bundles; a named bundle that cannot be restored is an error (exit 1).
+
+### 6.2 Regenerate FARM labeling
+
+`regenerate-labeling` runs every arm under the folder it is given, so give it a folder that holds only
+FARM: a one-arm view of symlinks.
+
+```bash
+mkdir -p outputs/view/<suite> && ln -sfn "$PWD/experiments/benchmark/<suite>/bundles/farm" outputs/view/<suite>/farm
+dotenv -f .env run --no-override -- python app/main.py regenerate-labeling \
+    --bundles outputs/view/<suite> --parallel 4
+```
+
+For each bundle whose machine a critic accepted, it runs the generation labeling loop again with the
+bundle's own models (only the small pair). The machine does not change. It writes the new
+`labeling.py` and attempts into the bundle and the old labeling, its attempts and the outcome into
+`<card>.labeling_regen.json` beside the folder; the first sidecar's `previous` is kept on every rerun.
+`--only <card-id> ...` limits the run (a card id also matches its `~p<k>` paraphrases). Retry once:
+run the same command again. A bundle whose sidecar is `accepted` for the same machine is skipped, a
+`failed` or `pending` one runs again, and a provider failure ends the command with an error after
+the other bundles ran. A bundle whose loop fails again keeps its old labeling (its tries are only in
+the sidecar). `--parallel` is safe since the machine rebuild runs under one lock (FL-AT's BDD parser
+keeps global state); before that, one process per card family was needed.
+
+### 6.3 Check and repair labeling
+
+```bash
+python app/main.py repair-labeling --traces experiments/benchmark/<suite>/traces \
+    --bundles experiments/benchmark/<suite>/bundles --check-only --parallel 10
+dotenv -f .env run --no-override -- python app/main.py repair-labeling \
+    --traces experiments/benchmark/<suite>/traces --bundles experiments/benchmark/<suite>/bundles --parallel 10
+```
+
+The first call checks each bundle's labeling against the trace bank (`trace-bank`, section 6.6),
+classes it (`missing`, `load`, `crash`, `wrong`, `ok`) and writes `<card>.labeling_check.json` beside
+the folder; it asks no model. The second repairs the failures with the bundle's own small generator,
+and finishes a bundle whose generation stopped at labeling (descriptions, embeddings) and rewrites
+the status as in section 2. Retry: run it again; it also finishes bundles repaired by an earlier run
+and resumes one that stopped half way. A bundle the loop leaves `unfixed` is for an agent to edit by
+hand; a later run checks the edited labeling and marks it `fixed-by-agent`. `--only <card-id> ...`
+limits it.
+
+### 6.4 Generation table
+
+```bash
+python app/main.py generation-table --root experiments/benchmark \
+    --output outputs/tables/generation-table.json > outputs/tables/generation-table.md
+```
+
+Reads the files beside every bundle under the root (`attempts.json`, the manifest, the card log, the
+labeling-check record, the regeneration sidecar, the `restored_from_log` mark) and prints, per arm and
+suite, the Reward Machines accepted out of all bundles and their mean tries, the labelings accepted
+at generation out of those that reached labeling and their mean tries, the labelings ok after repair
+and the mean repair rounds, and the bundles restored from a log. It writes the JSON and the Markdown
+only where you send them; `mkdir -p outputs/tables` first. Retry: run it again; it changes no bundle.
+
+### 6.5 Check the machines: too simple, and ready to train
+
+```bash
+PYTHONPATH=app python experiments/benchmark/scripts/check_too_simple.py --output outputs/tables/too-simple.json
+PYTHONPATH=app python experiments/benchmark/scripts/ready_list.py --output outputs/tables
+```
+
+`check_too_simple.py` runs the judge's `machine_too_simple` on every bundle's machine and lists the
+flagged ones: the start state is final, or a final state is reached from it by walking only `else`
+transitions and always-true guards. A flagged machine is the judge's call, not an error. `--suite
+<name> ...` limits it, and `--start-labels` also evaluates the bundle's own labeling on the
+just-reset environment for seeds 1 to 20, as the judge does, and walks the machine holding that
+valuation (it needs the card in `<suite>/tasks.json`). `ready_list.py` loads and
+validates every bundle the way training does (`validate(require_complete=True)`) and writes
+`ready-list.md` (per card) and `ready-list.json` (per bundle, with the reason a bundle is not ready).
+Both only read; rerun them whenever bundles change.
+
+### 6.6 The box-carry suite
+
+Task cards in `experiments/benchmark/box-carry/tasks.json`; the suite trains on `runs.yaml` there.
+
+```bash
+python app/main.py trace-bank --tasks experiments/benchmark/box-carry/tasks.json \
+    --output experiments/benchmark/box-carry/traces
+dotenv -f .env run --no-override -- python app/main.py generate-suite \
+    --tasks experiments/benchmark/box-carry/tasks.json --arm arm-fm \
+    --output experiments/benchmark/box-carry/bundles/arm-fm --paraphrases --parallel 10
+dotenv -f .env run --no-override -- python app/main.py generate-suite \
+    --tasks experiments/benchmark/box-carry/tasks.json --arm farm \
+    --output experiments/benchmark/box-carry/bundles/farm --paraphrases --parallel 10
+dotenv -f .env run --no-override -- python app/main.py repair-labeling \
+    --traces experiments/benchmark/box-carry/traces --bundles experiments/benchmark/box-carry/bundles
+PYTHONPATH=app python experiments/benchmark/scripts/check_too_simple.py --suite box-carry \
+    --start-labels --output outputs/tables/box-carry-too-simple.json
+PYTHONPATH=app python experiments/benchmark/scripts/ready_list.py --suite box-carry --output outputs/tables
+python app/main.py run-suite --suite experiments/benchmark/box-carry/runs.yaml --dry-run
+```
+
+`trace-bank` runs each card's plans on its environment and writes the bank `repair-labeling` checks
+against. `generate-suite` is section 2's call for one suite and arm: it skips `complete` bundles on a
+rerun and needs the embedding server. The last command prints one line per run (`start`, `share`,
+`skip`, `no-data`) and writes nothing. Retry: run the step that failed again; each one skips finished
+work.
+
+### 6.7 Ablation rebuild
+
+```bash
+dotenv -f .env run --no-override -- env PYTHONPATH=app python experiments/benchmark/scripts/build_ablation.py \
+    cx-rules-only cx-goal-one-rule cx-goal-many-rules
+```
+
+Runs `ablate-rm` on `complex/bundles/farm/<card>` for each reward switch in `OFF_PARTS` (`progress`,
+`well`, `soft_break`, `soft_pending`, `end_judgment`, `recurrent_soft_penalty`) and writes
+`ablation/bundles/<card>/off-<switch>/`. Then it checks each one against its source and prints one
+line each: `labeling.py` byte-equal, loads and validates complete, not too simple, the text changed
+unless the manifest marks the switch a no-op, descriptions and embeddings remade only when the states
+or transitions changed (in practice `recurrent_soft_penalty`), and the manifest names the switch. Exit 1 if a build or a check failed. Only
+`recurrent_soft_penalty` calls a model (it writes the state descriptions again) and the embedding server; leave it out with
+`--variants progress well soft_break soft_pending end_judgment` to work with no provider. Retry: run
+it again; an existing `off-<switch>` folder is kept, so delete the one to rebuild. `--check-only`
+checks without building.
+
+### 6.8 Training schedule: pass 2
+
+Placeholder. Training goes through `run-suite --suite <runs.yaml> --parallel N` (section 3), and a
+scheduler that starts each suite in order will be described here in pass 2. Until then, train a suite
+with the commands of section 3 and come back to section 6.9 when its runs finish.
+
+### 6.9 Judge finished runs, and judge old ones again
+
+```bash
+PYTHONPATH=app python experiments/benchmark/scripts/judge_runs.py                       # list, change nothing
+PYTHONPATH=app python experiments/benchmark/scripts/judge_runs.py --rejudge \
+    --results outputs/judge/results.jsonl --logs outputs/judge/logs
+```
+
+The first call lists every `seed*` folder under `outputs/runs` with its state (`finished`, `training`,
+`archived`) and judge format (`new`, `old`, `none`), and marks the ones that need a judge. The second
+judges them: it copies an existing `judge.json` to `judge.v1.json` (an existing `judge.v1.json` is
+never overwritten), then runs `test-rl --run <folder> --episodes 100 --judge <experiment>/card.json`
+from this checkout, two folders at a time with two threads each and only while 8 GB of memory is
+available. It skips a run that is still training, already judged in the new format, or being judged by
+another `test-rl`. A failed judge is retried once and recorded as `failed` in `--results`. Retry:
+run the same command; a run already in the new format is skipped, so only the failed ones run again.
+`--runs-root` points at another runs folder (a missing one counts as empty), `--min-age` (minutes,
+default 10) holds back a run with no `judge.json` until its summary is that old, because the training
+run may still judge it itself. `--results` is written only when a folder was handled (no folder to
+judge, no file; `results_table.py` skips a `--results` file that is missing), and a judge that waits
+for memory says so once.
+
+### 6.10 Shared no-RM runs
+
+No separate step: `run-suite` links them. The no-RM arm trains once per identical training config and
+seed across suites; the other cards get a run folder of symlinks to the owner's finished run, with
+`shared-run.json` naming it (`share` in the plan, `skip` once linked). Judge a linked run with the same
+`judge_runs.py` call as any other run; `aggregate-suite` notes it as a shared no-RM run of its owner.
+
+### 6.11 Results table
+
+```bash
+PYTHONPATH=app python experiments/benchmark/scripts/cycles.py --output outputs/tables/cycles.md
+PYTHONPATH=app python experiments/benchmark/scripts/results_table.py --out outputs/tables \
+    --results outputs/judge/results.jsonl
+```
+
+`cycles.py` lists, per ARM-FM bundle, the laps of its machine whose rewards add to more than zero (an
+agent can loop one for reward without finishing). `results_table.py` reads `outputs/runs` (or
+`--runs-root`) and writes `tables.csv` (one row per card x arm x seed) and `tables.md`: the judge
+columns, the training eval, the first step with greedy or sampled success of at least 0.8, wall time,
+rule breaks, flags (too simple, cannot start, positive cycle, farming, shared run, judge crashed), what
+the new judge changed against `judge.v1.json`, the cards that do not learn, and each card's NL task,
+LTLf and machine files. `--results` is the JSONL of section 6.9 and only names the runs whose judge
+crashed. It reads only; rerun it whenever runs or judges change.

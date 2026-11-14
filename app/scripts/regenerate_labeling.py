@@ -12,6 +12,7 @@ one is retried, so the command can run again. ``repair-labeling`` then checks th
 finishes a bundle whose generation had stopped at labeling.
 """
 
+import threading
 import time
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -56,6 +57,8 @@ from .ablate_rm import AblationError, _recorded_switches, _stored_task
 SIDECAR_SUFFIX = ".labeling_regen.json"
 ACCEPTED, FAILED, PROVIDER_ERROR, SKIPPED = "accepted", "failed", "provider-error", "skipped"
 PENDING = "pending"  # the sidecar of a run whose bundle write has not finished
+# FL-AT's BDD parser (the `dd` package) keeps global state: two machine rebuilds at once crash it.
+_REBUILD_LOCK = threading.Lock()
 
 
 def regenerate_labeling(CONFIG: Configuration, bundles: Path, only: Sequence[str]) -> None:
@@ -163,9 +166,10 @@ def _rebuild_compiler_result(CONFIG: Configuration, bundle: ArtifactBundle) -> C
         environment, proposal = _stored_task(CONFIG, bundle)
     except AblationError as error:
         raise ImmediateEngineError(str(error)) from error
-    dfas = compile_dfas(proposal, CONFIG)
-    result = build_compilation_result(environment, proposal, dfas, _recorded_switches(bundle))
-    machine = compiler_machine_to_paper(result.reward_machine, environment.proposition_ids)
+    with _REBUILD_LOCK:
+        dfas = compile_dfas(proposal, CONFIG)
+        result = build_compilation_result(environment, proposal, dfas, _recorded_switches(bundle))
+        machine = compiler_machine_to_paper(result.reward_machine, environment.proposition_ids)
     if serialize_paper_reward_machine(machine) != serialize_paper_reward_machine(
         bundle.reward_machine
     ):
