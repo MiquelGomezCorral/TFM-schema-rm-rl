@@ -29,7 +29,7 @@ REWARD_FUNCTION:
 
 
 def main():
-    doc = runpy.run_path("outputs/wave-tests/card-fix-2/after/doc_example_check.py")
+    doc = runpy.run_path(str(OUT / "doc_example_check.py"))
     table, view = doc["documented_expressions"]()
     # The "before" run (doc_cold_start-before.log) read the unguarded `prev["key_found"] or ...`.
     cases = (

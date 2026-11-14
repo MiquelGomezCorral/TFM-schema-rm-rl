@@ -94,27 +94,31 @@ drawn with `render-rm --html`.
 ## Files
 
 - `check/`: `k1_compare.py`, `k2_crm_check.py`, `k3_check.py`, `reset_check.py`, `replay_adds.py`, `analyze.py`
-  (builds `results.md`), `code-changes.patch`.
+  (builds `results.md`), `code-changes.patch`, `runs/<suite>/runs.yaml` and `runs/procedural/tasks.json` (the
+  training suites).
 - `evidence/`, `graphs/` as above.
 
 ## Rerun
 
-From the repository root, inside `RM_RL_env`, on the X2 branch (the learner change and its suites are not on
-`main`):
+The learner change is not in `main`; it is `check/code-changes.patch`, which applies to base commit `7ae1157`
+(checked with `git apply --check` on a copy of `7ae1157`; it no longer applies to current `main`, where
+`dqn.py` and `runtime.py` changed). The suite files are `check/runs/<suite>/runs.yaml` and
+`check/runs/procedural/tasks.json`. From the repository root, inside `RM_RL_env`:
 
 ```bash
-COPY=$(mktemp -d); git archive 236dda1 app experiments | tar -x -C "$COPY"   # the X2 branch commit
-(cd "$COPY" && PYTHONPATH=app python -W ignore "$OLDPWD"/docs/paper/x2-dqn-crm/check/k2_crm_check.py)   # CRM adds 3 rows per step
-# training: on branch MiquelGomezCorral/tp-x2-dqn-crm
-experiments/benchmark/scripts/train.sh tuning/dqn/<round1|round2|round3|round4|control|confirm|procedural|timing> --parallel 4
+ROOT=$PWD; COPY=$(mktemp -d); git archive 7ae1157 app tests experiments pyproject.toml | tar -x -C "$COPY"
+(cd "$COPY" && git apply "$ROOT"/docs/paper/x2-dqn-crm/check/code-changes.patch)
+mkdir -p "$COPY"/experiments/benchmark/tuning/dqn && cp -r "$ROOT"/docs/paper/x2-dqn-crm/check/runs/. "$COPY"/experiments/benchmark/tuning/dqn/
+(cd "$COPY" && PYTHONPATH=app python -W ignore "$ROOT"/docs/paper/x2-dqn-crm/check/k2_crm_check.py)   # CRM adds 3 rows per step
+(cd "$COPY" && experiments/benchmark/scripts/train.sh tuning/dqn/<round1|round2|round3|round4|control|confirm|procedural|timing> --parallel 4)
 ```
 
-`k2_crm_check.py` was rerun on a copy of `236dda1` for this entry and printed exactly the saved output
+`k2_crm_check.py` was rerun on `7ae1157` plus the patch for this entry and printed exactly the saved output
 (`evidence/k2-crm-output.txt`, ending `K2 ok: 5 scripted steps, 15 buffer rows = 5 x 3`). `k1-defaults.yaml`
-in `check/` is its configuration. The other checks were not rerun.
+in `check/` is its configuration. The other checks were not rerun, and neither was `train.sh` on the copy.
 
 The `train.sh` runs are training only (7 to 33 minutes each), no LLM call. The checks `K1` to `K3` need no
-training. The suites and the check scripts exist only on that branch; the copies here are for reading.
+training. The commit `236dda1` on branch `MiquelGomezCorral/tp-x2-dqn-crm` holds the same files.
 
 ## Gaps
 
@@ -127,6 +131,6 @@ training. The suites and the check scripts exist only on that branch; the copies
   (exploration 0.2) settings were chosen after reading rounds 1 and 2.
 - `pytest` was not installed in `RM_RL_env` and `tests/test_rl_contract.py` was skipped locally, so the test
   suite was not run; `ruff` and the config-defaults hook passed.
-- The code change is on branch `MiquelGomezCorral/tp-x2-dqn-crm`, not merged into `main` at the freeze
-  `a77709b`. A decision record is needed if 8 environments or CRM enter the final pipeline.
+- The code change (`check/code-changes.patch`) is not merged into `main`; it is also commit `236dda1` on branch
+  `MiquelGomezCorral/tp-x2-dqn-crm`. The freeze is `a77709b`. A decision record is needed if 8 environments or CRM enter the final pipeline.
 - The interactive curve pages (4 MB each) are not copied; `evidence/eval-points.csv` rebuilds them.

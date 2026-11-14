@@ -63,11 +63,11 @@ Both judge files judge the same card, `base-doorkey`, on the benchmark's own jud
 
 ## Rerun
 
-The check copies two finished runs (`outputs/runs/li-l54-dqn`, `outputs/runs/li2-l54-dqn`) and the
-no-RM judge file (`outputs/wave-tests/final-review/aggregation/judge.json`) from the repository's git-ignored
-`outputs/`, so it runs where those exist (the wave worktree); the two judge files are kept in
-`evidence/`. It needs no model call. From the repository root, inside `RM_RL_env`, on the code before
-the fix (`git checkout 0f7e56b^`) and after (`0f7e56b` or later):
+The check copies two finished runs and the two judge files from `evidence/` (`evidence/runs/li-l54-dqn/` and
+`evidence/runs/li2-l54-dqn/` hold only `summary.json` and `eval.csv`, 0.7 KB each; the model weights, `q_network.pt`
+3.3 MB each, are not kept; `evidence/judge-no-rm.json`, `evidence/judge-farm.json`). It needs no model call. From the
+repository root, inside `RM_RL_env`, on the code before the fix (`git checkout 0f7e56b^`) and after (`0f7e56b` or
+later):
 
 ```bash
 PYTHONPATH=app python docs/paper/c2-f1-judge-columns/check/f1_aggregation.py before

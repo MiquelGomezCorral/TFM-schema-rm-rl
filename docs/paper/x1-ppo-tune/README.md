@@ -75,7 +75,7 @@ Machine (5 states): [interactive graph](graphs/base-unlock-pickup.html),
 - `evidence/procedural/`: summary, per-run table and `reset-check.txt`.
 - `evidence/settings/`: the exact knobs of `base` and `s07`.
 - Base for all runs is commit `7ae1157`; the suite files and scripts were committed on branch
-  `MiquelGomezCorral/tp-x1-ppo-tune` as `306d402`.
+  `MiquelGomezCorral/tp-x1-ppo-tune` as `306d402` and are now in `experiments/benchmark/tuning/ppo/`.
 
 ## Files
 
@@ -85,10 +85,11 @@ Machine (5 states): [interactive graph](graphs/base-unlock-pickup.html),
 
 ## Rerun
 
-From the repository root, inside `RM_RL_env`, on the X1 branch (the suites are not on `main`):
+From the repository root, inside `RM_RL_env`. The suites are in `experiments/benchmark/tuning/ppo/` (`<suite>/runs.yaml`,
+`procedural/tasks.json`, `summarize.py`, `summarize_procedural.py`, `reset_check.py`); `check/` keeps byte-identical copies
+of the suite files, `summarize.py` and `reset_check.py`:
 
 ```bash
-git checkout MiquelGomezCorral/tp-x1-ppo-tune   # holds experiments/benchmark/tuning/ppo/ (commit 306d402)
 experiments/benchmark/scripts/train.sh tuning/ppo/<base|round1|round2|confirm|procedural|speed> --parallel 6 --max-ram-gb 12
 ```
 
@@ -105,7 +106,7 @@ rows exactly. Training only, no LLM call. About 4 to 17 minutes per run.
 - The wall times of the first rounds come from a loaded machine; only the same-load check (4.4 against
   9.9 minutes) is a fair speed comparison.
 - The interactive curve pages (4 MB each) are not copied; `evidence/eval_points.csv` rebuilds them.
-- The tuning code is on branch `MiquelGomezCorral/tp-x1-ppo-tune`, not merged into `main` at the freeze
-  `a77709b`.
+- The suite files and scripts were not merged into `main` at the freeze `a77709b`; they are now in
+  `experiments/benchmark/tuning/ppo/`.
 - The "gradient steps × learning rate" rule of thumb in the X1 notes was found after the fact and is untested;
   it is not stated here.

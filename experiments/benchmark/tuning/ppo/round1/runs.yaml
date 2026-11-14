@@ -1,0 +1,86 @@
+# X1 round 1: 12 PPO settings on the two pilot cards (FARM machines, 500k steps), seeds 1 and 2.
+# One setting runs on both tasks; never a per-task setting. Base (the pilot setting) is the
+# x1-base suite, so it is not repeated here. Run:
+#   experiments/benchmark/scripts/train.sh tuning/ppo/round1 --parallel 6 --max-ram-gb 12
+#
+# Base = configs/ppo.yaml: lr 2.5e-4, envs 8, steps 128, minibatches 4, epochs 4, clip 0.1,
+# ent 0.01, gae 0.95, gamma 0.99. Only s12 changes gamma (DQN keeps 0.99).
+#
+# Why these settings. In the base UnlockPickup runs (seeds 1 and 2) the policy stays diffuse
+# (entropy 1.5 of 1.95 at 500k steps, explained variance about 0) and the share of training
+# episodes that reach the key FALLS from 33% (first third) to 0.3% (last third): the update does
+# not learn from the weak key signal (0.1 plus an end charge 100 steps later). So the grid moves
+# how much PPO learns per batch, and how far the end charge reaches back:
+#   L = learning rate 1e-3     (rl-starter-files MiniGrid value; CleanRL and base use 2.5e-4)
+#   U = update intensity       minibatches 16, epochs 10 (rl-baselines3-zoo MiniGrid: batch 64,
+#                              10 epochs = 160 gradient steps per 1024 samples; base has 16)
+#   E = envs 16                (more diverse starts per update; rl-starter-files uses 16 procs)
+#   S = rollout 256 steps      (nearly a whole 288-step UnlockPickup episode per env; the zoo
+#                              uses 512 for its sparse FourRooms and RedBlueDoors)
+# s01-s07 are the half-fraction of the 2^4 grid over L, U, E, S (the base is its origin; s07 is
+# the all-high corner). s08-s12 move one knob each from the base.
+suite: x1-r1
+tasks: experiments/benchmark/pilot/tasks.json
+bundles: experiments/benchmark/pilot/bundles
+learner: s01
+compare_learners: [s01, s02, s03, s04, s05, s06, s07, s08, s09, s10, s11, s12]
+learners:
+  s01: # L+U: fast learning rate and zoo-style heavy updates together
+    config: experiments/benchmark/configs/ppo.yaml
+    ram_gb: 2.4
+    overrides: {ppo_learning_rate: 1.0e-3, ppo_num_minibatches: 16, ppo_update_epochs: 10}
+  s02: # L+E: fast learning rate with 16 envs
+    config: experiments/benchmark/configs/ppo.yaml
+    ram_gb: 2.4
+    overrides: {ppo_learning_rate: 1.0e-3, ppo_num_envs: 16}
+  s03: # L+S: fast learning rate with 256-step rollouts
+    config: experiments/benchmark/configs/ppo.yaml
+    ram_gb: 2.4
+    overrides: {ppo_learning_rate: 1.0e-3, ppo_num_steps: 256}
+  s04: # U+E: zoo-style updates with 16 envs
+    config: experiments/benchmark/configs/ppo.yaml
+    ram_gb: 2.4
+    overrides: {ppo_num_minibatches: 16, ppo_update_epochs: 10, ppo_num_envs: 16}
+  s05: # U+S: zoo-style updates with 256-step rollouts
+    config: experiments/benchmark/configs/ppo.yaml
+    ram_gb: 2.4
+    overrides: {ppo_num_minibatches: 16, ppo_update_epochs: 10, ppo_num_steps: 256}
+  s06: # E+S: 16 envs and 256-step rollouts (batch 4096), base update
+    config: experiments/benchmark/configs/ppo.yaml
+    ram_gb: 2.4
+    overrides: {ppo_num_envs: 16, ppo_num_steps: 256}
+  s07: # L+U+E+S: all four high
+    config: experiments/benchmark/configs/ppo.yaml
+    ram_gb: 2.4
+    overrides:
+      ppo_learning_rate: 1.0e-3
+      ppo_num_minibatches: 16
+      ppo_update_epochs: 10
+      ppo_num_envs: 16
+      ppo_num_steps: 256
+  s08: # entropy 0.03: the usual exploration knob, alone (base policy is already near uniform)
+    config: experiments/benchmark/configs/ppo.yaml
+    ram_gb: 2.4
+    overrides: {ppo_ent_coef: 0.03}
+  s09: # L alone: learning rate 1e-3
+    config: experiments/benchmark/configs/ppo.yaml
+    ram_gb: 2.4
+    overrides: {ppo_learning_rate: 1.0e-3}
+  s10: # U alone: the rl-baselines3-zoo update (minibatches 16, epochs 10)
+    config: experiments/benchmark/configs/ppo.yaml
+    ram_gb: 2.4
+    overrides: {ppo_num_minibatches: 16, ppo_update_epochs: 10}
+  s11: # GAE lambda 0.99: base weight of the 288-step end charge on a key pickup ~100 steps earlier is (0.99*0.95)^100 = 0.002, with 0.99 it is 0.13
+    config: experiments/benchmark/configs/ppo.yaml
+    ram_gb: 2.4
+    overrides: {ppo_gae_lambda: 0.99}
+  s12: # gamma 0.995: the end charge is discounted by 0.99^288 = 0.055 at step 0, by 0.995^288 = 0.24
+    config: experiments/benchmark/configs/ppo.yaml
+    ram_gb: 2.4
+    overrides: {gamma: 0.995}
+arms: [farm]
+seeds: [1, 2]
+total_timesteps: 500000
+time_box_min: 30
+only: [base-unlock-pickup, base-doorkey]   # UnlockPickup first: it is the task that separates settings
+variants: []

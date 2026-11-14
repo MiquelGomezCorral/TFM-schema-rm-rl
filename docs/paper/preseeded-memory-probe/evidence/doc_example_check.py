@@ -5,7 +5,7 @@ the ``gen_obs`` bullet of the Labeling API), loads them with ``load_labeling_fun
 compares them with the reference labeler step by step on the solving plan of ``cx-sequence``
 (seeds 1 to 50). Also shows that the earlier NumPy ``.any()`` example is refused by the sandbox.
 
-usage (repository root): PYTHONPATH=app python outputs/wave-tests/card-fix-2/after/doc_example_check.py
+usage (repository root): PYTHONPATH=app python docs/paper/preseeded-memory-probe/evidence/doc_example_check.py
 """
 
 import json
