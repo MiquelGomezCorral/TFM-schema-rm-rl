@@ -506,16 +506,32 @@ def tag_states(
 ) -> tuple[str, ...]:
     """Have the generator describe every state of one compiled machine, in node order.
 
-    A malformed answer or a transient provider failure is asked again, at most
-    ``Configuration.TAGGING_ATTEMPTS`` requests in all.
+    A machine of more than ``Configuration.TAGGING_BATCH_STATES`` states is described in
+    consecutive batches of at most that many; every request carries the whole machine and only
+    its list of states to describe changes. A malformed answer or a transient provider failure
+    is asked again for that batch, at most ``Configuration.TAGGING_ATTEMPTS`` requests in all.
 
     Raises:
-        ImmediateEngineError: Every request failed.
+        ImmediateEngineError: Every request of one batch failed.
     """
     facts = _tagger_facts(compiled)
     nodes = tuple(state_identifiers(compiled).values())
-    attempts = Configuration.TAGGING_ATTEMPTS
+    size = Configuration.TAGGING_BATCH_STATES
+    descriptions: list[str] = []
+    for start in range(0, len(nodes), size):
+        descriptions.extend(_tag_batch(engine, task, facts, nodes[start : start + size], warn))
+    return tuple(descriptions)
 
+
+def _tag_batch(
+    engine: GenericEngine,
+    task: str,
+    facts: dict[str, str],
+    nodes: tuple[str, ...],
+    warn: Callable[[str], None],
+) -> tuple[str, ...]:
+    """One tagging request for these states of the machine, asked again when it fails."""
+    attempts = Configuration.TAGGING_ATTEMPTS
     last_error: Exception | None = None
     for tagging_attempt in range(1, attempts + 1):
         try:

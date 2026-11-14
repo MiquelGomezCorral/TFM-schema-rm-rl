@@ -134,10 +134,34 @@ thing whichever arm produced it.
   reacting to an event. Of the forced runs, only `tpl-response-1-nogoal-forced` seed 1 trains (3 arms),
   labeled "trigger given"; the runs that had not started were dropped (user, 2026-11-14). Reactive cards,
   where the trigger happens during the episode, are proposed as the real test of conditional rules.
+- **Shop.** The reactive test the forced cards could not give: `MiniGrid-Shop-v0` and
+  `MiniGrid-Shop-Pot-v0` (suite `shop`, six cards by level of difficulty, `envs/shop/`, `envs/shop-pot/`).
+  A rule "whenever X happens, do Y" passes when X never happens; in the shop X belongs to the world (a
+  siren that rings, clients that arrive, food that slips out of the hands, a pot that boils over), at
+  times drawn from the reset seed and recorded in `info`, so doing nothing breaks every card (user,
+  2026-11-14: the rules are "for environments on which things happen and the agent has to react").
+  Always busy: the siren, the clients and the food slips run in every episode of every card, and the
+  cards differ only in their rules, so a policy trained on one card sees the world of every other (the
+  transfer experiment). The siren is heard everywhere: while it rings every plain wall and counter
+  cell turns red, the same for every arm, card and level, so the 7x7 view shows it from 232 of 232
+  poses (66 with the switch alone). The stove cooks only to an order taken (no preparing ahead), and
+  one slip is pending, owned by the food in hand. No goal: the episode ends only at the time limit,
+  600 steps. Quiet end: event x
+  does not start in the last 3 x N_x steps, N_x being the fewest actions that handle x from the worst
+  start pose, found by search (ring 15, client 37, pot 20, slip 1; the client's search lets the food be
+  fetched before the order, and the stove cooks only after it). Shop reward (the environment
+  reward): +1 per served order, -0.5 for every further 30 steps a waiting client keeps hearing one
+  ring, -0.5 for every further 24 steps of one boil, nothing for a food slip (the penalty repeats and
+  the stove cooks only to an order, so that no plan that breaks `shop-full` or `shop-boil` out-earns
+  the solving worker: 7.2 on Shop and 5.8 on Pot over 300 seeds, the nearest rival, leaving fallen
+  food, scores 7.0 and 5.7; a worker that holds raw food at the stove keeps every rule, is no wrong
+  plan, and earns more). Runs, user's "we try with and
+  without it": ARM-FM and FARM with the RM reward only (suite `shop`) and with the RM reward plus the shop
+  reward (`reward_source: both`, suite `shop-reward`), and no-RM on the shop reward.
 
 ## Protected invariants
 
-- RM arms never train on the environment reward, and the no-RM arm never uses an RM.
+- RM arms never train on the environment reward, except the scoped `shop-reward` runs below, and the no-RM arm never uses an RM.
 - The judge's clause verdicts never read a pipeline's labeling or RM, and the judge never calls
   `nl2ltl`. Only the cannot-start rule reads the run's own machine, its episode end and its
   labeling at reset.
@@ -148,6 +172,13 @@ thing whichever arm produced it.
   `MiniGrid-UnlockPickup-v0` build the same envs as before, so the original cards and runs are
   unchanged. A forced episode never loses its trigger at the first step: the ball starts away from the
   door and the key starts in the hands, and `drop` cannot put it down on the first step.
+- The shop world is the same for every card of its level: the siren, the clients, the pot and the
+  food slips run whatever the card says, the same reset seed gives the same schedule, and no event
+  starts in its quiet end. Doing nothing never passes a shop card.
+- Runs that add the shop reward to the RM reward (`reward_source: both`) exist only in the suite
+  `shop-reward` and stay labeled "RM + shop reward"; they are never pooled with RM-only runs. This is
+  the one place an RM arm trains with the environment reward, by the user's choice of 2026-11-14; the
+  first invariant holds for every other suite.
 - Judged success keeps its definition (every hard clause holds); the empty-pass check is reported
   beside it, never folded into it.
 - An episode the machine ended in a final state at once (the rule above) never counts as judged
@@ -187,6 +218,9 @@ and a restart is easier to trust.
 - `share_owners`, `find_owner` and `link_shared` in `app/scripts/run_suite.py`: who owns each no-RM
   training and the link; `owner_note` in `app/scripts/aggregate_suite.py`: the owner's state on followers.
 - `trace-bank`, `replay-traces`, `rm-facts` and `test-rl --judge`: card checks and judged results.
+- `experiments/benchmark/scripts/check_shop.py`: the shop's schedule, quiet end, `N_x`, plans, labels
+  and reward on seeds 1 to 300; the `reward_source` key (`rm` or `both`; `env` is refused) of
+  `run_suite.run_config` gives `shop-reward`.
 - `generate-suite` and `run-suite`: statuses, skip and retry rules, arm settings, call caps.
 - `ablate-rm`: which term each switch owns, and no-op detection.
 - `repair-labeling` with `app/src/benchmark/labeling_repair.py`: the classes, the 10-round limit, the
@@ -236,6 +270,10 @@ and a restart is easier to trust.
   labeled "trigger given", and reactive cards are proposed as the real test of conditional rules.
 - 2026-11-14: Cannot-start exception confirmed (user): the judge's rule that reads the run's own machine,
   its episode end and its labeling at reset is needed.
+- 2026-11-14: Shop added (user, after the box and forced cards still let idle agents pass: a level where
+  the world acts, always busy, no goal, quiet end, the shop reward with and without; testing program
+  slice `shop`). It adds `reward_source: both` runs in the suite `shop-reward`, the one exception to
+  the first invariant, scoped as written there.
 - 2026-11-14: Labeling vocabulary and accepted-steps rules added (user: "the labeling function generations only
   worry about those used by the reward machine"; "we do always keep all the steps that have been
   accepted"); testing program slice `lf-code`.

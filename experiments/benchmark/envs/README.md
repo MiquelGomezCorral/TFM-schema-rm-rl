@@ -13,6 +13,8 @@ Rule: `environment.md` holds facts; implementation is in `environment-code.md`.
 | `minigrid-key-corridor` | `MiniGrid-KeyCorridorS6R3-v0` | |
 | `service-room` | `MiniGrid-ServiceRoom-v0` | `siren_ringing`, `switch_toggled`, `holding_box`, `box_fell`, `at_exit` |
 | `service-room-carry` | `MiniGrid-ServiceRoom-v0` with `carry=True` | the same five; the agent starts holding the box (cards in `../box-carry`) |
+| `shop` | `MiniGrid-Shop-v0` | `siren_ringing`, `holding_food`, `switch_toggled`, `client_arrived`, `order_taken`, `food_prepared`, `order_served`, `food_fell`, `served_while_ringing`; no goal, always busy (cards in `../shop`) |
+| `shop-pot` | `MiniGrid-Shop-Pot-v0` | the nine of `shop` plus `pot_boiling`, `stove_fixed` (cards in `../shop`) |
 | `minigrid-blocked-unlock-pickup-cleared` | `MiniGrid-BlockedUnlockPickup-Cleared-v0` | the same five as the plain level; the ball starts away from the door (cards in `../forced-start`) |
 | `minigrid-unlock-pickup-key-held` | `MiniGrid-UnlockPickup-KeyHeld-v0` | the same four as the plain level; the agent starts holding the key (cards in `../forced-start`) |
 
