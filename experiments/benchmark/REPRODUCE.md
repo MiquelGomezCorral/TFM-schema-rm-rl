@@ -97,9 +97,25 @@ HTTP 408), quota and rate limits (402, 429), auth and permission (401, 403; this
 exhausted quota that way), a sticky 400 (seen in earlier benchmark runs) and server errors (5xx).
 Any other failure that left a bundle is `pipeline-failed`. The match is a heuristic on error text.
 
+After `generate-larm` and before the embeddings, `generate-suite` plays the card's plans through the new
+machine the way training does (`check-plans`, no model call): each replay stops at the first final or
+rejecting state, whatever the card's `goal`, and nothing after it counts. The solving plan must stop in a
+final state without entering the well first (a machine with no final state must end owing nothing). A plan
+that breaks a hard rule must not stop in a final state; a plan that breaks only soft rules must pay a
+negative reward. A machine whose initial state is final or rejecting fails every plan. A machine that does
+not pay the plans is `pipeline-failed` with the reason `plan-check-failed: <first problem>`, and each
+`--retry-failed` run generates it once more. A bundle with no labeling source is unchecked, and `generate-suite`
+prints a line when it skips the check (no card, or a bundle that will not load). The
+record `<card-id>.plan_check.json` stays beside the bundle folder; `python app/main.py check-plans --tasks
+<suite>/tasks.json --bundles <suite>/bundles` runs it over finished bundles.
+
 A critic request larger than the model's context window (HTTP 400 `context_length_exceeded`) is not retried: the run stops
 at the first answer with the reason `critic-context-exceeded`, "the machine is too complex to review", and the card is
-`pipeline-failed`, not a `provider-error`. In the shop, FARM generates `shop-boil` (257 states, 6.5M tokens) and
+`pipeline-failed`, not a `provider-error`. Every stage does the same, with the reason `<stage>-context-exceeded`
+(stage name with hyphens). The stages that send the machine text are `critic`, `rm_critic`, `rm_tagger`,
+`description_generator`, `labeling_generator` and `labeling_critic` ("too complex to review" for a stage ending
+in `critic`, "to generate" for the others); `declare_proposal` and `rm_generator` carry it only in the retry
+history of a rejected attempt. Any other 400 keeps its bounded retry. In the shop, FARM generates `shop-boil` (257 states, 6.5M tokens) and
 `shop-quiet-first` (65 states, 0.97M) but its review step cannot read them against the critic's 1M window (quiet-first
 is borderline: refused at reasoning `none`, the run's setting, and accepted at `low`); they count as
 "too complex to review", not as generation failures.

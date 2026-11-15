@@ -12,6 +12,7 @@ from scripts import (
     SuiteOptions,
     ablate_rm,
     aggregate_suite,
+    check_plans,
     cross_critic,
     embed_larm,
     evaluate_larm,
@@ -71,6 +72,7 @@ def cmd_generate_suite(args: argparse.Namespace) -> None:
             max_calls=args.max_calls,
             deadline_min=args.deadline_min,
             retry_failed=args.retry_failed,
+            seed=args.seed,
         )
     )
 
@@ -143,6 +145,11 @@ def cmd_state_check(args: argparse.Namespace) -> None:
 def cmd_trace_bank(args: argparse.Namespace) -> None:
     """Run every card plan in the real env and check the judge's verdicts."""
     trace_bank(args.tasks, args.output, args.only, args.seed)
+
+
+def cmd_check_plans(args: argparse.Namespace) -> None:
+    """Play each bundle's card plans through its machine and record whether it pays them."""
+    check_plans(args.tasks, args.bundles, args.only, args.seed)
 
 
 def cmd_replay_traces(args: argparse.Namespace) -> None:
@@ -698,6 +705,22 @@ if __name__ == "__main__":
     bank_parser.add_argument("--output", required=True, type=Path, help="Folder for the traces")
     bank_parser.add_argument("--only", nargs="+", metavar="ID", help="Run only these card ids")
     bank_parser.set_defaults(func=cmd_trace_bank)
+
+    # ======================================================================================
+    #                                      check-plans
+    # ======================================================================================
+    plans_parser = subparsers.add_parser(
+        "check-plans",
+        help="Play each bundle's card plans through its machine: solve reaches the final, wrong plans do not",
+    )
+    plans_parser.add_argument("--tasks", required=True, type=Path, help="Card file (tasks.json)")
+    plans_parser.add_argument(
+        "--bundles", required=True, type=Path, help="Folder <arm>/<card-id>[~p<k>]/ of bundles"
+    )
+    plans_parser.add_argument(
+        "--only", nargs="+", metavar="ID", help="Only these card ids or bundle names"
+    )
+    plans_parser.set_defaults(func=cmd_check_plans)
 
     # ======================================================================================
     #                                      replay-traces

@@ -13,9 +13,9 @@ from openai import BadRequestError
 from src.arm_fm.generation import _extract_artifact, _refine_labeling
 from src.compiler import materialize_proposal, parse_paper_reward_machine
 from src.engines import (
-    CRITIC_CONTEXT_EXCEEDED,
+    CONTEXT_EXCEEDED,
     AntigravityEngine,
-    CriticContextExceededError,
+    ContextExceededError,
     GenericEngine,
     ImmediateEngineError,
     OpenAIEngine,
@@ -457,9 +457,7 @@ class EngineTests(unittest.TestCase):
 
     @patch("src.engines.generic_engine.sleep")
     @patch.object(GenericEngine, "_renew_session")
-    def test_critic_context_overflow_fails_at_once_with_its_own_reason(
-        self, renew_session, sleep
-    ) -> None:
+    def test_context_overflow_fails_at_once_naming_the_stage(self, renew_session, sleep) -> None:
         response = Response(400, request=Request("POST", "https://provider.test/v1"))
         # The three bodies the provider sent for one overflow (farm-questions/probe_tokens.out):
         # at reasoning none, and at reasoning low with another code and with none.
@@ -491,17 +489,48 @@ class EngineTests(unittest.TestCase):
                 request = Mock(side_effect=failure)
                 engine = GenericEngine(ENVIRONMENT, "test-model", "Test", request, lambda *args: "")
 
-                with self.assertRaises(CriticContextExceededError) as raised:
+                with self.assertRaises(ContextExceededError) as raised:
                     engine.review_candidate("Finish", "[]", "REWARD_MACHINE:", ())
 
                 self.assertEqual(request.call_count, 1)
                 self.assertEqual(len(engine.calls), 1)
                 self.assertEqual(renew_session.call_count, 0)
-                self.assertTrue(str(raised.exception).startswith(CRITIC_CONTEXT_EXCEEDED))
+                self.assertTrue(str(raised.exception).startswith(f"critic-{CONTEXT_EXCEEDED}:"))
                 # No "Error code" text, so generate-suite does not read it as a provider error.
                 self.assertNotIn("Error code", str(raised.exception))
 
-        # Any other critic 400 is still the sticky one: it repeats with a new session each time.
+        # Every other stage stops the same way and names itself in the reason.
+        stages = {
+            "declare-proposal": lambda engine: engine.propose_task("Finish"),
+            "rm-tagger": lambda engine: engine.describe_states("Finish", "[]", "RM", ("u0",)),
+            "labeling-generator": lambda engine: engine.request_text(
+                "system", "user", stage="labeling_generator"
+            ),
+            "labeling-critic": lambda engine: engine.review_labeling(
+                "Finish",
+                "RM",
+                "api",
+                "code",
+                clauses_json="[]",
+                state_descriptions_json="{}",
+                nodes_json="[]",
+                propositions_json="{}",
+            ),
+        }
+        body = bodies["none"]
+        failure = BadRequestError(f"Error code: 400 - {body}", response=response, body=body)
+        for name, call in stages.items():
+            with self.subTest(stage=name):
+                request = Mock(side_effect=failure)
+                engine = GenericEngine(ENVIRONMENT, "test-model", "Test", request, request)
+
+                with self.assertRaises(ContextExceededError) as raised:
+                    call(engine)
+
+                self.assertEqual(request.call_count, 1)
+                self.assertTrue(str(raised.exception).startswith(f"{name}-{CONTEXT_EXCEEDED}:"))
+
+        # Any other 400 is still the sticky one: it repeats with a new session each time.
         other = BadRequestError("Error code: 400", response=response, body=None)
         request = Mock(side_effect=[other, other, '{"accepted": true, "feedback": "ok"}'])
         engine = GenericEngine(ENVIRONMENT, "test-model", "Test", request, lambda *args: "")
@@ -513,10 +542,10 @@ class EngineTests(unittest.TestCase):
     @patch("src.arm_fm.generation.extract_labeling_code", return_value="source")
     def test_labeling_critic_overflow_is_not_refined_again(self, extract, load) -> None:
         request = Mock(return_value="candidate")
-        review = Mock(side_effect=CriticContextExceededError(CRITIC_CONTEXT_EXCEEDED))
+        review = Mock(side_effect=ContextExceededError(CONTEXT_EXCEEDED))
         attempts = []
 
-        with self.assertRaises(CriticContextExceededError):
+        with self.assertRaises(ContextExceededError):
             _refine_labeling(("done",), request, review, attempts)
 
         self.assertEqual(request.call_count, 1)

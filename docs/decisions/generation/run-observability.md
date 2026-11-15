@@ -38,6 +38,24 @@ diagnostics to reproduce a failed run without changing compilation semantics.
   pipeline checks at every stage start, attempt start and retry loop; the in-flight provider request
   finishes first. A stopped run writes no output, logs the stop, and shows a neutral `Stopped` status,
   distinct from `Failed`. The CLI keeps Ctrl+C.
+- A request larger than the model's context window (HTTP 400 `context_length_exceeded`) stops the run
+  after one call, at any stage (`GenericEngine._call_provider` owns it). The stages that send the
+  machine text are `critic`, `rm_critic`, `rm_tagger`, `description_generator`, `labeling_generator`
+  and `labeling_critic`; `declare_proposal` and `rm_generator` carry it only in the retry history of
+  a rejected attempt. The reason is `<stage>-context-exceeded` (stage name with hyphens; "too complex
+  to review" for a stage ending in `critic`, "too complex to generate" otherwise); the card records it
+  and keeps what was accepted. Any other 400 keeps the bounded retry.
+- A plan check sits between labeling and training (`check-plans`; `generate-suite` runs it after
+  `generate-larm`). It plays the card's plans through the bundle's own labeling and machine the way
+  training does: each replay stops at the first final or rejecting state, whatever the card's `goal`
+  (ARM-FM machines always have a final state), and nothing after it counts. The solving plan must stop
+  in a final state without entering the well first (a machine with no final state must end owing
+  nothing). A plan that breaks a hard rule must not stop in a final state (no final: ends owing or in
+  the well); a plan that breaks only soft rules must pay a negative reward. A machine that stops
+  before the agent acts (its initial state is final or rejecting) fails every plan. A bundle with no
+  labeling source is unchecked, not failed. A failure fails the bundle with the reason
+  `plan-check-failed`; each `--retry-failed` run generates it once more. A bundle that passes is
+  unchanged.
 - Graph focus is a desktop-only reading mode; the focus control is hidden below the
   desktop breakpoint instead of introducing a separate mobile graph layout.
 
@@ -110,3 +128,9 @@ keeps their association visible when a trace is reopened.
 - 2026-10-23: Runs record whether the recurrent soft penalty was on (user decision).
 - 2026-11-14: A failed compiler run keeps its accepted machine and steps (user decision; testing program
   slice `lf-code`).
+- 2026-11-16: One call, then stop, on a context-too-long 400 at every machine-text stage (D11); a plan
+  check between labeling and training (D2) (user picks; testing program slice `gen-guards`). Soft-break
+  plans are judged by the trace bank's soft rule, not by "never reaches the final". Replays stop at the
+  first final or rejecting state, as training does, so a no-goal ARM-FM card is judged against its
+  final state too. Known limit: when two guards of a state overlap, the runtime takes the stored
+  transition and the check records no problem, so a pass or fail can depend on that choice.

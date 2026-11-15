@@ -239,6 +239,9 @@ and a restart is easier to trust.
   and reward on seeds 1 to 300; the `reward_source` key (`rm` or `both`; `env` is refused) of
   `run_suite.run_config` gives `shop-reward`.
 - `generate-suite` and `run-suite`: statuses, skip and retry rules, arm settings, call caps.
+- `check-plans` with `app/src/benchmark/plan_check.py`: the card's plans through each bundle's machine,
+  the record `<bundle>.plan_check.json` beside the folder, and the `plan-check-failed` reason that
+  `generate-suite` gives a failing bundle.
 - `ablate-rm`: which term each switch owns, and no-op detection.
 - `repair-labeling` with `app/src/benchmark/labeling_repair.py`: the classes, the 10-round limit, the
   small-model gate, and the record beside each bundle (it keeps the machine's hash and the first class).
