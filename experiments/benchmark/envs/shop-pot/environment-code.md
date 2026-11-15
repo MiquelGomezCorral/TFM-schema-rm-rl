@@ -4,7 +4,7 @@ Addition to `environment.md`; read both. The two levels share the checks and mos
 
 ## Source and runtime
 
-- Source: the same class as the shop, `ShopEnv(pot=True)` in `app/src/arm_fm/shop.py`. Gymnasium ID `MiniGrid-Shop-Pot-v0`, keyword `max_steps` (default 600).
+- Source: the same class as the shop, `ShopEnv(pot=True)` in `app/src/arm_fm/shop.py`. Gymnasium ID `MiniGrid-Shop-Pot-v0`, keyword `max_steps` (default 600). The options `small` and `easy_start_prob` of `../shop/environment-code.md` work here too.
 - The schedule draws the pot's start for every seed whatever the level, so the ring, client and slip draws of a seed are the same in both levels [code: `_plan_events`]. The pot is armed only with `pot=True`.
 - `[run: check_shop.py]` is `experiments/benchmark/scripts/check_shop.py`, reset seeds 1 to 300, `shop-pot` section.
 

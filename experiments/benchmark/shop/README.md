@@ -6,6 +6,13 @@ Why: a rule "whenever X happens, do Y" passes when X never happens. On the older
 
 The world is the same for every card of a level: the siren, the clients and the food slips run in every episode and only the rules differ, so a policy trained on one card sees the world of every other card (the transfer experiment needs this). Facts: `../envs/shop/environment.md` and `../envs/shop-pot/environment.md`. Code: `app/src/arm_fm/shop.py` (`MiniGrid-Shop-v0`, `MiniGrid-Shop-Pot-v0`).
 
+## Options: a smaller shop and an easier start
+
+Two settings of the shop environment, both off by default (the default shop, its cards and every existing run are unchanged). Set them in a card's `env_kwargs`, next to `max_steps` and `agent_view_size`; they work on Shop and Shop-Pot.
+
+- `small: true`: a 7 x 7 room with the counter, the pantry and the stove close together. The same objects, events and rules; the quiet end and the late-siren fine follow the shorter walks (`environment.md`, "Variants"). A scripted solver serves its first client about 35 steps after the client arrives, against about 49 in the default room. It is a constructor setting, not new gym ids, so one mechanism carries both options and no card or runs file needs a second id.
+- `easy_start_prob: p` (0 to 1): a share `p` of the episodes starts with the agent at the counter, facing the client spot, and the first client arrives on step 1 as the normal `client_arrived` event, so every machine and the labeling see it. The other events of the episode keep their seeded times.
+
 ## The cards
 
 No goal, no episode end except the 600-step limit. All clauses are `hard`. LTLf is the judge's display form.

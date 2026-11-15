@@ -156,7 +156,7 @@ def portions_outside_pantry(gym_id: str, seed: int) -> int:
     base, most = env.unwrapped, 0
     for _ in range(shop.MAX_STEPS):
         env.step(shop.scripted_policy(env))
-        floor = [cell for cell in cells_of_type(base, "box") if cell != shop.PANTRY_POS]
+        floor = [cell for cell in cells_of_type(base, "box") if cell != base.layout.pantry]
         most = max(most, len(floor) + (base.carrying is not None))
     return most
 
@@ -191,7 +191,7 @@ def check_handling_steps(checks: Checks, summary: dict) -> None:
     poses, base, walks = shop.poses(), env.unwrapped, []
     for x, y, direction in poses:
         base.agent_pos, base.agent_dir = (x, y), direction
-        walks.append(len(_plan(base, _faces(shop.SWITCH_POS))) + 1)
+        walks.append(len(_plan(base, _faces(base.layout.switch))) + 1)
     bound = shop.handling_steps()
     checks.report(
         "N_ring: the env's own planner needs as many actions as the search from the worst pose",
@@ -337,9 +337,9 @@ def stock_policy(env) -> int:
         return action
     base = env.unwrapped
     target, act = (
-        (shop.PANTRY_POS, Actions.pickup)
+        (base.layout.pantry, Actions.pickup)
         if base.carrying is None
-        else (shop.STOVE_POS, Actions.done)
+        else (base.layout.stove, Actions.done)
     )
     path = _plan(base, _faces(target))
     return int(path[0] if path else act)

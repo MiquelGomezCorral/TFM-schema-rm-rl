@@ -70,6 +70,13 @@ Readings: `switch_toggled` is true on every toggle of the switch, also when the 
 - The siren stops only when the agent toggles the switch, and a ring starts only while it is silent.
 - A client who is served is gone. The first ring and the first client always come within the first 30 steps, so every episode has at least one of each, with time to handle them.
 
+## Variants
+
+Two options change the start or the room; the rules, objects and events above stay the same. Without them the shop is as described above.
+
+- Smaller shop: a room of 7 x 7 cells, so 5 x 5 cells of floor, with the counter, the pantry and the stove closer together. The agent starts in the third floor column and the third row, facing right. The counter is in the leftmost floor column, in rows two to four, with the client spot in the middle; the pantry is in the rightmost floor column, in rows two to four, the middle cell holding the food; the stove is in the top wall above the agent's starting column; the siren switch is in the bottom wall, one column to the right of it. The shorter walks move the numbers: the reward counts a ring after more than 21 steps and again every 21 steps, and no ring starts after step 567, no client after step 519, no slip after step 597.
+- Easier start: in a share of the episodes the agent starts at the counter, facing the client spot, and the first client arrives at step 1 instead of at step 3 to 25.
+
 ## Example trace
 
 An example episode.
