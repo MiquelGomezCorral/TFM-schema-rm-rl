@@ -11,8 +11,8 @@ from src.models import EnvironmentDescription
 from src.prompts import read_prompt, render_prompt
 
 from .errors import (
-    CRITIC_CONTEXT_EXCEEDED,
-    CriticContextExceededError,
+    CONTEXT_EXCEEDED,
+    ContextExceededError,
     RetryableEngineError,
     RunCancelled,
     classify_provider_error,
@@ -212,11 +212,12 @@ class GenericEngine:
                 self.last_reply = request(self.model, *arguments)
                 return self.last_reply
             except BadRequestError as error:
-                # A critic request over the context window fails the same on every session.
-                if stage.endswith("critic") and _is_context_overflow(error):
-                    raise CriticContextExceededError(
-                        f"{CRITIC_CONTEXT_EXCEEDED}: the machine is too complex to review, "
-                        "its critic request is larger than the model's context window"
+                # A request over the context window fails the same on every session, at any stage.
+                if _is_context_overflow(error):
+                    action = "review" if stage.endswith("critic") else "generate"
+                    raise ContextExceededError(
+                        f"{stage.replace('_', '-')}-{CONTEXT_EXCEEDED}: the machine is too complex "
+                        f"to {action}, its {stage} request is larger than the model's context window"
                     ) from error
                 repeats += 1
                 if repeats > Configuration.PROVIDER_RETRIES:

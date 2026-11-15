@@ -24,7 +24,7 @@ from src.compiler import (
 )
 from src.config import Configuration
 from src.engines import (
-    CriticContextExceededError,
+    ContextExceededError,
     CriticUnavailableError,
     CriticValidationError,
     ImmediateEngineError,
@@ -387,6 +387,8 @@ def request_state_descriptions(
             descriptions = _parse_descriptions(candidate, machine.states)
             attempts.append(StageAttempt("descriptions", attempt, "accepted", candidate))
             return descriptions
+        except ContextExceededError:
+            raise  # the same request is larger than the context window on every try
         except Exception as error:
             attempts.append(
                 StageAttempt("descriptions", attempt, "failed", candidate, error=str(error))
@@ -903,8 +905,8 @@ def _refine_labeling(
             if accepted:
                 return labeling_source
             history.append(feedback)
-        except (CriticUnavailableError, CriticContextExceededError):
-            raise  # the critic cannot answer about this candidate: no new candidate
+        except (CriticUnavailableError, ContextExceededError):
+            raise  # the request cannot be sent or answered again: no new candidate
         except Exception as error:
             attempts.append(
                 StageAttempt("labeling", attempt, "failed", labeling_source, error=str(error))

@@ -9,9 +9,14 @@ import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 
 from src.arm_fm import BundleValidationError, load_bundle
+from src.benchmark import load_cards
+from src.benchmark.cards import Card
+from src.benchmark.plan_check import check_and_record, failure_reason
+from src.benchmark.traces import BundleRef, load_machine_bundle
 from src.config import Configuration
 
 MAIN = Path(__file__).resolve().parents[1] / "main.py"
@@ -53,6 +58,7 @@ class SuiteOptions:
     max_calls: int | None
     deadline_min: float | None
     retry_failed: bool
+    seed: int  # the plan check's run seed, the trace bank's
 
 
 @dataclass(frozen=True)
@@ -69,7 +75,10 @@ def generate_suite(options: SuiteOptions) -> None:
 
     A card is skipped when its bundle is complete, or its status is ``pipeline-failed`` without
     ``retry_failed``; ``provider-error`` and ``incomplete`` cards run again. A bundle whose
-    generation finished but has no embeddings only runs the embedding pass. Launching stops
+    generation finished but has no embeddings only runs the embedding pass. Before that pass the
+    card's plans run through the generated machine (``check-plans``); a machine that does not pay
+    them is ``pipeline-failed`` with the reason ``plan-check-failed``, and ``retry_failed``
+    generates it again. Launching stops
     when the calls of the ``generate-larm`` runs this call made reach ``max_calls``, or when
     ``deadline_min`` minutes passed; running cards finish, so the count can pass the limit by
     up to ``parallel`` cards. Each card's status file is written as soon as its generation,
@@ -180,8 +189,12 @@ def _generate(job: Job, options: SuiteOptions) -> tuple[dict, int]:
     """
     directory = options.output / job.id
     started = time.monotonic()
-    if _bundle_state(directory) == "generated":
-        return _status("incomplete", EMBEDDINGS_PENDING, job, options, started), 0
+    # A bundle that failed its plan check is generated again, not embedded.
+    retrying = _read_status(job, options).get("status") == "pipeline-failed"
+    if _bundle_state(directory) == "generated" and not retrying:
+        return _checked(
+            _status("incomplete", EMBEDDINGS_PENDING, job, options, started), job, options
+        ), 0
     command = [
         sys.executable,
         str(MAIN),
@@ -206,8 +219,36 @@ def _generate(job: Job, options: SuiteOptions) -> tuple[dict, int]:
         status, reason = "incomplete", EMBEDDINGS_PENDING
     else:
         status, reason = _classify_failure(directory, _log_path(job, options))
-    result = _status(status, reason, job, options, started)
+    result = _checked(_status(status, reason, job, options, started), job, options)
     return result, result["calls"] if _file_stamp(responses) != before else 0
+
+
+def _checked(result: dict, job: Job, options: SuiteOptions) -> dict:
+    """Fail a generated bundle whose machine does not pay its card's plans; no model call.
+
+    Embeddings follow only a bundle that passes. A card without runnable plans passes.
+    """
+    if result["reason"] != EMBEDDINGS_PENDING:
+        return result
+    card = _cards(options).get(job.id.split("~")[0])
+    bundle = load_machine_bundle(BundleRef(options.arm, job.id, options.output / job.id, False))
+    if card is None or isinstance(bundle, str):
+        print(f"{job.id}: plan check skipped ({'no card' if card is None else bundle})", flush=True)
+        return result
+    try:
+        record = check_and_record(bundle, card, options.seed, options.output / job.id)
+    except Exception as error:  # a crash must not end the suite; the next run checks again
+        reason = f"plan check could not run: {type(error).__name__}: {error}"
+        print(f"{job.id}: {reason}", flush=True)
+        return {**result, "reason": reason}
+    if record["passed"] is False:
+        return {**result, "status": "pipeline-failed", "reason": failure_reason(record)}
+    return result
+
+
+@cache
+def _cards(options: SuiteOptions) -> dict[str, Card]:
+    return {card.id: card for card in load_cards(options.tasks).cards}
 
 
 def _embed(job: Job, options: SuiteOptions, result: dict) -> dict:

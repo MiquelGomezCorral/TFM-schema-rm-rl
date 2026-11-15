@@ -3,6 +3,7 @@
 from .ablate_rm import OFF_CHOICES, ablate_rm
 from .aggregate_suite import aggregate_suite
 from .benchmark_traces import replay_traces, rm_facts, trace_bank
+from .check_plans import check_plans
 from .cross_critic import cross_critic
 from .embed_larm import embed_larm
 from .evaluate_larm import evaluate_larm

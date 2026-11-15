@@ -237,7 +237,7 @@ def run_trace_bank(
     return summary
 
 
-def _plans_of(card: Card) -> list[tuple[str, Sequence[Mapping[str, Any]], list[int] | None]]:
+def plans_of(card: Card) -> list[tuple[str, Sequence[Mapping[str, Any]], list[int] | None]]:
     """``(name, steps, breaks)`` of each plan; ``breaks`` is None for the solving plan."""
     plans = [("solve", card.solve, None)] if card.solve else []
     return plans + [
@@ -254,7 +254,7 @@ def _bank_card(
     runs = [
         _bank_plan(suite, card, plan, reset_seed, output)
         for reset_seed in card.reset_seeds(seed)
-        for plan in _plans_of(card)
+        for plan in plans_of(card)
     ]
     return {**card_header(card), "runs": runs}
 
