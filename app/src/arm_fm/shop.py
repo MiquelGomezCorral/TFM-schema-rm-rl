@@ -5,6 +5,10 @@ pot that boils over). There is no goal: the episode ends only at the time limit.
 client arrives, a carried food portion slips out of the hands, and the pot boils, all at times drawn
 from the reset seed, so every card of the suite sees the same world and differs only in its rules.
 
+Two options, both off by default (the default shop is unchanged): ``small=True`` puts the counter,
+the pantry and the stove close together in a 7 x 7 room, and ``easy_start_prob`` makes a share of
+the episodes start at the counter with a client arriving on step 1.
+
 It builds on ``ServiceRoomEnv`` and reuses its siren, switch, fall and seeded-schedule code. The
 rules (layout, events, reward) are in ``environment.md`` and the code-side facts in
 ``environment-code.md``, both in ``experiments/benchmark/envs/shop/`` (pot: ``shop-pot/``).
@@ -12,7 +16,8 @@ rules (layout, events, reward) are in ``environment.md`` and the code-side facts
 
 from collections import defaultdict, deque
 from collections.abc import Callable, Iterable, Iterator
-from functools import cache
+from functools import cache, partial
+from typing import NamedTuple
 
 import numpy as np
 from gymnasium.envs.registration import register
@@ -33,14 +38,41 @@ from .service_room import (
 )
 
 ENV_ID, POT_ENV_ID = "MiniGrid-Shop-v0", "MiniGrid-Shop-Pot-v0"
-SIZE = 10  # 8 x 8 cells of floor inside the wall
 MAX_STEPS = 600
-START, START_DIR = (4, 4), 0
-CLIENT_POS = (1, 4)  # the client spot in the counter; the agent serves it from (2, 4) facing west
-PANTRY_POS = (8, 4)  # the shelf that always holds one portion; the agent takes it from (7, 4)
-STOVE_POS = (4, 0)  # in the north wall; the agent uses it from (4, 1) facing north
-SWITCH_POS = (5, 9)  # in the south wall; the agent toggles it from (5, 8) facing south
-COUNTER_CELLS = ((1, 3), (1, 5), (8, 3), (8, 5))
+START_DIR = 0
+
+
+class Layout(NamedTuple):
+    """Where things stand in the room.
+
+    The agent works from the floor cell next to each: the client spot from the east (facing west),
+    the pantry from the west, the stove from the south, the switch from the north.
+    """
+
+    size: int  # the room is size x size cells with its wall
+    start: tuple[int, int]
+    client: tuple[int, int]  # the client spot in the counter
+    pantry: tuple[int, int]  # the shelf that always holds one portion
+    stove: tuple[int, int]  # in the north wall
+    switch: tuple[int, int]  # in the south wall
+    counter: tuple[tuple[int, int], ...]  # the other counter cells
+
+    @property
+    def floor(self) -> set[tuple[int, int]]:
+        return {(x, y) for x in range(1, self.size - 1) for y in range(1, self.size - 1)}
+
+    @property
+    def blocked(self) -> set[tuple[int, int]]:
+        return {self.client, self.pantry, *self.counter}
+
+    @property
+    def counter_state(self) -> tuple[int, int, int]:
+        """The agent at the counter, facing the client spot."""
+        return self.client[0] + 1, self.client[1], 2
+
+
+NORMAL = Layout(10, (4, 4), (1, 4), (8, 4), (4, 0), (5, 9), ((1, 3), (1, 5), (8, 3), (8, 5)))
+SMALL = Layout(7, (3, 3), (1, 3), (5, 3), (3, 0), (4, 6), ((1, 2), (1, 4), (5, 2), (5, 4)))
 COUNTER_COLOR, STOVE_COLOR = "yellow", "purple"  # a boiling stove takes the ringing red
 WAITING_COLOR, ORDERED_COLOR = "green", "blue"  # a client before and after the order is taken
 RAW_COLOR, PREPARED_COLOR = "yellow", "green"  # the food portion
@@ -61,22 +93,19 @@ MISS_PENALTY = -0.5
 # ======================================================================================
 #                                     LAYOUT SEARCH
 # ======================================================================================
-FLOOR = {(x, y) for x in range(1, SIZE - 1) for y in range(1, SIZE - 1)}
-STATIC_BLOCKED = {CLIENT_POS, PANTRY_POS, *COUNTER_CELLS}
-COUNTER_STATE = (2, 4, 2)  # the agent at the counter, facing the client spot
-
-
 def _front(x: int, y: int, direction: int) -> tuple[int, int]:
     dx, dy = DIRECTIONS[direction]
     return x + dx, y + dy
 
 
-def _walk(x: int, y: int, direction: int, blocked: set) -> Iterator[tuple[int, int, int]]:
+def _walk(
+    layout: Layout, x: int, y: int, direction: int, blocked: set
+) -> Iterator[tuple[int, int, int]]:
     """The turns and the step forward the agent can take from a state."""
     yield x, y, (direction - 1) % 4
     yield x, y, (direction + 1) % 4
     ahead = _front(x, y, direction)
-    if ahead in FLOOR and ahead not in blocked:
+    if ahead in layout.floor and ahead not in blocked:
         yield (*ahead, direction)
 
 
@@ -103,50 +132,50 @@ def _fewest_actions(starts: list, successors: Callable, is_goal: Callable) -> in
     return max(distance[start] for start in starts)
 
 
-def _walks(state: tuple) -> Iterator[tuple]:
-    return _walk(*state, STATIC_BLOCKED)
+def _walks(layout: Layout, state: tuple) -> Iterator[tuple]:
+    return _walk(layout, *state, layout.blocked)
 
 
-def _client_moves(state: tuple) -> Iterator[tuple]:
+def _client_moves(layout: Layout, state: tuple) -> Iterator[tuple]:
     """Serving a client: the order, the food (none, raw, prepared, handed over: 0 to 3) in either order.
 
     The food can be fetched before the order, but the stove prepares it only after the order.
     """
     *pose, ordered, food = state
-    for walked in _walk(*pose, STATIC_BLOCKED):
+    for walked in _walk(layout, *pose, layout.blocked):
         yield (*walked, ordered, food)
     ahead = _front(*pose)
-    if ahead == CLIENT_POS and not ordered:
+    if ahead == layout.client and not ordered:
         yield (*pose, True, food)
-    elif ahead == CLIENT_POS and food == 2:
+    elif ahead == layout.client and food == 2:
         yield (*pose, ordered, 3)
-    elif ahead == PANTRY_POS and food == 0:
+    elif ahead == layout.pantry and food == 0:
         yield (*pose, ordered, 1)
-    elif ahead == STOVE_POS and food == 1 and ordered:
+    elif ahead == layout.stove and food == 1 and ordered:
         yield (*pose, ordered, 2)
 
 
-def _pot_moves(state: tuple) -> Iterator[tuple]:
+def _pot_moves(layout: Layout, state: tuple) -> Iterator[tuple]:
     """Turning the stove down while carrying: put the food down, turn it down, pick the food up."""
     *pose, item, fixed = state
-    blocked = STATIC_BLOCKED | ({item} if item != HELD else set())
-    for walked in _walk(*pose, blocked):
+    blocked = layout.blocked | ({item} if item != HELD else set())
+    for walked in _walk(layout, *pose, blocked):
         yield (*walked, item, fixed)
     ahead = _front(*pose)
-    if item == HELD and ahead in FLOOR and ahead not in blocked:
+    if item == HELD and ahead in layout.floor and ahead not in blocked:
         yield (*pose, ahead, fixed)
     if item == ahead:
         yield (*pose, HELD, fixed)
-    if ahead == STOVE_POS and item != HELD:
+    if ahead == layout.stove and item != HELD:
         yield (*pose, item, True)
 
 
-def poses() -> list[tuple[int, int, int]]:
-    return [(*cell, d) for cell in sorted(FLOOR - STATIC_BLOCKED) for d in range(4)]
+def poses(layout: Layout = NORMAL) -> list[tuple[int, int, int]]:
+    return [(*cell, d) for cell in sorted(layout.floor - layout.blocked) for d in range(4)]
 
 
 @cache
-def handling_steps() -> dict[str, int]:
+def handling_steps(layout: Layout = NORMAL) -> dict[str, int]:
     """``N_x``: the fewest actions that fully handle event x from the worst start state.
 
     The worst start state is the worst floor cell with the worst facing, found by breadth-first
@@ -155,33 +184,34 @@ def handling_steps() -> dict[str, int]:
     food down, turn the stove down, pick the food up). A food slip is handled by the next pickup:
     the fall turns the agent to face the food.
     """
-    starts = poses()
-    ring = _fewest_actions(starts, _walks, lambda s: _front(*s) == SWITCH_POS)
+    starts = poses(layout)
+    ring = _fewest_actions(starts, partial(_walks, layout), lambda s: _front(*s) == layout.switch)
     client = _fewest_actions(
-        [(*pose, False, 0) for pose in starts], _client_moves, lambda s: s[4] == 3
+        [(*pose, False, 0) for pose in starts], partial(_client_moves, layout), lambda s: s[4] == 3
     )
     pot = _fewest_actions(
         [(*pose, HELD, False) for pose in starts],
-        _pot_moves,
+        partial(_pot_moves, layout),
         lambda s: s[4] and s[3] == HELD,
     )
     return {"ring": ring + 1, "client": client, "pot": pot, "fall": 1}
 
 
 @cache
-def walk_limits() -> dict[str, int]:
+def walk_limits(layout: Layout = NORMAL) -> dict[str, int]:
     """Steps a waiting client may hear the siren, or the pot may boil, before the shop reward fines it.
 
     Three times the shortest walk from the counter to the switch (or to the stove).
     """
-    to_switch = _fewest_actions([COUNTER_STATE], _walks, lambda s: _front(*s) == SWITCH_POS)
-    to_stove = _fewest_actions([COUNTER_STATE], _walks, lambda s: _front(*s) == STOVE_POS)
+    walks, start = partial(_walks, layout), [layout.counter_state]
+    to_switch = _fewest_actions(start, walks, lambda s: _front(*s) == layout.switch)
+    to_stove = _fewest_actions(start, walks, lambda s: _front(*s) == layout.stove)
     return {"ring": 3 * to_switch, "pot": 3 * to_stove}
 
 
-def last_start_steps(max_steps: int) -> dict[str, int]:
+def last_start_steps(max_steps: int, layout: Layout = NORMAL) -> dict[str, int]:
     """The last step an event may start at: it never starts in the last ``3 x N_x`` steps."""
-    return {kind: max_steps - QUIET_FACTOR * n for kind, n in handling_steps().items()}
+    return {kind: max_steps - QUIET_FACTOR * n for kind, n in handling_steps(layout).items()}
 
 
 def _late_penalty(count: int, limit: int) -> float:
@@ -242,24 +272,42 @@ class ShopEnv(ServiceRoomEnv):
     The reward is the shop's own: +1 per served order, ``-0.5`` for every further
     ``walk_limits()["ring"]`` steps a waiting client keeps hearing a ring, and with ``pot``
     ``-0.5`` for every further ``walk_limits()["pot"]`` steps of a boil.
+
+    Args:
+        pot: Add the pot that boils over.
+        small: Use the ``SMALL`` layout (a 7 x 7 room, the counter, the pantry and the stove close
+            together) instead of ``NORMAL``. The events, schedule and rules are the same.
+        easy_start_prob: Chance, per episode, of the easy start: the agent stands at the counter
+            facing the client spot and a client arrives on step 1. The chance is drawn from the
+            reset seed, after every other draw, so the schedule is the same whatever the value.
+        max_steps: Episode length.
     """
 
-    size = SIZE
-    switch_pos = SWITCH_POS
-
-    def __init__(self, pot: bool = False, max_steps: int = MAX_STEPS, **kwargs) -> None:
+    def __init__(
+        self,
+        pot: bool = False,
+        small: bool = False,
+        easy_start_prob: float = 0.0,
+        max_steps: int = MAX_STEPS,
+        **kwargs,
+    ) -> None:
         # the n-th gap is used only after n events, each at least the shortest gap long
         covered = GAP_DRAWS * min(low for low, _ in GAP.values())
         if max_steps > covered:
             raise ValueError(
                 f"max_steps {max_steps} is over {covered}: the {GAP_DRAWS} drawn gaps run out"
             )
+        if not 0.0 <= easy_start_prob <= 1.0:
+            raise ValueError(f"easy_start_prob {easy_start_prob} is not between 0 and 1")
+        self.layout = SMALL if small else NORMAL
+        self.size, self.switch_pos = self.layout.size, self.layout.switch  # read by the base class
         super().__init__(siren=True, max_steps=max_steps, **kwargs)
         self.pot, self.face_fallen = pot, True
+        self.easy_start_prob, self.easy_start = easy_start_prob, False
         self.pot_boiling = False
         self.client_present = self.order_taken = False
         self._ringing_before = False
-        self._last_start = last_start_steps(max_steps)
+        self._last_start = last_start_steps(max_steps, self.layout)
         self._first: dict[str, int] = {}
         self._due: dict[str, int | None] = {}
         self._gaps: dict[str, deque[int]] = {}
@@ -274,17 +322,23 @@ class ShopEnv(ServiceRoomEnv):
     def _gen_grid(self, width: int, height: int) -> None:
         self.grid = Grid(width, height)
         self.grid.wall_rect(0, 0, width, height)
-        for cell in (CLIENT_POS, *COUNTER_CELLS):
+        layout = self.layout
+        for cell in (layout.client, *layout.counter):
             self.grid.set(*cell, Counter())
-        self.grid.set(*PANTRY_POS, Food())
-        self.grid.set(*STOVE_POS, Stove())
-        self.grid.set(*SWITCH_POS, Switch())
-        self.agent_pos, self.agent_dir = START, START_DIR
+        self.grid.set(*layout.pantry, Food())
+        self.grid.set(*layout.stove, Stove())
+        self.grid.set(*layout.switch, Switch())
+        self.agent_pos, self.agent_dir = layout.start, START_DIR
 
     # ============================== episode ==============================
 
     def reset(self, *, seed: int | None = None, options: dict | None = None):
         obs, info = super().reset(seed=seed, options=options)
+        # the event seed, hence the easy-start choice, is known only after the grid is built
+        if self.easy_start:
+            x, y, direction = self.layout.counter_state
+            self.agent_pos, self.agent_dir = (x, y), direction  # a tuple, as MiniGrid keeps it
+            obs = self.gen_obs()
         return obs, {**info, "schedule": self._schedule_info()}
 
     def _plan_events(self, rng: np.random.Generator) -> None:
@@ -296,6 +350,9 @@ class ShopEnv(ServiceRoomEnv):
         delays = [int(d) for d in rng.integers(*SLIP_DELAY, size=PICKUP_DRAWS)]
         slips = rng.random(PICKUP_DRAWS) < SLIP_CHANCE
         slips[0] = True  # the first food of the episode always slips: the rule is never idle
+        self.easy_start = bool(rng.random() < self.easy_start_prob)  # last: no other draw moves
+        if self.easy_start:
+            first["client"] = 1  # arrives on the first step, as the normal "arrive" event
 
         self._gaps = {kind: deque(values) for kind, values in gaps.items()}
         self._first = first
@@ -331,7 +388,7 @@ class ShopEnv(ServiceRoomEnv):
             self._heard = 0
         if "boil" in self.events_this_step:
             self._boiled = 0
-        limits = walk_limits()
+        limits = walk_limits(self.layout)
         if self.siren_ringing and self.client_present:
             self._heard += 1
             reward += _late_penalty(self._heard, limits["ring"])
@@ -355,13 +412,13 @@ class ShopEnv(ServiceRoomEnv):
 
     def talk_to_client(self) -> None:
         """Toggling the client takes the order, or hands over prepared food and serves it."""
-        client = self.grid.get(*CLIENT_POS)
+        client = self.grid.get(*self.layout.client)
         if not self.order_taken:
             self.order_taken, client.color = True, ORDERED_COLOR
             self.events_this_step.append("order")
         elif self.carrying is not None and self.carrying.color == PREPARED_COLOR:
             self.carrying, self.client_present = None, False
-            self.grid.set(*CLIENT_POS, Counter())
+            self.grid.set(*self.layout.client, Counter())
             self._set_siren(self.siren_ringing)  # the new counter cell takes the current colour
             self.events_this_step.append("serve")
             if self._ringing_before:
@@ -389,7 +446,7 @@ class ShopEnv(ServiceRoomEnv):
 
     def _set_boiling(self, boiling: bool) -> None:
         self.pot_boiling = boiling
-        self.grid.get(*STOVE_POS).color = RINGING_COLOR if boiling else STOVE_COLOR
+        self.grid.get(*self.layout.stove).color = RINGING_COLOR if boiling else STOVE_COLOR
 
     def _schedule_fall(self) -> None:
         """Called after every pickup: keep the pantry full, one portion in the shop, plan a slip.
@@ -397,10 +454,10 @@ class ShopEnv(ServiceRoomEnv):
         One slip is pending, owned by the food in hand: a new pickup replaces it, so a slip
         planned for an earlier holding never drops the food of a later one.
         """
-        if self.grid.get(*PANTRY_POS) is None:  # the portion came from the pantry
-            self.grid.set(*PANTRY_POS, Food())
+        if self.grid.get(*self.layout.pantry) is None:  # the portion came from the pantry
+            self.grid.set(*self.layout.pantry, Food())
             for cell in cells_of_type(self, "box"):
-                if cell != PANTRY_POS:
+                if cell != self.layout.pantry:
                     self.grid.set(*cell, None)
         delay = self._slips[self._pickups] if self._pickups < PICKUP_DRAWS else None
         self._pickups += 1
@@ -416,7 +473,7 @@ class ShopEnv(ServiceRoomEnv):
             self._ring()
         if self._due["client"] == step:
             self._due["client"] = None
-            self.grid.set(*CLIENT_POS, Client())
+            self.grid.set(*self.layout.client, Client())
             self.client_present, self.order_taken = True, False
             self.event_counts["client"]["fired"] += 1
             self.events_this_step.append("arrive")
@@ -503,29 +560,35 @@ def _reactions(base: ShopEnv, ignore: set[str]) -> list[tuple[tuple[int, int], A
     held, serving = base.carrying, []
     floor_food = [] if held is not None else _floor_food(base)
     if base.client_present and not base.order_taken:
-        serving.append((CLIENT_POS, Actions.toggle))
+        serving.append((base.layout.client, Actions.toggle))
     elif base.client_present and held is None:
-        serving.append((PANTRY_POS, Actions.pickup))
+        serving.append((base.layout.pantry, Actions.pickup))
     elif base.client_present and held.color == RAW_COLOR:
-        serving.append((STOVE_POS, Actions.toggle))
+        serving.append((base.layout.stove, Actions.toggle))
     elif base.client_present:
-        serving.append((CLIENT_POS, Actions.toggle))
-    siren = [(SWITCH_POS, Actions.toggle)] if base.siren_ringing and "siren" not in ignore else []
-    pot = [(STOVE_POS, Actions.toggle)] if base.pot_boiling and "pot" not in ignore else []
+        serving.append((base.layout.client, Actions.toggle))
+    siren = (
+        [(base.layout.switch, Actions.toggle)]
+        if base.siren_ringing and "siren" not in ignore
+        else []
+    )
+    pot = [(base.layout.stove, Actions.toggle)] if base.pot_boiling and "pot" not in ignore else []
     if "siren_late" in ignore and base.client_present:  # the client first, whatever rings
         return serving + siren + pot
     return siren + pot + floor_food + serving
 
 
 def _floor_food(base: ShopEnv) -> list[tuple[tuple[int, int], Actions]]:
-    return [(cell, Actions.pickup) for cell in cells_of_type(base, "box") if cell != PANTRY_POS]
+    boxes = cells_of_type(base, "box")
+    return [(cell, Actions.pickup) for cell in boxes if cell != base.layout.pantry]
 
 
 def _put_food_down_by_stove(base: ShopEnv) -> int | None:
     """Walk to the stove access cell, face a free neighbor and drop the carried food there."""
     x, y, direction = *base.agent_pos, base.agent_dir
-    if (x, y) != (STOVE_POS[0], STOVE_POS[1] + 1):
-        approach = _plan(base, lambda px, py, _d: (px, py) == (STOVE_POS[0], STOVE_POS[1] + 1))
+    stove_x, stove_y = base.layout.stove
+    if (x, y) != (stove_x, stove_y + 1):
+        approach = _plan(base, lambda px, py, _d: (px, py) == (stove_x, stove_y + 1))
         return int(approach[0]) if approach else None
     free = [base.grid.get(*_front(x, y, turned)) is None for turned in range(4)]
     if free[direction]:
