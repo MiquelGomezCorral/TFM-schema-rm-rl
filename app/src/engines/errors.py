@@ -14,6 +14,10 @@ from openai import (
 
 from src.config import Configuration
 
+CRITIC_CONTEXT_EXCEEDED = (
+    "critic-context-exceeded"  # the reason a card records; not a provider error
+)
+
 
 class ProposalValidationError(ValueError):
     """Report a refused or invalid model proposal."""
@@ -29,6 +33,10 @@ class RetryableEngineError(RuntimeError):
 
 class ImmediateEngineError(RuntimeError):
     """A provider or configuration error that must not be retried."""
+
+
+class CriticContextExceededError(ImmediateEngineError):
+    """The critic request is larger than the model's context window; repeating it cannot help."""
 
 
 class CriticUnavailableError(ImmediateEngineError):

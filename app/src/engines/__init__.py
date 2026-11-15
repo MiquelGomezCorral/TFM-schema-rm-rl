@@ -1,6 +1,8 @@
 """External proposal engines."""
 
 from .errors import (
+    CRITIC_CONTEXT_EXCEEDED,
+    CriticContextExceededError,
     CriticUnavailableError,
     CriticValidationError,
     ImmediateEngineError,

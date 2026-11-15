@@ -26,6 +26,7 @@ from src.arm_fm import (
 from src.arm_fm.generation import StageAttempt
 from src.compiler import CompilationResult
 from src.config import Configuration
+from src.engines import CRITIC_CONTEXT_EXCEEDED
 from src.models import EnvironmentDescription
 from src.utils import (
     GenerationHooks,
@@ -107,6 +108,8 @@ def generate_compiler(CONFIG: Configuration, environment: EnvironmentDescription
 
 def _failure_reason(run_stats: list[dict], failures: list[str]) -> str:
     """Why the run failed; it names the stage when the critic had accepted a machine first."""
+    if failures and failures[0].startswith(CRITIC_CONTEXT_EXCEEDED):
+        return failures[0]  # a card too complex to review, not a failure to generate
     stage = _FAILED_STAGE.get(run_stats[0].get("last_stage")) if run_stats else None
     if stage is None or run_stats[0].get("accepted") is None or not failures:
         return "Compiler generation failed without an accepted result"

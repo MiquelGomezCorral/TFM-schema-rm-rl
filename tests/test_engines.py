@@ -10,10 +10,12 @@ from httpx import Request, Response
 from nl2ltl.declare.base import TemplateEnum
 from openai import BadRequestError
 
-from src.arm_fm.generation import _extract_artifact
+from src.arm_fm.generation import _extract_artifact, _refine_labeling
 from src.compiler import materialize_proposal, parse_paper_reward_machine
 from src.engines import (
+    CRITIC_CONTEXT_EXCEEDED,
     AntigravityEngine,
+    CriticContextExceededError,
     GenericEngine,
     ImmediateEngineError,
     OpenAIEngine,
@@ -452,6 +454,74 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(engine.request_text("system", "user"), "finished")
         self.assertEqual(sleep.call_count, 2)
         self.assertEqual(renew_session.call_count, 2)
+
+    @patch("src.engines.generic_engine.sleep")
+    @patch.object(GenericEngine, "_renew_session")
+    def test_critic_context_overflow_fails_at_once_with_its_own_reason(
+        self, renew_session, sleep
+    ) -> None:
+        response = Response(400, request=Request("POST", "https://provider.test/v1"))
+        # The three bodies the provider sent for one overflow (farm-questions/probe_tokens.out):
+        # at reasoning none, and at reasoning low with another code and with none.
+        bodies = {
+            "none": {
+                "message": "Your request resulted in more tokens than this model's maximum "
+                "context length allows. Please reduce the length of the messages or run "
+                "compaction.",
+                "type": "invalid_request_error",
+                "code": "context_length_exceeded",
+            },
+            "low, text only": {
+                "type": "invalid_request_error",
+                "message": "Upstream request failed: [400] This model's maximum context length "
+                "is 1048576 tokens. However, your messages resulted in 1682839 tokens. Please "
+                "reduce the length of the messages.",
+            },
+            "low, other code": {
+                "type": "invalid_request_error",
+                "code": "invalid_request_error",
+                "message": "Upstream request failed: [invalid_request_error] The prompt is too "
+                "long: 6518612, model maximum context length: 1048573",
+            },
+        }
+        for name, body in bodies.items():
+            with self.subTest(reasoning=name):
+                renew_session.reset_mock()
+                failure = BadRequestError(f"Error code: 400 - {body}", response=response, body=body)
+                request = Mock(side_effect=failure)
+                engine = GenericEngine(ENVIRONMENT, "test-model", "Test", request, lambda *args: "")
+
+                with self.assertRaises(CriticContextExceededError) as raised:
+                    engine.review_candidate("Finish", "[]", "REWARD_MACHINE:", ())
+
+                self.assertEqual(request.call_count, 1)
+                self.assertEqual(len(engine.calls), 1)
+                self.assertEqual(renew_session.call_count, 0)
+                self.assertTrue(str(raised.exception).startswith(CRITIC_CONTEXT_EXCEEDED))
+                # No "Error code" text, so generate-suite does not read it as a provider error.
+                self.assertNotIn("Error code", str(raised.exception))
+
+        # Any other critic 400 is still the sticky one: it repeats with a new session each time.
+        other = BadRequestError("Error code: 400", response=response, body=None)
+        request = Mock(side_effect=[other, other, '{"accepted": true, "feedback": "ok"}'])
+        engine = GenericEngine(ENVIRONMENT, "test-model", "Test", request, lambda *args: "")
+        renew_session.reset_mock()
+        self.assertTrue(engine.review_candidate("Finish", "[]", "REWARD_MACHINE:", ()).accepted)
+        self.assertEqual(renew_session.call_count, 2)
+
+    @patch("src.arm_fm.generation.load_labeling_functions")
+    @patch("src.arm_fm.generation.extract_labeling_code", return_value="source")
+    def test_labeling_critic_overflow_is_not_refined_again(self, extract, load) -> None:
+        request = Mock(return_value="candidate")
+        review = Mock(side_effect=CriticContextExceededError(CRITIC_CONTEXT_EXCEEDED))
+        attempts = []
+
+        with self.assertRaises(CriticContextExceededError):
+            _refine_labeling(("done",), request, review, attempts)
+
+        self.assertEqual(request.call_count, 1)
+        self.assertEqual(review.call_count, 1)
+        self.assertEqual(attempts, [])
 
     def test_state_tagger_output_shapes_are_validated(self) -> None:
         nodes = ("u0", "u1")

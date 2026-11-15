@@ -76,7 +76,12 @@ thing whichever arm produced it.
   (`deepseek-v4.1-flash` or `glm-5.3-flash` only) in up to 10 rounds, each shown the failure
   evidence. The Reward Machine is never touched. A bundle still failing after the loop is `unfixed`
   and goes to an outside agent step; if the agent changes the labeling and it then checks `ok`, the
-  bundle is `fixed-by-agent` and still counts as failed.
+  bundle is `fixed-by-agent` and still counts as failed. A repaired bundle whose generation stopped
+  at labeling, after its Reward Machine was accepted, then gets the stages it never reached: state
+  descriptions from its generator and embeddings from `embed-larm`. Its status becomes `complete`,
+  with the generation outcome kept in `generation_status` and `generation_reason` and who repaired it
+  in `labeling_repaired_by` (`small-model` or `agent`), so it is trained. A bundle whose machine was
+  never accepted stays `pipeline-failed`.
 - **Labeling vocabulary.** In both pipelines a labeling covers the propositions the accepted
   machine's guards mention (`PaperRewardMachine.used_propositions`) plus, transitively, the
   propositions their facts-page definitions read: `key_lost` reads the previous `has_door_key` (or
@@ -146,7 +151,11 @@ thing whichever arm produced it.
   cell turns red, the same for every arm, card and level, so the 7x7 view shows it from 232 of 232
   poses (66 with the switch alone). The stove cooks only to an order taken (no preparing ahead), and
   one slip is pending, owned by the food in hand. No goal: the episode ends only at the time limit,
-  600 steps. Quiet end: event x
+  600 steps. Two optional settings, both off by default so the default shop stays as it is: `small`
+  (a 7 x 7 room with the counter, pantry and stove close together; `N_x` 11, 27, 15 and fines at 21
+  and 18 steps) and `easy_start_prob` (a share of episodes starts at the counter with a client
+  arriving on step 1). Runs that use either are labeled so and are never pooled with default-shop
+  runs, since the late-fine thresholds and the reward scale differ. Quiet end: event x
   does not start in the last 3 x N_x steps, N_x being the fewest actions that handle x from the worst
   start pose, found by search (ring 15, client 37, pot 20, slip 1; the client's search lets the food be
   fetched before the order, and the stove cooks only after it). Shop reward (the environment
@@ -156,8 +165,12 @@ thing whichever arm produced it.
   the solving worker: 7.2 on Shop and 5.8 on Pot over 300 seeds, the nearest rival, leaving fallen
   food, scores 7.0 and 5.7; a worker that holds raw food at the stove keeps every rule, is no wrong
   plan, and earns more). Runs, user's "we try with and
-  without it": ARM-FM and FARM with the RM reward only (suite `shop`) and with the RM reward plus the shop
-  reward (`reward_source: both`, suite `shop-reward`), and no-RM on the shop reward.
+  without it": FARM with the RM reward only (suite `shop`) and with the RM reward plus the shop
+  reward (`reward_source: both`, suite `shop-reward`), and no-RM on the shop reward. Shop runs use
+  FARM and the no-RM baseline only (user, 2026-11-15). ARM-FM is out of the shop and of its transfer
+  experiment: 12 of its 22 shop machines have a final start state (1-step episodes), and when final
+  states do not end the episode it farms the loops of its own machine (probe, stopped at 2.4M steps).
+  Final and rejecting states keep ending the episode.
 
 ## Protected invariants
 
@@ -195,6 +208,10 @@ thing whichever arm produced it.
   before the switches existed.
 - Labeling repair never edits a Reward Machine and never replaces the class recorded before repair.
   A repaired or agent-fixed bundle is still a failure in the failure rate.
+- Finishing a repaired bundle leaves the generation numbers as they were: a count of generation
+  successes reads `generation_status` (else `status`), and the manifest's attempt metadata, `calls`
+  and `wall_time_s` are not changed. `evaluate-larm` keeps such a bundle among the generation
+  failures, never as a judged first-attempt or refined win; only training reads the current `status`.
 - A labeling is never asked to cover a proposition the machine does not use, and no pipeline throws away
   an accepted machine because a later stage failed. Regenerating a labeling never changes the machine.
 
@@ -279,3 +296,5 @@ and a restart is easier to trust.
   accepted"); testing program slice `lf-code`.
 - 2026-11-14: Vocabulary widened to what the used propositions' definitions read (correction 1 of `lf-code`:
   an RM-only labeling of `key_lost` crashed on the previous `has_door_key`).
+- 2026-11-15: Shop options added, `small` and `easy_start_prob`, off by default and never pooled with
+  default-shop runs (user decision of 00:35 on the serving change and the smaller shop).
