@@ -160,14 +160,66 @@ changes nothing in that machine) is listed `no-data` with that reason and is not
 
 <!-- seeds: the target is three seeds [1, 2, 3]; the committed runs.yaml files carry seed 1. -->
 
-Learner calibrations (disclosed, not tuned per arm): see `experiments/benchmark/configs/dqn.yaml`
-(`double_q: true`, gamma 0.95, `learning_starts` 20000, `end_e` 0.05, `batch_size` 128,
-`buffer_size` 1000000) and `experiments/benchmark/configs/ppo.yaml` (CleanRL MiniGrid values: lr
-2.5e-4, 8 envs, 128 steps, 4 minibatches, 4 epochs, clip 0.1, entropy 0.01, value 0.5, GAE 0.95,
-gamma 0.99, greedy evaluation). RM arms set `time_limit_penalty: 0.0`.
+Learner calibrations (one learner for every arm; PPO was tuned on FARM pilot machines, see the
+table below): the thesis runs use PPO setting s07 (`learner: ppo` in every thesis suite: `base`,
+`templates`, `complex`, `ablation`, `box-carry`, `forced-start` and the `shop` suites; `pilot` is `TBD`
+and `tuning/ppo/speed` uses `dqn`, because both compare learners), see
+`experiments/benchmark/configs/ppo.yaml` (lr 1e-3, 16 envs, 256 steps, 16 minibatches, 10 epochs,
+clip 0.1, entropy 0.01, value 0.5, GAE 0.95, gamma 0.99, greedy evaluation). DQN stays for the learner
+pilot and its checks, see `experiments/benchmark/configs/dqn.yaml` (`double_q: true`, gamma 0.95,
+`learning_starts` 20000, `end_e` 0.05, `batch_size` 128, `buffer_size` 1000000). RM arms set
+`time_limit_penalty: 0.0`.
 
 Time-limit asymmetry: FARM machines charge open items at any end of the episode, ARM-FM machines
 get 0 at the time limit. Read cross-arm return differences with that in mind.
+
+### Setup differences between the arms
+
+The arms are not set up the same way. Every difference the process audit (2026-11-15) found, for
+the paper's setup table:
+
+| Difference | ARM-FM (no-RM where it applies) | FARM | Detail |
+| --- | --- | --- | --- |
+| PPO tuning | no tuning check | PPO s07 was tuned on FARM pilot machines (base-doorkey, base-unlock-pickup; fixed layout, layout seed 1): 18 settings on run seeds 1 and 2, then s07 confirmed on seed 3 (3 of 3 seeds solve both cards) | [`docs/paper/x1-ppo-tune`](../../docs/paper/x1-ppo-tune/README.md); on procedural layouts (seeds 1, 21, 41) s07 solves UnlockPickup on 2 of 3. One ARM-FM tuning check on one card is planned. |
+| Labeling | the original labeling | regenerated with the RM-only vocabulary (`33b85dd`) | FARM only. |
+| Code at training | `f2ed884` | `b332ecf` and `9dd59d4` | The audit read the training-side diff as small: `app/src/arm_fm/environments.py` and `runtime.py`, 20 lines added and 8 removed. `git diff f2ed884 b332ecf -- app` lists 32 files, among them the forced-start cards and `service_room.py`. |
+| Time limit | pays 0 | pays the end judgment (-1 per open hard item, -0.5 per soft) | Disclosed above. |
+| Reward range | no per-step floor: tpl-chain-response-3-nogoal-carry pays -0.3 for every step it spends in `u1` (box down), so after the box falls, 199 idle steps return -59.8 (discounted at 0.99: -25.8); the smallest edge reward is 0 on 53 of the 73 main machines (lowest of all, -10) | bottoms out at -6; the smallest edge reward is -2 to -6 on 37 of the 73 main machines | PPO has no reward normalization. Probe: `reward_range.py`, output `reward_range.out`, in `<git common dir>/agent-memory/plans/testing-program-20261111/slices/audit-docs/`. |
+| Generation checks | the critic sees no compiler warnings, no positive-cycle check; 32 of the 170 bundles have dead or unreachable states | the critic sees compiler warnings, compile fails on a positive reward cycle; 0 of the 163 bundles with a machine have dead states | `app/scripts/generate_rm.py:372`, `app/src/compiler/reward_layer.py:545`. Dead-state counts: `process-audit/probes/scan_machines.out`, in the same `slices/` folder as the probe above (quoted, not rerun). |
+| Generation effort | 515 attempts over 170 bundles, 334 critic rejections, 7 runs not complete (machine not accepted in 10 attempts) | 199 attempts over the 163 bundles with a stamp, 60 critic rejections, 3 runs not complete (2 with no machine, 1 failed at labeling) | See below the table. |
+| Prompts | the authors' prompts, no worked examples | its own prompts, with worked examples | Bullet "Prompts" of [`docs/decisions/benchmark/thesis-benchmark.md`](../../docs/decisions/benchmark/thesis-benchmark.md). |
+
+Sets behind the counts (all under `experiments/benchmark/<suite>/bundles/<arm>/`, ablation machines
+excluded):
+
+- **170 and 165 bundles:** every folder with a `manifest.json`, paraphrase archives (`<card>~p1` to
+  `~p3`) included. 163 of the 165 FARM folders have a machine; `shop-boil` and `shop-quiet-first` have
+  none.
+- **73 main machines:** per arm, the folders without a `~pN` suffix that have a machine (73 for
+  ARM-FM and 73 for FARM). **71** is the same FARM set minus the 2 pilot bundles, which store no
+  clauses (the Precedence count in the decision record reads clauses).
+- **Reward range:** the smallest edge reward of a machine is the minimum over its explicit transitions;
+  the idle returns come from the machine's own rows through the runtime. The audit's -59.2 and -25.2
+  do not reproduce (200 steps at -0.3 is -60.0, with the first step -0.1 it is -59.8).
+
+How the generation effort was counted (2026-11-16, at `03b2920`):
+
+- **Attempts and rejections** are sums of `provenance.stamp.attempts` and `critic_interventions` in the
+  manifests. All 170 ARM-FM manifests have `provenance.status: reconstructed` (rebuilt from the logs);
+  so do 135 of the FARM ones (the other 30 are `failed`, below). The 2 pilot FARM manifests have no stamp. The process audit counted 197 FARM attempts
+  (`process-audit/synthesis.md`, finding 10); the manifests sum to 199.
+- **Not complete** means the run's `<card>.status.json` says so: ARM-FM 7 `pipeline-failed`; FARM 2
+  `provider-error` (`shop-boil`, `shop-quiet-first`: no accepted result, no machine) and 1
+  `pipeline-failed` (`tpl-existence-2-nogoal`, labeling failed after the machine was accepted).
+- **30 FARM manifests have `provenance.status: failed`.** 27 of them are runs whose status file says
+  `complete` but `generation_status: pipeline-failed` (labeling failed after the machine was
+  accepted); the bundle keeps the accepted machine, and they are not counted above as failures. The
+  other 3 are the not-complete runs.
+- A regeneration at `--reasoning max` (ordered 2026-11-16) will change these counts.
+
+The `learner:` of the `base`, `templates`, `complex` and `ablation` `runs.yaml` said `dqn`, while the
+runs behind the results tables trained PPO s07 through suite files derived from them; they now say
+`ppo`, so a rerun from the committed files trains the same learner.
 
 ## 4. Outputs
 

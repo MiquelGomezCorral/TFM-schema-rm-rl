@@ -1,8 +1,9 @@
 # Compiler redesign: IBM nl2ltl, FL-AT, and the reward layer
 
-Status: **planned, not implemented.** This records what we checked, what we decided, and why,
-from the design discussion of 2026-10-12. The current compiler still works as described in
-"Current compiler" below until the redesign lands.
+Status: **implemented and merged.** This records what we checked, what we decided, and why,
+from the design discussion of 2026-10-12, kept up to date as the reward layer changed (last
+change 2026-11-15). The code is in `app/src/compiler/`; "Compiler before the redesign" below
+describes the compiler it replaced.
 
 Every claim is marked with how it was checked:
 
@@ -11,7 +12,7 @@ Every claim is marked with how it was checked:
 - **[paper]**: a research worker or we read the primary source; the PDF is in `docs/` where noted.
 - **[decision]**: a choice the project owner made, with the reason.
 
-## Planned pipeline
+## Pipeline
 
 1. **LLM (our engine, our prompt)** reads the environment Markdown and the task and returns, in
    one answer, every clause the task needs. Each clause = one IBM DECLARE template, its
@@ -143,17 +144,26 @@ the rest.
   once. Why: on a chain of rules (client arrives, order taken, food prepared, served) each step
   closes one rule and opens the next, so with every `w_i = 1` the middle steps paid 0. On the shop
   serve chain the pay is now arrive -0.3, order +0.1, cook +0.1, serve +0.1. The weights are fixed
-  per clause, so the potential is still a difference of one function of the state and no loop
-  gains. Think of each state as a to-do list: every goal and every
+  per clause, so the potential is still a difference of one function of the state, and without
+  the learner's discount no loop gains. Think of each state as a to-do list: every goal and every
   rule is an item that counts the steps it still needs. A step pays 0.1 times the clause's chain
   weight (1 for a clause with no hand-off), and a new item or a step back costs the same, in
   tasks with and without a goal. Moving forward pays, staying pays 0, going
-  back costs the same amount, and any cycle sums to exactly 0, so loops cannot be farmed. Source:
-  Ng, Harada & Russell 1999. With the
-  learner's discount in the formula (`gamma * Phi(next) - Phi(current)`), self-loops pay a tiny
-  `(1 - gamma)` amount instead of 0. We use the undiscounted difference while the learner uses
-  `gamma = 0.99`: an accepted approximation, since a cycle can then net a small, bounded
-  positive shaping `(1 - gamma) * (Phi(v) - Phi(u))`; it cannot be farmed without limit.
+  back costs the same amount, and any cycle sums to exactly 0 (undiscounted). Source:
+  Ng, Harada & Russell 1999.
+- **[run + decision] The pay is undiscounted, the learner is not (gamma = 0.99).** A step pays
+  `0.1 x weight x (owed_before - owed_after)`, with no discount, while the theorem above needs
+  `gamma * Phi(next) - Phi(current)`. We keep the undiscounted difference for now; switching to
+  the discounted one is not decided (user, 2026-11-15: decide after the shop runs). Two effects,
+  measured in the process audit (2026-11-15; probes `follow_ups.py` and `sum_edges.py`):
+  - **Starting a rule costs more than closing it pays.** A rule one step from closed, started and
+    then closed k steps later, nets `-0.1 x w x (1 - gamma^k)` in discounted return, against 0
+    for idling. C1-sum weights make `w` bigger. On a 3-stage chain of Response rules with the
+    stages 20 steps apart, the net is -0.045 with every `w = 1` and -0.097 with C1-sum weights.
+  - **A loop can pay a little.** The earlier claim that a cycle "cannot be farmed without limit"
+    is true only undiscounted. On the 3-rule fork the best cycle nets +0.0195 per lap, and 80
+    laps of a 640-step episode are worth about +0.25 in discounted return, against 0 for idling.
+    Each lap is small, but the laps repeat until the time limit.
 - **[decision] Longest path, not shortest, and per clause,** for the shortcut reason above, and
   because the environment may never produce the shortcut. Each clause is measured on the DFA the
   product uses (for a soft rule, the re-armed one). Its accepting states absorb: their outgoing
@@ -165,7 +175,12 @@ the rest.
   touch it. The product is never collapsed, so a loop between two states that both owe something
   pays -x one way and +x the other; the old longest path of the whole product paid such a loop 0,
   and priced the same event differently depending on what else was pending. The sum around any
-  loop is still 0, so nothing can be farmed.
+  loop is still 0, so nothing can be farmed without the learner's discount (with it, a loop can
+  pay a little: see "The pay is undiscounted, the learner is not" above).
+- **[decision] Known limit, accepted: a step that only a "before" rule names is never paid.** A
+  `Precedence` is satisfied from the start, so it owes 0 and its first proposition pays nothing
+  (`_steps_to_accept`, `_open_steps`); 6 of the 71 FARM main machines that store their clauses
+  have such a step (user, 2026-11-15; list in the [RM execution record](decisions/arm-fm/rm-execution.md)).
 - **[decision] With no final state, progress needs no other target.** A rule-only task has no
   final. A product state where each clause is satisfied (accepting) or violated, and none is
   waiting for something to happen, owes 0 in every clause, so it sits at `Phi = 0` without a
@@ -191,19 +206,30 @@ the rest.
   judgment"). Ng's theorem also needs a bounded score. Some papers use -infinity for rejecting
   states; we do not need it.
 
-### Why no loop gains reward, and how we check it
+### Why no loop gains reward, undiscounted, and how we check it
 
-Two things keep no loop above 0: how the rewards are built, and one check on the finished RM.
+Two things keep every loop at 0 or below, counting rewards without the learner's discount (with
+the discount a loop can pay a little: see "The pay is undiscounted, the learner is not" above):
+how the rewards are built, and one check on the finished RM.
 
 - **[code] By construction.** Progress is a difference of one score per state, so around any loop
   the differences cancel. A loop that goes up one way comes down the same amount the other way
   (the cycles inside one clause's DFA are collapsed, so those states share a score and pay 0
   between them). The other rewards cannot repeat
   for gain: `+1` and the soft finish penalty are paid only on edges into the final, the well's
-  charge (-1 plus the open promises) only on edges into the well, and both are absorbing. A soft break costs -0.5 and nothing pays it
-  back, so a loop through a re-armed soft rule (see "Recurrent soft rules") loses reward on
-  every lap. With the switch off a broken clause stays broken (its DFA cannot leave a violated
-  state), so the break is paid once. Dropping the duplicate start removes a state and its edges
+  charge (-1 plus the open promises) only on edges into the well, and both are absorbing. A soft
+  break costs -0.5, and progress can pay part of it back: a broken soft rule owes 0, so its
+  weighted potential is refunded at the break. For a soft rule one step from closing, with chain
+  weight W (1 plus the weights of the rules it hands off to), the break step pays `0.1 W - 0.5`:
+  -0.4 at W = 1, free at W = 5, positive from W = 6 (probe `break_credit.py`: W = 2, 3, 4, 5, 6
+  pays -0.3, -0.2, -0.1, 0, +0.1). Accepted and recorded; no current soft clause has W above 1:
+  the 61 soft clauses of the 195 bundles that store their clauses (171 FARM bundles and 24
+  ablation bundles; ARM-FM bundles have no clauses, so no chain weights) all weigh 1, and the
+  largest weight anywhere is 4, on a hard rule (scan of 2026-11-16 with `_chain_weights`). See the
+  [RM execution record](decisions/arm-fm/rm-execution.md). The
+  trigger and the break together still cost exactly -0.5, so a loop through a re-armed soft rule
+  (see "Recurrent soft rules") loses reward on every lap. With the switch off a broken clause
+  stays broken (its DFA cannot leave a violated state), so the break is paid once. Dropping the duplicate start removes a state and its edges
   and adds none, so it cannot open a loop.
 - **[code] Checked on every RM.** After the rewards are set, `_has_positive_cycle` in
   `app/src/compiler/reward_layer.py` runs Bellman-Ford on the undiscounted rewards: if the best
@@ -341,16 +367,19 @@ the finished RM.
   state into one loop, and `_progress` paid 0 inside the merged loop.) With a hard
   `Existence(at_goal)` and a soft `Absence(key_lost)`:
 
-  | Case | Before | Off | On |
-  |---|---|---|---|
-  | Clean finish | 1.45 | 1.2 | 1.1 |
-  | Break step | -0.4 | -0.4 | -0.5 |
-  | Break on the finishing step | 0.7 | 0.7 | 0.6 |
+  | Case | Off | On |
+  |---|---|---|
+  | Clean finish | 1.1 | 1.1 |
+  | Break step | -0.5 | -0.5 |
+  | Break on the finishing step | 0.6 | 0.6 |
 
-  "Before" is the compiler without this change; "Off" differs from it only by the removed +0.25.
-  The table predates the per-clause progress of 2026-11-11, after which the Off column reads like
-  the On column (break -0.5, finish 1.1 and 0.6): the old longest path of the product paid
-  progress on the break step, the per-clause count does not.
+  Totals of the current compiler (rebuilt and walked on 2026-11-16, no model call). A single break
+  costs the same On and Off; the switch only matters from the second break on (see "The
+  supervisor's examples" above).
+  The first version of this table, from before the per-clause progress of 2026-11-11, read
+  1.45 / -0.4 / 0.7 without the change, 1.2 / -0.4 / 0.7 Off and 1.1 / -0.5 / 0.6 On. Off moved
+  because the old longest path of the product paid progress on the break step and the per-clause
+  count does not.
   The gap between a clean and a one-break finish stays 0.5. Against the off position a clean
   finish can lose 0.1 (`Absence`, `ChainResponse`) or 0.2 (`NotCoExistence`) of progress.
 - **[run] The product can grow with several soft rules.** The re-arm adds edges between states
