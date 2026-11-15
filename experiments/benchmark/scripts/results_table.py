@@ -10,18 +10,26 @@ judge changed against `judge.v1.json`, cards that do not learn, and each card's 
 Reward Machine files). Safe to rerun; it overwrites both files.
 
 Where each column comes from:
+- the verdict, `success: judged, a rule fired`: the share of the judge's test episodes judged
+  successful in which a hard rule's trigger fired (`aggregate_suite.fired_success`), beside the
+  judge's env success. An idle run on a conditional-rule card scores 0 in it;
 - judge columns: the run's `judge.json` (`judged`, `raw judged`, `non-empty`, untested rules, the
-  reward split) and its `judge.v1.json`, when the run was judged again, for the change report;
+  reward split) and its `judge.v1.json`, when the run was judged again, for the change report. A
+  run that timed out has no final model: its row says `timed-out` with a flag, and its judge
+  columns come from `model-last/` (else `model-best/`) that `test-rl --model` wrote there;
 - training eval: `summary.json` (final greedy and sampled success, wall time), `eval.csv` (the first
   step with greedy or sampled success of at least 0.8), `train.csv` and `episodes.csv` (the last 300k
   steps: entropy, explained variance, success, and the share of episodes that lap a cycle of the RM);
 - flags: a machine that is too simple, episodes that cannot start, a positive reward cycle in the
   run's ARM-FM machine (from `cycles.py`, read from the bundle in the run's `config.yaml`), farming
   (the RM path laps in at least half of the last-300k-step episodes), a shared no-RM run, and a
-  judge that crashed (a `failed` line in a `--results` file written by `judge_runs.py --rejudge`).
+  judge that crashed (a `failed` line in a `--results` file written by `judge_runs.py --rejudge`);
+- spread across wordings: the card's paraphrase bundles (`<card>~p1`.. beside the one that trained),
+  compared on the accepted clauses, the propositions on positive-reward edges and the machine text.
 
-A card "does not learn" when all three seeds end below 0.2 greedy success (the no-RM arm: all 0 on a
-card an RM arm solves). A card without a goal is expected to end at 0 when its rules hold.
+A card "does not learn" when all three seeds end below 0.2 on the verdict column (the no-RM arm: all 0
+on a card an RM arm solves). A card without a goal is expected to end at 0 env success when its rules
+hold.
 """
 
 import argparse
@@ -34,7 +42,8 @@ from pathlib import Path
 from cycles import positive_cycles
 
 from scripts.aggregate_suite import eval_rows, judge_columns
-from scripts.run_suite import RUNS_PATH
+from scripts.run_suite import RUNS_PATH, TIMED_OUT
+from src.arm_fm.ppo import model_folder
 from src.benchmark.declare_judge import ltlf_of
 from src.compiler.rm_format import parse_paper_reward_machine
 
@@ -126,14 +135,48 @@ def tail(folder: Path, steps: int | None) -> dict:
 
 
 def seed_folder(exp: Path, seed: int) -> Path | None:
-    """The run folder of a seed: one that finished, else the last one started."""
-    best = None
+    """The run folder of a seed: one that finished, else the first started, else a timed-out one.
+
+    A folder archived as `.timed-out` shows only when the seed has no other folder (no retry).
+    """
+    best = timed_out = None
     for path in sorted(exp.glob(f"seed{seed}-*")):
-        if "." in path.name or not path.is_dir():
+        if not path.is_dir():
+            continue
+        if "." in path.name:
+            timed_out = path if path.name.endswith(f".{TIMED_OUT}") else timed_out
             continue
         if best is None or (path / "summary.json").exists():
             best = path
-    return best
+    return best or timed_out
+
+
+def state_of(folder: Path, summary: dict, resources: dict) -> str:
+    """`finished`, `timed-out` (the folder name or its `resources.json` says so) or `training`."""
+    if summary:
+        return "finished"
+    stopped = folder.name.endswith(f".{TIMED_OUT}") or resources.get("status") == TIMED_OUT
+    return TIMED_OUT if stopped else "training"
+
+
+def judge_folder(folder: Path, summary: dict) -> tuple[Path, str | None]:
+    """Where the run's `judge.json` is, and which kept model it judged (None: the final one).
+
+    The run folder, or for a run with no final model the test of its last model (else its best)
+    that `test-rl --model` wrote; with neither, the run folder and None.
+    """
+    if not summary:
+        for name in ("last", "best"):
+            path = folder / model_folder(name)
+            if (path / "judge.json").is_file():
+                return path, name
+    return folder, None
+
+
+def last_step(folder: Path) -> int | None:
+    """The last training step the run logged in `train.csv` (a run with no `summary.json`)."""
+    rows = read_rows(folder / "train.csv")
+    return int(float(rows[-1]["global_step"])) if rows else None
 
 
 def bundle_of(folder: Path) -> str | None:
@@ -153,6 +196,60 @@ def machine_laps(bundle: str | None) -> tuple:
     if not bundle or not machine.is_file():
         return ()
     return tuple(positive_cycles(parse_paper_reward_machine(machine.read_text(encoding="utf-8"))))
+
+
+def paid_propositions(machine) -> frozenset[str]:
+    """The propositions a guard asks to be true on an edge that pays a positive reward."""
+    return frozenset(
+        literal
+        for transition in machine.transitions
+        if float(transition.reward) > 0
+        for literal in re.split(r"[&|()\s]+", transition.condition)
+        if literal and not literal.startswith("!")
+    )
+
+
+@cache
+def wording_spread(bundle: str) -> dict:
+    """How the bundle's card differs across its wordings: the one that trained and its `~p1`.. ones.
+
+    Only a wording whose folder holds a machine counts. `clauses` (the FARM manifest's accepted
+    clauses; ARM-FM has none) and `paid` (propositions on positive-reward edges) are compared as
+    sets, `text` as the machine file.
+    """
+    folder = Path(bundle)
+    found = {}
+    for path in [folder, *sorted(folder.parent.glob(f"{folder.name}~p*"))]:
+        if (path / "reward_machine.txt").is_file():
+            text = (path / "reward_machine.txt").read_text(encoding="utf-8")
+            clauses = (jload(path / "manifest.json").get("generation") or {}).get("clauses")
+            found[path.name] = {
+                "text": text,
+                "paid": paid_propositions(parse_paper_reward_machine(text)),
+                "clauses": None
+                if clauses is None
+                else frozenset((c[0], tuple(c[1]), c[2]) for c in clauses),
+            }
+    clause_sets = [w["clauses"] for w in found.values() if w["clauses"] is not None]
+    return {
+        "wordings": len(found),
+        "clauses": len(set(clause_sets)) > 1 if len(clause_sets) > 1 else None,
+        "paid": len({w["paid"] for w in found.values()}) > 1,
+        "text": len({w["text"] for w in found.values()}) > 1,
+    }
+
+
+def spread_cell(spread: dict | None) -> str:
+    """The table cell: how many wordings, and whether clauses, paid propositions, text differ."""
+    if spread is None:
+        return NO_VALUE
+    if spread["wordings"] < 2:
+        return "no paraphrases"
+    part = {None: "n/a", True: "differ", False: "same"}
+    return (
+        f"{spread['wordings']} wordings: clauses {part[spread['clauses']]}, paid propositions "
+        f"{part[spread['paid']]}, machine text {part[spread['text']]}"
+    )
 
 
 def split(judge: dict, prefix: str) -> str:
@@ -204,21 +301,26 @@ def drifted_keys(old: dict, judge: dict) -> list[str]:
 def run_row(exp: Path, seed: int, folder: Path, card: dict, crashed: set) -> dict:
     """The row of one run folder: judge, training eval, curve and flags."""
     arm = exp.name.split("__")[3]
-    summary, judge, old = (
-        jload(folder / name) for name in ("summary.json", "judge.json", "judge.v1.json")
-    )
+    summary = jload(folder / "summary.json")
     resources = jload(folder / "resources.json")
+    judged_in, kept_model = judge_folder(folder, summary)
+    judge, old = (jload(judged_in / name) for name in ("judge.json", "judge.v1.json"))
     shared = jload(folder / "shared-run.json").get("owner_exp_name")
     final = summary.get("final_eval", {})
     new_format = "machine_too_simple" in judge
-    steps = summary.get("total_env_steps")
+    status = state_of(folder, summary, resources)
+    steps = summary.get("total_env_steps") or (last_step(folder) if status == TIMED_OUT else None)
     curve = tail(folder, steps) if summary and arm != "no-rm" else {}
-    cycles = machine_laps(bundle_of(folder)) if arm == "arm-fm" else ()
+    bundle = bundle_of(folder)
+    cycles = machine_laps(bundle) if arm == "arm-fm" else ()
     state = judge_file_state(judge, old, str(folder) in crashed)
     flags = flags_of(judge, arm, cycles, curve.get("laps"), shared)
     if state.startswith("judge crashed"):
         flags.append(state)
-    cols = judge_columns(folder) if new_format else {}
+    if status == TIMED_OUT:
+        model = f"{kept_model} model" if kept_model else "no model"
+        flags.append(f"timed out at {thousands(steps)} steps; judged from: {model}")
+    cols = judge_columns(judged_in) if new_format else {}
     return {
         "suite": exp.name.split("__")[1],
         "card": card["id"],
@@ -229,7 +331,7 @@ def run_row(exp: Path, seed: int, folder: Path, card: dict, crashed: set) -> dic
         .replace("MiniGrid-", "")
         .replace("-v0", ""),
         "goal": card.get("goal"),
-        "run": "training" if not summary else "finished",
+        "run": status,
         "steps": steps or "",
         "wall_min": ((summary.get("wall_seconds") or resources.get("wall_time_s") or 0) / 60)
         or None,
@@ -238,6 +340,7 @@ def run_row(exp: Path, seed: int, folder: Path, card: dict, crashed: set) -> dic
         if summary
         else None,
         "judge_file": state,
+        "fired": cols.get("fired_success"),
         "judged": judge.get("mean_judged_success"),
         "raw_judged": judge.get("mean_raw_judged_success"),
         "non_empty": judge.get("mean_non_empty_success"),
@@ -254,6 +357,7 @@ def run_row(exp: Path, seed: int, folder: Path, card: dict, crashed: set) -> dic
         "too_simple": judge.get("machine_too_simple"),
         "cannot_start_share": judge.get("mean_cannot_start"),
         "farming_laps": curve.get("laps"),
+        "wordings": spread_cell(wording_spread(bundle) if bundle else None),
         "flags": "; ".join(flags),
         "old_judged": old.get("mean_judged_success"),
         "drift": drifted_keys(old, judge) if new_format else [],
@@ -268,14 +372,16 @@ def table_line(row: dict) -> str:
     untested = row["untested_rules"] or ("none" if row["non_empty"] is not None else NO_VALUE)
     wall = NO_VALUE if row["wall_min"] is None else f"{row['wall_min']:.0f}"
     breaks = f"{f2(row['hard_breaks'])} / {f2(row['soft_breaks'])}"
+    # A judged run with no verdict: no hard rule has a trigger, so none could fire.
+    fired = "n/a" if row["fired"] is None and row["judged"] is not None else f2(row["fired"])
     return (
         f"| {row['suite']} | {row['card']} | {row['arm']} | {row['seed']} | {row['env']} | {run} "
-        f"| {row['judge_file']} | {f2(row['judged'])} | {f2(row['raw_judged'])} "
-        f"| {f2(row['non_empty'])} | {untested} | {f2(row['env_success_test'])} "
+        f"| {row['judge_file']} | {fired} | {f2(row['env_success_test'])} "
+        f"| {f2(row['judged'])} | {f2(row['raw_judged'])} | {f2(row['non_empty'])} | {untested} "
         f"| {f2(row['greedy_final'])} / {f2(row['sampled_final'])} "
         f"| {thousands(row['step_greedy_0.8'])} / {thousands(row['step_sampled_0.8'])} "
         f"| {breaks} | {row['env_return_total_pos_neg']} | {row['rm_return_total_pos_neg']} "
-        f"| {wall} | {row['flags']} |"
+        f"| {wall} | {row['wordings']} | {row['flags']} |"
     )
 
 
@@ -321,24 +427,27 @@ def change_report(table: list[dict]) -> dict[str, list[str]]:
 
 
 def not_learning(table: list[dict]) -> list[str]:
-    """Notes on the cards whose three seeds all ended below `LEARNED_LEVEL`, with the curve tail."""
+    """Notes on the cards whose three seeds all ended below `LEARNED_LEVEL`, with the curve tail.
+
+    The verdict is the judged success with a rule fired; env success is shown beside it.
+    """
     arms: dict[tuple, dict[str, list[dict]]] = {}
     for r in table:
-        if r["greedy_final"] is not None:
+        if r["fired"] is not None:
             arms.setdefault((r["suite"], r["card"]), {}).setdefault(r["arm"], []).append(r)
     notes = []
     for (_, card), by_arm in arms.items():
         rm_solved = any(
-            max(r["greedy_final"] for r in runs) >= LEARNED_LEVEL
+            max(r["fired"] for r in runs) >= LEARNED_LEVEL
             for arm, runs in by_arm.items()
             if arm != "no-rm"
         )
         for arm, runs in by_arm.items():
-            greedy = [r["greedy_final"] for r in runs]
+            fired = [r["fired"] for r in runs]
             stuck = (
-                all(g == 0 for g in greedy) and rm_solved
+                all(f == 0 for f in fired) and rm_solved
                 if arm == "no-rm"
-                else all(g < LEARNED_LEVEL for g in greedy)
+                else all(f < LEARNED_LEVEL for f in fired)
             )
             if len(runs) < len(SEEDS) or not stuck:
                 continue
@@ -348,8 +457,9 @@ def not_learning(table: list[dict]) -> list[str]:
                 else " (no goal: env success 0 is expected when the rules hold)"
             )
             notes.append(
-                f"- **{card} / {arm}** greedy final {greedy}; judged success (rules, 100 unseen layouts) "
-                f"{f2(mean([r['judged'] for r in runs]))}; goal={runs[0]['goal']}{note}"
+                f"- **{card} / {arm}** success (judged, a rule fired) {[round(f, 2) for f in fired]}; "
+                f"env success (judge test) {[f2(r['env_success_test']) for r in runs]}; "
+                f"goal={runs[0]['goal']}{note}"
             )
             notes += [curve_note(r) for r in runs]
     return notes
@@ -409,10 +519,13 @@ def collect(runs_root: Path, crashed: set) -> tuple[list[dict], dict, dict]:
 
 def markdown(table: list[dict], cards: dict, bundles: dict, runs_root: Path) -> str:
     head = (
-        "| suite | card | arm | seed | env | run | judge file | judged | raw judged | non-empty "
-        "| untested rules (<50% activated) | env success (judge test) | greedy / sampled (final eval) "
+        "| suite | card | arm | seed | env | run | judge file | success: judged, a rule fired "
+        "| env success (judge test) | judged | raw judged | non-empty "
+        "| untested rules (<50% activated) | greedy / sampled (final eval) "
         "| step greedy / sampled >= 0.8 | rule breaks hard / soft per episode | env return total (+ / -) "
-        "| RM return total (+ / -) | wall min | flags |\n" + "|---" * 19 + "|"
+        "| RM return total (+ / -) | wall min | spread across wordings | flags |\n"
+        + "|---" * 21
+        + "|"
     )
     report = change_report(table)
     drifted = [
@@ -429,6 +542,11 @@ def markdown(table: list[dict], cards: dict, bundles: dict, runs_root: Path) -> 
         "# Every run, judged with the current judge\n\n"
         f"Runs root `{runs_root}`; one row per card x arm x seed ({len(table)} rows). Made by "
         "`experiments/benchmark/scripts/results_table.py` (read-only).\n\n"
+        "- success: judged, a rule fired = the verdict: the share of the judge's 100 test episodes judged "
+        "successful in which at least one hard rule's trigger fired (an idle agent scores 0 on a "
+        "conditional-rule card); n/a when none of the card's hard rules has a trigger (Absence only: nothing "
+        "could fire), then the judged column is the card's score and the not-learning list skips it; "
+        "env success (judge test) sits beside it.\n"
         "- judged = judge's mean judged success after the cannot-start rule; raw judged = before it; non-empty = "
         "judged and every hard clause with a trigger activated.\n"
         "- env success (judge test) = the judge's 100 test episodes (greedy policy); greedy / sampled (final eval) "
@@ -437,7 +555,8 @@ def markdown(table: list[dict], cards: dict, bundles: dict, runs_root: Path) -> 
         "rows show the owner's training eval and their own judge columns.\n"
         "- flags: machine too simple; episodes cannot start (share above 0.5); positive cycle in the ARM-FM "
         "machine; farming (RM path laps in at least half of the last-300k-step training episodes); shared "
-        "no-RM run; judge crashed.\n"
+        "no-RM run; judge crashed; timed out (the run was stopped by the time box; judged from its last or "
+        "best model, or not judged).\n"
         "- A `judge crashed` row keeps its old-format judge.json (judged shown is the old judge's).\n\n"
         "## Table\n\n" + head + "\n" + "\n".join(table_line(r) for r in table) + "\n\n"
         "## What changed against judge.v1.json\n\n"
@@ -450,7 +569,7 @@ def markdown(table: list[dict], cards: dict, bundles: dict, runs_root: Path) -> 
         "### Other judge means that drifted (should be none)\n\n" + ("\n".join(drifted) or none_drifted) + "\n\n"
         "### Still on the old judge\n\n" + ("\n".join(report["not_rejudged"]) or "none") + "\n\n"
         "## Not learning candidates\n\n"
-        "RM arm: 3 seeds all greedy final < 0.2; no-RM arm: all 0 on a card whose RM arm solves.\n\n"
+        "RM arm: 3 seeds all success (judged, a rule fired) < 0.2; no-RM arm: all 0 on a card whose RM arm solves.\n\n"
         + ("\n".join(not_learning(table)) or "none") + "\n\n"
         "## Cards: NL task, LTLf, RM files\n\n" + card_sections(cards, bundles) + "\n"
     )  # fmt: skip

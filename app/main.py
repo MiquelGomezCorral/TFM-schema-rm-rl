@@ -34,6 +34,7 @@ from scripts import (
     trace_bank,
     train_rl,
 )
+from src.arm_fm.ppo import MODEL_FILES
 from src.config import REASONING_LEVELS, Configuration
 from src.utils import GenerationHooks, print_warning
 
@@ -645,6 +646,15 @@ if __name__ == "__main__":
         default=None,
         metavar="SEED",
         help="Control: permute the state embeddings among the machine's states with this seed",
+    )
+    test_parser.add_argument(
+        "--model",
+        dest="test_model",
+        choices=tuple(MODEL_FILES),
+        default="final",
+        help="PPO model to test: the final one, or the last or best a run keeps at its periodic "
+        "evaluations (the only ones a timed-out run has). last and best write their results "
+        "under <run>/model-<name>/ and list every run folder that holds that model",
     )
     test_parser.set_defaults(func=cmd_test_rl)
 

@@ -314,6 +314,9 @@ class Configuration:
     # Evaluation only (test-rl --shuffle-embeddings): permute the state embeddings of the machine
     # among its states with this seed. Not a training setting, so a run's config.yaml omits it.
     shuffle_embeddings_seed: int | None = None
+    # Evaluation only (test-rl --model): the PPO model to test, ``final`` (``agent.pt``) or the
+    # ``last`` / ``best`` one a run keeps at its periodic evaluations. Not a training setting.
+    test_model: str = "final"
 
     total_timesteps: int = 300_000
     learning_rate: float = 1e-4

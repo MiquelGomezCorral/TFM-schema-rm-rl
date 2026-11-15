@@ -4,7 +4,8 @@ Usage:
     python app/main.py aggregate-suite --suite <runs.yaml> --output outputs/results/pilot
 
 One row per run of the suite (``run_suite.expand_runs``), with the run's status, then a
-per-card table that sets the arms side by side. Judged success, hard and soft breaks and open
+per-card table that sets the arms side by side. The first metric, judged success with a rule fired,
+is the card's verdict (see ``fired_success``); env success sits beside it. Judged success, hard and soft breaks and open
 at end are the episode means in the run's ``judge.json`` (``test-rl --judge``); open at end is
 the hard and soft clauses still open, added together. Non-empty judged success needs every hard
 clause with a trigger to have fired; the least activated hard clause is the lowest share of
@@ -69,6 +70,8 @@ FLAGS = (  # yes/no/unknown columns: a card shows yes if any seed does
 )
 # (table header, results key) of the metric columns, in table order.
 METRICS = (
+    ("judged success, a rule fired", "fired_success"),
+    ("env success", "env_success"),
     ("judged success", "judged_success"),
     ("raw judged success", "raw_judged_success"),
     ("machine too simple", "machine_too_simple"),
@@ -77,7 +80,6 @@ METRICS = (
     ("non-empty judged success", "non_empty_success"),
     ("least activated hard clause", "min_hard_activated"),
     ("untested rules", "untested_rules"),
-    ("env success", "env_success"),
     ("hard breaks", "hard_breaks"),
     ("soft breaks", "soft_breaks"),
     ("open at end", "open_at_end"),
@@ -151,6 +153,29 @@ def eval_columns(card: dict, rows: list[dict], status: str) -> dict:
     }
 
 
+def fired_success(judge: dict) -> float | None:
+    """The share of test episodes judged successful in which a hard rule's trigger fired.
+
+    The card's verdict: an agent that idles passes a conditional rule without ever triggering it,
+    and that episode does not count. Read from the per-episode ``judged_success`` (after the
+    cannot-start rule) and ``activated`` (None: a rule with no trigger, such as Absence) of
+    ``judge.json``, so it also covers runs judged before the column existed. None too when no
+    hard rule has a trigger in any episode (an Absence-only card): nothing could fire, so the
+    verdict is unknown and the judged success beside it is the card's score.
+    """
+    episodes = judge.get("per_episode")
+    if not episodes:  # a judge.json from before the per-episode record: unknown
+        return None
+    hard = [index for index, item in enumerate(judge["expect"]) if item["clause"][2] == "hard"]
+    if all(episode["activated"][index] is None for episode in episodes for index in hard):
+        return None
+    counted = [
+        episode["judged_success"] and any(episode["activated"][index] for index in hard)
+        for episode in episodes
+    ]
+    return sum(counted) / len(counted)
+
+
 def judge_columns(folder: Path) -> dict:
     """The judge's columns, or "not evaluated" when ``test-rl --judge`` has not run.
 
@@ -161,8 +186,9 @@ def judge_columns(folder: Path) -> dict:
     """
     judge = read_json(folder / "judge.json")
     if not judge:
-        return {"judged_success": NOT_EVALUATED}
+        return {"judged_success": NOT_EVALUATED, "fired_success": NOT_EVALUATED}
     columns = {key: judge.get(f"mean_{key}") for key in JUDGE_KEYS}
+    columns["fired_success"] = fired_success(judge)
     hard_open, soft_open = judge.get("mean_hard_open"), judge.get("mean_soft_open")
     columns["open_at_end"] = None if None in (hard_open, soft_open) else hard_open + soft_open
     hard = [
@@ -227,6 +253,7 @@ def run_row(run: Run, bundles: Path, replay: dict | None, owner: Owner | None) -
         status=status,
         note=note,
         judged_success=NOT_EVALUATED,  # a run with no folder has no judge.json either
+        fired_success=NOT_EVALUATED,
         bundle=str(run.bundle or ""),
         run_folder=str(folder or ""),
         time_limit_asymmetry=ASYMMETRY,

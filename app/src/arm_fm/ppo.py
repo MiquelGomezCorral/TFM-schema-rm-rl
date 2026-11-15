@@ -89,6 +89,15 @@ POSITIVE_SETTINGS = ("total_timesteps", "eval_frequency", "eval_episodes", "fina
 STEP_INFO_KEYS = ("env_reward", "rm_reward", "rm_state", "rm_accept", "task")
 HIDDEN_FEATURES = 512
 LOG_EVERY_ITERATIONS = 10
+# The models a run folder keeps: the final one, and the last and the best of the periodic
+# evaluations (a run stopped by the time box has no final one).
+MODEL_FILES = {"final": "agent.pt", "last": "last.pt", "best": "best.pt"}
+
+
+def model_folder(name: str) -> str:
+    """The folder of a run where ``test-rl --model <name>`` writes its results."""
+    return f"model-{name}"
+
 
 Observation = dict[str, Tensor]
 
@@ -190,7 +199,7 @@ def _run(
     recorder.write_evaluation(global_step, final_eval, CONFIG.success_threshold)
     fields = {**learner.summary_fields(), **collector.summary_fields()}
     recorder.write_summary(CONFIG, fields, final_eval)
-    torch.save(learner.agent.state_dict(), recorder.directory / "agent.pt")
+    torch.save(learner.agent.state_dict(), recorder.directory / MODEL_FILES["final"])
     return recorder.directory
 
 
@@ -705,6 +714,7 @@ def _train(
     iterations = math.ceil(CONFIG.total_timesteps / batch_size)
     rollout = Rollout.create(CONFIG, collector.envs.single_observation_space, collector.device)
     next_evaluation = CONFIG.eval_frequency
+    best_score = -math.inf
 
     for iteration in range(1, iterations + 1):
         learning_rate = CONFIG.ppo_learning_rate
@@ -746,8 +756,31 @@ def _train(
         if global_step >= next_evaluation and iteration < iterations:
             row = evaluate_with_sampled(CONFIG, eval_run, learner.agent, CONFIG.eval_episodes)
             recorder.write_evaluation(global_step, row, CONFIG.success_threshold)
+            best_score = _keep_models(recorder.directory, learner.agent, row, best_score)
             while next_evaluation <= global_step:
                 next_evaluation += CONFIG.eval_frequency
+
+
+def _keep_models(
+    directory: Path, agent: PPOAgent, row: dict[str, object], best_score: float
+) -> float:
+    """Overwrite ``last.pt``, and ``best.pt`` when the row's greedy success ties or beats the best.
+
+    A tie goes to the later model (a rules-only card scores 0 everywhere; the later one trained
+    longer). Each file is written aside and renamed, so a run stopped mid-save keeps the old one.
+
+    Returns:
+        float: The best greedy success so far.
+    """
+    score = float(row["exit_rate"])
+    names = ["last", "best"] if score >= best_score else ["last"]
+    state = agent.state_dict()
+
+    for name in names:
+        temporary = directory / f"{name}.tmp"
+        torch.save(state, temporary)
+        temporary.replace(directory / MODEL_FILES[name])
+    return max(best_score, score)
 
 
 # ======================================================================================

@@ -6,7 +6,10 @@ Usage:
 ``--run`` is a run folder or an experiment name: a name tests every finished run (one with a
 ``summary.json``) under ``outputs/runs/<exp_name>/``. Each run is rebuilt from its saved
 ``config.yaml`` and final model, never retrained, and gets ``test.json`` plus, with ``--gifs``,
-``gifs/<i>.gif``. Episode ``i`` resets with seed ``--seed-base + i``; training uses the run seed
+``gifs/<i>.gif``. With ``--model last`` or ``--model best`` a PPO run is tested from the model it
+kept at its periodic evaluations instead (a time-boxed run has no final one): a name then tests
+every run folder that holds that model, and the results go under ``<run>/model-<name>/``.
+Episode ``i`` resets with seed ``--seed-base + i``; training uses the run seed
 and validation ``eval_seed_base``, so these maps are unseen. A fixed-layout run has one layout,
 so it is tested on its layout seed instead, and ``test.json`` says so.
 
@@ -56,9 +59,9 @@ from src.arm_fm.dqn import (
 )
 from src.arm_fm.dqn import evaluate as evaluate_dqn
 from src.arm_fm.environments import RewardMachineObservation, RunEnvironment, make_environment
+from src.arm_fm.ppo import MODEL_FILES, fixed_layout, load_ppo_agent, model_folder
 from src.arm_fm.ppo import evaluate as evaluate_ppo
 from src.arm_fm.ppo import evaluation_resets as evaluation_resets_ppo
-from src.arm_fm.ppo import fixed_layout, load_ppo_agent
 from src.arm_fm.runtime import RewardMachineRuntime
 from src.arm_fm.transfer import embedding_permutation
 from src.benchmark import (
@@ -163,10 +166,12 @@ def _run_directories(CONFIG: Configuration) -> list[Path]:
     given = Path(CONFIG.exp_name)
     if (given / "config.yaml").is_file():
         return [given]
-    runs = sorted((CONFIG.OUTPUT_PATH / "runs" / CONFIG.exp_name).glob("*/summary.json"))
+    # A final model comes with a summary; a last or best one is kept by runs that never finished.
+    marker = "summary.json" if CONFIG.test_model == "final" else MODEL_FILES[CONFIG.test_model]
+    runs = sorted((CONFIG.OUTPUT_PATH / "runs" / CONFIG.exp_name).glob(f"*/{marker}"))
     if not runs:
-        raise ValueError(f"No finished run in {given} or under outputs/runs/{CONFIG.exp_name}/")
-    return [summary.parent for summary in runs]
+        raise ValueError(f"No {marker} in {given} or under outputs/runs/{CONFIG.exp_name}/*/")
+    return [run.parent for run in runs]
 
 
 # ======================================================================================
@@ -199,11 +204,13 @@ def _test_run(
     if CONFIG.bundle is not None or CONFIG.shuffle_embeddings_seed is not None:
         config, transfer = _transferred_config(CONFIG, saved, judge)
     out = directory / "transfer" / transfer["name"] if transfer else directory
+    if CONFIG.test_model != "final":
+        out /= model_folder(CONFIG.test_model)  # the final model's results stay where they are
     run = make_run_environment(config)
     try:
         if transfer and CONFIG.bundle is not None:
             _check_same_spaces(trained, run, CONFIG.bundle)
-        policy = _load_policy(config, run, directory)
+        policy = _load_policy(config, run, directory, CONFIG.test_model)
         # Built first: a card that does not fit the run fails before any test work.
         judge_recorder = JudgeRecorder(config, run, policy, judge) if judge is not None else None
         out.mkdir(parents=True, exist_ok=True)
@@ -343,9 +350,9 @@ def _shape(space: spaces.Space | None) -> object:
     return "missing" if space is None else getattr(space, "shape", space)
 
 
-def _load_policy(config: Configuration, run: RunEnvironment, directory: Path) -> Policy:
+def _load_policy(config: Configuration, run: RunEnvironment, directory: Path, model: str) -> Policy:
     if config.algorithm == "ppo":
-        agent = load_ppo_agent(directory / "agent.pt", run, CPU)
+        agent = load_ppo_agent(directory / MODEL_FILES[model], run, CPU)
 
         def new_ppo_act() -> Callable[[Any], int]:
             generator = torch.Generator().manual_seed(config.seed)
@@ -359,6 +366,8 @@ def _load_policy(config: Configuration, run: RunEnvironment, directory: Path) ->
             new_act=new_ppo_act,
         )
 
+    if model != "final":
+        raise TransferError(f"a DQN run keeps its final model only, not its {model} one")
     q_network = QNetwork(run.make_encoder(), run.env.observation_space, int(run.env.action_space.n))
     q_network.load_state_dict(torch.load(directory / "q_network.pt", map_location=CPU))
 
