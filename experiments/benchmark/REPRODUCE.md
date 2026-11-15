@@ -97,6 +97,13 @@ HTTP 408), quota and rate limits (402, 429), auth and permission (401, 403; this
 exhausted quota that way), a sticky 400 (seen in earlier benchmark runs) and server errors (5xx).
 Any other failure that left a bundle is `pipeline-failed`. The match is a heuristic on error text.
 
+A critic request larger than the model's context window (HTTP 400 `context_length_exceeded`) is not retried: the run stops
+at the first answer with the reason `critic-context-exceeded`, "the machine is too complex to review", and the card is
+`pipeline-failed`, not a `provider-error`. In the shop, FARM generates `shop-boil` (257 states, 6.5M tokens) and
+`shop-quiet-first` (65 states, 0.97M) but its review step cannot read them against the critic's 1M window (quiet-first
+is borderline: refused at reasoning `none`, the run's setting, and accepted at `low`); they count as
+"too complex to review", not as generation failures.
+
 ### Stamp and per-call records
 
 Each bundle's `manifest.json`, failed bundles included, holds `provenance["stamp"]`: `commit`,

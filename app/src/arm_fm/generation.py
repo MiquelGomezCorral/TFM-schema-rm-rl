@@ -24,6 +24,7 @@ from src.compiler import (
 )
 from src.config import Configuration
 from src.engines import (
+    CriticContextExceededError,
     CriticUnavailableError,
     CriticValidationError,
     ImmediateEngineError,
@@ -902,8 +903,8 @@ def _refine_labeling(
             if accepted:
                 return labeling_source
             history.append(feedback)
-        except CriticUnavailableError:
-            raise  # the critic never answered about this candidate: no new candidate
+        except (CriticUnavailableError, CriticContextExceededError):
+            raise  # the critic cannot answer about this candidate: no new candidate
         except Exception as error:
             attempts.append(
                 StageAttempt("labeling", attempt, "failed", labeling_source, error=str(error))

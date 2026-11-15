@@ -31,6 +31,7 @@ LTLf: `Response(a,b)` is `(G (a -> (F b)))`, `ChainResponse(a,b)` is `(G (a -> (
 - Wording: the brief's "pick it up right away" and "run the shop" are not used. The card contract bans "right away", so the food rule reads "pick it up on your very next move" (the box-carry wording). "Run the shop" alone would hide the rules from the generator, so each task spells its rules out.
 - `shop-boil`: the clause is the pot rule alone. "Put down what you hold, turn the stove down, pick it up again" is how a carrying agent can satisfy it, because the stove works only with empty hands; it is not a separate clause.
 - `shop-quiet-first`: "never serve while the siren rings" fits none of the 8 templates, so `served_while_ringing` (a serve on a siren that was already ringing) makes it `Absence`.
+- FARM and the two big cards: FARM generates both machines, but its review step cannot read them. `shop-boil` (257 states) is 6.5M tokens and `shop-quiet-first` (65 states) is 0.97M, against the critic's 1M window. `shop-quiet-first` is borderline: it is refused at reasoning `none`, the run's setting, and fits at `low`. Both count as "too complex to review" (reason `critic-context-exceeded`), not as generation failures. The status files in `bundles/farm/` predate the reason and still read `provider-error`.
 
 ## Plans
 
@@ -42,15 +43,16 @@ Seed 1 only for now (target 1, 2, 3). Learner PPO, setting s07 (`../configs/ppo.
 
 | File | Suite | Cards | Arms | Reward | Steps | Runs |
 |---|---|---|---|---|---|---|
-| `runs-level1.yaml` | `shop` | `shop-siren` | ARM-FM, FARM | RM | 1.5M | 2 |
-| `runs-level1-shop-reward.yaml` | `shop-reward` | `shop-siren` | ARM-FM, FARM | RM + shop | 1.5M | 2 |
-| `runs-levels2-5.yaml` | `shop` | `shop-serve`, `shop-full`, `shop-quiet-first`, `shop-boil` | ARM-FM, FARM | RM | 5M | 8 |
-| `runs-levels2-5-shop-reward.yaml` | `shop-reward` | the same four | ARM-FM, FARM | RM + shop | 5M | 8 |
-| `runs-pot.yaml` | `shop` | `shop-pot` | ARM-FM, FARM | RM | 5M | 2 |
+| `runs-level1.yaml` | `shop` | `shop-siren` | FARM | RM | 1.5M | 1 |
+| `runs-level1-shop-reward.yaml` | `shop-reward` | `shop-siren` | FARM | RM + shop | 1.5M | 1 |
+| `runs-levels2-5.yaml` | `shop` | `shop-serve`, `shop-full`, `shop-quiet-first`, `shop-boil` | FARM | RM | 5M | 4 |
+| `runs-levels2-5-shop-reward.yaml` | `shop-reward` | the same four | FARM | RM + shop | 5M | 4 |
+| `runs-pot.yaml` | `shop` | `shop-pot` | FARM | RM | 5M | 1 |
 | `runs-no-rm.yaml` | `shop` | all six | no-RM | shop reward | 5M | 6 listed, 2 trained |
-| `runs-boil-15m.yaml` | `shop-probe` | `shop-boil` | ARM-FM | RM | 15M | 1 |
 
-25 trainings. No-RM trains once per level (Shop for the first four cards, Shop-Pot for `shop-boil` and `shop-pot`; the dry run prints `start` twice and `share` four times) and is judged against every card of its level with `test-rl --judge <card.json>`. The 5M of `shop-pot` is a choice (the brief gives none for it). Reward note: the shop penalty repeats (-0.5 for every further K steps a waiting client hears the siren, K = 30; pot, K_p = 24), so the solving worker out-earns every plan that breaks `shop-full` or `shop-boil` (Shop: 7.2 against -9.5 for doing nothing, 5.2 for ignoring the siren, 7.0 for leaving fallen food; Pot: 5.8 against -20.5, 3.5, -3.8 for ignoring the pot, 5.7; 300 seeds, `check_shop.py`). `shop-quiet-first` has no such target: serving before switching the siren off breaks only its quiet clause and averages 7.5 on Shop. Preparing ahead is impossible (the stove cooks only to an order taken), and a worker that holds raw food at the stove while nobody waits keeps every rule: it is no wrong plan and averages 8.2 on Shop and 6.3 on Pot, above the solving worker, which is fine because the target only ranks plans that break a card.
+2026-11-15: the shop runs FARM and no-RM only (user decision, `docs/decisions/benchmark/thesis-benchmark.md`). The ARM-FM rows of this grid were dropped: none of them had been trained or reported (the ARM-FM shop runs so far are probes and a smoke run outside these files), and `runs-boil-15m.yaml`, an ARM-FM-only probe of `shop-boil`, was removed. ARM-FM machines for the shop cards stay in `bundles/arm-fm/` as generated.
+
+13 trainings. No-RM trains once per level (Shop for the first four cards, Shop-Pot for `shop-boil` and `shop-pot`; the dry run prints `start` twice and `share` four times) and is judged against every card of its level with `test-rl --judge <card.json>`. The 5M of `shop-pot` is a choice (the brief gives none for it). Reward note: the shop penalty repeats (-0.5 for every further K steps a waiting client hears the siren, K = 30; pot, K_p = 24), so the solving worker out-earns every plan that breaks `shop-full` or `shop-boil` (Shop: 7.2 against -9.5 for doing nothing, 5.2 for ignoring the siren, 7.0 for leaving fallen food; Pot: 5.8 against -20.5, 3.5, -3.8 for ignoring the pot, 5.7; 300 seeds, `check_shop.py`). `shop-quiet-first` has no such target: serving before switching the siren off breaks only its quiet clause and averages 7.5 on Shop. Preparing ahead is impossible (the stove cooks only to an order taken), and a worker that holds raw food at the stove while nobody waits keeps every rule: it is no wrong plan and averages 8.2 on Shop and 6.3 on Pot, above the solving worker, which is fine because the target only ranks plans that break a card.
 
 ## Contents
 
