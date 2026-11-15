@@ -21,6 +21,7 @@ from scripts import (
     generation_table,
     import_paper_bundle,
     product_rm,
+    rebuild_rewards,
     regenerate_labeling,
     render_rm,
     repair_labeling,
@@ -94,6 +95,13 @@ def cmd_ablate_rm(args: argparse.Namespace) -> None:
     """Rebuild a compiler bundle's Reward Machine with one reward part switched off."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
     if not ablate_rm(CONFIG, args.off, args.destination):
+        sys.exit(1)
+
+
+def cmd_rebuild_rewards(args: argparse.Namespace) -> None:
+    """Rebuild a compiler bundle's Reward Machine rewards with the current reward layer."""
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    if not rebuild_rewards(CONFIG):
         sys.exit(1)
 
 
@@ -515,6 +523,21 @@ if __name__ == "__main__":
     )
     ablate_parser.add_argument("--overwrite", action="store_true")
     ablate_parser.set_defaults(func=cmd_ablate_rm)
+
+    # ======================================================================================
+    #                                     rebuild-rewards
+    # ======================================================================================
+    rebuild_parser = subparsers.add_parser(
+        "rebuild-rewards",
+        help="Rewrite a compiler bundle in place with the current reward layer's rewards",
+    )
+    rebuild_parser.add_argument(
+        "--bundle",
+        required=True,
+        type=Path,
+        help="Bundle made by generate-larm --mode compiler; it must store its clauses",
+    )
+    rebuild_parser.set_defaults(func=cmd_rebuild_rewards)
 
     # ======================================================================================
     #                                   import-paper-bundle

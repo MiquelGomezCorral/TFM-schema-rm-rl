@@ -12,6 +12,7 @@ from .generate_suite import SuiteOptions, generate_suite
 from .generation_table import generation_table
 from .import_paper_bundle import import_paper_bundle
 from .product_rm import product_rm
+from .rebuild_rewards import rebuild_rewards
 from .regenerate_labeling import regenerate_labeling
 from .render_rm import render_rm
 from .repair_labeling import repair_labeling

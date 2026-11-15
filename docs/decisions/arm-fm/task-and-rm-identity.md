@@ -307,9 +307,14 @@ through their inputs and prompts, while both challenge the same generator.
 - 2026-10-27: `ACCEPTING_STATES` = no pending clause: a broken soft rule already paid and counts
   as accepted, a broken hard rule is the rejecting well (user answer to the plan critique).
 - 2026-11-11: Every compiled machine, with or without a final, carries the end-judgment lines, and
-  progress is a per-clause to-do count. A machine with a final lists no accepting state, so its
+  progress is a per-clause to-do count, each clause weighted by the chain it hands off to
+  (2026-11-15, below). A machine with a final lists no accepting state, so its
   `ACCEPTING_STATES:` line is empty. This reverses "Machines with a final are unchanged" of
   2026-10-26 (user decision; see [RM execution](rm-execution.md)).
+- 2026-11-15, user-approved: the progress count is `Phi(u) = -0.1 * sum over clauses i of w_i *
+  remaining_i(u)`, with `w_i` = 1 plus the sum of `w_j` over every clause j that closing clause i
+  opens in the same step (1 when it hands off to none), so the middle steps of a chain of rules
+  pay too (see [RM execution](rm-execution.md)).
 - 2026-11-11: An edge into the rejecting well pays -1 plus the end charge of the state it leaves,
   so a break is always worse than timing out there (user decision; see
   [RM execution](rm-execution.md)).
