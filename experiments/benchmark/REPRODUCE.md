@@ -184,7 +184,8 @@ Smoke and test output goes to `outputs/wave-tests/` and is never committed.
 ## 5. Metrics
 
 Generation (from the stamps): attempts, critic interventions, retries, wall time, calls. Training
-(from `aggregate-suite`): run status, judged success, environment success, hard and soft breaks,
+(from `aggregate-suite`): run status, judged success counted where a hard rule fired (the verdict),
+environment success, judged success, hard and soft breaks,
 open items at the end (hard and soft clauses together; judged success, breaks and open items are
 means over the test episodes), steps to first environment success (`n/a` when the environment
 reward does not match the task), evaluation success over the last three evaluation points,

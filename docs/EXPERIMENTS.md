@@ -343,7 +343,10 @@ Each run writes `outputs/runs/<exp_name>/seed<N>-<UTC>-<pid>/`:
 - `train.csv`: losses and speed.
 - `summary.json`: final validation result, steps to first success, run size and speed. A PPO run also lists
   `rm_states_visited`; for DQN read `final_rm_state` in `episodes.csv`.
-- `q_network.pt` (DQN) or `agent.pt` (PPO): the final model.
+- `q_network.pt` (DQN) or `agent.pt` (PPO): the final model. A PPO run also keeps `last.pt` (the
+  latest evaluation point) and `best.pt` (the best greedy success so far), each overwritten at every
+  evaluation; `test-rl --model last` or `--model best` judges one of them, which is how a timed-out
+  run with no `agent.pt` is judged.
 
 Cost guide: a 1.5M-step MiniGrid RM run takes about an hour with 6 runs side by side on the RTX 5070 and up to
 8 GB of RAM; a Craftium PPO run takes about 15 h per 10M steps and 9-13 GB of RAM.

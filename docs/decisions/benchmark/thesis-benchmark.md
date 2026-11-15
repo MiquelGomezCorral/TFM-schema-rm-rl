@@ -193,7 +193,20 @@ thing whichever arm produced it.
   the one place an RM arm trains with the environment reward, by the user's choice of 2026-11-14; the
   first invariant holds for every other suite.
 - Judged success keeps its definition (every hard clause holds); the empty-pass check is reported
-  beside it, never folded into it.
+  beside it, never folded into it. The results table's verdict column is the exception the user
+  chose on 2026-11-15 20:27: judged success counted only in episodes where a hard rule's trigger fired
+  (`aggregate_suite.fired_success`), with env success beside it for every arm. A card none of whose
+  hard rules can fire (Absence only, no trigger in any episode) gets no verdict: its cell reads
+  "n/a", the judged column beside it is its score, and the not-learning list skips it (parent
+  ruling of 2026-11-16, flagged to the user, who picked nothing for Absence). `judge.json` itself is
+  unchanged.
+- A long PPO run keeps two models besides the final `agent.pt`: `last.pt` and `best.pt`
+  (`arm_fm/ppo.py:_keep_models`), overwritten at each periodic evaluation (`best` when greedy
+  success ties or beats the best so far). A timed-out run has no `agent.pt`; its table row says
+  `timed-out` with a flag and its judge columns come from `test-rl --model last|best`
+  (`model-last/`, `model-best/`). The final save and the default `test-rl` model are unchanged.
+  `last.pt` is written before `best.pt`, so a kill between the two saves at a new-best evaluation
+  can leave `best.pt` one evaluation behind `last.pt`.
 - An episode the machine ended in a final state at once (the rule above) never counts as judged
   success, and the judge's raw value stays recorded beside the corrected one.
 - A shared no-RM run is only shared between cards whose training configuration is identical,
@@ -298,3 +311,7 @@ and a restart is easier to trust.
   an RM-only labeling of `key_lost` crashed on the previous `has_door_key`).
 - 2026-11-15: Shop options added, `small` and `easy_start_prob`, off by default and never pooled with
   default-shop runs (user decision of 00:35 on the serving change and the smaller shop).
+- 2026-11-16: Results columns (user, audit decisions D3 and D5; testing program slice `results-cols`):
+  the verdict column counts judged success only where a hard rule fired, env success beside it for
+  every arm; long PPO runs keep `last.pt` and `best.pt`, and timed-out runs are listed with a flag and
+  judged from one of them. D9 (each card's spread across wordings) is a results column only.
