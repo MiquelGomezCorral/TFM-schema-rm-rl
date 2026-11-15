@@ -5,9 +5,12 @@ pot that boils over). There is no goal: the episode ends only at the time limit.
 client arrives, a carried food portion slips out of the hands, and the pot boils, all at times drawn
 from the reset seed, so every card of the suite sees the same world and differs only in its rules.
 
-Two options, both off by default (the default shop is unchanged): ``small=True`` puts the counter,
-the pantry and the stove close together in a 7 x 7 room, and ``easy_start_prob`` makes a share of
-the episodes start at the counter with a client arriving on step 1.
+Six options, all off by default (the default shop is unchanged): ``small=True`` puts the counter,
+the pantry and the stove close together in a 7 x 7 room, ``easy_start_prob`` makes a share of
+the episodes start at the counter with a client arriving on step 1, ``slip_chance`` lowers
+(or, at 0, removes) the chance that a carried food slips, ``siren=False`` and ``clients=False``
+take the siren or the clients out of the shop, and ``client_patience=N`` makes a client who
+waits N steps unserved leave and end the episode as a loss.
 
 It builds on ``ServiceRoomEnv`` and reuses its siren, switch, fall and seeded-schedule code. The
 rules (layout, events, reward) are in ``environment.md`` and the code-side facts in
@@ -84,7 +87,7 @@ HELD = "held"
 FIRST_START = {"ring": (3, 30), "client": (3, 25), "pot": (30, 90)}
 GAP = {"ring": (25, 70), "client": (10, 40), "pot": (40, 100)}
 SLIP_DELAY = (2, 8)  # steps from a pickup to the slip planned for it
-SLIP_CHANCE = 0.5  # every pickup but the first; the first of the episode always slips
+SLIP_CHANCE = 0.5  # default slip_chance: every pickup but the first; the first always slips
 GAP_DRAWS, PICKUP_DRAWS = 60, 60
 QUIET_FACTOR = 3  # an event does not start in the last QUIET_FACTOR x N_x steps
 MISS_PENALTY = -0.5
@@ -280,7 +283,18 @@ class ShopEnv(ServiceRoomEnv):
         easy_start_prob: Chance, per episode, of the easy start: the agent stands at the counter
             facing the client spot and a client arrives on step 1. The chance is drawn from the
             reset seed, after every other draw, so the schedule is the same whatever the value.
+        slip_chance: Chance that a pickup is followed by a slip. The first pickup of an episode
+            always slips while this is above 0 (the fall rule is never idle); at 0 no food ever
+            slips. The slip draws are made whatever the value, so every other event keeps its time.
         max_steps: Episode length.
+        siren (via kwargs, default True): False means the siren never rings (the switch stays on
+            the wall). The ring draws are still made, so every other event keeps its time.
+        clients (via kwargs, default True): False means no client ever comes in (the client spot
+            stays a counter). The client draws are still made. With no clients every ring is fined
+            after the usual walk limit (with clients, only a ring a waiting client hears).
+        client_patience (via kwargs, default None = the client waits for ever): a client not served
+            this many steps after coming in leaves, the episode ends there as a loss (``terminated``,
+            event ``leave``), and the shop reward gets no extra penalty.
     """
 
     def __init__(
@@ -288,6 +302,7 @@ class ShopEnv(ServiceRoomEnv):
         pot: bool = False,
         small: bool = False,
         easy_start_prob: float = 0.0,
+        slip_chance: float = SLIP_CHANCE,
         max_steps: int = MAX_STEPS,
         **kwargs,
     ) -> None:
@@ -299,11 +314,23 @@ class ShopEnv(ServiceRoomEnv):
             )
         if not 0.0 <= easy_start_prob <= 1.0:
             raise ValueError(f"easy_start_prob {easy_start_prob} is not between 0 and 1")
+        if not 0.0 <= slip_chance <= 1.0:
+            raise ValueError(f"slip_chance {slip_chance} is not between 0 and 1")
         self.layout = SMALL if small else NORMAL
         self.size, self.switch_pos = self.layout.size, self.layout.switch  # read by the base class
-        super().__init__(siren=True, max_steps=max_steps, **kwargs)
+        # siren and clients ride in kwargs (the signature is at the argument limit); the base class
+        # takes siren itself and Shop builds its own grid, so for the Shop it only records the flag
+        self.clients = kwargs.pop("clients", True)
+        self.client_patience = kwargs.pop("client_patience", None)
+        if self.client_patience is not None and self.client_patience < 1:
+            raise ValueError(
+                f"client_patience {self.client_patience} is not a step count of 1 or more"
+            )
+        kwargs.setdefault("siren", True)
+        super().__init__(max_steps=max_steps, **kwargs)
         self.pot, self.face_fallen = pot, True
         self.easy_start_prob, self.easy_start = easy_start_prob, False
+        self.slip_chance = slip_chance
         self.pot_boiling = False
         self.client_present = self.order_taken = False
         self._ringing_before = False
@@ -314,6 +341,7 @@ class ShopEnv(ServiceRoomEnv):
         self._slips: list[int | None] = []
         self._pickups = 0
         self._heard = self._boiled = 0
+        self._arrived_at = 0
 
     @staticmethod
     def _gen_mission() -> str:
@@ -348,15 +376,18 @@ class ShopEnv(ServiceRoomEnv):
             first[kind] = int(rng.integers(FIRST_START[kind][0], FIRST_START[kind][1] + 1))
             gaps[kind] = [int(g) for g in rng.integers(*GAP[kind], size=GAP_DRAWS)]
         delays = [int(d) for d in rng.integers(*SLIP_DELAY, size=PICKUP_DRAWS)]
-        slips = rng.random(PICKUP_DRAWS) < SLIP_CHANCE
-        slips[0] = True  # the first food of the episode always slips: the rule is never idle
-        self.easy_start = bool(rng.random() < self.easy_start_prob)  # last: no other draw moves
+        slips = rng.random(PICKUP_DRAWS) < self.slip_chance
+        # the first food of the episode always slips (the rule is never idle), unless slips are off
+        slips[0] = self.slip_chance > 0
+        # last: no other draw moves; no easy start without clients (it needs a client on step 1)
+        self.easy_start = bool(rng.random() < self.easy_start_prob) and self.clients
         if self.easy_start:
             first["client"] = 1  # arrives on the first step, as the normal "arrive" event
 
         self._gaps = {kind: deque(values) for kind, values in gaps.items()}
         self._first = first
-        self._due = {kind: first[kind] if kind != "pot" or self.pot else None for kind in first}
+        enabled = {"ring": self.siren, "client": self.clients, "pot": self.pot}
+        self._due = {kind: first[kind] if enabled[kind] else None for kind in first}
         self._slips = [delay if slip else None for delay, slip in zip(delays, slips, strict=True)]
         self._pickups = 0
         self._fall_steps = []
@@ -380,7 +411,26 @@ class ShopEnv(ServiceRoomEnv):
     def step(self, action):
         self._ringing_before = self.siren_ringing
         obs, _, terminated, truncated, info = super().step(action)
-        return obs, self._shop_reward(), terminated, truncated, info
+        reward = self._shop_reward()
+        if self._leave_if_impatient():
+            # a loss, not a time-out: the learner does not bootstrap past it
+            terminated = True
+            info["events"] = list(self.events_this_step)
+        return obs, reward, terminated, truncated, info
+
+    def _leave_if_impatient(self) -> bool:
+        """With ``client_patience``, a client not served that many steps after coming in leaves.
+
+        Changes state (the client spot, the ``leave`` event); returns whether the client left.
+        """
+        waited = self.step_count - self._arrived_at
+        if self.client_patience is None or not self.client_present or waited < self.client_patience:
+            return False
+        self.client_present = False
+        self.grid.set(*self.layout.client, Counter())
+        self._set_siren(self.siren_ringing)  # the new counter cell takes the current colour
+        self.events_this_step.append("leave")
+        return True
 
     def _shop_reward(self) -> float:
         reward = 1.0 if "serve" in self.events_this_step else 0.0
@@ -389,7 +439,8 @@ class ShopEnv(ServiceRoomEnv):
         if "boil" in self.events_this_step:
             self._boiled = 0
         limits = walk_limits(self.layout)
-        if self.siren_ringing and self.client_present:
+        # with no clients any ring is fined, not only one a waiting client hears
+        if self.siren_ringing and (self.client_present or not self.clients):
             self._heard += 1
             reward += _late_penalty(self._heard, limits["ring"])
         if self.pot_boiling:
@@ -475,6 +526,7 @@ class ShopEnv(ServiceRoomEnv):
             self._due["client"] = None
             self.grid.set(*self.layout.client, Client())
             self.client_present, self.order_taken = True, False
+            self._arrived_at = step
             self.event_counts["client"]["fired"] += 1
             self.events_this_step.append("arrive")
         if self._due["pot"] == step:
