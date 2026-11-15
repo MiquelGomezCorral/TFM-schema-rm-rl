@@ -110,6 +110,34 @@ usable for imported paper-style machines and fallbacks to other states. Drawing 
 defaults makes missing rows understandable, including final and rejecting sinks,
 without expanding the machine or adding a guard-coverage calculation.
 
+## Known limits of the chain-weighted progress
+
+Accepted and recorded (user picks of the process audit, 2026-11-15). None is protected behaviour:
+each is a gap to close when a card needs it.
+
+- **A rule closed (or opened) by either of two events hands off to nobody.** `_forced_propositions`
+  intersects the forced propositions over all closing (and opening) edges
+  (`app/src/compiler/reward_layer.py:267-298`), so `G(a -> F(b | c))` forces nothing, gets weight 1,
+  and its middle steps pay 0. The function's docstring states it. No current card has such a rule.
+  Fix (per-edge-pair detection) when a card needs it.
+- **A step that only a "before" rule names is never paid.** `Precedence` is satisfied from the
+  start, so it owes 0: accepting states owe 0 (`reward_layer.py:263`) and violated states owe 0
+  (`:332`). The hand-off does not cover it. Whether such a step pays depends on the generator
+  also writing an `Existence` for it. 6 of the 71 FARM main machines that store their clauses (the
+  73 FARM bundles without a `~pN` paraphrase suffix, minus the 2 pilot bundles, which store none):
+  base-key-corridor (`target_room_entered`), tpl-precedence-1-goal (`blocker_moved`),
+  tpl-precedence-1-nogoal (`switch_toggled`), tpl-precedence-2-goal and tpl-precedence-2-nogoal
+  (`door_open`), tpl-precedence-3-nogoal (`blocker_moved`).
+- **Progress is paid into a soft-violated state.** A broken soft clause owes 0, so its break edge
+  refunds the clause's weighted potential. For a soft rule one step from closing, with chain weight
+  W (1 plus the weights of the rules it hands off to), the break step pays `0.1 W - 0.5`: -0.4 at
+  W = 1, free at W = 5, positive from W = 6. The trigger and the break together still cost -0.5, so
+  no loop gains (undiscounted). No current soft clause has W above 1: the 61 soft clauses of the
+  195 bundles that store their clauses (171 FARM and 24 ablation; ARM-FM bundles have none) all
+  weigh 1, and the largest weight anywhere is 4, on a hard rule (scan of 2026-11-16 with
+  `_chain_weights`). The user decides what to do after seeing a live example (slice
+  soft-break-demo).
+
 ## Enforcement
 
 - `app/src/arm_fm/runtime.py` owns guard evaluation, explicit fallback selection,
@@ -190,3 +218,7 @@ without expanding the machine or adding a guard-coverage calculation.
   exception; every non-ablation machine keeps it (user).
 - 2026-11-12: Kept rejecting an ARM-FM reward row on an undeclared transition; the parser error is the
   next ARM-FM round's feedback (user).
+- 2026-11-15, user picks of the process audit: recorded three known limits of the chain-weighted
+  progress (either-or hand-offs, steps only a `Precedence` names, progress paid into a soft break),
+  all accepted for now. The undiscounted progress stays; switching to discounted shaping is decided
+  after the shop runs ([reward layer](../../COMPILER_REWARD_DESIGN.md)).
