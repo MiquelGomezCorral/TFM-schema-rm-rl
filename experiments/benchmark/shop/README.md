@@ -6,12 +6,15 @@ Why: a rule "whenever X happens, do Y" passes when X never happens. On the older
 
 The world is the same for every card of a level: the siren, the clients and the food slips run in every episode and only the rules differ, so a policy trained on one card sees the world of every other card (the transfer experiment needs this). Facts: `../envs/shop/environment.md` and `../envs/shop-pot/environment.md`. Code: `app/src/arm_fm/shop.py` (`MiniGrid-Shop-v0`, `MiniGrid-Shop-Pot-v0`).
 
-## Options: a smaller shop and an easier start
+## Options: a smaller shop, an easier start, fewer food slips, no siren or clients, a client who leaves
 
-Two settings of the shop environment, both off by default (the default shop, its cards and every existing run are unchanged). Set them in a card's `env_kwargs`, next to `max_steps` and `agent_view_size`; they work on Shop and Shop-Pot.
+Six settings of the shop environment, all off by default (the default shop, its cards and every existing run are unchanged). Set them in a card's `env_kwargs`, next to `max_steps` and `agent_view_size`; they work on Shop and Shop-Pot.
 
 - `small: true`: a 7 x 7 room with the counter, the pantry and the stove close together. The same objects, events and rules; the quiet end and the late-siren fine follow the shorter walks (`environment.md`, "Variants"). A scripted solver serves its first client about 35 steps after the client arrives, against about 49 in the default room. It is a constructor setting, not new gym ids, so one mechanism carries both options and no card or runs file needs a second id.
-- `easy_start_prob: p` (0 to 1): a share `p` of the episodes starts with the agent at the counter, facing the client spot, and the first client arrives on step 1 as the normal `client_arrived` event, so every machine and the labeling see it. The other events of the episode keep their seeded times.
+- `easy_start_prob: p` (0 to 1): a share `p` of the episodes starts with the agent at the counter, facing the client spot, and the first client arrives on step 1 as the normal `client_arrived` event, so every machine and the labeling see it. The other events of the episode keep their seeded times. Not with `clients: false`: with no client to arrive there is no easy start.
+- `slip_chance: p` (0 to 1, default 0.5): the chance that a pickup is followed by a slip. The first pickup of an episode always slips while `p > 0`; `slip_chance: 0` means no slip ever (`food_fell` never true). The other events keep their seeded times. Built to test whether the risk of holding food is what blocks serving; `environment.md` is not changed, so the generated machines are the same.
+- `siren: false` / `clients: false`: the siren never rings / no client ever comes in. For a test that should run in a shop with only the parts its card uses (a serving card without the siren, a siren card without clients). With no clients, every ring is fined after the usual walk limit. The other events keep their seeded times.
+- `client_patience: n` (a step count, default none): a client not served `n` steps after coming in leaves and the episode ends there as a loss (`terminated`, event `leave`), so a machine pays its end charge at that step instead of at step 600. The fewest actions from a client's arrival to the serve are 37 from the worst pose, 30 from the episode start and 28 from the counter, so 50 fits.
 
 ## The cards
 

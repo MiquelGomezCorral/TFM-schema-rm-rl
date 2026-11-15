@@ -79,6 +79,10 @@ it, or getting a new thing to do, costs." Each state is a to-do list:
   edge pays the difference between the scores of its two ends: +0.1 for a step toward finishing,
   -0.1 for a step back or a new item. Tasks with and without a goal work the same way, and any loop
   totals 0, so nothing can be farmed.
+  That price (+0.1 a step, -0.1 a new item) holds for a rule that hands off to no other rule. Since main
+  `c21f066`, progress weights each rule by the chain it hands off to (C1-sum), so every step of a chained
+  rule pays. `check/todo_list_check.py` still passes on that code: `PASS: every edge matches its table;
+  every loop nets to 0`.
 - When the environment ends the episode, every open item is charged: -1 if hard, -0.5 if soft. A goal
   is a hard item, so goal tasks are judged this way too (before, they paid a flat -0.5).
 - The well rule: an edge into the well pays -1 plus what timing out in the state it leaves would cost
