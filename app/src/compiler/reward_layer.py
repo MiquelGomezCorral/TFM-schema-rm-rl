@@ -63,7 +63,7 @@ class _Product:
     alphabet: set[str]
     edges: list[_Edge]
     labels: dict[str, tuple[ClauseState, ...]]  # per product state, one label per clause
-    open_steps: dict[str, int]  # per product state, the steps all its clauses still need
+    open_steps: dict[str, int]  # per product state, the chain-weighted steps its clauses still need
 
 
 @dataclass(frozen=True)
@@ -264,14 +264,72 @@ def _steps_to_accept(dfa: dict) -> dict[str, int]:
     return {state: steps[component] for state, component in dag.graph["mapping"].items()}
 
 
-def _open_steps(dfa: dict, by_state: dict[str, ClauseState]) -> dict[str, int]:
-    """The steps each state of the clause DFA still needs; a violated state counts 0.
+def _forced_propositions(dfa: dict, closing: bool) -> set[str]:
+    """The propositions every closing (or, if not ``closing``, opening) edge of the DFA forces true.
 
-    A broken soft rule was paid when it broke, and a broken hard rule ends in the well.
+    A closing edge takes the rule from pending to satisfied; an opening one takes it from not
+    pending to pending. The DFA's own start state is skipped: it is the duplicate start that
+    ``_drop_pre_step_start`` drops. A rule that different events can close or open forces
+    nothing, so it hands off to no one.
+    """
+    alphabet = sorted(dfa["alphabet"])
+    labels = _clause_labels(dfa)
+    forced_per_edge = []
+    for (source, guard), destination in dfa["transitions"].items():
+        before, after = labels[source], labels[destination]
+        if closing:
+            matches = before is ClauseState.PENDING and after is ClauseState.SATISFIED
+        else:
+            matches = before is not ClauseState.PENDING and after is ClauseState.PENDING
+        if source == dfa["initial_state"] or not matches:
+            continue
+
+        parsed = parse_boolean_guard(guard, alphabet)
+        valuations = (
+            dict(zip(alphabet, values, strict=True))
+            for values in itertools.product((False, True), repeat=len(alphabet))
+        )
+        true_on = [
+            valuation for valuation in valuations if evaluate_boolean_guard(parsed, valuation)
+        ]
+        forced_per_edge.append(
+            {name for name in alphabet if true_on and all(v[name] for v in true_on)}
+        )
+    return set.intersection(*forced_per_edge) if forced_per_edge else set()
+
+
+def _chain_weights(dfas: Sequence[dict]) -> list[int]:
+    """One weight per clause: 1 plus the weights of every clause that closing it opens.
+
+    Clause ``i`` hands off to clause ``j`` when a proposition that closes ``i`` also opens ``j``.
+    Hand-off cycles are collapsed, so a cycle counts once.
+    """
+    closing = [_forced_propositions(dfa, closing=True) for dfa in dfas]
+    opening = [_forced_propositions(dfa, closing=False) for dfa in dfas]
+    hand_offs = nx.DiGraph()
+    hand_offs.add_nodes_from(range(len(dfas)))
+    hand_offs.add_edges_from(
+        (first, second)
+        for first, second in itertools.permutations(range(len(dfas)), 2)
+        if closing[first] & opening[second]
+    )
+
+    chains = nx.condensation(hand_offs)
+    weight: dict[int, int] = {}
+    for chain in reversed(list(nx.topological_sort(chains))):
+        weight[chain] = 1 + sum(weight[next_chain] for next_chain in chains.successors(chain))
+    return [weight[chains.graph["mapping"][clause]] for clause in range(len(dfas))]
+
+
+def _open_steps(dfa: dict, by_state: dict[str, ClauseState], weight: int) -> dict[str, int]:
+    """The steps each state of the clause DFA still needs, times the clause's chain weight.
+
+    A violated state counts 0: a broken soft rule was paid when it broke, and a broken hard rule
+    ends in the well.
     """
     steps = _steps_to_accept(dfa)
     return {
-        state: 0 if by_state[state] is ClauseState.VIOLATED else steps[state]
+        state: 0 if by_state[state] is ClauseState.VIOLATED else weight * steps[state]
         for state in dfa["states"]
     }
 
@@ -285,9 +343,12 @@ def _clause_product(dfas: Sequence[dict], rearm: Sequence[bool]) -> _Product:
         _rearm_violated(dfa, by_state) if rearm_clause else deepcopy(dfa)
         for dfa, by_state, rearm_clause in zip(dfas, clause_labels, rearm, strict=True)
     ]
-    # Steps are measured on the DFAs the product uses, before FL-AT touches them.
+    # Steps are measured on the DFAs the product uses, before FL-AT touches them. Chain weights
+    # come from the original DFAs, like the labels.
+    chain_weights = _chain_weights(dfas)
     clause_steps = [
-        _open_steps(used, by_state) for used, by_state in zip(copies, clause_labels, strict=True)
+        _open_steps(used, by_state, weight)
+        for used, by_state, weight in zip(copies, clause_labels, chain_weights, strict=True)
     ]
     machine = automatas_to_rm(copies, [1] * len(dfas))
     labels = {
@@ -458,10 +519,12 @@ def _progress(edges: Sequence[_Edge], product: _Product, finals: set[str]) -> di
     """Potential-based shaping: pay per step a clause gets closer to done, charge per step back.
 
     Each clause counts the longest path its own DFA still has to an accepting state (see
-    ``_steps_to_accept``); a state owes the sum over its clauses, and finals owe nothing. The
-    potential difference sums to 0 around any loop, so nothing can be farmed. Edges into the
-    well, and into a state that reaches no target, pay no progress. The targets are the finals;
-    a task without one aims at the states where no clause is pending.
+    ``_steps_to_accept``), times its chain weight (see ``_chain_weights``): a rule that hands off
+    to another is worth the chain behind it, so the middle steps of a chain pay too. A state owes
+    the sum over its clauses, and finals owe nothing. The potential difference sums to 0 around
+    any loop, so nothing can be farmed. Edges into the well, and into a state that reaches no
+    target, pay no progress. The targets are the finals; a task without one aims at the states
+    where no clause is pending.
     """
     inner = [edge for edge in edges if edge.destination != _WELL]
     labels = product.labels

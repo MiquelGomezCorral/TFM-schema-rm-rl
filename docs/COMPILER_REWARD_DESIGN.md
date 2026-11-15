@@ -133,11 +133,21 @@ the rest.
   shaping + task completion +1 + soft penalties. The clause 0.1 and the progress term reward the
   same thing.
 - **[decision] Progress formula:** every edge adds `Phi(next) - Phi(current)`, with
-  `Phi(u) = -k * sum over clauses i of remaining_i(u)`, `k = 0.1`, and `Phi = 0` at final states.
-  `remaining_i(u)` is the longest path, in steps, from clause i's own DFA state to one of its
-  accepting states (user, 2026-11-11). Think of each state as a to-do list: every goal and every
-  rule is an item that counts the steps it still needs. A step done pays +0.1, a new item or a step
-  back costs -0.1, in tasks with and without a goal. Moving forward pays, staying pays 0, going
+  `Phi(u) = -k * sum over clauses i of w_i * remaining_i(u)`, `k = 0.1`, and `Phi = 0` at final
+  states. `remaining_i(u)` is the longest path, in steps, from clause i's own DFA state to one of
+  its accepting states (user, 2026-11-11). `w_i` is the chain weight of clause i: 1 plus the sum
+  of `w_j` over every clause j that closing clause i opens in the same step, and 1 when it hands
+  off to none (user, 2026-11-15). Clause i hands off to clause j when every edge that closes i and
+  every edge that opens j force one shared proposition (the order is taken: it answers the arrival
+  and starts the cooking); the start state of each DFA is left out, and a cycle of hand-offs counts
+  once. Why: on a chain of rules (client arrives, order taken, food prepared, served) each step
+  closes one rule and opens the next, so with every `w_i = 1` the middle steps paid 0. On the shop
+  serve chain the pay is now arrive -0.3, order +0.1, cook +0.1, serve +0.1. The weights are fixed
+  per clause, so the potential is still a difference of one function of the state and no loop
+  gains. Think of each state as a to-do list: every goal and every
+  rule is an item that counts the steps it still needs. A step pays 0.1 times the clause's chain
+  weight (1 for a clause with no hand-off), and a new item or a step back costs the same, in
+  tasks with and without a goal. Moving forward pays, staying pays 0, going
   back costs the same amount, and any cycle sums to exactly 0, so loops cannot be farmed. Source:
   Ng, Harada & Russell 1999. With the
   learner's discount in the formula (`gamma * Phi(next) - Phi(current)`), self-loops pay a tiny
@@ -260,7 +270,8 @@ the finished RM.
   every hard rule clause satisfied. Soft clauses change the reward on the finishing edge (-0.5 for
   a soft clause still pending: a soft goal, or an open obligation such as `ChainResponse`'s), on
   the edge where they break, on an edge where one more step of a soft clause is done or undone
-  (the per-clause progress, +0.1 or -0.1), and when the environment ends the episode with the
+  (the per-clause progress, 0.1 times the clause's chain weight, 1 for a clause with no
+  hand-off), and when the environment ends the episode with the
   clause still open (the end judgment, -0.5 per open soft clause).
 - **[decision] A final state judges on its last edge; an end the environment forces is judged where
   it happens.** Reaching a final state ends the episode, so the rule is judged on that last edge.

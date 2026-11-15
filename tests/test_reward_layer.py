@@ -67,6 +67,27 @@ RESPONSE = {
 }
 
 
+def response(trigger, answer, name):
+    """G(trigger -> F answer) as MONA gives it: a start state `<name>S` that its idle step leaves."""
+    start, open_, owed = f"{name}S", f"{name}R", f"{name}Q"
+    return {
+        "alphabet": {trigger, answer},
+        "states": {start, open_, owed},
+        "initial_state": start,
+        "accepting_states": {start, open_},
+        "transitions": {
+            (state, guard): destination
+            for state in (start, open_)
+            for guard, destination in (
+                (f"!{trigger}", open_),
+                (f"{trigger}&{answer}", open_),
+                (f"{trigger}&!{answer}", owed),
+            )
+        }
+        | {(owed, answer): open_, (owed, f"!{answer}"): owed},
+    }
+
+
 def rewards_of(clauses, soft, propositions, steps, **switches):
     """Run one episode of true-proposition sets through the compiled, serialized machine."""
     machine = build_reward_machine(clauses, soft, RewardSwitches(**switches)).reward_machine
@@ -176,6 +197,23 @@ class RewardLayerTests(unittest.TestCase):
                 result = build_reward_machine(clauses, priorities)
                 self.assertIsNone(result.reward_machine.final_state)
                 self.assertEqual(result.inert_soft_clauses, ())
+
+    def test_a_rule_is_weighted_by_the_chain_it_hands_off_to(self):
+        names = ("a", "b", "c", "d")
+
+        # Each answer closes one rule and opens the next, so each middle step pays like the last.
+        chain = (response("a", "b", "R0"), response("b", "c", "R1"), response("c", "d", "R2"))
+        self.assertEqual(
+            rewards_of(chain, (False,) * 3, names, [{"a"}, {"b"}, {"c"}, {"d"}]),
+            [-0.3, 0.1, 0.1, 0.1],
+        )
+
+        # One event closes a rule and opens two: the rule weighs both (sum), so the step pays 0.1.
+        fork = (response("a", "b", "R0"), response("b", "c", "R1"), response("b", "d", "R2"))
+        self.assertEqual(
+            rewards_of(fork, (False,) * 3, names, [{"a"}, {"b"}, {"c"}, {"d"}]),
+            [-0.3, 0.1, 0.1, 0.1],
+        )
 
     def test_a_hard_goal_that_a_hard_rule_forbids_is_rejected(self):
         forbids_goal = {

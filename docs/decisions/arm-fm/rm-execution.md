@@ -172,7 +172,12 @@ without expanding the machine or adding a guard-coverage calculation.
   promise, so an episode the environment ends with the goal open is charged for it (-1) with the
   other open items, instead of the flat -0.5. Such a machine lists no accepting state; success
   still needs the final. Author bundles keep the flat -0.5. Reward progress became a per-clause
-  to-do count ([reward layer](../../COMPILER_REWARD_DESIGN.md)) (user decision).
+  to-do count, each clause weighted by the chain it hands off to (2026-11-15, see below)
+  ([reward layer](../../COMPILER_REWARD_DESIGN.md)) (user decision).
+- 2026-11-15, user-approved: progress is `Phi(u) = -0.1 * sum over clauses i of w_i *
+  remaining_i(u)`, where `w_i` is 1 plus the sum of `w_j` over every clause j that closing clause
+  i opens in the same step (1 when it hands off to none). Why: on a chain of rules each step closes
+  one rule and opens the next, so the middle steps paid 0. It stays a potential, so no loop gains.
 - 2026-11-11: An edge into the rejecting well pays its -1 plus the end charge of the state it
   leaves, the same counts `PENDING_PROMISES` holds, so breaking a rule always costs more than
   timing out in that state. This solves the disclosed corner where idling with two hard promises
