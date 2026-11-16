@@ -37,6 +37,7 @@ from src.benchmark.labeling_repair import (
     UNREPAIRABLE,
     Check,
     Generator,
+    Traces,
     check_labeling,
     finished_status,
     generator_model,
@@ -74,7 +75,7 @@ class Job:
 
     ref: BundleRef
     bundle: ArtifactBundle
-    records: list[TraceRecord]
+    traces: Traces
     record: dict
     check: Check
 
@@ -99,9 +100,13 @@ def repair_labeling(
         _, records = load_bank(traces)
     except CardError as error:
         raise SystemExit(f"error: {error}") from error
-    by_card: dict[str, list[TraceRecord]] = defaultdict(list)
+    plans: dict[str, list[TraceRecord]] = defaultdict(list)
     for record in records:
-        by_card[record.card_id].append(record)
+        plans[record.card_id].append(record)
+    by_card = {
+        card_id: Traces.of(card_plans, CONFIG.repair_walk_layouts)
+        for card_id, card_plans in plans.items()
+    }
 
     selected = [
         ref for ref in find_bundles(bundles) if not only or {ref.card_id, ref.name} & set(only)
@@ -135,43 +140,72 @@ def repair_labeling(
 # ======================================================================================
 
 
-def _open_job(
-    ref: BundleRef, by_card: dict[str, list[TraceRecord]], skipped: dict[str, str]
-) -> Job | None:
+def _open_job(ref: BundleRef, by_card: dict[str, Traces], skipped: dict[str, str]) -> Job | None:
     """Check one bundle and return its repair job, or ``None`` when there is nothing to repair.
 
-    A bundle without a record gets its first check, which stays as ``initial``. A bundle whose
-    labeling is not the one the record last saw was edited since (the agent step): it is checked
-    again and marked ``fixed-by-agent`` when it passes now.
+    A bundle without a record gets its first check, which stays as ``initial``. A MiniGrid bundle
+    whose record predates the walk replay (no ``replay``) is replayed once, an ``unfixed`` one too
+    (its rounds were graded on the plan traces only): its record gets the result, and a labeling
+    that fails goes back to ``pending``, its old rounds kept in ``earlier_rounds`` and the
+    labeling in ``labeling_before_replay``. A bundle whose labeling is
+    not the one the record last saw was edited since (the agent step): it is checked again and
+    marked ``fixed-by-agent`` when it passes now.
     """
     bundle = load_machine_bundle(ref, allow_missing_labeling=True)
     if isinstance(bundle, str):
         skipped[ref.key] = bundle
         return None
     traces = by_card.get(ref.card_id)
-    if not traces:
+    if traces is None:
         skipped[ref.key] = f"no traces for card {ref.card_id!r}"
         return None
 
     record = read_record(ref)
     if not record:
-        check = check_labeling(bundle, traces)
-        record = new_record(ref, bundle, check, traces[0].gym_id)
+        check = check_labeling(bundle, traces.block(0))
+        record = new_record(ref, bundle, check, traces.plans[0].gym_id)
+        if traces.walks:
+            record["replay"] = asdict(check)
         write_record(ref, record)
         return Job(ref, bundle, traces, record, check) if check.kind != OK else None
 
     check = Check(**record["initial"])
-    if record["outcome"] in DONE_OUTCOMES:
-        return None
-    if sha256(bundle.labeling_source) != record["labeling_sha256"]:
-        check = check_labeling(bundle, traces)
+    if (
+        record["outcome"] not in DONE_OUTCOMES
+        and sha256(bundle.labeling_source) != record["labeling_sha256"]
+    ):
+        check = check_labeling(bundle, traces.block(len(record["rounds"]) + 1))
         record["agent_check"] = asdict(check)
         if check.kind == OK:
             record.update(outcome=FIXED_BY_AGENT, labeling_sha256=sha256(bundle.labeling_source))
         write_record(ref, record)
+    if traces.walks and "replay" not in record and record["outcome"] in (*DONE_OUTCOMES, UNFIXED):
+        return _replay_old_record(ref, bundle, traces, record)
     if record["outcome"] in (PENDING, PROVIDER_ERROR):
         return Job(ref, bundle, traces, record, check)
     return None
+
+
+def _replay_old_record(
+    ref: BundleRef, bundle: ArtifactBundle, traces: Traces, record: dict
+) -> Job | None:
+    """Replay the walks through a labeling that only passed the plan check; repair it if it fails.
+
+    The old record keeps its class and rounds. A failing labeling goes back to ``pending`` with
+    a fresh round budget: its old rounds move to ``earlier_rounds`` and the labeling being
+    replaced is kept in ``labeling_before_replay``, beside the one the repair writes.
+    """
+    check = check_labeling(bundle, traces.block(0))
+    record["replay"] = asdict(check)
+    if check.kind != OK:
+        record.update(
+            outcome=PENDING,
+            earlier_rounds=record["rounds"],
+            rounds=[],
+            labeling_before_replay=bundle.labeling_source,
+        )
+    write_record(ref, record)
+    return Job(ref, bundle, traces, record, check) if check.kind != OK else None
 
 
 # ======================================================================================
@@ -204,7 +238,7 @@ def _repair_job(CONFIG: Configuration, job: Job) -> str:
         model,
     )
     repair = repair_rounds(
-        bundle, job.records, generator, CONFIG.repair_iterations, start_repair(bundle, record)
+        bundle, job.traces, generator, CONFIG.repair_iterations, start_repair(bundle, record)
     )
 
     if repair.error:
@@ -336,6 +370,7 @@ def _print_summary(summary: dict, bundles: Path) -> None:
     for key, group in {"all": summary["initial"], **summary["by_arm_environment"]}.items():
         counts = ", ".join(f"{kind} {n}" for kind, n in group["counts"].items())
         print(f"{key}: {group['total']} bundles, failure rate {group['failure_rate']}; {counts}")
+    print(f"replay classes: {summary['replay']}")
     print(f"outcomes: {summary['outcomes']}")
     if summary["unfixed"]:
         print(f"unfixed, for the agent step: {', '.join(summary['unfixed'])}")

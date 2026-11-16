@@ -1,4 +1,4 @@
-def blocker_moved(env): return not any(cell is not None and cell.type == "ball" for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)] if any(d is not None and d.type == "door" and abs(x - dx) + abs(y - dy) == 1 for dx in range(env.width) for dy in range(env.height) for d in [env.grid.get(dx, dy)]))
+def blocker_moved(env): return not any(cell is not None and cell.type == "door" and x > 0 and any(blocker is not None and blocker.type == "ball" for blocker in [env.grid.get(x - 1, y)]) for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])
 
 def has_door_key(env): return env.carrying is not None and env.carrying.type == "key" and any(cell is not None and cell.type == "door" and cell.color == env.carrying.color for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])
 

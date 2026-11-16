@@ -254,9 +254,16 @@ dotenv -f .env run --no-override -- python app/main.py repair-labeling \
     --traces experiments/benchmark/<suite>/traces --bundles experiments/benchmark/<suite>/bundles --parallel 10
 ```
 
-The first call checks each bundle's labeling against the trace bank (`trace-bank`, section 6.6),
-classes it (`missing`, `load`, `crash`, `wrong`, `ok`) and writes `<card>.labeling_check.json` beside
-the folder; it asks no model. The second repairs the failures with the bundle's own small generator,
+The first call checks each bundle's labeling against the trace bank (`trace-bank`, section 6.6) and,
+for the four MiniGrid envs, against seeded random walks on layouts the plans never use
+(`Configuration.repair_walk_layouts` layouts, a `uniform` and a `task` walk each; the record's
+`coverage.reference_true` counts the steps each proposition is true). It classes the labeling
+(`missing`, `load`, `crash`, `wrong`, `ok`; `ok` needs plans and walks to agree) and writes
+`<card>.labeling_check.json` beside the folder; it asks no model. A record made before the replay gets
+its `replay` entry on the next run, and a labeling that fails it is repaired again (old rounds in
+`earlier_rounds`, the labeling replaced in `labeling_before_replay`). The second repairs the failures
+with the bundle's own small generator (`--reasoning max` for the small pair), each round graded on
+a fresh block of walks,
 and finishes a bundle whose generation stopped at labeling (descriptions, embeddings) and rewrites
 the status as in section 2. Retry: run it again; it also finishes bundles repaired by an earlier run
 and resumes one that stopped half way. A bundle the loop leaves `unfixed` is for an agent to edit by

@@ -3,9 +3,10 @@
 ``check_labeling`` gives a bundle one class, recorded before any repair: ``missing`` (no
 labeling), ``load`` (the sandbox refuses it, or a machine proposition has no function), ``crash``
 (it raises while the card's traces replay), ``wrong`` (its labels disagree with the reference
-labeler on those traces) or ``ok``. ``repair_rounds`` asks the bundle's own generator model for
+labeler on those traces) or ``ok``. The traces are the card's plans and, for a MiniGrid env,
+seeded random walks (``Traces``). ``repair_rounds`` asks the bundle's own generator model for
 a corrected labeling with the failure evidence, up to a round limit, and checks every reply the
-way the first check did. The Reward Machine is never changed. The record of one bundle sits
+way the first check did, on fresh walks. The Reward Machine is never changed. The record of one bundle sits
 beside its folder (``<name>.labeling_check.json``), so a bundle folder gains no file; the repaired
 labeling replaces ``labeling.py`` and the original stays in the record.
 
@@ -30,6 +31,7 @@ from src.config import Configuration
 from src.engines import ImmediateEngineError, RetryableEngineError
 from src.prompts import read_prompt, render_prompt
 
+from .reference_labels import MINIGRID_LABELERS
 from .traces import (
     BundleRef,
     TraceRecord,
@@ -39,6 +41,7 @@ from .traces import (
     replay_in_bundle,
     write_json,
 )
+from .walks import Walks
 
 MISSING, LOAD, CRASH, WRONG, OK = "missing", "load", "crash", "wrong", "ok"
 CLASSES = (MISSING, LOAD, CRASH, WRONG, OK)
@@ -71,6 +74,31 @@ class Check:
     coverage: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class Traces:
+    """What a card's labelings are checked on: its plan traces, plus random walks in a MiniGrid env.
+
+    Plans visit only the states their author planned, so a labeling is ``ok`` only when plans and
+    walks both agree with the reference labels. The walks come in blocks of fresh layouts: block 0
+    is a bundle's first check and repair round ``n`` is graded on block ``n``, so a repair is never
+    graded on the layouts that showed its failure. The other envs hand their events to the
+    labeling, so they keep the plan check alone (``walks`` is None).
+    """
+
+    plans: Sequence[TraceRecord]
+    walks: Walks | None
+
+    @classmethod
+    def of(cls, plans: Sequence[TraceRecord], layouts: int) -> "Traces":
+        """The traces of one card, from its plan records (at least one)."""
+        minigrid = plans[0].gym_id.startswith(tuple(MINIGRID_LABELERS))
+        return cls(plans, Walks(plans[0], layouts) if minigrid else None)
+
+    def block(self, number: int) -> list[TraceRecord]:
+        """The plan traces and the walks of block ``number``."""
+        return [*self.plans, *(self.walks.block(number) if self.walks else ())]
+
+
 def check_labeling(bundle: ArtifactBundle, records: Sequence[TraceRecord]) -> Check:
     """Class the bundle's labeling against the Reward Machine's propositions and the traces."""
     if not bundle.labeling_source.strip():
@@ -97,6 +125,8 @@ def check_labeling(bundle: ArtifactBundle, records: Sequence[TraceRecord]) -> Ch
     compared = agreement["propositions"]
     coverage = {
         "compared": {name: item["total"] for name, item in compared.items()},
+        "differ": {name: item["total"] - item["agree"] for name, item in compared.items()},
+        "reference_true": {name: item["true"] for name, item in compared.items()},
         "of": len(bundle.labeling_propositions),
         "not_in_reference": agreement["unmatched_bundle"],
     }
@@ -158,17 +188,20 @@ class Repair:
 
 
 def start_repair(bundle: ArtifactBundle, record: dict[str, Any]) -> Repair:
-    """The loop state a record holds: its rounds so far, and the last candidate's check."""
+    """The loop state a record holds: its rounds so far, and the last candidate's check.
+
+    With no round yet, the check that opened the loop: the replay's when the record has one (a
+    labeling that passed the plan check and failed the walks), else the first check.
+    """
     rounds = list(record["rounds"])
-    final = (
-        Check(rounds[-1]["class"], rounds[-1]["evidence"]) if rounds else Check(**record["initial"])
-    )
+    first = Check(**(record.get("replay") or record["initial"]))
+    final = Check(rounds[-1]["class"], rounds[-1]["evidence"]) if rounds else first
     return Repair(bundle.labeling_source, final, rounds)
 
 
 def repair_rounds(
     bundle: ArtifactBundle,
-    records: Sequence[TraceRecord],
+    traces: Traces,
     generator: Generator,
     iterations: int,
     repair: Repair,
@@ -177,7 +210,8 @@ def repair_rounds(
 
     ``repair`` is where the bundle stands (``start_repair``): a rerun continues from the last
     candidate and spends only the rounds the bundle has left, none when it is at the limit. Each
-    round shows the model the latest labeling and its failure evidence. A provider outage repeats
+    round shows the model the latest labeling and its failure evidence and grades the reply on the
+    walks of block ``round`` (fresh layouts, see ``Traces``). A provider outage repeats
     the request without using a round, at most ``Configuration.OUTAGE_RETRIES`` times in a row;
     then, or on an error that must not be retried, the loop ends with ``error`` set. ``source``
     is the first labeling that checks ``ok``, else the original.
@@ -194,7 +228,7 @@ def repair_rounds(
             repair.error = f"{type(error).__name__}: {error}"
             break
         current = replace(bundle, labeling_source=extract_labeling_code(reply))
-        check = check_labeling(current, records)
+        check = check_labeling(current, traces.block(number))
         repair.final = check
         repair.rounds.append(
             {
@@ -392,9 +426,10 @@ def write_record(ref: BundleRef, record: dict[str, Any]) -> None:
 def summarize(bundles: Path, skipped: dict[str, str]) -> dict[str, Any]:
     """Counts and rates per class before repair, overall and per arm and environment.
 
-    Read from the records on disk, so a rerun and the agent step update it. ``failures`` holds the
-    evidence of every bundle that did not check ``ok`` at first; ``unfixed`` lists the bundles the
-    loop did not repair, for the agent step.
+    A bundle counts by its replay class when it has one (plans and walks both checked), else by
+    its first check. Read from the records on disk, so a rerun and the agent step update it.
+    ``failures`` holds the evidence of every bundle that did not check ``ok`` that way; ``unfixed``
+    lists the bundles the loop did not repair, for the agent step.
     """
     records = [
         json.loads(path.read_text(encoding="utf-8"))
@@ -406,27 +441,40 @@ def summarize(bundles: Path, skipped: dict[str, str]) -> dict[str, Any]:
     return {
         "bundles": len(records),
         "initial": _counts(records),
+        "replay": dict(
+            Counter(record["replay"]["kind"] for record in records if "replay" in record)
+        ),
         "by_arm_environment": {key: _counts(items) for key, items in sorted(groups.items())},
         "outcomes": dict(Counter(record["outcome"] for record in records)),
         "unfixed": [record["bundle"] for record in records if record["outcome"] == UNFIXED],
         "failures": [
             {
                 "bundle": record["bundle"],
-                "class": record["initial"]["kind"],
-                "evidence": record["initial"]["evidence"],
-                "coverage": record["initial"]["coverage"],
+                "class": (first := _first_check(record))["kind"],
+                "evidence": first["evidence"],
+                "coverage": first["coverage"],
                 "outcome": record["outcome"],
                 "rounds": len(record["rounds"]),
             }
             for record in records
-            if record["failed"]
+            if _first_check(record)["kind"] != OK
         ],
         "skipped": skipped,
     }
 
 
+def _first_check(record: dict[str, Any]) -> dict[str, Any]:
+    """The class a bundle counts by: its first check, with the walks when the plans alone passed it.
+
+    A first check that failed stands, also in a record made before the replay (its replay saw the
+    repaired labeling). One that passed gives way to the replay, which holds the walk result.
+    """
+    initial = record["initial"]
+    return initial if initial["kind"] != OK else record.get("replay", initial)
+
+
 def _counts(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
-    kinds = Counter(record["initial"]["kind"] for record in records)
+    kinds = Counter(_first_check(record)["kind"] for record in records)
     total = len(records)
 
     def rate(count: int) -> float:

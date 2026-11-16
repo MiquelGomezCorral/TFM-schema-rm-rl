@@ -279,6 +279,7 @@ class Configuration:
     # ======================= Labeling repair (repair-labeling) =======================
     repair_iterations: int = 10  # repair rounds per bundle before it stays unfixed
     repair_parallel: int = 10  # bundles repaired (or labeling-regenerated) at once
+    repair_walk_layouts: int = 40  # layouts per block of random walks a labeling is replayed on
 
     # ============================== Training (train-rl) ==============================
     # A YAML run config overrides these; defaults follow ARM-FM Table 5.

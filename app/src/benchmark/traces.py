@@ -75,7 +75,7 @@ class TraceRecord:
     suite: str
     card_id: str
     plan: str
-    source: str  # "plan" or "agent"
+    source: str  # "plan", "agent" or "walk" (a random walk, never written to disk)
     gym_id: str
     env_kwargs: dict[str, Any]
     layout: str | None
@@ -536,9 +536,10 @@ def label_agreement(
 ) -> dict[str, Any]:
     """Per-proposition agreement of the bundle's labeling with the reference labels.
 
-    Names are matched by equality; the others are listed, never guessed.
+    Names are matched by equality; the others are listed, never guessed. ``true`` counts the steps
+    the reference sets the proposition true: with 0, agreement says nothing about its true branch.
     """
-    counts: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    counts: dict[str, list[int]] = defaultdict(lambda: [0, 0, 0])
     reference: set[str] = set()
     for record, replay in pairs:
         reference |= {name for step in record.labels for name in step}
@@ -546,8 +547,12 @@ def label_agreement(
             for name in valuation.keys() & labels.keys():
                 counts[name][0] += valuation[name] == labels[name]
                 counts[name][1] += 1
+                counts[name][2] += labels[name]
     return {
-        "propositions": {name: {"agree": a, "total": t} for name, (a, t) in sorted(counts.items())},
+        "propositions": {
+            name: {"agree": agree, "total": total, "true": true}
+            for name, (agree, total, true) in sorted(counts.items())
+        },
         "unmatched_bundle": sorted(set(propositions) - reference),
         "unmatched_reference": sorted(reference - set(propositions)),
     }
