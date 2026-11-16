@@ -71,10 +71,15 @@ thing whichever arm produced it.
 - **Attempts.** Both pipelines get up to 10 reward-machine generation attempts, the first included.
   Labeling, descriptions and FARM tagging keep their own limits.
 - **Labeling repair.** Before any repair, `repair-labeling` gives each bundle one class from replays of
-  its card's traces: `missing`, `load`, `crash`, `wrong` or `ok`. That class is the measured failure
-  rate and is never overwritten. A failed labeling is then repaired by the bundle's own generator
+  its card's traces: `missing`, `load`, `crash`, `wrong` or `ok`. The traces are the card's plans
+  and, for the four MiniGrid envs, seeded random walks on layouts the plans never use (user, 2026-11-16: "replay
+  random walks against the reference labels before a labeling counts as ok or fixed"); a labeling is `ok`
+  only when plans and walks both agree with the reference labels. ServiceRoom is out of scope of the
+  replay: it has no reference labeler and hands its events to the labeling, so it keeps the plan check.
+  That class is the measured failure rate and is never overwritten. A failed labeling is then repaired by the bundle's own generator
   (`deepseek-v4.1-flash` or `glm-5.3-flash` only) in up to 10 rounds, each shown the failure
-  evidence. The Reward Machine is never touched. A bundle still failing after the loop is `unfixed`
+  evidence and graded on a fresh block of walks, never on the layouts that showed its failure. The
+  Reward Machine is never touched. A bundle still failing after the loop is `unfixed`
   and goes to an outside agent step; if the agent changes the labeling and it then checks `ok`, the
   bundle is `fixed-by-agent` and still counts as failed. A repaired bundle whose generation stopped
   at labeling, after its Reward Machine was accepted, then gets the stages it never reached: state
@@ -221,6 +226,9 @@ thing whichever arm produced it.
   before the switches existed.
 - Labeling repair never edits a Reward Machine and never replaces the class recorded before repair.
   A repaired or agent-fixed bundle is still a failure in the failure rate.
+- A MiniGrid labeling is `ok`, `fixed` or `fixed-by-agent` only when the plan check and the random-walk
+  replay both agree, and a repair is graded on walks whose layouts did not produce its failure evidence.
+  A record made before the replay existed has no `replay` entry and is replayed once.
 - Finishing a repaired bundle leaves the generation numbers as they were: a count of generation
   successes reads `generation_status` (else `status`), and the manifest's attempt metadata, `calls`
   and `wall_time_s` are not changed. `evaluate-larm` keeps such a bundle among the generation
@@ -257,7 +265,9 @@ and a restart is easier to trust.
   `generate-suite` gives a failing bundle.
 - `ablate-rm`: which term each switch owns, and no-op detection.
 - `repair-labeling` with `app/src/benchmark/labeling_repair.py`: the classes, the 10-round limit, the
-  small-model gate, and the record beside each bundle (it keeps the machine's hash and the first class).
+  small-model gate, and the record beside each bundle (it keeps the machine's hash and the first class);
+  `app/src/benchmark/walks.py` makes the random walks and their fresh blocks, and the check's
+  `coverage` counts the steps the reference sets each proposition true.
 - `regenerate-labeling` and `generation-table`: the labeling-only rerun and the per-arm acceptance table.
 - `aggregate-suite`: the asymmetry line on every table and per-direction cross-critic summaries.
 - Card approval, no human fixes, equal model pairs and the prompt-budget decision are Review-only:
@@ -318,3 +328,7 @@ and a restart is easier to trust.
   the verdict column counts judged success only where a hard rule fired, env success beside it for
   every arm; long PPO runs keep `last.pt` and `best.pt`, and timed-out runs are listed with a flag and
   judged from one of them. D9 (each card's spread across wordings) is a results column only.
+- 2026-11-16: Labeling check gains a random-walk replay for MiniGrid cards (user: "Yes, for MiniGrid cards:
+  replay random walks against the reference labels before a labeling counts as ok or fixed"; testing program
+  slice `labeling-replay`). The plan check saw only the states the card's plans visit, and a repair was graded
+  on the traces that showed its failure.

@@ -817,6 +817,12 @@ if __name__ == "__main__":
         help="Class the failures and write the records; ask no model",
     )
     repair_parser.add_argument(
+        "--reasoning",
+        choices=REASONING_LEVELS,
+        default=Configuration.reasoning,
+        help="Reasoning level of the repair model (default: %(default)s)",
+    )
+    repair_parser.add_argument(
         "--max-iterations",
         dest="repair_iterations",
         type=int,
