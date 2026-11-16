@@ -53,6 +53,7 @@ def _coerce_number(numeric_type: type, value: object) -> int | float:
 ALGORITHMS = ("dqn", "ppo")
 SUCCESS_MODES = ("env", "rm")
 REWARD_SOURCES = ("rm", "env", "both")
+RM_STATE_ENCODINGS = ("embedding", "one_hot")
 TASK_BUNDLE_KEYS = ("bundle", "labeling_bundle", "env_kwargs", "success")
 TASK_DRAWS = ("alternate",)
 PPO_POSITIVE = (
@@ -302,6 +303,10 @@ class Configuration:
     # Added to the RM reward on the step where the time limit ends an episode the RM did not (0 or
     # negative). A machine with an end judgment pays that judgment instead.
     time_limit_penalty: float = -0.5
+    # How the learner sees the machine state: ``embedding`` the text embedding of the state
+    # (``rm_embedding``), ``one_hot`` one slot per state, in sorted state-name order (``rm_state``).
+    # ``one_hot`` is a diagnostic input, not an arm; its runs are never pooled with embedding runs.
+    rm_state_encoding: str = "embedding"
     env_kwargs: dict = field(default_factory=dict)  # keyword arguments of gym.make
     algorithm: str = "dqn"
     # Which rule counts an episode as a success: the environment's own (``env``) or RM
@@ -497,7 +502,30 @@ class Configuration:
             _task_bundle(entry, index) for index, entry in enumerate(self.task_bundles)
         ]
         _check_task_draw(self.task_draw, bool(self.task_bundles))
+        self._validate_rm_state_encoding()
         self._validate_ppo()
+
+    def _validate_rm_state_encoding(self) -> None:
+        if self.rm_state_encoding not in RM_STATE_ENCODINGS:
+            raise ValueError(
+                f"rm_state_encoding must be one of {', '.join(RM_STATE_ENCODINGS)}: "
+                f"{self.rm_state_encoding!r}"
+            )
+        if self.rm_state_encoding != "one_hot":
+            return
+        if self.reward_source == "env":
+            raise ValueError(
+                "rm_state_encoding: one_hot needs a Reward Machine; reward_source: env has none"
+            )
+        if self.shuffle_embeddings_seed is not None:
+            raise ValueError(
+                "rm_state_encoding: one_hot has no embeddings to shuffle; "
+                "drop shuffle_embeddings_seed"
+            )
+        if self.task_bundles:
+            raise ValueError(
+                "rm_state_encoding: one_hot needs one machine; task_bundles has several"
+            )
 
     def _validate_ppo(self) -> None:
         not_finite = [name for name in PPO_NUMBERS if not _is_finite_number(getattr(self, name))]

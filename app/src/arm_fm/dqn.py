@@ -60,7 +60,13 @@ from torch import Tensor, nn, optim
 
 from src.config import Configuration
 
-from .environments import MultiTaskEnvironment, RunEnvironment, make_run_environment, task_name
+from .environments import (
+    MultiTaskEnvironment,
+    RunEnvironment,
+    make_run_environment,
+    one_hot_state_names,
+    task_name,
+)
 
 LAYOUTS = ("fixed", "procedural")
 POSITIVE_SETTINGS = (
@@ -290,6 +296,8 @@ class QNetwork(nn.Module):
         image_space = observation_space
         rm_feature_count = 0
         if isinstance(observation_space, spaces.Dict):
+            if "rm_state" in observation_space.spaces:
+                raise ValueError("rm_state_encoding: one_hot is for PPO; DQN needs embedding")
             image_space = observation_space["image"]
             dimension = observation_space["rm_embedding"].shape[0]
             rm_feature_count = dimension // 4
@@ -691,6 +699,10 @@ class RunRecorder:
         recorder.success_modes = _success_modes(CONFIG)
         settings = {field: _plain(getattr(CONFIG, field)) for field in RUN_SETTINGS}
         settings["layout_seed"] = layout_seed(CONFIG)
+        # Not in RUN_SETTINGS: run_suite keys shared no-RM runs on those, and old runs lack these.
+        settings["rm_state_encoding"] = CONFIG.rm_state_encoding
+        if CONFIG.rm_state_encoding == "one_hot":
+            settings["rm_state_names"] = one_hot_state_names(CONFIG.bundle)
         settings["device"] = str(device)
         settings["git_head"] = _git_head()
         (recorder.directory / "config.yaml").write_text(
