@@ -29,8 +29,11 @@ from src.utils import get_engine, ltlf_of, preflight_paths, print_warning
 from .embed_larm import embed_larm
 from .generate_rm import tag_states
 
-# Command-line name -> the RewardSwitches field it switches off.
-OFF_PARTS = {item.name.removeprefix("reward_"): item.name for item in fields(RewardSwitches)}
+# Command-line name -> the RewardSwitches field it switches off. A part that is off by default
+# (the promise cost) is not an ablation: ``rebuild-rewards`` turns it on.
+OFF_PARTS = {
+    item.name.removeprefix("reward_"): item.name for item in fields(RewardSwitches) if item.default
+}
 OFF_CHOICES = (NO_PART, *OFF_PARTS)
 
 # What a machine must have for the switch to change anything; named when the ablation is a no-op.
@@ -189,7 +192,7 @@ def _stored_task(
 
 
 def _recorded_switches(source: ArtifactBundle) -> RewardSwitches:
-    """The reward switches the source was made with; one that records none paid every part."""
+    """The reward switches the source was made with; one that records none paid the defaults."""
     settings = source.manifest.effective_settings
     return RewardSwitches(
         **{

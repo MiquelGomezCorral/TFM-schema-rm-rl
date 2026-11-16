@@ -183,6 +183,21 @@ without expanding the machine or adding a guard-coverage calculation.
   timing out in that state. This solves the disclosed corner where idling with two hard promises
   open (-2) cost more than a hard break (-1). The number is in the edge's reward, so the runtime
   does not change and the well adds no charge at the end (user decision).
+- 2026-11-16, user-approved (D4 picked 2026-11-15 20:27; go on 2026-11-16 00:13, "okey add the D4
+  thing, like is having a constant -0.01 on each step, right? either do something or get
+  penalized", and 00:16, "ok go with it"): a setting, off by default (`--promise-cost`,
+  `reward_promise_cost`), charges `PROMISE_COST_REWARD` (-0.01) on every step taken while at least
+  one hard promise is open, once however many are open, and nothing when none is. The step out of
+  such a state into the well or a final pays it too; the end charge and the well's -1 are
+  unchanged. Why: breaking a rule pays -1 plus the end charge now, idling pays the same end charge
+  only at the time limit, the shop's 600-step limit and a discount of 0.99 later, so waiting costs
+  almost nothing today. The cost is not charged when nothing is owed: a cost on every step
+  (-0.01 x 600) would make breaking (-1 now) the cheaper way out of waiting.
+  The idle self-loops of a state with a promise open become priced edges, so `rebuild-rewards`
+  checks that states, finals, end judgment and every edge that moves are unchanged instead of the
+  text; `rebuild-rewards --promise-cost` turns it on in a saved bundle, and a copy is
+  `cp -r BUNDLE COPY` first. The setting is recorded in `effective_settings`; ablation does not
+  offer it (user).
 - 2026-11-12: The flat -0.5 at the time limit becomes the run setting `time_limit_penalty`
   (default -0.5, so reproduction runs keep it); the thesis benchmark sets 0 for ARM-FM machines,
   as the ARM-FM paper pays nothing there. FARM's end judgment is unchanged (user decision).

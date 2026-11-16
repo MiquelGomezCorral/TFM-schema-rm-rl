@@ -209,6 +209,8 @@ class Configuration:
     # A goal is a hard promise.
     HARD_FAILED_REWARD: ClassVar[float] = -1.0
     SOFT_FAILED_REWARD: ClassVar[float] = -0.5
+    # Promise cost (off by default): paid once on each step taken while a hard promise is open.
+    PROMISE_COST_REWARD: ClassVar[float] = -0.01
 
     # ============================== Runtime options ==============================
 
@@ -237,6 +239,8 @@ class Configuration:
     reward_soft_break: bool = True
     reward_soft_pending: bool = True
     reward_end_judgment: bool = True
+    # The one reward part that is off by default.
+    reward_promise_cost: bool = False
     reasoning: str = "none"
     attempts: int = 3
     labeling: bool = False

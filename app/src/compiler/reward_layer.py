@@ -83,7 +83,8 @@ class RewardSwitches:
     """Which reward parts the machine pays; a part switched off pays 0.
 
     The defaults are the ``Configuration`` class defaults, and the field names are its field
-    names. Completion is never switched off. The recurrent soft penalty changes the machine's
+    names. Completion is never switched off. ``reward_promise_cost`` is the one part that is off
+    by default. The recurrent soft penalty changes the machine's
     structure (see ``_rearm_violated``); the other switches only change the rewards (and, for the
     end judgment, the machine's end lines).
     """
@@ -93,6 +94,7 @@ class RewardSwitches:
     reward_soft_break: bool = Configuration.reward_soft_break
     reward_soft_pending: bool = Configuration.reward_soft_pending
     reward_end_judgment: bool = Configuration.reward_end_judgment
+    reward_promise_cost: bool = Configuration.reward_promise_cost
     recurrent_soft_penalty: bool = Configuration.recurrent_soft_penalty
 
     @classmethod
@@ -469,7 +471,9 @@ def _price_edges(
     break always costs more than timing out there. Progress pays a soft clause where the clause
     starts or stops waiting. That is a proxy, approximate both ways: it can call a clause paid
     that changes nothing, or inert when it changes rewards. It follows the ``switches``: a part
-    switched off pays 0, so a soft clause that only that part paid counts as inert.
+    switched off pays 0, so a soft clause that only that part paid counts as inert. With the
+    promise cost on, every edge out of a state with a hard promise open (the well and finishing
+    edges too) pays it once; idle loops there become priced edges, so they stay in the machine.
     """
     labels = product.labels
     progress = (
@@ -478,19 +482,22 @@ def _price_edges(
     paying: set[int] = set()
     priced = []
     for edge in edges:
+        hard, soft = _open_promises(labels[edge.source], soft_clauses)
+        promise_cost = (
+            Configuration.PROMISE_COST_REWARD if switches.reward_promise_cost and hard else 0.0
+        )
         if edge.destination == _WELL:
-            hard, soft = _open_promises(labels[edge.source], soft_clauses)
             charge = (
                 hard * Configuration.HARD_FAILED_REWARD + soft * Configuration.SOFT_FAILED_REWARD
                 if switches.reward_end_judgment
                 else 0.0
             )
             well = Configuration.WELL_REWARD if switches.reward_well else 0.0
-            priced.append((edge, round(well + charge, 9)))
+            priced.append((edge, round(well + charge + promise_cost, 9)))
             continue
 
         finishing = edge.destination in finals
-        reward = progress[edge]
+        reward = progress[edge] + promise_cost
         if finishing:
             reward += Configuration.TASK_COMPLETION_REWARD
         for clause in soft_clauses:

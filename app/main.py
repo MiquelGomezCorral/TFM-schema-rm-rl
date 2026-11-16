@@ -249,6 +249,12 @@ if __name__ == "__main__":
         help="Charge a soft rule's -0.5 at every new break (default: enabled)",
     )
     generate_parser.add_argument(
+        "--promise-cost",
+        dest="reward_promise_cost",
+        action="store_true",
+        help="Charge -0.01 on every step while a hard promise is open (default: off)",
+    )
+    generate_parser.add_argument(
         "--reasoning",
         choices=REASONING_LEVELS,
         default=Configuration.reasoning,
@@ -379,6 +385,13 @@ if __name__ == "__main__":
         action=argparse.BooleanOptionalAction,
         default=True,
         help="compiler mode only: charge a soft rule's -0.5 at every new break (default: enabled)",
+    )
+    larm_parser.add_argument(
+        "--promise-cost",
+        dest="reward_promise_cost",
+        action="store_true",
+        help="compiler mode only: charge -0.01 on every step while a hard promise is open "
+        "(default: off)",
     )
     larm_parser.add_argument(
         "--reasoning",
@@ -536,6 +549,13 @@ if __name__ == "__main__":
         required=True,
         type=Path,
         help="Bundle made by generate-larm --mode compiler; it must store its clauses",
+    )
+    rebuild_parser.add_argument(
+        "--promise-cost",
+        dest="reward_promise_cost",
+        action="store_true",
+        help="Turn the promise cost on (-0.01 on every step while a hard promise is open); "
+        "without it the bundle keeps the setting it records",
     )
     rebuild_parser.set_defaults(func=cmd_rebuild_rewards)
 

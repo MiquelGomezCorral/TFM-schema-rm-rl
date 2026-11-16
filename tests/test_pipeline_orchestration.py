@@ -832,6 +832,7 @@ class OrchestrationTests(unittest.TestCase):
                     "reward_soft_break": True,
                     "reward_soft_pending": True,
                     "reward_end_judgment": True,
+                    "reward_promise_cost": False,
                     "recurrent_soft_penalty": True,
                 },
             )
