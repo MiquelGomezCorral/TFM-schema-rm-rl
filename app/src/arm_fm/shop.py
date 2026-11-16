@@ -5,12 +5,13 @@ pot that boils over). There is no goal: the episode ends only at the time limit.
 client arrives, a carried food portion slips out of the hands, and the pot boils, all at times drawn
 from the reset seed, so every card of the suite sees the same world and differs only in its rules.
 
-Six options, all off by default (the default shop is unchanged): ``small=True`` puts the counter,
+Eight options, all off by default (the default shop is unchanged): ``small=True`` puts the counter,
 the pantry and the stove close together in a 7 x 7 room, ``easy_start_prob`` makes a share of
 the episodes start at the counter with a client arriving on step 1, ``slip_chance`` lowers
 (or, at 0, removes) the chance that a carried food slips, ``siren=False`` and ``clients=False``
-take the siren or the clients out of the shop, and ``client_patience=N`` makes a client who
-waits N steps unserved leave and end the episode as a loss.
+take the siren or the clients out of the shop, ``client_patience=N`` makes a client who
+waits N steps unserved leave and end the episode as a loss, and ``order_needed=False`` and
+``cooking_needed=False`` let a client take food without an order or raw food without cooking.
 
 It builds on ``ServiceRoomEnv`` and reuses its siren, switch, fall and seeded-schedule code. The
 rules (layout, events, reward) are in ``environment.md`` and the code-side facts in
@@ -295,6 +296,11 @@ class ShopEnv(ServiceRoomEnv):
         client_patience (via kwargs, default None = the client waits for ever): a client not served
             this many steps after coming in leaves, the episode ends there as a loss (``terminated``,
             event ``leave``), and the shop reward gets no extra penalty.
+        order_needed (via kwargs, default True): False means a client needs no order: it takes food
+            the moment it is held at the counter, and the ``order`` event never fires.
+        cooking_needed (via kwargs, default True): False means raw food from the pantry counts as
+            served; the stove still cooks. Neither option moves a draw or ``N_x``, so every card
+            sees the same schedule.
     """
 
     def __init__(
@@ -326,6 +332,8 @@ class ShopEnv(ServiceRoomEnv):
             raise ValueError(
                 f"client_patience {self.client_patience} is not a step count of 1 or more"
             )
+        self.order_needed = kwargs.pop("order_needed", True)
+        self.cooking_needed = kwargs.pop("cooking_needed", True)
         kwargs.setdefault("siren", True)
         super().__init__(max_steps=max_steps, **kwargs)
         self.pot, self.face_fallen = pot, True
@@ -467,7 +475,7 @@ class ShopEnv(ServiceRoomEnv):
         if not self.order_taken:
             self.order_taken, client.color = True, ORDERED_COLOR
             self.events_this_step.append("order")
-        elif self.carrying is not None and self.carrying.color == PREPARED_COLOR:
+        elif self._food_ready():
             self.carrying, self.client_present = None, False
             self.grid.set(*self.layout.client, Counter())
             self._set_siren(self.siren_ringing)  # the new counter cell takes the current colour
@@ -475,6 +483,11 @@ class ShopEnv(ServiceRoomEnv):
             if self._ringing_before:
                 self.events_this_step.append("serve_ringing")
             self._start_after("client")
+
+    def _food_ready(self) -> bool:
+        """Whether the held food may be handed over: prepared, or any food when cooking is not needed."""
+        held = self.carrying
+        return held is not None and (not self.cooking_needed or held.color == PREPARED_COLOR)
 
     def use_stove(self) -> None:
         """Toggling the stove cooks raw food for an order taken; with empty hands it turns a boil down."""
@@ -525,7 +538,7 @@ class ShopEnv(ServiceRoomEnv):
         if self._due["client"] == step:
             self._due["client"] = None
             self.grid.set(*self.layout.client, Client())
-            self.client_present, self.order_taken = True, False
+            self.client_present, self.order_taken = True, not self.order_needed
             self._arrived_at = step
             self.event_counts["client"]["fired"] += 1
             self.events_this_step.append("arrive")
@@ -615,7 +628,7 @@ def _reactions(base: ShopEnv, ignore: set[str]) -> list[tuple[tuple[int, int], A
         serving.append((base.layout.client, Actions.toggle))
     elif base.client_present and held is None:
         serving.append((base.layout.pantry, Actions.pickup))
-    elif base.client_present and held.color == RAW_COLOR:
+    elif base.client_present and held.color == RAW_COLOR and base.cooking_needed:
         serving.append((base.layout.stove, Actions.toggle))
     elif base.client_present:
         serving.append((base.layout.client, Actions.toggle))
