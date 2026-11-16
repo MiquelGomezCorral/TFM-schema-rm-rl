@@ -524,6 +524,12 @@ having conflicting clauses.
   charged again. The plan review found it and it was first disclosed and kept
   ([rule-only progress](paper/rule-only-progress/README.md)). The well charge above solves it: the
   same break now costs -1 plus the same -2.
+- **[decision] An optional promise cost, off by default (user, picked 2026-11-15, go
+  2026-11-16).** With `--promise-cost` (`reward_promise_cost`), every step taken while a hard
+  promise is open pays an extra -0.01 (`PROMISE_COST_REWARD`, `_price_edges`), once however many
+  are open and nothing when none is; the end charge and the well's -1 stay. `rebuild-rewards
+  --promise-cost` turns it on in a saved bundle. The reason is in
+  [rm-execution](decisions/arm-fm/rm-execution.md).
 
 ### FL-AT change
 
