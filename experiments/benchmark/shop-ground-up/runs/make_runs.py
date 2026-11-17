@@ -38,11 +38,16 @@ MACHINES = {
     # Scale-only copies (scale versus shape): step2-a3 with every pay x10, step2-ground with every pay x0.1.
     "step2-a3-x10": ("step2a3x10", "step2"),
     "step2-ground-x01": ("step2groundx01", "step2"),
+    # Scale test 2: step2-generated (the model's own step-2 machine) with every pay and failed reward x10.
+    "step2-generated-x10": ("step2genx10", "step2"),
     "step3-ground": ("step3ground", "step3"),
     "step3-h2": ("step3h2", "step3"),
     "step3-chain4-fixed": ("step3chain4fixed", "step3"),
     "step3-chain4-fixed-noend": ("step3chain4fixednoend", "step3"),
     "step3-generated": ("step3gen", "step3"),
+    # The final generator prompt's step-3 machine (try armA3-step3-1) and its x10 copy.
+    "step3-a3": ("step3a3", "step3"),
+    "step3-a3-x10": ("step3a3x10", "step3"),
     "dry-bundle": ("standin", "step2"),  # step2-chain, dry runs only
     "no-rm-step2": ("norm", "step2"),
     "no-rm-step3": ("norm", "step3"),
@@ -161,11 +166,11 @@ def round3() -> list[Run]:
     """Plan steps 13-14, by result: the final generator prompt's step-2 machine, then step-3 runs.
 
     The step-2 machine and its ladder copy run at P1 for 2M, and so do the hand machine step2-ground (seeds 1-3)
-    and the two scale copies step2-a3-x10 and step2-ground-x01 (seeds 1-3 each).
-    The six step-3 runs take 5M: step3-ground seeds 2 and 3,
+    and the three scale copies step2-a3-x10, step2-ground-x01 and step2-generated-x10 (seeds 1-3 each).
+    The eight step-3 runs take 5M: step3-ground seeds 2 and 3,
     its embedding run, step3-chain4-fixed (embedding) warm-started from round 1's step-2
-    embedding learner, and step3-h2 seeds 2 and 3 (one-hot). Three more continue round 2's step-3 learners for
-    10M steps (``-cont``).
+    embedding learner, step3-h2 seeds 2 and 3 (one-hot), and step3-a3 with its x10 copy (seed 1, one-hot).
+    Three more continue round 2's step-3 learners for 10M steps (``-cont``).
     """
     warm = make_run("r3", "step3-chain4-fixed", "P1", "embedding")
     long_runs = [
@@ -175,6 +180,8 @@ def round3() -> list[Run]:
         replace(warm, name=f"{warm.name}-ws", init_from=str(STEP2_EMBEDDING_RUN)),
         make_run("r3", "step3-h2", "P1", seed=2),
         make_run("r3", "step3-h2", "P1", seed=3),
+        make_run("r3", "step3-a3", "P1"),
+        make_run("r3", "step3-a3-x10", "P1"),
     ]
     continued = []
     for (machine, pset), folder in CONTINUED.items():
@@ -189,7 +196,7 @@ def round3() -> list[Run]:
         *(make_run("r3", "step2-ground", "P1", seed=seed) for seed in (1, 2, 3)),
         *(
             make_run("r3", machine, "P1", seed=seed)
-            for machine in ("step2-a3-x10", "step2-ground-x01")
+            for machine in ("step2-a3-x10", "step2-ground-x01", "step2-generated-x10")
             for seed in (1, 2, 3)
         ),
         *(replace(run, steps=STEPS["r2"]) for run in long_runs),
@@ -302,6 +309,10 @@ Everything not listed below comes from `experiments/benchmark/configs/ppo.yaml` 
   scale-copy runs (seeds 1-3 each): `step2-a3-x10` is `step2-a3` with every pay and both failed rewards x10, `step2-ground-x01` is
   `step2-ground` with every pay x0.1; states and edges as in their sources; the three `step3-ground` runs (seeds 2 and 3 one-hot, seed 1 embedding) and the
   `-ws` run take 5M.
+- Round 3, scale test 2 (do the compiler's pay magnitudes stop the generated machines): `step2-generated-x10` is
+  `step2-generated` (the model's own step-2 machine) with every pay and both failed rewards x10 (seeds 1-3, 2M);
+  `step3-a3` is generator try `armA3-step3-1` as written (the final prompt's step-3 machine) and `step3-a3-x10` its x10 copy
+  (seed 1 each, 5M); states and edges as in their sources.
 - A name ending in `-cont` continues a finished round-2 step-3 run (same machine, PPO set, encoding, seed): `init_from`
   is that 5M run's folder, so it loads its `agent.pt` (fresh optimizer and schedules) and trains 10M more steps, 15M in all.
 - Bundles are read from `{bundles}/<name>`.

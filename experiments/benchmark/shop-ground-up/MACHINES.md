@@ -1,4 +1,4 @@
-# Shop ground-up machines: fourteen training-complete bundles (seven, the fixed pair, the final prompt's step-2 machine, its hand copy, the step-2 ground machine, and two scale-only copies)
+# Shop ground-up machines: seventeen training-complete bundles (seven, the fixed pair, the final prompt's step-2 machine, its hand copy, the step-2 ground machine, two scale-only copies, the final prompt's step-3 machine, and two x10 copies of generated machines)
 
 Built from the code at commit `c1c3efd`, with no model call; embeddings come from the local embedding server
 (nomic-embed-text). The pay checks, plan checks, graphs and build scripts named below stay with the private plan notes,
@@ -7,7 +7,7 @@ outside the repository; this folder holds the bundles and the run tooling (`runs
 `SL` = the earlier testing-program slices in the private plan notes (`plans/testing-program-20261111/slices`), not in
 the repository; the `SL/...` sources below record where each bundle came from.
 
-## Bundles (`bundles/<name>/`, fourteen, each loads with `load_bundle` and passes `validate(require_complete=True)`)
+## Bundles (`bundles/<name>/`, seventeen, each loads with `load_bundle` and passes `validate(require_complete=True)`)
 
 | bundle | states | source | clauses or hand text |
 |---|---|---|---|
@@ -18,6 +18,7 @@ the repository; the `SL/...` sources below record where each bundle came from.
 | step2-ground | 4 | hand text in the plan notes' `round3/scripts/ground2_build.py`, shell from `step2-generated` (labeling unchanged: it already defines `holding_food`) | `step3-ground` without the prepare stage: chain u0 -> u1 -> u2 -> u3, then u3 -> u0 when no client is present or u3 -> u1 when one is, +1 per agent stage (+2 for the order taken with food already in hand), arrival 0, no negative reward, no step-back edges, end judgment kept with failed rewards 0 |
 | step2-a3-x10 | 8 | `step2-a3` copied, then every pay and both failed rewards multiplied by 10 (scale-versus-shape test, round 3; script `round3/scripts/sign_build.py` in the plan notes) | the same machine with only numbers changed: arrival -3, stages +1 to +5, failed rewards -10 (hard) and -5 (soft), so the cut charge is -13 / -22 / -11 / 0 after the arrival / order / pickup / serve. States, edges and `PENDING_PROMISES` are unchanged |
 | step2-ground-x01 | 4 | `step2-ground` copied, then every pay multiplied by 0.1 (same script) | the same machine with only numbers changed: +0.1 per agent stage (+0.2 for the order taken with food already in hand), arrival 0, failed rewards stay 0. States, edges and `PENDING_PROMISES` are unchanged |
+| step2-generated-x10 | 8 | `step2-generated` copied, then every pay and both failed rewards multiplied by 10 (scale test 2, round 3; script `round3/scripts/scale2_build.py` in the plan notes, with `sign_build.py`'s scaling) | the same machine with only numbers changed: arrival -3, other pays -2 to +3, failed rewards -10 (hard) and -5 (soft), so the cut charge is -33 / -22 / -11 / 0 after the arrival / order / pickup / serve. States, edges and `PENDING_PROMISES` are unchanged |
 | step3-ground | 5 | hand text in `scripts/build_bundles.py` (`GROUND_TEXT`), shell from `SL/shop-serve-only/bundles/farm/shop-serve-only` | chain u0 -> u1 -> u2 -> u3 -> u4, then u4 -> u0 when no client is present or u4 -> u1 when one is, +1 per agent stage (+2 for the order taken with food already in hand), arrival 0, no negative reward, end judgment kept with failed rewards 0 |
 | step3-h2 | 5 | `SL/shop-handmade/h2-units.txt` as written (the saved file lacks only the zero-pay `(u0, client_arrived, u1) -> 0` line the serializer drops); same shell | the hand machine with drop penalties (-1, -2), step-back edges and end charges (hard -1, soft -0.5) |
 | step3-chain4 | 16 | copy of `SL/shop-serve-only/bundles/farm/shop-serve-only`, machine recompiled from new clauses | `Response(client_arrived, order_taken)`, `Response(order_taken, holding_food)`, `Response(holding_food, food_prepared)`, `Response(food_prepared, order_served)`, all hard (R16 step 3) |
@@ -25,6 +26,8 @@ the repository; the `SL/...` sources below record where each bundle came from.
 | step3-chain4-fixed | 16 | copy of `SL/shop-serve-only/bundles/farm/shop-serve-only`, machine recompiled from new clauses (found by `scripts/fix_search.py`, see `chain4-fixed.md`) | `Response(client_arrived, order_taken)`, `Response(order_taken, holding_food)`, `Response(order_taken, food_prepared)`, `Response(food_prepared, order_served)`, all hard: R16's chain with the third clause triggered by the order |
 | step3-chain4-fixed-noend | 16 | `step3-chain4-fixed` through `ablate-rm --off end_judgment`, manifest records `ablation.off = end_judgment` | same four clauses; no end-judgment lines. **The run config needs `time_limit_penalty: 0`**, otherwise the cut charges the flat -0.5 (see below) |
 | step3-generated | 8 | exact copy of `SL/shop-serve-only/bundles/farm/shop-serve-only` (the model's own clauses) | `Response(client_arrived, order_taken)`, `Response(order_taken, food_prepared)`, `Response(food_prepared, order_served)`, all hard |
+| step3-a3 | 16 | exact copy of generator try `armA3-step3-1`, written by the final generator prompt (A3); the step-3 twin of `step2-a3` (copied by `round3/scripts/scale2_build.py`) | `Response(client_arrived, order_taken)`, `Response(order_taken, holding_food)`, `Response(order_taken, food_prepared)`, `Response(food_prepared, order_served)`, all hard |
+| step3-a3-x10 | 16 | `step3-a3` copied, then every pay and both failed rewards multiplied by 10 (same script) | the same machine with only numbers changed: arrival -4, pays -5 to +8, failed rewards -10 (hard) and -5 (soft), so the cut charge is -14 / -23 / -12 / -11 / 0 after the arrival / order / pickup / prepare / serve. States, edges and `PENDING_PROMISES` are unchanged |
 
 Notes on how they differ from the packet's wording.
 
@@ -51,6 +54,7 @@ Notes on how they differ from the packet's wording.
 | step2-ground | PASS (round 1's scenarios: every stage > 0, a full service +3 in any order, nothing < 0, every cut charges 0; best cycle +3 per service, a drop + re-pick loop pays 0) | not rerun (step2-generated's) | PASS (100/100, no wrong plan ends accepting) |
 | step2-a3-x10 | pay walk (round 1's scenarios): every pay and end charge is exactly 10 x step2-a3's; best serve-free cycle pay 0 | not rerun (step2-a3's) | not run |
 | step2-ground-x01 | pay walk (same scenarios): every pay exactly 0.1 x step2-ground's, a full service +0.3, nothing < 0, every cut charges 0; no serve-free cycle | not rerun (step2-generated's) | not run (states and edges as in step2-ground, which passes) |
+| step2-generated-x10 | pay walk (round 1's scenarios): every pay and end charge is exactly 10 x step2-generated's; best serve-free cycle pay 0 | not rerun (step2-generated's) | not run (states and edges as in step2-generated, which passes) |
 | step3-ground | PASS | ok | PASS |
 | step3-h2 | PASS | ok | PASS |
 | step3-chain4 | PASS on the two asked lines; a full service never returns to accepting (net -0.2, end charge -1) | ok | FAIL (solve ends accepting 0/100) |
@@ -58,22 +62,24 @@ Notes on how they differ from the packet's wording.
 | step3-chain4-fixed | PASS (stages > 0, drop, ends accepting, net 0) | ok | PASS (accepting 100/100, end charge 0) |
 | step3-chain4-fixed-noend | PASS, same pays | ok | PASS (accepting 100/100; end charge -0.50 at the config default, 0 with `time_limit_penalty: 0`) |
 | step3-generated | FAIL: pickup pays 0 | ok | PASS |
+| step3-a3 | pay walk (a full service in each of the three orders, two drop and re-pick services, a cut after each stage): the order-first service pays -0.4 +0.1 +0.1 +0.1 +0.1 (every agent stage > 0, net 0); with the pickup before the order the order pays +0.2 and the pickup 0; best serve-free cycle pay 0 | not rerun (the generator try's) | PASS (100/100, no wrong plan ends accepting, end charge 0) |
+| step3-a3-x10 | pay walk (same scenarios): every pay and end charge is exactly 10 x step3-a3's; best serve-free cycle pay 0 | not rerun (step3-a3's) | not run (states and edges as in step3-a3, which passes) |
 
 ## Folders
 
-- `bundles/` the fourteen bundles.
+- `bundles/` the seventeen bundles.
 - `runs/` the round configs and tooling (scheduler, watch table, judge); its `README.md` lists every run and command.
 
 ## Rebuild
 
 The two `-noend` bundles come from their parents through `app/main.py ablate-rm --bundle <parent> --off end_judgment
---output <name>`, and their manifests record it. `step2-a3` is a generator output copied as is; `step2-a3-ladder` is a copy of it with
+--output <name>`, and their manifests record it. `step2-a3` and `step3-a3` are generator outputs (`armA3-step2-1`, `armA3-step3-1`) copied as is; `step2-a3-ladder` is a copy of `step2-a3` with
 one edited line in `reward_machine.txt` (`u4: hard 3, soft 0`) and a hand-bundle manifest (script in the plan notes). The
 other seven were built by a staging script kept with the plan notes; `step2-ground` by `round3/scripts/ground2_build.py` in the
-plan notes (the same recipe as `step3-ground`, on `step2-generated`'s shell). `step2-a3-x10` and `step2-ground-x01` are byte copies of
+plan notes (the same recipe as `step3-ground`, on `step2-generated`'s shell). `step2-generated-x10` and `step3-a3-x10` are byte copies of `step2-generated` and `step3-a3` with the numbers of `reward_machine.txt` scaled by 10 and a hand-bundle manifest (`round3/scripts/scale2_build.py` in the plan notes, which also copies `step3-a3`). `step2-a3-x10` and `step2-ground-x01` are byte copies of
 `step2-a3` and `step2-ground` with the numbers of `reward_machine.txt` scaled and a hand-bundle manifest (`round3/scripts/sign_build.py`
 in the plan notes). Each bundle's manifest and `reward_machine.txt` hold
-everything training reads, and `load_bundle` plus `validate(require_complete=True)` accept all fourteen.
+everything training reads, and `load_bundle` plus `validate(require_complete=True)` accept all seventeen.
 
 ## Run config for the no-end bundles (`step3-chain4-noend`, `step3-chain4-fixed-noend`)
 
