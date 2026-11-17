@@ -1,4 +1,4 @@
-# Shop ground-up machines: seventeen training-complete bundles (seven, the fixed pair, the final prompt's step-2 machine, its hand copy, the step-2 ground machine, two scale-only copies, the final prompt's step-3 machine, and two x10 copies of generated machines)
+# Shop ground-up machines: eighteen training-complete bundles (seven, the fixed pair, the final prompt's step-2 machine, its hand copy, the step-2 ground machine, two scale-only copies, the final prompt's step-3 machine, two x10 copies of generated machines, and the step-3 ladder copy)
 
 Built from the code at commit `c1c3efd`, with no model call; embeddings come from the local embedding server
 (nomic-embed-text). The pay checks, plan checks, graphs and build scripts named below stay with the private plan notes,
@@ -7,7 +7,7 @@ outside the repository; this folder holds the bundles and the run tooling (`runs
 `SL` = the earlier testing-program slices in the private plan notes (`plans/testing-program-20261111/slices`), not in
 the repository; the `SL/...` sources below record where each bundle came from.
 
-## Bundles (`bundles/<name>/`, seventeen, each loads with `load_bundle` and passes `validate(require_complete=True)`)
+## Bundles (`bundles/<name>/`, eighteen, each loads with `load_bundle` and passes `validate(require_complete=True)`)
 
 | bundle | states | source | clauses or hand text |
 |---|---|---|---|
@@ -28,6 +28,7 @@ the repository; the `SL/...` sources below record where each bundle came from.
 | step3-generated | 8 | exact copy of `SL/shop-serve-only/bundles/farm/shop-serve-only` (the model's own clauses) | `Response(client_arrived, order_taken)`, `Response(order_taken, food_prepared)`, `Response(food_prepared, order_served)`, all hard |
 | step3-a3 | 16 | exact copy of generator try `armA3-step3-1`, written by the final generator prompt (A3); the step-3 twin of `step2-a3` (copied by `round3/scripts/scale2_build.py`) | `Response(client_arrived, order_taken)`, `Response(order_taken, holding_food)`, `Response(order_taken, food_prepared)`, `Response(food_prepared, order_served)`, all hard |
 | step3-a3-x10 | 16 | `step3-a3` copied, then every pay and both failed rewards multiplied by 10 (same script) | the same machine with only numbers changed: arrival -4, pays -5 to +8, failed rewards -10 (hard) and -5 (soft), so the cut charge is -14 / -23 / -12 / -11 / 0 after the arrival / order / pickup / prepare / serve. States, edges and `PENDING_PROMISES` are unchanged |
+| step3-a3-x10-ladder | 16 | `step3-a3-x10` copied, then hand-edited (ladder test 3, round 3; script `round3/scripts/ladder3_build.py` in the plan notes) | the same machine with one change: `PENDING_PROMISES` gives `u6` (client arrived, order not taken) `hard 2` instead of `hard 1`, so the cut total (pays so far plus the end charge) is -24 / -23 / -12 / -11 / 0 after the arrival / order / pickup / prepare / serve (step3-a3-x10's: -14 / -23 / -12 / -11 / 0, a dip at the order). Pays, edges, states and failed rewards are unchanged |
 
 Notes on how they differ from the packet's wording.
 
@@ -64,10 +65,11 @@ Notes on how they differ from the packet's wording.
 | step3-generated | FAIL: pickup pays 0 | ok | PASS |
 | step3-a3 | pay walk (a full service in each of the three orders, two drop and re-pick services, a cut after each stage): the order-first service pays -0.4 +0.1 +0.1 +0.1 +0.1 (every agent stage > 0, net 0); with the pickup before the order the order pays +0.2 and the pickup 0; best serve-free cycle pay 0 | not rerun (the generator try's) | PASS (100/100, no wrong plan ends accepting, end charge 0) |
 | step3-a3-x10 | pay walk (same scenarios): every pay and end charge is exactly 10 x step3-a3's; best serve-free cycle pay 0 | not rerun (step3-a3's) | not run (states and edges as in step3-a3, which passes) |
+| step3-a3-x10-ladder | pay walk (same scenarios, `round3/scripts/ladder3_cut_walk.py`): every pay is identical to step3-a3-x10's; only the cut charge after the arrival changes (-10 to -20, total -14 to -24). The cut total rises strictly from the arrival on (-24 / -23 / -12 / -11 / 0) in the order-first, pre-pick and both drop and re-pick services; with the pickup after the arrival and before the order it is flat from the arrival to the pickup (-24, -24: `u6` has no `holding_food` edge, as in step3-a3-x10) and then rises; best serve-free cycle pay 0; the idle agent ends at -24, below every finished service (0) | not rerun (step3-a3's) | PASS (100/100, no wrong plan ends accepting, end charge 0; the do-nothing plan ends -20 at the cut) |
 
 ## Folders
 
-- `bundles/` the seventeen bundles.
+- `bundles/` the eighteen bundles.
 - `runs/` the round configs and tooling (scheduler, watch table, judge); its `README.md` lists every run and command.
 
 ## Rebuild
@@ -78,8 +80,9 @@ one edited line in `reward_machine.txt` (`u4: hard 3, soft 0`) and a hand-bundle
 other seven were built by a staging script kept with the plan notes; `step2-ground` by `round3/scripts/ground2_build.py` in the
 plan notes (the same recipe as `step3-ground`, on `step2-generated`'s shell). `step2-generated-x10` and `step3-a3-x10` are byte copies of `step2-generated` and `step3-a3` with the numbers of `reward_machine.txt` scaled by 10 and a hand-bundle manifest (`round3/scripts/scale2_build.py` in the plan notes, which also copies `step3-a3`). `step2-a3-x10` and `step2-ground-x01` are byte copies of
 `step2-a3` and `step2-ground` with the numbers of `reward_machine.txt` scaled and a hand-bundle manifest (`round3/scripts/sign_build.py`
-in the plan notes). Each bundle's manifest and `reward_machine.txt` hold
-everything training reads, and `load_bundle` plus `validate(require_complete=True)` accept all seventeen.
+in the plan notes). `step3-a3-x10-ladder` is a byte copy of `step3-a3-x10` with one edited line in `reward_machine.txt`
+(`u6: hard 2, soft 0`) and a hand-bundle manifest (`round3/scripts/ladder3_build.py` in the plan notes). Each bundle's manifest and `reward_machine.txt` hold
+everything training reads, and `load_bundle` plus `validate(require_complete=True)` accept all eighteen.
 
 ## Run config for the no-end bundles (`step3-chain4-noend`, `step3-chain4-fixed-noend`)
 

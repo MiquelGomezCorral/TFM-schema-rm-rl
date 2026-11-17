@@ -30,7 +30,7 @@ Everything not listed below comes from `experiments/benchmark/configs/ppo.yaml` 
 - Every RM run name ends in `-oh` (one-hot machine state) or `-emb` (text embedding, `rm_state_encoding: embedding`) before
   the seed, so the two are never mixed in a table (decision record: one-hot runs are never pooled with embedding runs).
   No-RM runs use `reward_source: env` and no bundle.
-- Run names: `sgu-<round>-<machine>-<pset>-<oh|emb>-s<seed>`, no-RM `sgu-<round>-norm-<pset>-s<seed>`; machine tokens: `step2chain` = step2-chain, `step2gen` = step2-generated, `step2a3` = step2-a3, `step2a3ladder` = step2-a3-ladder, `step2ground` = step2-ground, `step2a3x10` = step2-a3-x10, `step2groundx01` = step2-ground-x01, `step2genx10` = step2-generated-x10, `step3ground` = step3-ground, `step3h2` = step3-h2, `step3chain4fixed` = step3-chain4-fixed, `step3chain4fixednoend` = step3-chain4-fixed-noend, `step3gen` = step3-generated, `step3a3` = step3-a3, `step3a3x10` = step3-a3-x10, `standin` = dry-bundle, `norm` = no-rm-step2, `norm` = no-rm-step3.
+- Run names: `sgu-<round>-<machine>-<pset>-<oh|emb>-s<seed>`, no-RM `sgu-<round>-norm-<pset>-s<seed>`; machine tokens: `step2chain` = step2-chain, `step2gen` = step2-generated, `step2a3` = step2-a3, `step2a3ladder` = step2-a3-ladder, `step2ground` = step2-ground, `step2a3x10` = step2-a3-x10, `step2groundx01` = step2-ground-x01, `step2genx10` = step2-generated-x10, `step3ground` = step3-ground, `step3h2` = step3-h2, `step3chain4fixed` = step3-chain4-fixed, `step3chain4fixednoend` = step3-chain4-fixed-noend, `step3gen` = step3-generated, `step3a3` = step3-a3, `step3a3x10` = step3-a3-x10, `step3a3x10ladder` = step3-a3-x10-ladder, `standin` = dry-bundle, `norm` = no-rm-step2, `norm` = no-rm-step3.
 - A name ending in `-ws` is a warm start: its config sets `init_from` to the finished run folder
   `/home/turbotowerlnx/orca/workspaces/TFM-schema-rm-rl/tp-shop-ground-up/outputs/runs/sgu-r1-step2gen-p1-emb-s1/seed1-20261117T013552-920749` (round 1's step-2 embedding run); train-rl loads its `agent.pt`, with a fresh optimizer and schedules.
 - Round 3: `step2-a3` and its hand copy `step2-a3-ladder` (cut charge -3.3 / -2.2 / -1.1 / 0 after the arrival, order,
@@ -43,6 +43,10 @@ Everything not listed below comes from `experiments/benchmark/configs/ppo.yaml` 
   `step2-generated` (the model's own step-2 machine) with every pay and both failed rewards x10 (seeds 1-3, 2M);
   `step3-a3` is generator try `armA3-step3-1` as written (the final prompt's step-3 machine) and `step3-a3-x10` its x10 copy
   (seed 1 each, 5M); states and edges as in their sources.
+- Round 3, ladder test 3 (does the step-3 cut-charge dip stop `step3-a3-x10`): `step3-a3-x10-ladder` is `step3-a3-x10` with
+  `PENDING_PROMISES` giving `u6` (client arrived, order not taken) `hard 2` instead of `hard 1`, so the cut total is -24 / -23
+  / -12 / -11 / 0 after the arrival / order / pickup / prepare / serve (seed 1, 5M); pays, edges and failed rewards as in
+  `step3-a3-x10`.
 - A name ending in `-cont` continues a finished round-2 step-3 run (same machine, PPO set, encoding, seed): `init_from`
   is that 5M run's folder, so it loads its `agent.pt` (fresh optimizer and schedules) and trains 10M more steps, 15M in all.
 - Bundles are read from `/home/turbotowerlnx/orca/workspaces/TFM-schema-rm-rl/tp-shop-ground-up/experiments/benchmark/shop-ground-up/bundles/<name>`.
@@ -149,6 +153,7 @@ $R/judge.sh r3
 | `sgu-r3-step3h2-p1-oh-s3` | step3-h2 | step3 (shop-serve-only) | P1 (0.2 / 0.995 / 0.001) | one-hot | 5,000,000 | 3 |
 | `sgu-r3-step3a3-p1-oh-s1` | step3-a3 | step3 (shop-serve-only) | P1 (0.2 / 0.995 / 0.001) | one-hot | 5,000,000 | 1 |
 | `sgu-r3-step3a3x10-p1-oh-s1` | step3-a3-x10 | step3 (shop-serve-only) | P1 (0.2 / 0.995 / 0.001) | one-hot | 5,000,000 | 1 |
+| `sgu-r3-step3a3x10ladder-p1-oh-s1` | step3-a3-x10-ladder | step3 (shop-serve-only) | P1 (0.2 / 0.995 / 0.001) | one-hot | 5,000,000 | 1 |
 | `sgu-r3-step3ground-p1-oh-s1-cont` | step3-ground | step3 (shop-serve-only) | P1 (0.2 / 0.995 / 0.001) | one-hot | 10,000,000 | 1 |
 | `sgu-r3-step3h2-p1-oh-s1-cont` | step3-h2 | step3 (shop-serve-only) | P1 (0.2 / 0.995 / 0.001) | one-hot | 10,000,000 | 1 |
 | `sgu-r3-step3ground-p3-oh-s1-cont` | step3-ground | step3 (shop-serve-only) | P3 (0.2 / 0.999 / 0.001) | one-hot | 10,000,000 | 1 |
