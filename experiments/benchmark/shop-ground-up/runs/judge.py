@@ -20,12 +20,12 @@ from pathlib import Path
 import yaml
 from sgu import CARDS, fmt, is_finished, run_folder, select
 
-from scripts.test_rl import JudgeRecorder, _load_policy, _run_config, test_rl
+from scripts.test_rl import JudgeRecorder, load_policy, run_config, test_rl
 from src.arm_fm import make_run_environment
 from src.config import Configuration
 
 EVAL_SEED_BASE = 2_000_000  # the default of ``test-rl --seed-base``
-LEARNED_SERVED = 10  # plan R11: greedy mean served per episode
+LEARNED_SERVED = 7.5  # greedy served/ep; plan R11, lowered from 10 on 2026-11-17 (user)
 SKIPPED = (OSError, ValueError, RuntimeError, SystemExit)  # one failed run must not stop the others
 
 
@@ -44,12 +44,12 @@ def judge_greedy(folder: Path, card: Path, episodes: int) -> None:
 
 def judge_sampled(folder: Path, card: Path, episodes: int) -> None:
     saved = yaml.safe_load((folder / "config.yaml").read_text(encoding="utf-8"))
-    config = _run_config(saved, EVAL_SEED_BASE)
+    config = run_config(saved, EVAL_SEED_BASE)
     config.eval_greedy = False
     run = make_run_environment(config)
     out = folder / "sampled" / card.stem
     try:
-        policy = _load_policy(config, run, folder, "final")
+        policy = load_policy(config, run, folder, "final")
         out.mkdir(parents=True, exist_ok=True)
         JudgeRecorder(config, run, policy, card).write(out, episodes)
     finally:

@@ -240,14 +240,16 @@ def _load_initial_weights(agent: PPOAgent, CONFIG: Configuration, device: torch.
         raise ValueError(
             f"init_from {CONFIG.init_from} does not fit this machine: a one-hot slot means one "
             f"state of one machine; saved one-hot states {source or 'none (embedding)'}, this "
-            f"run's {target or 'none (embedding)'}"
+            f"run's {target or 'none (embedding)'}. Point init_from at a run with the same "
+            f"rm_state_encoding (for one_hot, the same state names), or drop init_from"
         )
     try:
         agent.load_state_dict(torch.load(path, map_location=device))
     except RuntimeError as error:
         raise ValueError(
             f"{path} does not fit this run's observation or action space (image size, RM state "
-            f"input size or action count differ): {error}"
+            f"input size or action count differ). Point init_from at a run of the same "
+            f"environment and RM embedding model, or drop init_from. Torch says: {error}"
         ) from error
 
 

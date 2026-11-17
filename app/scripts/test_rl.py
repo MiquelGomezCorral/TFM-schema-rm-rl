@@ -215,7 +215,7 @@ def _test_run(
     CONFIG: Configuration, directory: Path, gifs: int, judge: Path | None
 ) -> dict[str, object]:
     saved = yaml.safe_load((directory / "config.yaml").read_text(encoding="utf-8"))
-    trained = _run_config(saved, CONFIG.eval_seed_base)
+    trained = run_config(saved, CONFIG.eval_seed_base)
     config, transfer = trained, None
     if CONFIG.bundle is not None or CONFIG.shuffle_embeddings_seed is not None:
         config, transfer = _transferred_config(CONFIG, saved, judge)
@@ -226,7 +226,7 @@ def _test_run(
     try:
         if transfer and CONFIG.bundle is not None:
             _check_same_spaces(trained, saved, run, CONFIG.bundle)
-        policy = _load_policy(config, run, directory, CONFIG.test_model)
+        policy = load_policy(config, run, directory, CONFIG.test_model)
         # Built first: a card that does not fit the run fails before any test work.
         judge_recorder = JudgeRecorder(config, run, policy, judge) if judge is not None else None
         out.mkdir(parents=True, exist_ok=True)
@@ -258,7 +258,7 @@ def _test_run(
     return row
 
 
-def _run_config(
+def run_config(
     saved: dict[str, Any], seed_base: int, overrides: dict[str, Any] | None = None
 ) -> Configuration:
     """The run's own settings, rebuilt from its ``config.yaml``, testing from ``seed_base``.
@@ -309,7 +309,7 @@ def _transferred_config(
             "env_kwargs": dict(card.env["env_kwargs"]),
         }
         parts.append(f"{CONFIG.bundle.parent.name}-{CONFIG.bundle.name}")
-    config = _run_config(saved, CONFIG.eval_seed_base, overrides)
+    config = run_config(saved, CONFIG.eval_seed_base, overrides)
     if seed is not None:
         parts.append(f"shuffled-s{seed}")
     bundles = (
@@ -348,7 +348,8 @@ def _check_same_spaces(
     if policy_states != machine_states:
         raise TransferError(
             f"{bundle} does not fit the policy (rm_state): it was trained on the one-hot "
-            f"states {policy_states}, the bundle's machine has {machine_states}"
+            f"states {policy_states}, the bundle's machine has {machine_states}. Pass a --bundle "
+            f"whose machine has the same state names, or retrain the policy on this bundle"
         )
     reference = make_run_environment(trained)
     try:
@@ -356,7 +357,9 @@ def _check_same_spaces(
             seen, wanted = getattr(tested.env, name), getattr(reference.env, name)
             if seen != wanted:
                 raise TransferError(
-                    f"{bundle} does not fit the policy ({name}): {_space_difference(wanted, seen)}"
+                    f"{bundle} does not fit the policy ({name}): {_space_difference(wanted, seen)}. "
+                    "Pass a --bundle for the same environment and RM embedding model as the "
+                    "policy's training bundle, or retrain the policy on this bundle"
                 )
     finally:
         reference.env.close()
@@ -378,7 +381,8 @@ def _shape(space: spaces.Space | None) -> object:
     return "missing" if space is None else getattr(space, "shape", space)
 
 
-def _load_policy(config: Configuration, run: RunEnvironment, directory: Path, model: str) -> Policy:
+def load_policy(config: Configuration, run: RunEnvironment, directory: Path, model: str) -> Policy:
+    """Load the ``model`` weights saved in run folder ``directory`` as a policy playing in ``run``."""
     if config.algorithm == "ppo":
         agent = load_ppo_agent(directory / MODEL_FILES[model], run, CPU)
 
