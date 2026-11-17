@@ -31,6 +31,10 @@ Everything not listed below comes from `experiments/benchmark/configs/ppo.yaml` 
   the seed, so the two are never mixed in a table (decision record: one-hot runs are never pooled with embedding runs).
   No-RM runs use `reward_source: env` and no bundle.
 - Run names: `sgu-<round>-<machine>-<pset>-<oh|emb>-s<seed>`, no-RM `sgu-<round>-norm-<pset>-s<seed>`; machine tokens: `step2chain` = step2-chain, `step2gen` = step2-generated, `step2a3` = step2-a3, `step3ground` = step3-ground, `step3h2` = step3-h2, `step3chain4fixed` = step3-chain4-fixed, `step3chain4fixednoend` = step3-chain4-fixed-noend, `step3gen` = step3-generated, `standin` = dry-bundle, `norm` = no-rm-step2, `norm` = no-rm-step3.
+- A name ending in `-ws` is a warm start: its config sets `init_from` to the finished run folder
+  `/home/turbotowerlnx/orca/workspaces/TFM-schema-rm-rl/tp-shop-ground-up/outputs/runs/sgu-r1-step2gen-p1-emb-s1/seed1-20261117T013552-920749` (round 1's step-2 embedding run); train-rl loads its `agent.pt`, with a fresh optimizer and schedules.
+- Round 3: `step2-a3` runs 2M steps; the three `step3-ground` runs (seeds 2 and 3 one-hot, seed 1 embedding) and the
+  `-ws` run take 5M.
 - Bundles are read from `/home/turbotowerlnx/orca/workspaces/TFM-schema-rm-rl/tp-shop-ground-up/experiments/benchmark/shop-ground-up/bundles/<name>`.
 
 ## Commands
@@ -54,7 +58,7 @@ $E/python $R/scheduler.py r2
 $E/python $R/watch.py r2
 $R/judge.sh r2
 
-# Round 3 (by result, 2M steps)
+# Round 3 (by result; 2M or 5M steps, see the table)
 $E/python $R/scheduler.py r3
 $E/python $R/watch.py r3
 $R/judge.sh r3
@@ -109,11 +113,15 @@ $R/judge.sh r3
 | `sgu-r2-step2gen-p1-oh-s2` | step2-generated | step2 (shop-order-deliver) | P1 (0.2 / 0.995 / 0.001) | one-hot | 5,000,000 | 2 |
 | `sgu-r2-step2gen-p1-oh-s3` | step2-generated | step2 (shop-order-deliver) | P1 (0.2 / 0.995 / 0.001) | one-hot | 5,000,000 | 3 |
 
-### Round 3 (plan step 13, by result)
+### Round 3 (plan steps 13-14, by result)
 
 | run | machine | env | PPO set | encoding | steps | seed |
 |---|---|---|---|---|---|---|
 | `sgu-r3-step2a3-p1-oh-s1` | step2-a3 | step2 (shop-order-deliver) | P1 (0.2 / 0.995 / 0.001) | one-hot | 2,000,000 | 1 |
+| `sgu-r3-step3ground-p1-oh-s2` | step3-ground | step3 (shop-serve-only) | P1 (0.2 / 0.995 / 0.001) | one-hot | 5,000,000 | 2 |
+| `sgu-r3-step3ground-p1-oh-s3` | step3-ground | step3 (shop-serve-only) | P1 (0.2 / 0.995 / 0.001) | one-hot | 5,000,000 | 3 |
+| `sgu-r3-step3ground-p1-emb-s1` | step3-ground | step3 (shop-serve-only) | P1 (0.2 / 0.995 / 0.001) | embedding | 5,000,000 | 1 |
+| `sgu-r3-step3chain4fixed-p1-emb-s1-ws` | step3-chain4-fixed | step3 (shop-serve-only) | P1 (0.2 / 0.995 / 0.001) | embedding | 5,000,000 | 1 |
 
 ### Dry runs (4096 steps, bundle `step2-chain`)
 

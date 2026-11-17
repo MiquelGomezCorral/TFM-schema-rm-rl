@@ -7,12 +7,13 @@ Usage:
 
 Each run is one ``train-rl`` config in ``configs/<run>.yaml``: ``experiments/benchmark/configs/ppo.yaml``
 of the worktree, the run's PPO set, the card's environment and the run's machine (the fields
-``run-suite`` writes, plus ``rm_state_encoding``). Run names are ``sgu-<round>-<machine>-<pset>-<oh|emb>-s<seed>`` (no-RM: ``sgu-<round>-norm-<pset>-s<seed>``).
+``run-suite`` writes, plus ``rm_state_encoding``). Run names are ``sgu-<round>-<machine>-<pset>-<oh|emb>-s<seed>`` (no-RM: ``sgu-<round>-norm-<pset>-s<seed>``);
+a warm start (``init_from``) adds ``-ws``.
 """
 
 import argparse
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 import yaml
@@ -54,6 +55,10 @@ PSETS = {
 ENT_COEF = 0.01
 EVAL_FREQUENCY = 50_000
 STEPS = {"r1": 2_000_000, "r2": 5_000_000, "r3": 2_000_000, "dry": 4096}
+# Round 1's finished step-2 embedding run: the weights round 3's warm start (``-ws``) begins from.
+STEP2_EMBEDDING_RUN = (
+    WORKTREE / "outputs/runs/sgu-r1-step2gen-p1-emb-s1/seed1-20261117T013552-920749"
+)
 
 
 @dataclass
@@ -67,6 +72,7 @@ class Run:
     steps: int
     seed: int
     bundle: str | None = None
+    init_from: str | None = None  # a finished PPO run folder whose weights the run starts from
 
     @property
     def card(self) -> str:
@@ -138,8 +144,23 @@ def round2(winner: tuple[str, str] | None, second_pset: str) -> list[Run]:
 
 
 def round3() -> list[Run]:
-    """Plan step 13, by result: the final generator prompt's step-2 machine at P1."""
-    return [make_run("r3", "step2-a3", "P1")]
+    """Plan steps 13-14, by result: the final generator prompt's step-2 machine, then step-3 runs.
+
+    The step-2 machine runs at P1 for 2M. The four step-3 runs take 5M: step3-ground seeds 2 and 3,
+    its embedding run, and step3-chain4-fixed (embedding) warm-started from round 1's step-2
+    embedding learner.
+    """
+    warm = make_run("r3", "step3-chain4-fixed", "P1", "embedding")
+    long_runs = [
+        make_run("r3", "step3-ground", "P1", seed=2),
+        make_run("r3", "step3-ground", "P1", seed=3),
+        make_run("r3", "step3-ground", "P1", "embedding"),
+        replace(warm, name=f"{warm.name}-ws", init_from=str(STEP2_EMBEDDING_RUN)),
+    ]
+    return [
+        make_run("r3", "step2-a3", "P1"),
+        *(replace(run, steps=STEPS["r2"]) for run in long_runs),
+    ]
 
 
 def dry_runs() -> list[Run]:
@@ -178,6 +199,8 @@ def build_config(run: Run) -> dict:
         total_timesteps=run.steps,
         success="env",
     )
+    if run.init_from:
+        config["init_from"] = run.init_from
     if run.round == "dry":
         config.update(final_eval_episodes=10, eval_episodes=5)  # a short final check
     if run.bundle is None:
@@ -237,6 +260,10 @@ Everything not listed below comes from `experiments/benchmark/configs/ppo.yaml` 
   the seed, so the two are never mixed in a table (decision record: one-hot runs are never pooled with embedding runs).
   No-RM runs use `reward_source: env` and no bundle.
 - Run names: `sgu-<round>-<machine>-<pset>-<oh|emb>-s<seed>`, no-RM `sgu-<round>-norm-<pset>-s<seed>`; machine tokens: {tokens}.
+- A name ending in `-ws` is a warm start: its config sets `init_from` to the finished run folder
+  `{warm_start}` (round 1's step-2 embedding run); train-rl loads its `agent.pt`, with a fresh optimizer and schedules.
+- Round 3: `step2-a3` runs 2M steps; the three `step3-ground` runs (seeds 2 and 3 one-hot, seed 1 embedding) and the
+  `-ws` run take 5M.
 - Bundles are read from `{bundles}/<name>`.
 
 ## Commands
@@ -260,7 +287,7 @@ $E/python $R/scheduler.py r2
 $E/python $R/watch.py r2
 $R/judge.sh r2
 
-# Round 3 (by result, 2M steps)
+# Round 3 (by result; 2M or 5M steps, see the table)
 $E/python $R/scheduler.py r3
 $E/python $R/watch.py r3
 $R/judge.sh r3
@@ -312,7 +339,7 @@ def write_readme(rounds: dict[str, list[Run]], pending: bool) -> None:
             "\n\nNot written yet: the three round-2 runs of the round-1 winner (seeds 2 and 3 at 5M; the embedding "
             "run, only when the winner is not `step2-generated` at P1). Run `make_runs.py --winner <machine>:<set>`."
         )
-    sections.append(f"### Round 3 (plan step 13, by result)\n\n{table(rounds['r3'])}")
+    sections.append(f"### Round 3 (plan steps 13-14, by result)\n\n{table(rounds['r3'])}")
     sections.append(
         f"### Dry runs (4096 steps, bundle `{DRY_BUNDLE.name}`)\n\n{table(rounds['dry'])}"
     )
@@ -327,6 +354,7 @@ def write_readme(rounds: dict[str, list[Run]], pending: bool) -> None:
         psets=psets,
         tokens=tokens,
         bundles=BUNDLES,
+        warm_start=STEP2_EMBEDDING_RUN,
         tables="\n\n".join(sections),
     )
     (HERE / "README.md").write_text(text, encoding="utf-8")
