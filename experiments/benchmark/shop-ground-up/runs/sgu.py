@@ -1,7 +1,7 @@
 """Shared paths and run lookup of the shop-ground-up run tools (make_runs, scheduler, watch, judge).
 
 ``runs.json`` (written by make_runs.py) lists every run; a tool takes a round name (``r1``, ``r2``,
-``dry``, ``all``) or exact run names and gets the matching entries. Run folders are looked up
+``r3``, ``dry``, ``all``) or exact run names and gets the matching entries. Run folders are looked up
 under ``RUNS_ROOT`` (the worktree's ``outputs/runs`` unless ``SGU_RUNS_ROOT`` is set).
 """
 
@@ -20,7 +20,7 @@ CARDS = HERE / "cards"
 CONFIGS = HERE / "configs"
 LOGS = HERE / "logs"
 PIDS = HERE / "pids"
-ROUNDS = ("r1", "r2", "dry")
+ROUNDS = ("r1", "r2", "r3", "dry")
 
 
 def load_runs() -> list[dict]:

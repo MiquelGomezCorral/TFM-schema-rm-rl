@@ -1,6 +1,6 @@
 """Start shop-ground-up runs from the worktree, a few at a time, and print their run folders.
 
-Usage:  python scheduler.py <r1|r2|dry|all|run name> [...]   (run with the RM_RL_env python)
+Usage:  python scheduler.py <r1|r2|r3|dry|all|run name> [...]   (run with the RM_RL_env python)
 Env:    SGU_MAX_ALIVE (default 11), SGU_MIN_AVAIL_GB (default 8), SGU_STAGGER_SECONDS (default 20),
         SGU_WORKTREE, SGU_RUNS_ROOT
 
