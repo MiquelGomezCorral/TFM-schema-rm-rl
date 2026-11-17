@@ -30,7 +30,7 @@ Everything not listed below comes from `experiments/benchmark/configs/ppo.yaml` 
 - Every RM run name ends in `-oh` (one-hot machine state) or `-emb` (text embedding, `rm_state_encoding: embedding`) before
   the seed, so the two are never mixed in a table (decision record: one-hot runs are never pooled with embedding runs).
   No-RM runs use `reward_source: env` and no bundle.
-- Run names: `sgu-<round>-<machine>-<pset>-<oh|emb>-s<seed>`, no-RM `sgu-<round>-norm-<pset>-s<seed>`; machine tokens: `step2chain` = step2-chain, `step2gen` = step2-generated, `step2a3` = step2-a3, `step3ground` = step3-ground, `step3h2` = step3-h2, `step3chain4fixed` = step3-chain4-fixed, `step3chain4fixednoend` = step3-chain4-fixed-noend, `step3gen` = step3-generated, `standin` = dry-bundle, `norm` = no-rm-step2, `norm` = no-rm-step3, `norm` = no-RM.
+- Run names: `sgu-<round>-<machine>-<pset>-<oh|emb>-s<seed>`, no-RM `sgu-<round>-norm-<pset>-s<seed>`; machine tokens: `step2chain` = step2-chain, `step2gen` = step2-generated, `step2a3` = step2-a3, `step3ground` = step3-ground, `step3h2` = step3-h2, `step3chain4fixed` = step3-chain4-fixed, `step3chain4fixednoend` = step3-chain4-fixed-noend, `step3gen` = step3-generated, `standin` = dry-bundle, `norm` = no-rm-step2, `norm` = no-rm-step3.
 - Bundles are read from `/home/turbotowerlnx/orca/workspaces/TFM-schema-rm-rl/tp-shop-ground-up/experiments/benchmark/shop-ground-up/bundles/<name>`.
 
 ## Commands
@@ -106,8 +106,8 @@ $R/judge.sh r3
 | `sgu-r2-step3chain4fixed-p3-oh-s1` | step3-chain4-fixed | step3 (shop-serve-only) | P3 (0.2 / 0.999 / 0.001) | one-hot | 5,000,000 | 1 |
 | `sgu-r2-step3gen-p1-oh-s1` | step3-generated | step3 (shop-serve-only) | P1 (0.2 / 0.995 / 0.001) | one-hot | 5,000,000 | 1 |
 | `sgu-r2-norm-p1-s1` | no-rm-step3 | step3 (shop-serve-only) | P1 (0.2 / 0.995 / 0.001) | none | 5,000,000 | 1 |
-
-Not written yet: the three round-2 runs of the round-1 winner (seeds 2 and 3 at 5M; the embedding run, only when the winner is not `step2-generated` at P1). Run `make_runs.py --winner <machine>:<set>`.
+| `sgu-r2-step2gen-p1-oh-s2` | step2-generated | step2 (shop-order-deliver) | P1 (0.2 / 0.995 / 0.001) | one-hot | 5,000,000 | 2 |
+| `sgu-r2-step2gen-p1-oh-s3` | step2-generated | step2 (shop-order-deliver) | P1 (0.2 / 0.995 / 0.001) | one-hot | 5,000,000 | 3 |
 
 ### Round 3 (plan step 13, by result)
 

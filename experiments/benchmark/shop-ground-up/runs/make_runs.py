@@ -67,7 +67,6 @@ class Run:
     steps: int
     seed: int
     bundle: str | None = None
-    note: str = ""
 
     @property
     def card(self) -> str:
@@ -136,7 +135,7 @@ def round2(winner: tuple[str, str] | None, second_pset: str) -> list[Run]:
 
 
 def round3() -> list[Run]:
-    """Plan step 13, by result: the final generator prompt's step-2 machine at P1, round 1's winning set."""
+    """Plan step 13, by result: the final generator prompt's step-2 machine at P1."""
     return [make_run("r3", "step2-a3", "P1")]
 
 
@@ -323,7 +322,7 @@ def write_readme(rounds: dict[str, list[Run]], pending: bool) -> None:
         worktree=WORKTREE,
         here=HERE,
         psets=psets,
-        tokens=f"{tokens}, `norm` = no-RM",
+        tokens=tokens,
         bundles=BUNDLES,
         tables="\n\n".join(sections),
     )

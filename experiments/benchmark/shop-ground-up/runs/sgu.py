@@ -1,4 +1,4 @@
-"""Shared paths and run lookup of the shop-ground-up run tools (make_runs, scheduler, watch, judge).
+"""Shared paths, run lookup and number format of the shop-ground-up run tools (make_runs, scheduler, watch, judge).
 
 ``runs.json`` (written by make_runs.py) lists every run; a tool takes a round name (``r1``, ``r2``,
 ``r3``, ``dry``, ``all``) or exact run names and gets the matching entries. Run folders are looked up
@@ -35,6 +35,10 @@ def select(names: list[str]) -> list[dict]:
     if unknown:
         raise SystemExit(f"unknown run or round: {', '.join(unknown)}")
     return [run for run in runs if "all" in names or run["round"] in names or run["name"] in names]
+
+
+def fmt(value: float | None, digits: int = 2) -> str:
+    return "-" if value is None else f"{value:.{digits}f}"
 
 
 def run_folder(name: str) -> Path | None:

@@ -22,7 +22,7 @@ from itertools import pairwise
 from pathlib import Path
 
 import yaml
-from sgu import RUNS_ROOT, is_finished, pid_alive, run_folder, select
+from sgu import RUNS_ROOT, fmt, is_finished, pid_alive, run_folder, select
 
 ROW = re.compile(r"^\((u\d+), (.+)\) -> (u\d+)$")
 STAGES = {
@@ -85,10 +85,6 @@ def read_csv(path: Path) -> list[dict]:
 def mean(rows: list[dict], column: str) -> float | None:
     values = [float(row[column]) for row in rows if row.get(column)]
     return sum(values) / len(values) if values else None
-
-
-def fmt(value: float | None, digits: int = 2) -> str:
-    return "-" if value is None else f"{value:.{digits}f}"
 
 
 def state_of(name: str, folder: Path | None) -> str:
@@ -194,7 +190,7 @@ def main() -> None:
     for run in select(args.names):
         print("| " + " | ".join(describe(run, args.window, args.early)) + " |")
     print(
-        f"\nRuns root: {RUNS_ROOT}. served/ep is training-episode env return (sampled actions); eval is greedy, 10 episodes."
+        f"\nRuns root: {RUNS_ROOT}. served/ep is training-episode env return (sampled actions); eval is greedy."
     )
 
 

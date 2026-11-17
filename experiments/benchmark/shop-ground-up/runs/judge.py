@@ -18,7 +18,7 @@ import shutil
 from pathlib import Path
 
 import yaml
-from sgu import CARDS, is_finished, run_folder, select
+from sgu import CARDS, fmt, is_finished, run_folder, select
 
 from scripts.test_rl import JudgeRecorder, _load_policy, _run_config, test_rl
 from src.arm_fm import make_run_environment
@@ -29,12 +29,17 @@ LEARNED_SERVED = 10  # plan R11: greedy mean served per episode
 SKIPPED = (OSError, ValueError, RuntimeError, SystemExit)  # one failed run must not stop the others
 
 
+def verdict_name(card: str, label: str) -> str:
+    """The verdict file of a judge (``greedy`` or ``sampled``) on a card, inside the run folder."""
+    return f"judge-{card}.json" if label == "greedy" else f"judge-{label}-{card}.json"
+
+
 def judge_greedy(folder: Path, card: Path, episodes: int) -> None:
     CONFIG = Configuration(
         exp_name=str(folder), final_eval_episodes=episodes, eval_seed_base=EVAL_SEED_BASE
     )
     test_rl(CONFIG, 0, card)
-    shutil.copy(folder / "judge.json", folder / f"judge-{card.stem}.json")
+    shutil.copy(folder / "judge.json", folder / verdict_name(card.stem, "greedy"))
 
 
 def judge_sampled(folder: Path, card: Path, episodes: int) -> None:
@@ -49,7 +54,7 @@ def judge_sampled(folder: Path, card: Path, episodes: int) -> None:
         JudgeRecorder(config, run, policy, card).write(out, episodes)
     finally:
         run.env.close()
-    shutil.copy(out / "judge.json", folder / f"judge-sampled-{card.stem}.json")
+    shutil.copy(out / "judge.json", folder / verdict_name(card.stem, "sampled"))
 
 
 def judge_run(run: dict, args: argparse.Namespace) -> None:
@@ -58,11 +63,11 @@ def judge_run(run: dict, args: argparse.Namespace) -> None:
         print(f"not finished: {run['name']}", flush=True)
         return
     card = CARDS / f"{run['card']}.json"
-    steps = [("greedy", judge_greedy, f"judge-{card.stem}.json")]
+    steps = [("greedy", judge_greedy)]
     if not args.no_sampled:
-        steps.append(("sampled", judge_sampled, f"judge-sampled-{card.stem}.json"))
-    for label, judge, verdict in steps:
-        if (folder / verdict).is_file() and not args.force:
+        steps.append(("sampled", judge_sampled))
+    for label, judge in steps:
+        if (folder / verdict_name(card.stem, label)).is_file() and not args.force:
             continue
         try:
             judge(folder, card, args.episodes)
@@ -85,20 +90,16 @@ def cells(verdict: dict) -> list[str]:
     served = verdict.get("mean_served_count")
     return [
         "-" if served is None else f"{served:.2f}",
-        _fmt(verdict.get("mean_served_success")),
-        _fmt(verdict.get("mean_judged_success")),
+        fmt(verdict.get("mean_served_success")),
+        fmt(verdict.get("mean_judged_success")),
     ]
-
-
-def _fmt(value: float | None) -> str:
-    return "-" if value is None else f"{value:.2f}"
 
 
 def table(runs: list[dict]) -> str:
     head = (
         "| run | machine | PPO set | encoding | steps | episodes "
         "| greedy served/ep | greedy served_success | greedy judged_success "
-        "| sampled served/ep | sampled served_success | sampled judged_success | learned (greedy served >= 10) |"
+        f"| sampled served/ep | sampled served_success | sampled judged_success | learned (greedy served >= {LEARNED_SERVED}) |"
     )
     lines = [head, "|" + "---|" * 13]
     for run in runs:
@@ -107,8 +108,8 @@ def table(runs: list[dict]) -> str:
             lines.append(f"| `{run['name']}` | {run['machine']} | not finished |" + " |" * 10)
             continue
         card = run["card"]
-        greedy = read_verdict(folder, f"judge-{card}.json")
-        sampled = read_verdict(folder, f"judge-sampled-{card}.json")
+        greedy = read_verdict(folder, verdict_name(card, "greedy"))
+        sampled = read_verdict(folder, verdict_name(card, "sampled"))
         served = greedy.get("mean_served_count")
         learned = "-" if served is None else ("YES" if served >= LEARNED_SERVED else "no")
         episodes = len(greedy.get("per_episode", [])) or "-"
