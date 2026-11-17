@@ -31,6 +31,8 @@ MACHINES = {
     "step2-generated": ("step2gen", "step2"),
     # The final generator prompt's own machine (try armA3-step2-1).
     "step2-a3": ("step2a3", "step2"),
+    # Hand copy of step2-a3 for the cause test: only u4's end charge differs (-3 at the cut, not -1).
+    "step2-a3-ladder": ("step2a3ladder", "step2"),
     "step3-ground": ("step3ground", "step3"),
     "step3-h2": ("step3h2", "step3"),
     "step3-chain4-fixed": ("step3chain4fixed", "step3"),
@@ -54,11 +56,18 @@ PSETS = {
 }
 ENT_COEF = 0.01
 EVAL_FREQUENCY = 50_000
-STEPS = {"r1": 2_000_000, "r2": 5_000_000, "r3": 2_000_000, "dry": 4096}
+STEPS = {"r1": 2_000_000, "r2": 5_000_000, "r3": 2_000_000, "cont": 10_000_000, "dry": 4096}
 # Round 1's finished step-2 embedding run: the weights round 3's warm start (``-ws``) begins from.
 STEP2_EMBEDDING_RUN = (
     WORKTREE / "outputs/runs/sgu-r1-step2gen-p1-emb-s1/seed1-20261117T013552-920749"
 )
+# Round 2's 5M step-3 learners (machine, PPO set) -> run folder under outputs/runs; round 3's ``-cont`` run
+# of each starts from that folder's weights and trains 10M more steps (15M in all).
+CONTINUED = {
+    ("step3-ground", "P1"): "sgu-r2-step3ground-p1-oh-s1/seed1-20261117T022045-980497",
+    ("step3-h2", "P1"): "sgu-r2-step3h2-p1-oh-s1/seed1-20261117T022409-984803",
+    ("step3-ground", "P3"): "sgu-r2-step3ground-p3-oh-s1/seed1-20261117T022751-988381",
+}
 
 
 @dataclass
@@ -146,9 +155,9 @@ def round2(winner: tuple[str, str] | None, second_pset: str) -> list[Run]:
 def round3() -> list[Run]:
     """Plan steps 13-14, by result: the final generator prompt's step-2 machine, then step-3 runs.
 
-    The step-2 machine runs at P1 for 2M. The four step-3 runs take 5M: step3-ground seeds 2 and 3,
+    The step-2 machine and its ladder copy run at P1 for 2M. The four step-3 runs take 5M: step3-ground seeds 2 and 3,
     its embedding run, and step3-chain4-fixed (embedding) warm-started from round 1's step-2
-    embedding learner.
+    embedding learner. Three more continue round 2's step-3 learners for 10M steps (``-cont``).
     """
     warm = make_run("r3", "step3-chain4-fixed", "P1", "embedding")
     long_runs = [
@@ -157,9 +166,18 @@ def round3() -> list[Run]:
         make_run("r3", "step3-ground", "P1", "embedding"),
         replace(warm, name=f"{warm.name}-ws", init_from=str(STEP2_EMBEDDING_RUN)),
     ]
+    continued = []
+    for (machine, pset), folder in CONTINUED.items():
+        run = make_run("r3", machine, pset)
+        source = WORKTREE / "outputs/runs" / folder
+        continued.append(
+            replace(run, name=f"{run.name}-cont", steps=STEPS["cont"], init_from=str(source))
+        )
     return [
         make_run("r3", "step2-a3", "P1"),
+        make_run("r3", "step2-a3-ladder", "P1"),
         *(replace(run, steps=STEPS["r2"]) for run in long_runs),
+        *continued,
     ]
 
 
@@ -262,8 +280,11 @@ Everything not listed below comes from `experiments/benchmark/configs/ppo.yaml` 
 - Run names: `sgu-<round>-<machine>-<pset>-<oh|emb>-s<seed>`, no-RM `sgu-<round>-norm-<pset>-s<seed>`; machine tokens: {tokens}.
 - A name ending in `-ws` is a warm start: its config sets `init_from` to the finished run folder
   `{warm_start}` (round 1's step-2 embedding run); train-rl loads its `agent.pt`, with a fresh optimizer and schedules.
-- Round 3: `step2-a3` runs 2M steps; the three `step3-ground` runs (seeds 2 and 3 one-hot, seed 1 embedding) and the
+- Round 3: `step2-a3` and its hand copy `step2-a3-ladder` (cut charge -3.3 / -2.2 / -1.1 / 0 after the arrival, order,
+  pickup, serve; every pay and edge as in `step2-a3`) run 2M steps; the three `step3-ground` runs (seeds 2 and 3 one-hot, seed 1 embedding) and the
   `-ws` run take 5M.
+- A name ending in `-cont` continues a finished round-2 step-3 run (same machine, PPO set, encoding, seed): `init_from`
+  is that 5M run's folder, so it loads its `agent.pt` (fresh optimizer and schedules) and trains 10M more steps, 15M in all.
 - Bundles are read from `{bundles}/<name>`.
 
 ## Commands
@@ -287,7 +308,7 @@ $E/python $R/scheduler.py r2
 $E/python $R/watch.py r2
 $R/judge.sh r2
 
-# Round 3 (by result; 2M or 5M steps, see the table)
+# Round 3 (by result; 2M, 5M or 10M steps, see the table)
 $E/python $R/scheduler.py r3
 $E/python $R/watch.py r3
 $R/judge.sh r3

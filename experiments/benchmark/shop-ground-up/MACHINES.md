@@ -1,4 +1,4 @@
-# Shop ground-up machines: ten training-complete bundles (seven, the fixed pair, and the final prompt's step-2 machine)
+# Shop ground-up machines: eleven training-complete bundles (seven, the fixed pair, the final prompt's step-2 machine, and its hand copy)
 
 Built from the code at commit `c1c3efd`, with no model call; embeddings come from the local embedding server
 (nomic-embed-text). The pay checks, plan checks, graphs and build scripts named below stay with the private plan notes,
@@ -7,13 +7,14 @@ outside the repository; this folder holds the bundles and the run tooling (`runs
 `SL` = the earlier testing-program slices in the private plan notes (`plans/testing-program-20261111/slices`), not in
 the repository; the `SL/...` sources below record where each bundle came from.
 
-## Bundles (`bundles/<name>/`, ten, each loads with `load_bundle` and passes `validate(require_complete=True)`)
+## Bundles (`bundles/<name>/`, eleven, each loads with `load_bundle` and passes `validate(require_complete=True)`)
 
 | bundle | states | source | clauses or hand text |
 |---|---|---|---|
 | step2-chain | 8 | copy of `SL/shop-steps/bundles/farm/shop-order-deliver`, machine recompiled from new clauses with today's compiler | `Response(client_arrived, order_taken)`, `Response(order_taken, holding_food)`, `Response(holding_food, order_served)`, all hard |
 | step2-generated | 8 | exact copy of `SL/shop-steps/bundles/farm/shop-order-deliver` (the model's own clauses) | `Response(client_arrived, order_taken)`, `Response(client_arrived, holding_food)`, `Response(client_arrived, order_served)`, all hard |
 | step2-a3 | 8 | exact copy of generator try `armA3-step2-1`, written by the final generator prompt (A3) | `Response(client_arrived, order_taken)`, `Response(order_taken, holding_food)`, `Response(order_taken, order_served)`, all hard |
+| step2-a3-ladder | 8 | `step2-a3` copied, then hand-edited (cause test for the chain failure, round 3) | the same machine with one change: `PENDING_PROMISES` gives `u4` (client arrived, order not taken) `hard 3` instead of `hard 1`, so the cut charge is -3.3 / -2.2 / -1.1 / 0 after the arrival / order / pickup / serve (step2-generated's ladder; step2-a3's is -1.3 / -2.2 / -1.1 / 0). Edges and pays are unchanged |
 | step3-ground | 5 | hand text in `scripts/build_bundles.py` (`GROUND_TEXT`), shell from `SL/shop-serve-only/bundles/farm/shop-serve-only` | chain u0 -> u1 -> u2 -> u3 -> u4, then u4 -> u0 when no client is present or u4 -> u1 when one is, +1 per agent stage (+2 for the order taken with food already in hand), arrival 0, no negative reward, end judgment kept with failed rewards 0 |
 | step3-h2 | 5 | `SL/shop-handmade/h2-units.txt` as written (the saved file lacks only the zero-pay `(u0, client_arrived, u1) -> 0` line the serializer drops); same shell | the hand machine with drop penalties (-1, -2), step-back edges and end charges (hard -1, soft -0.5) |
 | step3-chain4 | 16 | copy of `SL/shop-serve-only/bundles/farm/shop-serve-only`, machine recompiled from new clauses | `Response(client_arrived, order_taken)`, `Response(order_taken, holding_food)`, `Response(holding_food, food_prepared)`, `Response(food_prepared, order_served)`, all hard (R16 step 3) |
@@ -43,6 +44,7 @@ Notes on how they differ from the packet's wording.
 | step2-chain | PASS | ok | PASS |
 | step2-generated | PASS | ok | PASS |
 | step2-a3 | PASS (generator evidence) | not rerun | PASS (generator evidence) |
+| step2-a3-ladder | pay walk (round 1's scenarios): only the cut charge after the arrival changes (-1.3 to -3.3); best cycle pay 0 | not rerun (step2-a3's) | not run |
 | step3-ground | PASS | ok | PASS |
 | step3-h2 | PASS | ok | PASS |
 | step3-chain4 | PASS on the two asked lines; a full service never returns to accepting (net -0.2, end charge -1) | ok | FAIL (solve ends accepting 0/100) |
@@ -53,15 +55,16 @@ Notes on how they differ from the packet's wording.
 
 ## Folders
 
-- `bundles/` the ten bundles.
+- `bundles/` the eleven bundles.
 - `runs/` the round configs and tooling (scheduler, watch table, judge); its `README.md` lists every run and command.
 
 ## Rebuild
 
 The two `-noend` bundles come from their parents through `app/main.py ablate-rm --bundle <parent> --off end_judgment
---output <name>`, and their manifests record it. `step2-a3` is a generator output copied as is. The other seven were
-built by a staging script kept with the plan notes; each bundle's manifest and `reward_machine.txt` hold everything
-training reads, and `load_bundle` plus `validate(require_complete=True)` accept all ten.
+--output <name>`, and their manifests record it. `step2-a3` is a generator output copied as is; `step2-a3-ladder` is a copy of it with
+one edited line in `reward_machine.txt` (`u4: hard 3, soft 0`) and a hand-bundle manifest (script in the plan notes). The
+other seven were built by a staging script kept with the plan notes; each bundle's manifest and `reward_machine.txt` hold
+everything training reads, and `load_bundle` plus `validate(require_complete=True)` accept all eleven.
 
 ## Run config for the no-end bundles (`step3-chain4-noend`, `step3-chain4-fixed-noend`)
 
