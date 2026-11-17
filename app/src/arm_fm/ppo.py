@@ -57,6 +57,7 @@ from torch.distributions.categorical import Categorical
 
 from src.config import Configuration
 
+from .artifacts import load_bundle
 from .dqn import (
     EpisodeTracker,
     RunRecorder,
@@ -70,6 +71,7 @@ from .environments import (
     RunEnvironment,
     make_run_environment,
     one_hot_state_names,
+    same_one_hot_states,
 )
 
 TRAIN_COLUMNS = (
@@ -230,8 +232,12 @@ def _load_initial_weights(agent: PPOAgent, CONFIG: Configuration, device: torch.
         yaml.safe_load(saved_config.read_text(encoding="utf-8")) if saved_config.is_file() else {}
     )
     source = saved.get("rm_state_names")
-    target = one_hot_state_names(CONFIG.bundle) if CONFIG.rm_state_encoding == "one_hot" else None
-    if source != target:  # both None: embedding to embedding
+    target = (
+        one_hot_state_names(load_bundle(CONFIG.bundle).reward_machine)
+        if CONFIG.rm_state_encoding == "one_hot"
+        else None
+    )
+    if not same_one_hot_states(source, target):
         raise ValueError(
             f"init_from {CONFIG.init_from} does not fit this machine: a one-hot slot means one "
             f"state of one machine; saved one-hot states {source or 'none (embedding)'}, this "

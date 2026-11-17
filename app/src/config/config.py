@@ -305,7 +305,7 @@ class Configuration:
     time_limit_penalty: float = -0.5
     # How the learner sees the machine state: ``embedding`` the text embedding of the state
     # (``rm_embedding``), ``one_hot`` one slot per state, in sorted state-name order (``rm_state``).
-    # ``one_hot`` is a diagnostic input, not an arm; its runs are never pooled with embedding runs.
+    # ``one_hot`` is a diagnostic input, not an arm.
     rm_state_encoding: str = "embedding"
     env_kwargs: dict = field(default_factory=dict)  # keyword arguments of gym.make
     algorithm: str = "dqn"
@@ -513,6 +513,8 @@ class Configuration:
             )
         if self.rm_state_encoding != "one_hot":
             return
+        if self.algorithm != "ppo":
+            raise ValueError("rm_state_encoding: one_hot is for PPO; set algorithm: ppo")
         if self.reward_source == "env":
             raise ValueError(
                 "rm_state_encoding: one_hot needs a Reward Machine; reward_source: env has none"
@@ -523,9 +525,7 @@ class Configuration:
                 "drop shuffle_embeddings_seed"
             )
         if self.task_bundles:
-            raise ValueError(
-                "rm_state_encoding: one_hot needs one machine; task_bundles has several"
-            )
+            raise ValueError("rm_state_encoding: one_hot needs a single machine; drop task_bundles")
 
     def _validate_ppo(self) -> None:
         not_finite = [name for name in PPO_NUMBERS if not _is_finite_number(getattr(self, name))]

@@ -64,6 +64,7 @@ from src.arm_fm.environments import (
     RunEnvironment,
     make_environment,
     one_hot_state_names,
+    same_one_hot_states,
 )
 from src.arm_fm.ppo import MODEL_FILES, fixed_layout, load_ppo_agent, model_folder
 from src.arm_fm.ppo import evaluate as evaluate_ppo
@@ -341,13 +342,15 @@ def _check_same_spaces(
     fails here, in words, instead of as a weight-shape error. A one-hot policy also needs the
     same state names: a slot means one state of one machine, whatever the width.
     """
-    if trained.rm_state_encoding == "one_hot":
-        policy_states, machine_states = saved.get("rm_state_names"), one_hot_state_names(bundle)
-        if policy_states != machine_states:
-            raise TransferError(
-                f"{bundle} does not fit the policy (rm_state): it was trained on the one-hot "
-                f"states {policy_states}, the bundle's machine has {machine_states}"
-            )
+    policy_states = saved.get("rm_state_names")  # None: an embedding policy
+    machine_states = (
+        one_hot_state_names(load_bundle(bundle).reward_machine) if policy_states else None
+    )
+    if not same_one_hot_states(policy_states, machine_states):
+        raise TransferError(
+            f"{bundle} does not fit the policy (rm_state): it was trained on the one-hot "
+            f"states {policy_states}, the bundle's machine has {machine_states}"
+        )
     reference = make_run_environment(trained)
     try:
         for name in ("observation_space", "action_space"):
@@ -546,14 +549,14 @@ class JudgeRecorder:
         self.run = run
         self.policy = policy
         self.suite, self.card = load_card(card_path)
-        self.shop = self.card.env.get("gym_id") in SHOP_GYM_IDS
+        gym_id = self.card.env.get("gym_id")
+        self.shop = gym_id in SHOP_GYM_IDS
         self.machine = load_bundle(config.bundle).reward_machine if config.bundle else None
         self.expected = expected_length(self.card)
         if config.task_bundles:
             raise CardError(
                 f"{card_path}: the judge does not take a task_bundles run: one card judges one task"
             )
-        gym_id = self.card.env.get("gym_id")
         if gym_id != config.gym_id:
             raise CardError(
                 f"{card_path}: the card is for {gym_id!r}, the run plays {config.gym_id!r}"

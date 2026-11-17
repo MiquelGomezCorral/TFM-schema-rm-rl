@@ -21,7 +21,7 @@ from gymnasium.wrappers import FrameStackObservation, GrayscaleObservation, Resi
 from minigrid.wrappers import ImgObsWrapper, RGBImgPartialObsWrapper
 from torch import Tensor, nn
 
-from src.compiler import RuntimeValidationError
+from src.compiler import PaperRewardMachine, RuntimeValidationError
 from src.config import Configuration
 
 from . import (
@@ -207,7 +207,7 @@ class RewardMachineObservation(gym.Wrapper):
     follows ``reward_source``, RM reset on env reset. Observations are
     ``{"image": obs, "rm_embedding": phi(u)}`` with phi(u_I) after reset; with
     ``rm_state_encoding: one_hot`` the key is ``rm_state`` and phi(u) is the one-hot vector of
-    the state's position in ``sorted(machine.states)``. ``info`` gains
+    the state's position in ``one_hot_state_names(machine)``. ``info`` gains
     ``env_reward``, ``rm_reward``, ``rm_state`` and ``rm_accept`` (state is final, or accepting
     where the environment ended the episode of a machine with no final).
     """
@@ -234,8 +234,7 @@ class RewardMachineObservation(gym.Wrapper):
         self.accepted = False
 
         if CONFIG.rm_state_encoding == "one_hot":
-            # Slot order of ``one_hot_state_names``: the sorted names, the same at every reset.
-            states = sorted(machine.states)
+            states = one_hot_state_names(machine)
             self.state_key = "rm_state"
             identity = np.eye(len(states), dtype=np.float32)
             self.state_vectors = dict(zip(states, identity, strict=True))
@@ -282,13 +281,21 @@ class RewardMachineObservation(gym.Wrapper):
         return {"image": image, self.state_key: self.state_vectors[state]}
 
 
-def one_hot_state_names(bundle: Path) -> list[str]:
+def one_hot_state_names(machine: PaperRewardMachine) -> list[str]:
     """The machine's state names in one-hot slot order: slot ``i`` is the ``i``-th sorted name.
 
     A one-hot slot means one state of one machine, so a run records these names and a policy
     loads only onto a machine with the same list.
     """
-    return sorted(load_bundle(bundle).reward_machine.states)
+    return sorted(machine.states)
+
+
+def same_one_hot_states(saved_names: list[str] | None, names: list[str] | None) -> bool:
+    """Whether a policy trained on ``saved_names`` fits ``names``; ``None`` is an embedding run.
+
+    An embedding run fits only another embedding run, a one-hot run only the same names.
+    """
+    return saved_names == names
 
 
 def _reward_machine_inputs(
