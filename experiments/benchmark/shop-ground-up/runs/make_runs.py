@@ -35,6 +35,9 @@ MACHINES = {
     "step2-a3-ladder": ("step2a3ladder", "step2"),
     # step3-ground without the prepare stage: +1 per agent stage, no charges (is the compiled pay shape the problem?).
     "step2-ground": ("step2ground", "step2"),
+    # Scale-only copies (scale versus shape): step2-a3 with every pay x10, step2-ground with every pay x0.1.
+    "step2-a3-x10": ("step2a3x10", "step2"),
+    "step2-ground-x01": ("step2groundx01", "step2"),
     "step3-ground": ("step3ground", "step3"),
     "step3-h2": ("step3h2", "step3"),
     "step3-chain4-fixed": ("step3chain4fixed", "step3"),
@@ -157,7 +160,8 @@ def round2(winner: tuple[str, str] | None, second_pset: str) -> list[Run]:
 def round3() -> list[Run]:
     """Plan steps 13-14, by result: the final generator prompt's step-2 machine, then step-3 runs.
 
-    The step-2 machine and its ladder copy run at P1 for 2M, and so do the hand machine step2-ground (seeds 1-3).
+    The step-2 machine and its ladder copy run at P1 for 2M, and so do the hand machine step2-ground (seeds 1-3)
+    and the two scale copies step2-a3-x10 and step2-ground-x01 (seeds 1-3 each).
     The six step-3 runs take 5M: step3-ground seeds 2 and 3,
     its embedding run, step3-chain4-fixed (embedding) warm-started from round 1's step-2
     embedding learner, and step3-h2 seeds 2 and 3 (one-hot). Three more continue round 2's step-3 learners for
@@ -183,6 +187,11 @@ def round3() -> list[Run]:
         make_run("r3", "step2-a3", "P1"),
         make_run("r3", "step2-a3-ladder", "P1"),
         *(make_run("r3", "step2-ground", "P1", seed=seed) for seed in (1, 2, 3)),
+        *(
+            make_run("r3", machine, "P1", seed=seed)
+            for machine in ("step2-a3-x10", "step2-ground-x01")
+            for seed in (1, 2, 3)
+        ),
         *(replace(run, steps=STEPS["r2"]) for run in long_runs),
         *continued,
     ]
@@ -289,7 +298,9 @@ Everything not listed below comes from `experiments/benchmark/configs/ppo.yaml` 
   `{warm_start}` (round 1's step-2 embedding run); train-rl loads its `agent.pt`, with a fresh optimizer and schedules.
 - Round 3: `step2-a3` and its hand copy `step2-a3-ladder` (cut charge -3.3 / -2.2 / -1.1 / 0 after the arrival, order,
   pickup, serve; every pay and edge as in `step2-a3`) run 2M steps, and so do the three `step2-ground` runs (seeds 1-3;
-  hand machine: +1 per agent stage, +2 for the order with food in hand, no negative pay, end charge 0); the three `step3-ground` runs (seeds 2 and 3 one-hot, seed 1 embedding) and the
+  hand machine: +1 per agent stage, +2 for the order with food in hand, no negative pay, end charge 0), and so do the six
+  scale-copy runs (seeds 1-3 each): `step2-a3-x10` is `step2-a3` with every pay and both failed rewards x10, `step2-ground-x01` is
+  `step2-ground` with every pay x0.1; states and edges as in their sources; the three `step3-ground` runs (seeds 2 and 3 one-hot, seed 1 embedding) and the
   `-ws` run take 5M.
 - A name ending in `-cont` continues a finished round-2 step-3 run (same machine, PPO set, encoding, seed): `init_from`
   is that 5M run's folder, so it loads its `agent.pt` (fresh optimizer and schedules) and trains 10M more steps, 15M in all.
