@@ -1,0 +1,11 @@
+def client_arrived(env):
+    return "arrive" in env.events_this_step
+
+def food_prepared(env):
+    return "prepare" in env.events_this_step
+
+def order_served(env):
+    return "serve" in env.events_this_step
+
+def order_taken(env):
+    return "order" in env.events_this_step
