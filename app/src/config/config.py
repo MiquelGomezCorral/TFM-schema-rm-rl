@@ -517,7 +517,8 @@ class Configuration:
             raise ValueError("rm_state_encoding: one_hot is for PPO; set algorithm: ppo")
         if self.reward_source == "env":
             raise ValueError(
-                "rm_state_encoding: one_hot needs a Reward Machine; reward_source: env has none"
+                "rm_state_encoding: one_hot needs a Reward Machine; reward_source: env has none; "
+                "set reward_source: rm"
             )
         if self.shuffle_embeddings_seed is not None:
             raise ValueError(

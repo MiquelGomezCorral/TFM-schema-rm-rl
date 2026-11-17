@@ -290,14 +290,6 @@ def one_hot_state_names(machine: PaperRewardMachine) -> list[str]:
     return sorted(machine.states)
 
 
-def same_one_hot_states(saved_names: list[str] | None, names: list[str] | None) -> bool:
-    """Whether a policy trained on ``saved_names`` fits ``names``; ``None`` is an embedding run.
-
-    An embedding run fits only another embedding run, a one-hot run only the same names.
-    """
-    return saved_names == names
-
-
 def _reward_machine_inputs(
     CONFIG: Configuration,
 ) -> tuple[ArtifactBundle, dict[str, Callable[[object], bool]]]:

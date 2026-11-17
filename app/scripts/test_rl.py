@@ -64,7 +64,6 @@ from src.arm_fm.environments import (
     RunEnvironment,
     make_environment,
     one_hot_state_names,
-    same_one_hot_states,
 )
 from src.arm_fm.ppo import MODEL_FILES, fixed_layout, load_ppo_agent, model_folder
 from src.arm_fm.ppo import evaluate as evaluate_ppo
@@ -346,7 +345,7 @@ def _check_same_spaces(
     machine_states = (
         one_hot_state_names(load_bundle(bundle).reward_machine) if policy_states else None
     )
-    if not same_one_hot_states(policy_states, machine_states):
+    if policy_states != machine_states:
         raise TransferError(
             f"{bundle} does not fit the policy (rm_state): it was trained on the one-hot "
             f"states {policy_states}, the bundle's machine has {machine_states}"
@@ -648,9 +647,7 @@ class JudgeRecorder:
                 **judge_means(episodes, SHOP_JUDGE_MEANS),
             }
         if self.config.rm_state_encoding == "one_hot":
-            summary["rm_state_encoding"] = (
-                "one_hot"  # its runs are never pooled with embedding runs
-            )
+            summary["rm_state_encoding"] = "one_hot"
         return summary
 
     def _rollout(self, act: Callable[[Any], int], reset: dict[str, object]) -> Played:

@@ -71,7 +71,6 @@ from .environments import (
     RunEnvironment,
     make_run_environment,
     one_hot_state_names,
-    same_one_hot_states,
 )
 
 TRAIN_COLUMNS = (
@@ -237,7 +236,7 @@ def _load_initial_weights(agent: PPOAgent, CONFIG: Configuration, device: torch.
         if CONFIG.rm_state_encoding == "one_hot"
         else None
     )
-    if not same_one_hot_states(source, target):
+    if source != target:  # both None for embedding runs
         raise ValueError(
             f"init_from {CONFIG.init_from} does not fit this machine: a one-hot slot means one "
             f"state of one machine; saved one-hot states {source or 'none (embedding)'}, this "
