@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Judge finished shop-ground-up runs (greedy + sampled) and print the summary table.
-# Usage: judge.sh <r1|r2|r3|dry|all|run name> [...] [--episodes N] [--no-sampled] [--force]
+# Usage: judge.sh <r1|r2|r3|r4|dry|all|run name> [...] [--episodes N] [--no-sampled] [--force]
 # Runs from the worktree with the RM_RL_env python; writes only into the run folders (see judge.py).
 set -eu
 R="$(cd "$(dirname "$0")" && pwd)"

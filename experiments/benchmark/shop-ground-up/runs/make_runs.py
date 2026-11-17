@@ -355,13 +355,13 @@ Everything not listed below comes from `experiments/benchmark/configs/ppo.yaml` 
   `PENDING_PROMISES` giving `u6` (client arrived, order not taken) `hard 2` instead of `hard 1`, so the cut total is -24 / -23
   / -12 / -11 / 0 after the arrival / order / pickup / prepare / serve (seed 1, 5M); pays, edges and failed rewards as in
   `step3-a3-x10`.
-- Round 4, reward shapes at the 0.1 pay unit (the compiled machines serve 0 there): copies of `step2-a3` (2M) and
-  `step3-a3` (5M), seed 1, P1, one-hot, with only pay values, `PENDING_PROMISES` counts and the two failed rewards
-  changed (states, edges and labels as in the source). `-done` adds 0.3 (step 2) or 0.4 (step 3) to every serve edge,
+- Round 4, reward shapes at the 0.1 pay unit (the compiled machines serve 0 there): 14 runs, six at seed 1 plus
+  seeds 2-3 of pot and pot0, all P1, one-hot; copies of `step2-a3` (2M) and `step3-a3` (5M) with only pay values,
+  `PENDING_PROMISES` counts and the two failed rewards changed (states, edges and labels as in the source). `-done` adds 0.3 (step 2) or 0.4 (step 3) to every serve edge,
   so a full service nets that instead of 0 and every charge stays. `-pot` pays progress with take-back: arrival 0, each
   stage +0.1, the serve +0.1, an edge that goes back pays the difference, and the end charge of a state is minus the pay
   the open service has earned (`HARD_FAILED_REWARD -0.1`, `hard` = stages earned), so every unfinished state cuts to 0.
-  `-pot0` is `-pot` with both failed rewards 0. `scheduler.py` knows no `r4` round (`sgu.py`): pass the run names.
+  `-pot0` is `-pot` with both failed rewards 0.
 - A name ending in `-cont` continues a finished round-2 step-3 run (same machine, PPO set, encoding, seed): `init_from`
   is that 5M run's folder, so it loads its `agent.pt` (fresh optimizer and schedules) and trains 10M more steps, 15M in all.
 - Bundles are read from `{bundles}/<name>`.
@@ -392,11 +392,13 @@ $E/python $R/scheduler.py r3
 $E/python $R/watch.py r3
 $R/judge.sh r3
 
-# Round 4 (the six shape runs, 2M or 5M steps): by run name, `sgu.py` has no r4 round
-$E/python $R/scheduler.py <run names from the Round 4 table>
+# Round 4 (14 runs: six at seed 1, plus seeds 2-3 of pot and pot0; 2M or 5M steps, see the table)
+$E/python $R/scheduler.py r4
+$E/python $R/watch.py r4
+$R/judge.sh r4
 ```
 
-- `scheduler.py` takes `r1`, `r2`, `r3`, `dry` or run names; it skips a run that is alive or has a finished folder, refuses a run
+- `scheduler.py` takes `r1`, `r2`, `r3`, `r4`, `dry` or run names; it skips a run that is alive or has a finished folder, refuses a run
   whose bundle is incomplete (needs `manifest.json`, `reward_machine.txt`, `labeling.py`, `state_descriptions.json`,
   `embeddings.json`), waits while 11 of its runs are alive or free RAM is under 8 GB, and writes `pids/<run>.pid` and
   `logs/<run>.log`. Runs start in their own session, so they outlive the shell that started them.

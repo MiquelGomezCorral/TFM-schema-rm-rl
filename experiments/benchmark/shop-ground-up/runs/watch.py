@@ -1,6 +1,6 @@
 """One table of the runs of a round, read from their training logs.
 
-Usage:  [SGU_RUNS_ROOT=DIR] python watch.py <r1|r2|r3|dry|all|run name> [...] [--early] [--window N]
+Usage:  [SGU_RUNS_ROOT=DIR] python watch.py <r1|r2|r3|r4|dry|all|run name> [...] [--early] [--window N]
 
 Columns (per run folder under the runs root):
   state    done (summary.json), running (live pid file), DEAD (folder, no summary, no live process), queued
@@ -168,7 +168,7 @@ def describe(run: dict, window: int, early: bool) -> list[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("names", nargs="+", help="r1, r2, r3, dry, all or run names")
+    parser.add_argument("names", nargs="+", help="r1, r2, r3, r4, dry, all or run names")
     parser.add_argument("--early", action="store_true", help="the first window instead of the last")
     parser.add_argument("--window", type=int, default=100_000, help="window length in steps")
     args = parser.parse_args()

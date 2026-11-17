@@ -1,7 +1,7 @@
 """Judge finished shop-ground-up runs on their own card, then print a summary table.
 
 Usage (through judge.sh, which sets the worktree, PYTHONPATH and the conda python):
-    judge.sh <r1|r2|r3|dry|all|run name> [...] [--episodes N] [--no-sampled] [--force]
+    judge.sh <r1|r2|r3|r4|dry|all|run name> [...] [--episodes N] [--no-sampled] [--force]
 
 Per finished run, on its card (``cards/``, the shop card of its step), ``N`` test episodes (default 100) from
 test seed 2000000, as ``test-rl --run <folder> --judge <card>`` does:
@@ -25,7 +25,7 @@ from src.arm_fm import make_run_environment
 from src.config import Configuration
 
 EVAL_SEED_BASE = 2_000_000  # the default of ``test-rl --seed-base``
-LEARNED_SERVED = 7.5  # greedy served/ep; plan R11, lowered from 10 on 2026-11-17 (user)
+LEARNED_SERVED = 7.5  # greedy served/ep; plan R11
 SKIPPED = (OSError, ValueError, RuntimeError, SystemExit)  # one failed run must not stop the others
 
 
@@ -121,7 +121,7 @@ def table(runs: list[dict]) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("names", nargs="+", help="r1, r2, r3, dry, all or run names")
+    parser.add_argument("names", nargs="+", help="r1, r2, r3, r4, dry, all or run names")
     parser.add_argument("--episodes", type=int, default=100, help="test episodes per judge")
     parser.add_argument("--no-sampled", action="store_true", help="skip the sampled judge")
     parser.add_argument("--force", action="store_true", help="judge again, replacing the verdicts")
