@@ -1,4 +1,4 @@
-# Shop ground-up machines: eighteen training-complete bundles (seven, the fixed pair, the final prompt's step-2 machine, its hand copy, the step-2 ground machine, two scale-only copies, the final prompt's step-3 machine, two x10 copies of generated machines, and the step-3 ladder copy)
+# Shop ground-up machines: twenty-four training-complete bundles (seven, the fixed pair, the final prompt's step-2 machine, its hand copy, the step-2 ground machine, two scale-only copies, the final prompt's step-3 machine, two x10 copies of generated machines, the step-3 ladder copy, and six reward-shape copies of the two A3 machines)
 
 Built from the code at commit `c1c3efd`, with no model call; embeddings come from the local embedding server
 (nomic-embed-text). The pay checks, plan checks, graphs and build scripts named below stay with the private plan notes,
@@ -7,7 +7,7 @@ outside the repository; this folder holds the bundles and the run tooling (`runs
 `SL` = the earlier testing-program slices in the private plan notes (`plans/testing-program-20261111/slices`), not in
 the repository; the `SL/...` sources below record where each bundle came from.
 
-## Bundles (`bundles/<name>/`, eighteen, each loads with `load_bundle` and passes `validate(require_complete=True)`)
+## Bundles (`bundles/<name>/`, twenty-four, each loads with `load_bundle` and passes `validate(require_complete=True)`)
 
 | bundle | states | source | clauses or hand text |
 |---|---|---|---|
@@ -29,6 +29,12 @@ the repository; the `SL/...` sources below record where each bundle came from.
 | step3-a3 | 16 | exact copy of generator try `armA3-step3-1`, written by the final generator prompt (A3); the step-3 twin of `step2-a3` (copied by `round3/scripts/scale2_build.py`) | `Response(client_arrived, order_taken)`, `Response(order_taken, holding_food)`, `Response(order_taken, food_prepared)`, `Response(food_prepared, order_served)`, all hard |
 | step3-a3-x10 | 16 | `step3-a3` copied, then every pay and both failed rewards multiplied by 10 (same script) | the same machine with only numbers changed: arrival -4, pays -5 to +8, failed rewards -10 (hard) and -5 (soft), so the cut charge is -14 / -23 / -12 / -11 / 0 after the arrival / order / pickup / prepare / serve. States, edges and `PENDING_PROMISES` are unchanged |
 | step3-a3-x10-ladder | 16 | `step3-a3-x10` copied, then hand-edited (ladder test 3, round 3; script `round3/scripts/ladder3_build.py` in the plan notes) | the same machine with one change: `PENDING_PROMISES` gives `u6` (client arrived, order not taken) `hard 2` instead of `hard 1`, so the cut total (pays so far plus the end charge) is -24 / -23 / -12 / -11 / 0 after the arrival / order / pickup / prepare / serve (step3-a3-x10's: -14 / -23 / -12 / -11 / 0, a dip at the order). Pays, edges, states and failed rewards are unchanged |
+| step2-a3-done | 8 | `step2-a3` copied, then pay values only (shape test 4, round 4; script `round4/scripts/shape4_build.py` in the plan notes) | the compiled pays and charges kept, plus +0.3 (stages per service 3 x 0.1) on every serve edge (21), so a full service nets +0.3 instead of 0: arrival -0.3, order +0.1, pickup +0.1, serve +0.4. Failed rewards -1 / -0.5 and `PENDING_PROMISES` as in `step2-a3` |
+| step2-a3-pot | 8 | `step2-a3` copied, then pay values, failed rewards and `PENDING_PROMISES` counts only (same script) | progress pay with take-back: arrival 0, order +0.1, pickup +0.1, serve +0.1 (net +0.3); an edge that goes back pays the difference; `HARD_FAILED_REWARD -0.1`, `SOFT_FAILED_REWARD 0`, `hard` = stages the open service has earned (`u1:1 u2:2 u3:2 u4:0 u5:1 u6:2 u7:2`), so every unfinished state cuts to 0 in total |
+| step2-a3-pot0 | 8 | `step2-a3-pot` copied, then both failed rewards set to 0 (same script) | the same pays as `step2-a3-pot` and the same counts, with `HARD_FAILED_REWARD 0` and `SOFT_FAILED_REWARD 0`: no take-back at the cut (the cut total after each stage rises 0 / +0.1 / +0.2, then +0.3 at the serve) |
+| step3-a3-done | 16 | `step3-a3` copied, then pay values only (same script) | the compiled pays and charges kept, plus +0.4 (stages per service 4 x 0.1) on every serve edge (87), so a full service nets +0.4 instead of 0. Failed rewards and `PENDING_PROMISES` as in `step3-a3` |
+| step3-a3-pot | 16 | `step3-a3` copied, then pay values, failed rewards and `PENDING_PROMISES` counts only (same script) | progress pay with take-back as in `step2-a3-pot` over four stages: arrival 0, each stage +0.1, serve +0.1 (net +0.4); `HARD_FAILED_REWARD -0.1`, `SOFT_FAILED_REWARD 0`, `hard` = stages earned (`u1:1 u2:2 u3:3 u4:2 u5:3 u6:0 u7:3 u8:1 u9:2 u10:2 u11:3 u12:4 u13:5 u14:4 u15:5`; a state with two services open can hold more than 4) |
+| step3-a3-pot0 | 16 | `step3-a3-pot` copied, then both failed rewards set to 0 (same script) | the same pays and counts as `step3-a3-pot` with `HARD_FAILED_REWARD 0` and `SOFT_FAILED_REWARD 0` |
 
 Notes on how they differ from the packet's wording.
 
@@ -66,10 +72,16 @@ Notes on how they differ from the packet's wording.
 | step3-a3 | pay walk (a full service in each of the three orders, two drop and re-pick services, a cut after each stage): the order-first service pays -0.4 +0.1 +0.1 +0.1 +0.1 (every agent stage > 0, net 0); with the pickup before the order the order pays +0.2 and the pickup 0; best serve-free cycle pay 0 | not rerun (the generator try's) | PASS (100/100, no wrong plan ends accepting, end charge 0) |
 | step3-a3-x10 | pay walk (same scenarios): every pay and end charge is exactly 10 x step3-a3's; best serve-free cycle pay 0 | not rerun (step3-a3's) | not run (states and edges as in step3-a3, which passes) |
 | step3-a3-x10-ladder | pay walk (same scenarios, `round3/scripts/ladder3_cut_walk.py`): every pay is identical to step3-a3-x10's; only the cut charge after the arrival changes (-10 to -20, total -14 to -24). The cut total rises strictly from the arrival on (-24 / -23 / -12 / -11 / 0) in the order-first, pre-pick and both drop and re-pick services; with the pickup after the arrival and before the order it is flat from the arrival to the pickup (-24, -24: `u6` has no `holding_food` edge, as in step3-a3-x10) and then rises; best serve-free cycle pay 0; the idle agent ends at -24, below every finished service (0) | not rerun (step3-a3's) | PASS (100/100, no wrong plan ends accepting, end charge 0; the do-nothing plan ends -20 at the cut) |
+| step2-a3-done | pay walk (`round4/scripts/shape4_pay_walk.py`, every service order of round 1's scenarios): only the serve step differs from step2-a3 (+0.3); order-first service pays -0.3 +0.1 +0.1 +0.4, net +0.3; cut totals as step2-a3's until the serve (-1.3 / -2.2 / -1.1, then +0.3); idle / one service / two services: -1.3 / +0.3 / +0.6; best serve-free cycle pay 0, but a full service cycle pays +0.3, so the compiler's `_has_positive_cycle` would reject this shape | not rerun (step2-a3's) | PASS (100/100, no wrong plan ends accepting; do-nothing ends -1.00 at the cut) |
+| step2-a3-pot | same walk: arrival 0, order +0.1, pickup +0.1, serve +0.1, net +0.3 in every order; cut total 0 after every stage before the serve, then +0.3; idle / one / two services: 0 / +0.3 / +0.6; best serve-free cycle pay 0; a full service cycle pays +0.3 (the compiler's positive-cycle check would reject it) | not rerun (step2-a3's) | PASS (100/100, no wrong plan ends accepting; end charge 0 / -0.10 / -0.20 for do-nothing / order only / order and food) |
+| step2-a3-pot0 | same walk: the pays of step2-a3-pot; cut total after each stage 0 / +0.1 / +0.2, then +0.3; idle / one / two services: 0 / +0.3 / +0.6; best serve-free cycle pay 0; a full service cycle pays +0.3 | not rerun (step2-a3's) | PASS (100/100, no wrong plan ends accepting; end charge 0 in every plan) |
+| step3-a3-done | same walk over `scale2_pay_walk`'s step-3 scenarios: only the serve step differs from step3-a3 (+0.4); order-first service pays -0.4 +0.1 +0.1 +0.1 +0.5, net +0.4; cut totals as step3-a3's until the serve (-1.4 / -2.3 / -1.2 / -1.1, then +0.4); idle / one / two services: -1.4 / +0.4 / +0.8; best serve-free cycle pay 0; a full service cycle pays +0.4 | not rerun (step3-a3's) | PASS (100/100, no wrong plan ends accepting; do-nothing ends -1.00 at the cut) |
+| step3-a3-pot | same walk: arrival 0, each stage +0.1, serve +0.1, net +0.4 in every order; cut total 0 after every stage before the serve, then +0.4; idle / one / two services: 0 / +0.4 / +0.8; best serve-free cycle pay 0; a full service cycle pays +0.4 | not rerun (step3-a3's) | PASS (100/100, no wrong plan ends accepting; end charge 0 / -0.10 / -0.20 for do-nothing / order only / no prepare) |
+| step3-a3-pot0 | same walk: the pays of step3-a3-pot; cut total after each stage 0 / +0.1 / +0.2 / +0.3, then +0.4; idle / one / two services: 0 / +0.4 / +0.8; best serve-free cycle pay 0; a full service cycle pays +0.4 | not rerun (step3-a3's) | PASS (100/100, no wrong plan ends accepting; end charge 0 in every plan) |
 
 ## Folders
 
-- `bundles/` the eighteen bundles.
+- `bundles/` the twenty-four bundles.
 - `runs/` the round configs and tooling (scheduler, watch table, judge); its `README.md` lists every run and command.
 
 ## Rebuild
@@ -82,7 +94,10 @@ plan notes (the same recipe as `step3-ground`, on `step2-generated`'s shell). `s
 `step2-a3` and `step2-ground` with the numbers of `reward_machine.txt` scaled and a hand-bundle manifest (`round3/scripts/sign_build.py`
 in the plan notes). `step3-a3-x10-ladder` is a byte copy of `step3-a3-x10` with one edited line in `reward_machine.txt`
 (`u6: hard 2, soft 0`) and a hand-bundle manifest (`round3/scripts/ladder3_build.py` in the plan notes). Each bundle's manifest and `reward_machine.txt` hold
-everything training reads, and `load_bundle` plus `validate(require_complete=True)` accept all eighteen.
+everything training reads, and `load_bundle` plus `validate(require_complete=True)` accept all twenty-four.
+The six `-done`, `-pot` and `-pot0` bundles are byte copies of `step2-a3` and `step3-a3` with only the pay values, both failed
+rewards and the `PENDING_PROMISES` counts of `reward_machine.txt` rewritten and a hand-bundle manifest (`round4/scripts/shape4_build.py`
+in the plan notes); a masked-number diff against the source shows only added reward rows, no transition, state or label changed.
 
 ## Run config for the no-end bundles (`step3-chain4-noend`, `step3-chain4-fixed-noend`)
 
