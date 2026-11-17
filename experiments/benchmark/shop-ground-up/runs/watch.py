@@ -190,7 +190,7 @@ def main() -> None:
     for run in select(args.names):
         print("| " + " | ".join(describe(run, args.window, args.early)) + " |")
     print(
-        f"\nRuns root: {RUNS_ROOT}. served/ep is training-episode env return (sampled actions); eval is greedy."
+        f"\nRuns root: {RUNS_ROOT}. served/ep is training-episode env return (sampled actions); eval shows greedy / sampled."
     )
 
 

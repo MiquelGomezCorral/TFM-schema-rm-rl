@@ -9,7 +9,7 @@ test seed 2000000, as ``test-rl --run <folder> --judge <card>`` does:
   sampled  the same judge with ``eval_greedy = False`` -> ``<run>/sampled/<card>/``, copied to ``judge-sampled-<card>.json``
 Writes only into the run folder. A run that already has the verdict file is skipped unless ``--force``.
 The table gives served_count (clients served per 600-step episode), served_success and judged_success; a run
-counts as learned (plan R11) when its greedy mean served_count is at least 10.
+counts as learned (plan R11) when its greedy mean served_count is at least ``LEARNED_SERVED``.
 """
 
 import argparse
@@ -87,9 +87,8 @@ def read_verdict(folder: Path, name: str) -> dict:
 
 
 def cells(verdict: dict) -> list[str]:
-    served = verdict.get("mean_served_count")
     return [
-        "-" if served is None else f"{served:.2f}",
+        fmt(verdict.get("mean_served_count")),
         fmt(verdict.get("mean_served_success")),
         fmt(verdict.get("mean_judged_success")),
     ]

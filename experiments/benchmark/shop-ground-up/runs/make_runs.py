@@ -111,7 +111,10 @@ def round1() -> list[Run]:
 
 
 def round2(winner: tuple[str, str] | None, second_pset: str) -> list[Run]:
-    """Plan step 11: 11 runs, 5M steps. The three winner runs need ``--winner`` (round 1's result)."""
+    """Plan step 11, 5M steps; ``--winner`` (round 1's result) adds that machine's runs.
+
+    Those are seeds 2 and 3, plus an embedding run for any winner other than step2-generated at P1.
+    """
     runs = [
         make_run("r2", machine, "P1")
         for machine in (
@@ -251,7 +254,7 @@ $E/python $R/watch.py r1                           # one table: step, served per
 $E/python $R/watch.py r1 --early                   # the same for the first 100k steps (early vs late stage counts)
 $R/judge.sh r1                                     # greedy + sampled judge, 100 episodes, then the summary table
 
-# Round 2 (11 runs, 5M steps): the winner runs need round 1's result first
+# Round 2 (5M steps): the winner runs need round 1's result first
 $E/python $R/make_runs.py --winner <step2 machine>:<P1..P4> [--second-pset P3]
 $E/python $R/scheduler.py r2
 $E/python $R/watch.py r2

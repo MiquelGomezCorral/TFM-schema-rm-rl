@@ -48,7 +48,7 @@ $E/python $R/watch.py r1                           # one table: step, served per
 $E/python $R/watch.py r1 --early                   # the same for the first 100k steps (early vs late stage counts)
 $R/judge.sh r1                                     # greedy + sampled judge, 100 episodes, then the summary table
 
-# Round 2 (11 runs, 5M steps): the winner runs need round 1's result first
+# Round 2 (5M steps): the winner runs need round 1's result first
 $E/python $R/make_runs.py --winner <step2 machine>:<P1..P4> [--second-pset P3]
 $E/python $R/scheduler.py r2
 $E/python $R/watch.py r2
