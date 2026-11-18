@@ -642,9 +642,9 @@ Table~\ref{tab:running} gives the clauses that the language model chose for each
 \end{tabularx}
 \end{table}
 
-\section{Step 2 · MONA turns each formula into a DFA}
+\section{Step 2 · LTLf to DFA}
 \label{sec:step2}
-The second step turns every LTLf formula into a deterministic finite automaton (DFA) that accepts exactly the traces satisfying it (Section~\ref{sec:sota-ltl}). FL-AT translates the formula for MONA, and MONA returns the automaton (Figure~\ref{fig:step2}).
+The second step turns every LTLf formula (one for each clause) into a deterministic finite automaton (DFA) that accepts exactly the traces satisfying it (Section~\ref{sec:sota-ltl}). FL-AT translates the formula for MONA, and MONA returns the automaton (Figure~\ref{fig:step2}).
 
 \begin{figure}[H]
 \centering
@@ -660,17 +660,25 @@ The second step turns every LTLf formula into a deterministic finite automaton (
 \end{figure}
 
 \subsection{FL-AT and MONA}
-FL-AT, the Formal Language--Automaton Transmogrifier \cite{transmogrifier2020}, writes the LTLf formula as a formula of monadic second-order logic over finite words, the input language of MONA, and reads back the automaton that MONA prints. MONA \cite{henriksen1995mona} is a decision procedure for that logic: to decide a formula it builds the minimal DFA of its models. FARM uses a fork of FL-AT (Appendix~\ref{app:implementation}).
+FL-AT, the Formal Language--Automaton Transmogrifier \cite{transmogrifier2020}, writes the LTLf formula as a formula of monadic second-order logic over finite words, the input language of MONA, and reads back the automaton that MONA prints. 
+
+MONA \cite{henriksen1995mona} is a decision procedure for that logic: to decide a formula it builds the minimal DFA of its models. FARM uses a fork of FL-AT to get more information from the inner states of this tool, such as the internal structure of the automaton or how MONA flags different states (Appendix~\ref{app:implementation}).
+% Also here, check this last sentence I added because we do add extra stuff and we do change the mona to get information out of the different stages of the of the process, but I don't know exactly what it is, how it matters and everything, so more or less explain it here. what we are getting and then references not reference the next one of the next sections where we use this and it is on the step four our post process because we get part of this information out of Mona to get better reward machines just state which part of the inner state we get And for which section we use it, and more or less for which intention, briefly everything. 
+
 % What will go here: the encoding of LTLf in MONA's input and the format of the automaton it returns.
 
-\subsection{Redundant states in MONA's automata}
+
+\paragraph{Redundant states in MONA's automata}
+% Again, we should select a better kind other than paragraph. And since we mentioned the fork we do in the previous section, we are going to also wire it with this one. 
+% Also rewrite a little bit this section because the two parentheses of S0 in panel parenthesis A close parenthesis is weird and the way in which the both nodes are listed, I don't know, it's hard to read this paragraph. 
 \label{sec:redundant}
 The automaton that MONA returns is minimal for the language of its formula, yet two of its states are redundant for a Reward Machine. Figure~\ref{fig:mona-stages} shows both for the clause Absence(\texttt{key\_lost}). The first is a start state that every input leaves for the same successor (S0 in panel~(a)); the FL-AT fork removes it. The second appears in rule clauses: a ``no step yet'' start that nothing re-enters and that behaves like its idle successor on every input (S1 against S2 in panel~(b)); the post-process of Step~4 merges the two (panel~(c)).
 % What will go here: how the two states arise from the MONA encoding.
 
 \subsection{Running examples: from formulas to DFAs}
 \label{sec:run-step2}
-The three running examples have nine clauses but only four templates, and clauses of the same template give automata of the same shape. Figure~\ref{fig:run-dfas} draws one automaton per template. All three examples share Existence(\texttt{at\_goal}), Absence(\texttt{key\_lost}) comes from example 3, Precedence(\texttt{has\_key}, \texttt{door\_open}) from example 1 and ChainResponse(\texttt{key\_lost}, \texttt{has\_key}) from example 2. The other Existence and Precedence clauses of example 1 differ only in their propositions. In these graphs an arrow without a source marks the initial state and a double circle an accepting state. Each edge is labelled with its guard, where $\neg$ stands for \texttt{!}, $\land$ for \texttt{\&} and $\top$ for any input.
+% Same as before, since this is a cascade.  you have to redo the section with the previous changed templates, though it's fine that you don't show every single template since there are a lot and most of them repeat. It's fine that you show only one ex one example of each and maybe you don't even need to change it, so checne. Try to simplify it a little bit if you can. Recall that if you just name an example or or whatever s1, s2, s4, s3 mean, you can just list them once and then refer to them because you are in the same paragraph, so it's fine that you reference these kind of things in the very same place. That way you don't repeat yourself every time. So the wording is nice, but make sure that you don't leave S1 or S2 without really saying what it is. Because here it's clearly fine to see that they are just stage, but say that we are going to refer to the stage of blah with this name, blah blah. 
+The three running examples have nine clauses but only four templates, and clauses of the same template give automata of the same shape. Figure~\ref{fig:run-dfas} draws one automaton per template. All three examples share Existence(\texttt{at\_goal}), Absence(\texttt{key\_lost}) comes from example 3, Precedence(\texttt{has\_key}, \texttt{door\_open}) from example 1 and ChainResponse(\texttt{key\_lost}, \texttt{has\_key}) from example 2. The other Existence and Precedence clauses of example 1 differ only in their propositions. In these graphs an arrow without a source marks the initial state and a double circle an accepting state. Each edge is labelled with its guard, where $\neg$ stands for \texttt{!}, $\land$ for \texttt{\&} and $\top$ for any other input, an 'else' label for the default case.
 
 The Existence automaton waits in S1 until \texttt{at\_goal} holds and then stays accepting in S2. Absence accepts in S2 while the key is kept and falls into S3, which no input leaves, at the first loss; it is the automaton of panel~(b) of Figure~\ref{fig:mona-stages}. Precedence accepts in S2 while neither event has happened and in S3 once the key comes first, and opening the door without the key leads to the dead state S4. ChainResponse accepts in S2 while nothing is owed. A lost key moves it to S3, where the key must be back at the next step, and without \texttt{has\_key} it falls into S4. In the three rule automata S1 is the ``no step yet'' start of Section~\ref{sec:redundant}: it moves like S2 but is not accepting.
 
@@ -706,13 +714,16 @@ The Existence automaton waits in S1 until \texttt{at\_goal} holds and then stays
     \end{tikzpicture}
     \caption{ChainResponse(\texttt{key\_lost}, \texttt{has\_key})}
 \end{subfigure}
-\caption[DFAs of the running examples]{The DFAs of the four templates of the running examples after Step~2, once the FL-AT fork has removed MONA's first start state.}
+\caption[DFAs of the running examples]{The DFAs of the four templates of the running examples after Step~2. The removal of MONA's first start state has been applied.}
 \label{fig:run-dfas}
 \end{figure}
 
-\section{Step 3 · FL-AT multiplies the DFAs into one machine}
+\section{Step 3 · Multiply DFAs into one machine}
 \label{sec:step3}
-The third step combines the clause automata into one. FL-AT builds their synchronous product, the construction that Camacho et al.~\cite{camacho2019ltl} use for combined specifications: a product state holds one state of each clause DFA, and every step moves all of them at once. The fork returns that tuple for every product state, so later steps know where each clause stands (Figure~\ref{fig:step3}).
+The third step combines all the automatas into one. FL-AT builds their synchronous product, the construction that Camacho et al.~\cite{camacho2019ltl} use for combined specifications: a product state holds one state of each clause DFA, and every step moves all of them at once. 
+
+% I am reading here this line of the fork returns, etc. I think this is what I referred earlier that we changed so the future steps on the step four can do other things. 
+The fork returns that tuple for every product state, so later steps know where each clause stands (Figure~\ref{fig:step3}).
 
 \begin{figure}[H]
 \centering
@@ -731,13 +742,27 @@ The third step combines the clause automata into one. FL-AT builds their synchro
 The product has no more states than the product of the sizes of the clause DFAs \cite{camacho2019ltl}. Its transitions carry Boolean conditions over the propositions, one per combination of clause transitions that can fire together.
 % What will go here: a small product built by hand from two clauses, with the state tuples.
 
-\subsection{What was wrong with FL-AT's reward}
-FL-AT also assigns rewards. Each product edge pays the reward of every clause whose DFA is accepting after the step, so a finished clause is paid again at every later step. Rules that merely hold pay for doing nothing, and Response and ChainResponse contain a rewarded cycle that can be farmed. FARM discards these rewards (Step~4).
-% Reward farming. Fixed in Step 4 (Section~\ref{sec:step4}). What will go here: the evidence of the farmed cycle.
+% I don't know if I would really add that part here, but what I know is that this section needs a way better explanation. That paragraph is too short, it makes no sense and shows nothing about how it's really being multiplied and so on. No one that reads these paragraphs really understand how this flat is really managing to get all the DFAs into a simplified reward machine. Therefore in here more steps have to be simplified, more things have to be brought down, to which is the real the real process by which this tool manages to convert the DFAs into a real Product machine. 
 
-\subsection{Final states}
-FL-AT derives its accepting states from its own rewards: they are the destinations of the edges that pay the highest reward. FARM discards this marking and recomputes the final states from the hard clauses (Step~4).
+\subsection{Discarted features of FL-AT's product}
+\paragraph{What was wrong with FL-AT's reward}
+FL-AT also assigns rewards. Each product edge pays the reward of every clause whose DFA is accepting after the step, so a finished clause is paid again at every later step. 
+
+
+
+Rules that merely hold pay for doing nothing, and Response and ChainResponse contain a rewarded cycle that can be farmed. 
+
+
+\paragraph{Final states}
+FL-AT derives its accepting states from its own rewards: they are the destinations of the edges that pay the highest reward. 
+
+% I would give more insight here about what they do, not too much, just a few lines more. And then more explanations on why this is not holding and why this is discarded by farm. And yeah, you can show one example here that has a few of these things that we don't like and therefore we discard. 
+% Same here I would add the or I would add a example that covers both. 
+
+FARM discards this marking and recomputes the final states from the hard clauses (Step~4).
+FARM discards these rewards (Step~4).
 % What will go here: an example where FL-AT's accepting state is not the end of the task.
+% Reward farming. Fixed in Step 4 (Section~\ref{sec:step4}). What will go here: the evidence of the farmed cycle.
 
 \subsection{Running examples: from DFAs to the product}
 \label{sec:run-step3}
@@ -786,7 +811,9 @@ The reward of an edge counts the clause automata that accept after the step, so 
 \label{fig:run-product2}
 \end{figure}
 
-\section{Step 4 · FARM's post-process: hard and soft clauses, and rewards}
+% The exception is not that bad, it has good explanations, but I think you overexplained things that are going to appear in the previous stage. Therefore just show what happens, just show what it becomes and that's it. I would even say that you only show the figure about the example 3, which is fine to read and see and leave the other two at the appendix. 
+
+\section{Step 4 · Post-process}
 \label{sec:step4}
 The fourth step is specific to FARM and turns the product into a Reward Machine. For every clause, each product state is labelled as satisfied, pending (not yet satisfied but still possible) or violated (no longer satisfiable). The labels are computed exactly, by reachability on the DFA of each clause. Hard clauses prune the machine and decide the final states, soft clauses only change rewards, and the rewards are assigned last (Figure~\ref{fig:step4}).
 
