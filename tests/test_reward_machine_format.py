@@ -11,6 +11,7 @@ from src.arm_fm.runtime import RewardMachineRuntime
 from src.compiler import (
     ClauseProposal,
     Proposal,
+    RewardSwitches,
     build_compilation_result,
     parse_paper_reward_machine,
     parse_reward_machine,
@@ -61,23 +62,26 @@ class RewardMachineFormatTests(unittest.TestCase):
                 ("2", "true"): "2",
             },
         }
-        result = build_compilation_result(environment, proposal, (dfa,))
+        # The end judgment is off by default; the round trip keeps its lines in the text.
+        result = build_compilation_result(
+            environment, proposal, (dfa,), RewardSwitches(reward_end_judgment=True)
+        )
         expected = """REWARD_MACHINE:
 STATES: u0, u1, u2
 INITIAL_STATE: u0
 FINAL_STATES: u2
 ACCEPTING_STATES:
 DEFAULT_REWARD: 0
-HARD_FAILED_REWARD: -1
-SOFT_FAILED_REWARD: -0.5
+HARD_FAILED_REWARD: -10
+SOFT_FAILED_REWARD: -5
 TRANSITION_FUNCTION:
 (u0, done) -> u1
 (u1, done) -> u2
 REWARD_FUNCTION:
-(u0, done, u1) -> 0.1
-(u1, done, u2) -> 1.1
+(u0, done, u1) -> 1
+(u1, done, u2) -> 11
 PENDING_PROMISES:
-u0: hard 1, soft 0
+u0: hard 2, soft 0
 u1: hard 1, soft 0
 """
         self.assertEqual(result.text, expected)
@@ -85,9 +89,9 @@ u1: hard 1, soft 0
         runtime = RewardMachineRuntime(parse_paper_reward_machine(result.text))
         for valuation, destination, reward in (
             (False, "u0", 0),
-            (True, "u1", 0.1),
+            (True, "u1", 1),
             (False, "u1", 0),
-            (True, "u2", 1.1),
+            (True, "u2", 11),
             (True, "u2", 0),
         ):
             step = runtime.step({"done": valuation})

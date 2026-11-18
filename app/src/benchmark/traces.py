@@ -42,7 +42,7 @@ PAGE_STYLE = (
     "body{font:15px/1.5 system-ui,sans-serif;max-width:1100px;margin:1rem auto;padding:0 16px}"
     "pre{overflow-x:auto;background:#f4f4f4;padding:8px}li{margin:.2rem 0}"
 )
-PENALTY_NOTE = "Benchmark runs set `time_limit_penalty` to 0; -0.5 is the reproduction default."
+PENALTY_NOTE = "Benchmark runs set `time_limit_penalty` to 0; -5 is the reproduction default."
 # The one text that says what judge.json's ``rm_return`` sums (the replay page shows it too).
 RM_RETURN_DEFINITION = (
     "rm_return sums the wrapper's info['rm_reward'] over the episode: the RM transition rewards "

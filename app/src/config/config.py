@@ -196,21 +196,22 @@ class Configuration:
     PROVIDER_RETRIES: ClassVar[int] = 10
     PROVIDER_RETRY_WAIT_S: ClassVar[float] = 1.0
     MAX_TASK_CLAUSES: ClassVar[int] = 25
-    # Paid per step a clause gets closer to done, and charged per step back or new step owed;
-    # each clause counts the longest remaining path of its own DFA.
-    PROGRESS_REWARD: ClassVar[float] = 0.1
-    TASK_COMPLETION_REWARD: ClassVar[float] = 1.0
-    WELL_REWARD: ClassVar[float] = -1.0
-    # Soft clauses: paid when one breaks, and on the finishing edge when one is still pending.
-    SOFT_BREAK_REWARD: ClassVar[float] = -0.5
-    SOFT_PENDING_AT_FINISH_REWARD: ClassVar[float] = -0.5
+    # The pay unit, in whole units: paid per stage a clause gets closer to done, and charged per
+    # stage back or newly owed; each clause counts the longest remaining path of its own DFA.
+    # Every other pay is a multiple of it, so this is the one place that sets the scale.
+    PROGRESS_REWARD: ClassVar[float] = 1.0
+    TASK_COMPLETION_REWARD: ClassVar[float] = 10 * PROGRESS_REWARD
+    WELL_REWARD: ClassVar[float] = -10 * PROGRESS_REWARD
+    # A soft clause still pending on the finishing edge. A soft break's cost is the setting
+    # ``soft_break_cost``.
+    SOFT_PENDING_AT_FINISH_REWARD: ClassVar[float] = -5 * PROGRESS_REWARD
     # A compiled machine is judged where the environment ends an episode before its final state:
-    # each hard and soft promise still open pays one of these, instead of ``time_limit_penalty``.
-    # A goal is a hard promise.
-    HARD_FAILED_REWARD: ClassVar[float] = -1.0
-    SOFT_FAILED_REWARD: ClassVar[float] = -0.5
+    # each stage a hard or soft clause still owes pays one of these, instead of
+    # ``time_limit_penalty``. A goal is a hard promise.
+    HARD_FAILED_REWARD: ClassVar[float] = -10 * PROGRESS_REWARD
+    SOFT_FAILED_REWARD: ClassVar[float] = -5 * PROGRESS_REWARD
     # Promise cost (off by default): paid once on each step taken while a hard promise is open.
-    PROMISE_COST_REWARD: ClassVar[float] = -0.01
+    PROMISE_COST_REWARD: ClassVar[float] = -0.1 * PROGRESS_REWARD
 
     # ============================== Runtime options ==============================
 
@@ -228,18 +229,23 @@ class Configuration:
     # generate-larm --mode arm-fm: the critic calls use the critic model instead of one model
     # for every role.
     arm_fm_critic: bool = False
-    # A soft rule's -0.5 is paid at every new break (on) or once per episode (off).
+    # A soft rule's break cost is paid at every new break (on) or once per episode (off).
     recurrent_soft_penalty: bool = True
+    # What one soft break costs, in pay units (paid as a negative reward); to be tested at 2.5, 2,
+    # 1.5 and 1.
+    soft_break_cost: float = 5 * PROGRESS_REWARD
     # Reward switches for the ablation: off, a term pays 0 (completion is never switched off).
-    # Progress; the well's -1 (the well stays a rejecting sink); a soft rule's break; a soft rule
-    # still pending at the finish; the end judgment (open items charged where the environment ends
-    # the episode, also on the edges into the well).
+    # Progress; the well's flat charge (the well stays a rejecting sink); a soft rule's break; a
+    # soft rule still pending at the finish; the end judgment (each stage a clause still owes
+    # charged where the environment ends the episode, also on the edges into the well).
     reward_progress: bool = True
     reward_well: bool = True
     reward_soft_break: bool = True
     reward_soft_pending: bool = True
-    reward_end_judgment: bool = True
-    # The one reward part that is off by default.
+    # Off by default (D2): the end judgment and the owed charge on the well edges. To switch them
+    # on by default, flip this one line.
+    reward_end_judgment: bool = False
+    # Off by default.
     reward_promise_cost: bool = False
     reasoning: str = "none"
     attempts: int = 3
@@ -300,8 +306,9 @@ class Configuration:
     # the plain environment with no RM. The flag is run-wide.
     reward_source: str = "rm"
     # Added to the RM reward on the step where the time limit ends an episode the RM did not (0 or
-    # negative). A machine with an end judgment pays that judgment instead.
-    time_limit_penalty: float = -0.5
+    # negative; the default is half a completion, in pay units). A machine with an end judgment
+    # pays that judgment instead.
+    time_limit_penalty: float = -5 * PROGRESS_REWARD
     env_kwargs: dict = field(default_factory=dict)  # keyword arguments of gym.make
     algorithm: str = "dqn"
     # Which rule counts an episode as a success: the environment's own (``env``) or RM
@@ -358,7 +365,7 @@ class Configuration:
     ppo_anneal_lr: bool = True
     ppo_max_grad_norm: float = 0.5
     ppo_gae_lambda: float = 0.95
-    ppo_clip_coef: float = 0.1
+    ppo_clip_coef: float = 0.2
     ppo_clip_vloss: bool = True
     ppo_norm_adv: bool = True
     ppo_ent_coef: float = 0.01

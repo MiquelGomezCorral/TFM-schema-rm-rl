@@ -104,7 +104,7 @@ def cmd_ablate_rm(args: argparse.Namespace) -> None:
 def cmd_rebuild_rewards(args: argparse.Namespace) -> None:
     """Rebuild a compiler bundle's Reward Machine rewards with the current reward layer."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
-    if not rebuild_rewards(CONFIG):
+    if not rebuild_rewards(CONFIG, args.destination):
         sys.exit(1)
 
 
@@ -254,13 +254,19 @@ if __name__ == "__main__":
         "--recurrent-soft-penalty",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Charge a soft rule's -0.5 at every new break (default: enabled)",
+        help="Charge a soft rule's break cost at every new break (default: enabled)",
+    )
+    generate_parser.add_argument(
+        "--soft-break-cost",
+        type=float,
+        default=Configuration.soft_break_cost,
+        help="What one soft break costs, in pay units (default: %(default)s)",
     )
     generate_parser.add_argument(
         "--promise-cost",
         dest="reward_promise_cost",
         action="store_true",
-        help="Charge -0.01 on every step while a hard promise is open (default: off)",
+        help="Charge -0.1 on every step while a hard promise is open (default: off)",
     )
     generate_parser.add_argument(
         "--reasoning",
@@ -392,13 +398,20 @@ if __name__ == "__main__":
         "--recurrent-soft-penalty",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="compiler mode only: charge a soft rule's -0.5 at every new break (default: enabled)",
+        help="compiler mode only: charge a soft rule's break cost at every new break "
+        "(default: enabled)",
+    )
+    larm_parser.add_argument(
+        "--soft-break-cost",
+        type=float,
+        default=Configuration.soft_break_cost,
+        help="compiler mode only: what one soft break costs, in pay units (default: %(default)s)",
     )
     larm_parser.add_argument(
         "--promise-cost",
         dest="reward_promise_cost",
         action="store_true",
-        help="compiler mode only: charge -0.01 on every step while a hard promise is open "
+        help="compiler mode only: charge -0.1 on every step while a hard promise is open "
         "(default: off)",
     )
     larm_parser.add_argument(
@@ -550,21 +563,36 @@ if __name__ == "__main__":
     # ======================================================================================
     rebuild_parser = subparsers.add_parser(
         "rebuild-rewards",
-        help="Rewrite a compiler bundle in place with the current reward layer's rewards",
+        help="Write a copy of a compiler bundle with the current reward layer's rewards",
     )
     rebuild_parser.add_argument(
         "--bundle",
         required=True,
         type=Path,
-        help="Bundle made by generate-larm --mode compiler; it must store its clauses",
+        help="Source bundle made by generate-larm --mode compiler; it must store its clauses",
+    )
+    rebuild_parser.add_argument(
+        "--output",
+        dest="destination",
+        required=True,
+        type=Path,
+        metavar="DIR",
+        help="New bundle folder to write; the source is never changed",
     )
     rebuild_parser.add_argument(
         "--promise-cost",
         dest="reward_promise_cost",
         action="store_true",
-        help="Turn the promise cost on (-0.01 on every step while a hard promise is open); "
+        help="Turn the promise cost on (-0.1 on every step while a hard promise is open); "
         "without it the bundle keeps the setting it records",
     )
+    rebuild_parser.add_argument(
+        "--soft-break-cost",
+        type=float,
+        default=Configuration.soft_break_cost,
+        help="What one soft break costs, in pay units (default: %(default)s)",
+    )
+    rebuild_parser.add_argument("--overwrite", action="store_true")
     rebuild_parser.set_defaults(func=cmd_rebuild_rewards)
 
     # ======================================================================================

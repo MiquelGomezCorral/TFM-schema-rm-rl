@@ -101,11 +101,13 @@ class RewardLayerTests(unittest.TestCase):
         machine = build_reward_machine((BOUNCE,), (False,)).reward_machine
 
         for transition in machine.transitions:
-            expected = 1.1 if transition.destination == machine.final_state else 0.0
+            expected = 11.0 if transition.destination == machine.final_state else 0.0
             self.assertEqual(transition.reward, expected)
 
     def test_hard_violation_enters_one_well_and_the_headers_name_final_and_well(self):
-        result = build_reward_machine((GOAL, NO_LAVA), (False, False))
+        result = build_reward_machine(
+            (GOAL, NO_LAVA), (False, False), RewardSwitches(reward_end_judgment=True)
+        )
         text = serialize_reward_machine(result.reward_machine)
         machine = parse_paper_reward_machine(text, propositions=("goal", "lava"))
 
@@ -115,8 +117,8 @@ class RewardLayerTests(unittest.TestCase):
 
         runtime = RewardMachineRuntime(machine)
         step = runtime.step({"goal": False, "lava": True})
-        # The well's -1 plus the -1 the open goal would cost at the time limit.
-        self.assertEqual((step.destination, step.reward), (machine.rejecting_states[0], -2.0))
+        # The well's -10 plus the -10 the open goal would cost at the time limit.
+        self.assertEqual((step.destination, step.reward), (machine.rejecting_states[0], -20.0))
 
     def test_an_idle_first_step_pays_nothing_and_finishing_pays_the_same_either_way(self):
         clauses, soft, propositions = (GOAL, NO_LAVA), (False, False), ("goal", "lava")
@@ -134,41 +136,43 @@ class RewardLayerTests(unittest.TestCase):
         self.assertEqual(len(machine.states), 3)
 
     def test_a_broken_soft_rule_pays_the_break_and_a_pending_soft_goal_pays_at_the_finish(self):
-        # A soft rule: the break pays -0.5 and, as the break and the start share a component, no
-        # progress. Finishing pays 1.1 (0.1 progress + 1) whether or not the rule held.
+        # A soft rule: the break pays -5 and, as the break and the start share a component, no
+        # progress. Finishing pays 11 (1 progress + 10) whether or not the rule held.
         never_lava = ((GOAL, NO_LAVA), (False, True), ("goal", "lava"))
-        self.assertEqual(rewards_of(*never_lava, [{"lava"}, {"lava"}, {"goal"}]), [-0.5, 0.0, 1.1])
-        self.assertEqual(rewards_of(*never_lava, [{"goal"}]), [1.1])
+        self.assertEqual(rewards_of(*never_lava, [{"lava"}, {"lava"}, {"goal"}]), [-5.0, 0.0, 11.0])
+        self.assertEqual(rewards_of(*never_lava, [{"goal"}]), [11.0])
 
-        # A soft goal: finishing without it pays -0.5; holding it adds nothing.
+        # A soft goal: finishing without it pays -5; holding it adds nothing.
         get_key = ((GOAL, KEY), (False, True), ("goal", "key"))
-        self.assertEqual(rewards_of(*get_key, [{"goal"}]), [0.7])
-        self.assertEqual(rewards_of(*get_key, [{"goal", "key"}]), [1.2])
-        self.assertEqual(rewards_of(*get_key, [{"key"}, {"goal"}]), [0.1, 1.1])
+        self.assertEqual(rewards_of(*get_key, [{"goal"}]), [7.0])
+        self.assertEqual(rewards_of(*get_key, [{"goal", "key"}]), [12.0])
+        self.assertEqual(rewards_of(*get_key, [{"key"}, {"goal"}]), [1.0, 11.0])
 
     def test_each_reward_switch_drops_only_its_own_term_and_completion_stays(self):
         lava = ((GOAL, NO_LAVA), (False, False), ("goal", "lava"))
         soft_lava = ((GOAL, NO_LAVA), (False, True), ("goal", "lava"))
         soft_key = ((GOAL, KEY), (False, True), ("goal", "key"))
-        # A hard no-lava rule with the goal still open and soft: the lava edge pays the well (-1)
-        # plus the soft end charge (-0.5), so each part left alone shows a different value.
+        # A hard no-lava rule with the goal still open and soft: the lava edge pays the well (-10)
+        # plus the soft end charge (-5), so each part left alone shows a different value.
         open_goal = ((GOAL, NO_LAVA), (True, False), ("goal", "lava"))
-        # Defaults pay [1.1], [-1.5], [-0.5, 1.1], [0.7], [-1.5].
+        # With the end judgment on (it is off by default) the pay is [11], [-15], [0, 11], [7], [-15].
         rows = (
-            ("reward_progress", ((GOAL,), (False,), ("goal",)), [{"goal"}], [1.0]),
-            ("reward_well", open_goal, [{"lava"}], [-0.5]),
-            ("reward_soft_break", soft_lava, [{"lava"}, {"goal"}], [0.0, 1.1]),
-            ("reward_soft_pending", soft_key, [{"goal"}], [1.2]),
-            ("reward_end_judgment", open_goal, [{"lava"}], [-1.0]),
+            ("reward_progress", ((GOAL,), (False,), ("goal",)), [{"goal"}], [10.0]),
+            ("reward_well", open_goal, [{"lava"}], [-5.0]),
+            ("reward_soft_break", soft_lava, [{"lava"}, {"goal"}], [0.0, 11.0]),
+            ("reward_soft_pending", soft_key, [{"goal"}], [12.0]),
+            ("reward_end_judgment", open_goal, [{"lava"}], [-10.0]),
         )
         for switch, setup, steps, expected in rows:
             with self.subTest(switch):
-                self.assertEqual(rewards_of(*setup, steps, **{switch: False}), expected)
+                on = {"reward_end_judgment": True}
+                self.assertEqual(rewards_of(*setup, steps, **{**on, switch: False}), expected)
 
         well_off = build_reward_machine(*lava[:2], RewardSwitches(reward_well=False))
-        judgment_off = build_reward_machine(*lava[:2], RewardSwitches(reward_end_judgment=False))
+        judgment_on = build_reward_machine(*lava[:2], RewardSwitches(reward_end_judgment=True))
         self.assertTrue(well_off.reward_machine.rejecting_states)
-        self.assertIsNone(judgment_off.reward_machine.judgment)
+        self.assertIsNone(build_reward_machine(*lava[:2]).reward_machine.judgment)
+        self.assertIsNotNone(judgment_on.reward_machine.judgment)
 
     def test_the_promise_cost_adds_one_charge_to_each_step_that_leaves_an_open_hard_promise(self):
         def added(clauses, soft, propositions, steps):
@@ -178,26 +182,26 @@ class RewardLayerTests(unittest.TestCase):
 
         # Nothing owed pays nothing; an idle step and the closing step with a promise open pay it.
         owed = ((RESPONSE,), (False,), ("x", "y"))
-        self.assertEqual(added(*owed, [set(), {"x"}, set(), {"y"}, set()]), [0, 0, -0.01, -0.01, 0])
+        self.assertEqual(added(*owed, [set(), {"x"}, set(), {"y"}, set()]), [0, 0, -0.1, -0.1, 0])
 
         # Two promises open still pay it once, flat.
         two = ((response("a", "b", "A"), response("c", "d", "B")), (False, False), "abcd")
-        self.assertEqual(added(*two, [{"a", "c"}, set(), {"b"}, set(), {"d"}]), [0, *[-0.01] * 4])
+        self.assertEqual(added(*two, [{"a", "c"}, set(), {"b"}, set(), {"d"}]), [0, *[-0.1] * 4])
 
         # The finishing step and the step into the well pay it on top of their own reward.
         open_goal = ((GOAL, NO_LAVA), (False, False), ("goal", "lava"))
-        self.assertEqual(added(*open_goal, [set(), {"goal"}]), [-0.01, -0.01])
-        self.assertEqual(added(*open_goal, [{"lava"}]), [-0.01])
+        self.assertEqual(added(*open_goal, [set(), {"goal"}]), [-0.1, -0.1])
+        self.assertEqual(added(*open_goal, [{"lava"}]), [-0.1])
 
     def test_a_soft_rule_pays_every_new_break_with_the_recurrent_penalty_and_once_without(self):
         never_lava = ((NO_LAVA,), (True,), ("lava",))
 
         # A step that breaks it again while still broken is free; the rule re-arms on the next.
-        self.assertEqual(rewards_of(*never_lava, [{"lava"}, {"lava"}]), [-0.5, 0.0])
-        self.assertEqual(rewards_of(*never_lava, [{"lava"}, set(), {"lava"}]), [-0.5, 0.0, -0.5])
+        self.assertEqual(rewards_of(*never_lava, [{"lava"}, {"lava"}]), [-5.0, 0.0])
+        self.assertEqual(rewards_of(*never_lava, [{"lava"}, set(), {"lava"}]), [-5.0, 0.0, -5.0])
         self.assertEqual(
             rewards_of(*never_lava, [{"lava"}, set(), {"lava"}], recurrent_soft_penalty=False),
-            [-0.5, 0.0, 0.0],
+            [-5.0, 0.0, 0.0],
         )
 
     def test_without_a_final_progress_runs_toward_the_states_where_no_answer_is_owed(self):
@@ -207,11 +211,11 @@ class RewardLayerTests(unittest.TestCase):
 
                 # The trigger costs one step of progress and the answer pays it back.
                 self.assertEqual(
-                    rewards_of(clauses, priorities, propositions, [{"x"}, {"y"}]), [-0.1, 0.1]
+                    rewards_of(clauses, priorities, propositions, [{"x"}, {"y"}]), [-1.0, 1.0]
                 )
                 self.assertEqual(
                     rewards_of(clauses, priorities, propositions, [{"x"}, set(), {"y"}]),
-                    [-0.1, 0.0, 0.1],
+                    [-1.0, 0.0, 1.0],
                 )
                 result = build_reward_machine(clauses, priorities)
                 self.assertIsNone(result.reward_machine.final_state)
@@ -224,15 +228,45 @@ class RewardLayerTests(unittest.TestCase):
         chain = (response("a", "b", "R0"), response("b", "c", "R1"), response("c", "d", "R2"))
         self.assertEqual(
             rewards_of(chain, (False,) * 3, names, [{"a"}, {"b"}, {"c"}, {"d"}]),
-            [-0.3, 0.1, 0.1, 0.1],
+            [-3.0, 1.0, 1.0, 1.0],
         )
 
-        # One event closes a rule and opens two: the rule weighs both (sum), so the step pays 0.1.
+        # One event closes a rule and opens two: the rule weighs both (sum), so the step pays 1.
         fork = (response("a", "b", "R0"), response("b", "c", "R1"), response("b", "d", "R2"))
         self.assertEqual(
             rewards_of(fork, (False,) * 3, names, [{"a"}, {"b"}, {"c"}, {"d"}]),
-            [-0.3, 0.1, 0.1, 0.1],
+            [-3.0, 1.0, 1.0, 1.0],
         )
+
+    def test_the_end_charge_and_the_well_charge_count_the_stages_still_owed(self):
+        names = ("a", "b", "c", "d", "lava")
+        chain = (
+            response("a", "b", "R0"),
+            response("b", "c", "R1"),
+            response("c", "d", "R2"),
+            NO_LAVA,
+        )
+        switches = RewardSwitches(reward_end_judgment=True)
+        machine = build_reward_machine(chain, (False,) * 4, switches).reward_machine
+        text = serialize_reward_machine(machine)
+        paper = parse_paper_reward_machine(text, propositions=names)
+
+        def play(steps):
+            runtime = RewardMachineRuntime(paper)
+            return [runtime.step({name: name in step for name in names}) for step in steps]
+
+        # The pay so far plus what the time limit would charge: 10 per stage owed, 11 with the
+        # stage's progress already paid, so each answer lifts the end total by one stage.
+        totals = []
+        paid = 0.0
+        for step in play([{"a"}, {"b"}, {"c"}, {"d"}]):
+            paid += step.reward
+            totals.append(paid + paper.judgment.end_charge(step.destination))
+        self.assertEqual(totals, [-33.0, -22.0, -11.0, 0.0])
+
+        # A hard break pays the well plus the same charge: three stages owed, not the one open rule.
+        well = play([{"a"}, {"lava"}])[-1]
+        self.assertEqual((well.destination, well.reward), (paper.rejecting_states[0], -40.0))
 
     def test_a_hard_goal_that_a_hard_rule_forbids_is_rejected(self):
         forbids_goal = {

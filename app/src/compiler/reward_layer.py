@@ -63,7 +63,8 @@ class _Product:
     alphabet: set[str]
     edges: list[_Edge]
     labels: dict[str, tuple[ClauseState, ...]]  # per product state, one label per clause
-    open_steps: dict[str, int]  # per product state, the chain-weighted steps its clauses still need
+    # per product state, the chain-weighted stages each clause still owes (the one owed measure)
+    open_steps: dict[str, tuple[int, ...]]
 
 
 @dataclass(frozen=True)
@@ -83,10 +84,10 @@ class RewardSwitches:
     """Which reward parts the machine pays; a part switched off pays 0.
 
     The defaults are the ``Configuration`` class defaults, and the field names are its field
-    names. Completion is never switched off. ``reward_promise_cost`` is the one part that is off
-    by default. The recurrent soft penalty changes the machine's
-    structure (see ``_rearm_violated``); the other switches only change the rewards (and, for the
-    end judgment, the machine's end lines).
+    names. Completion is never switched off. ``reward_end_judgment`` and ``reward_promise_cost``
+    are off by default. ``soft_break_cost`` is what one soft break costs, in pay units. The
+    recurrent soft penalty changes the machine's structure (see ``_rearm_violated``); the other
+    switches only change the rewards (and, for the end judgment, the machine's end lines).
     """
 
     reward_progress: bool = Configuration.reward_progress
@@ -96,6 +97,7 @@ class RewardSwitches:
     reward_end_judgment: bool = Configuration.reward_end_judgment
     reward_promise_cost: bool = Configuration.reward_promise_cost
     recurrent_soft_penalty: bool = Configuration.recurrent_soft_penalty
+    soft_break_cost: float = Configuration.soft_break_cost
 
     @classmethod
     def from_config(cls, CONFIG: Configuration) -> Self:
@@ -112,7 +114,7 @@ def build_reward_machine(
     soft rule's violated state takes the start state's edges, so each new break pays again
     instead of once per episode. Without a hard goal clause the machine has no final
     state (a rule-only task) and progress aims at the states where no clause is pending. With
-    ``reward_end_judgment`` the machine carries an end judgment for the promises still open where
+    ``reward_end_judgment`` the machine carries an end judgment for the stages still owed where
     the environment ends the episode; without it the runtime pays the flat time-limit penalty on
     a truncated step that did not terminate, and nothing on a termination. The other
     ``switches`` default to the ``Configuration`` class defaults.
@@ -361,7 +363,7 @@ def _clause_product(dfas: Sequence[dict], rearm: Sequence[bool]) -> _Product:
         for state, clause_states in machine["state_tuples"].items()
     }
     open_steps = {
-        state: sum(
+        state: tuple(
             steps[clause_state]
             for steps, clause_state in zip(clause_steps, clause_states, strict=True)
         )
@@ -467,9 +469,10 @@ def _price_edges(
 ) -> tuple[list[tuple[_Edge, float]], set[int]]:
     """Reward each edge from its destination's clause labels; also return the soft clauses paid.
 
-    An edge into the well pays the well reward plus the end charge of the state it leaves, so a
-    break always costs more than timing out there. Progress pays a soft clause where the clause
-    starts or stops waiting. That is a proxy, approximate both ways: it can call a clause paid
+    An edge into the well pays the well reward plus the end charge of the state it leaves (the
+    stages it still owes, ``_owed``), so a break always costs more than timing out there.
+    Progress pays a soft clause where the clause starts or stops waiting. That is a proxy,
+    approximate both ways: it can call a clause paid
     that changes nothing, or inert when it changes rewards. It follows the ``switches``: a part
     switched off pays 0, so a soft clause that only that part paid counts as inert. With the
     promise cost on, every edge out of a state with a hard promise open (the well and finishing
@@ -482,7 +485,7 @@ def _price_edges(
     paying: set[int] = set()
     priced = []
     for edge in edges:
-        hard, soft = _open_promises(labels[edge.source], soft_clauses)
+        hard, soft = _owed(product.open_steps[edge.source], soft_clauses)
         promise_cost = (
             Configuration.PROMISE_COST_REWARD if switches.reward_promise_cost and hard else 0.0
         )
@@ -516,7 +519,7 @@ def _soft_term(
 ) -> float:
     """A soft clause pays when it breaks, and how it ends when the task finishes."""
     broke = before is not ClauseState.VIOLATED and after is ClauseState.VIOLATED
-    term = Configuration.SOFT_BREAK_REWARD if broke and switches.reward_soft_break else 0.0
+    term = -switches.soft_break_cost if broke and switches.reward_soft_break else 0.0
     if finishing and switches.reward_soft_pending:
         term += _FINISH_REWARD[after]
     return term
@@ -528,10 +531,11 @@ def _progress(edges: Sequence[_Edge], product: _Product, finals: set[str]) -> di
     Each clause counts the longest path its own DFA still has to an accepting state (see
     ``_steps_to_accept``), times its chain weight (see ``_chain_weights``): a rule that hands off
     to another is worth the chain behind it, so the middle steps of a chain pay too. A state owes
-    the sum over its clauses, and finals owe nothing. The potential difference sums to 0 around
-    any loop, so nothing can be farmed. Edges into the well, and into a state that reaches no
-    target, pay no progress. The targets are the finals; a task without one aims at the states
-    where no clause is pending.
+    the sum over its clauses, and finals owe nothing. A soft clause that a step breaks pays
+    nothing on that step, so the break is never refunded by the stages the clause owed; the
+    loops that remain sum to 0 or less, so nothing can be farmed. Edges into the well, and into
+    a state that reaches no target, pay no progress. The targets are the finals; a task without
+    one aims at the states where no clause is pending.
     """
     inner = [edge for edge in edges if edge.destination != _WELL]
     labels = product.labels
@@ -539,10 +543,22 @@ def _progress(edges: Sequence[_Edge], product: _Product, finals: set[str]) -> di
         state for state, states in labels.items() if ClauseState.PENDING not in states
     }
     reachable = _reaching(_graph(labels, inner), targets)
-    owed = {state: 0 if state in finals else steps for state, steps in product.open_steps.items()}
+    owed = {
+        state: (0,) * len(steps) if state in finals else steps
+        for state, steps in product.open_steps.items()
+    }
+
+    def paid_stages(edge: _Edge) -> int:
+        return sum(
+            before - after
+            for before, after, label in zip(
+                owed[edge.source], owed[edge.destination], labels[edge.destination], strict=True
+            )
+            if label is not ClauseState.VIOLATED
+        )
 
     return {
-        edge: Configuration.PROGRESS_REWARD * (owed[edge.source] - owed[edge.destination])
+        edge: Configuration.PROGRESS_REWARD * paid_stages(edge)
         if edge.destination in reachable
         else 0.0
         for edge in inner
@@ -613,34 +629,36 @@ def _structure(
         final_state=numbers.get(_FINAL),
         rejecting_states=(numbers[_WELL],) if _WELL in numbers else (),
         transitions=tuple(transitions),
-        judgment=_end_judgment(numbers, product.labels, soft_clauses),
+        judgment=_end_judgment(numbers, product, soft_clauses),
     )
 
 
-def _open_promises(states: tuple[ClauseState, ...], soft_clauses: Sequence[int]) -> tuple[int, int]:
-    """The hard and soft clauses still pending in one product state."""
-    open_clauses = [clause for clause, label in enumerate(states) if label is ClauseState.PENDING]
-    soft = sum(clause in soft_clauses for clause in open_clauses)
-    return len(open_clauses) - soft, soft
+def _owed(steps: tuple[int, ...], soft_clauses: Sequence[int]) -> tuple[int, int]:
+    """The hard and soft stages a state still owes: the stages the progress pay counts.
+
+    ``steps`` is one product state's ``open_steps``. The end judgment and the end charge on the
+    edges into the well both charge by this count, not by the clauses still open.
+    """
+    soft = sum(steps[clause] for clause in soft_clauses)
+    return sum(steps) - soft, soft
 
 
 def _end_judgment(
-    numbers: dict[str, int],
-    labels: dict[str, tuple[ClauseState, ...]],
-    soft_clauses: Sequence[int],
+    numbers: dict[str, int], product: _Product, soft_clauses: Sequence[int]
 ) -> EndJudgment:
-    """Split the numbered states into accepting ones and ones with promises still open.
+    """Split the numbered states into accepting ones and ones that still owe stages.
 
-    A state is accepting when no clause is pending. A soft rule broken for good was paid when it
-    broke, so it counts as kept; the well and the final are in neither list. In a machine with
-    a final every other state has a hard clause open (the goal or a hard rule), so none accepts.
+    A state is accepting when it owes nothing, that is, no clause is pending. A soft rule broken
+    for good was paid when it broke, so it counts as kept; the well and the final are in neither
+    list. In a machine with a final every other state has a hard clause open (the goal or a hard
+    rule), so none accepts.
     """
     accepting: list[int] = []
     pending: list[tuple[int, int, int]] = []
     for state, number in numbers.items():
         if state in {_WELL, _FINAL}:
             continue
-        hard, soft = _open_promises(labels[state], soft_clauses)
+        hard, soft = _owed(product.open_steps[state], soft_clauses)
         if hard or soft:
             pending.append((number, hard, soft))
         else:
