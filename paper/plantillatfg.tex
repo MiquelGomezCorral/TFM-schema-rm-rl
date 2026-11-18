@@ -206,11 +206,40 @@ The automated construction of Reward Machines (RMs) in Reinforcement Learning ha
 \chapter{Introduction}
 \label{chap:introduction}
 \section{Motivation}
+Reward shaping is hard
+Right now you need to know a lot and tweak a lot the reward of and RL system to get it right so a tool that would improve based on formal methods is needed to remove the need of technical knowledge and make it more accessible to non-technical users.
+
+since reward shaping is needed, and improves the performance of RL systems, a tool that leverages formal methods to automate this process is essential. why? bc perople normally handcraft reward functions, which is time-consuming and requires expertise. Automating this process can save time and make RL more accessible.
+
+Since a lot of stuff are already done by LLM based programming assystants, there was something those could do to help developers and researches on this behalf
+
+---
+That for the technical stuff, we whta we also want is to bring AI to humans, in this sense, we also want to acchieve something that makes AI models, one step closer to human preferences that is one of the main motivations on this. bringing close to human + improving the development and performace of rl systems without human experts while getting a robust enough solution that does not depend on the incertainty of LLMs and their hallucinations.
+
+---
+these points need to be polish, take more from the notes and then all structured properly.
+
+
 \section{Objectives}
+This sectino can be infered from the rest of the paper
+
 \section{Expected impact}
+Make reward shaping and taks definition more accessible to non-technical users, and improve the performance of RL systems by providing a more robust and formal approach to reward machine generation -> better reward shaping
+
+
+
 \section{Structure of the paper}
+Sota 
+then what we proposue in words
+then the method + some implementation details, this part presented with examples and diagrams that show what is done in each step and how easier to understand
+Some limitaions along the way
+then the results and the conclusions   
+
+we finish with open work and leave at the end, on the apendix more example and details on the implementation for reproducibility purposes and for better clarification on whatet is done in each step of the method.
+
 \section{Scope and limits of the study}
 % Scope facts for the final text (no prose yet):
+% We start from the work done of other paper, which we had to recreate almost from scratch with the paper and the small code that was available (ARM-FM Paper. <use on the section the right paper name>), that said
 % - FARM takes ARM-FM's setting and improves only the generation of the Reward Machine (RM). The
 %   labelling functions and the state descriptions and embeddings follow ARM-FM and are not
 %   evaluated. The comparison with ARM-FM is isolated to RM generation.
@@ -218,11 +247,19 @@ The automated construction of Reward Machines (RMs) in Reinforcement Learning ha
 %   the paper, no licence) holds prompts, machines and labelling code for four MiniGrid tasks only.
 %   The baseline is rebuilt from the paper and that material; the authors did not answer the
 %   contact attempts; the results may differ from theirs.
+
+% Since we use LLMs, we decided to work with small - cheap - accessible models, not that smart yet good enough to show the point of the paper. the used model can influence the results since part of them still hold on LLMs, yet we do give a setup that hold for all or most of the LLMS used -> check thin out when the results are in
+
+
 % - FARM generates with small models (generator deepseek-v4.1-flash and critic glm-5.3-flash, as
 %   resolved from the environment on 2026-10-29; reasoning level none and three attempts are the
 %   defaults of app/src/config/config.py). ARM-FM used GPT-4o.
+
+
+% We will use some templates defined by repository as our building blocks for the LRMs. It is left for feature work to increase this or go one step further and work without them. 
 % - LTLf over finite traces; the eight Declare templates of IBM nl2ltl; no RM minimisation
-%   (future work); prompt ablations are planned.
+
+% This section is poorly writteng, needs to be contextualized and improved, but the poinst are more or less okey
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                               STATE OF THE ART                              %
@@ -336,20 +373,36 @@ The ARM-FM paper releases no code. Its appendices print the generator and critic
 \section{Human preferences}
 An RL agent pursues whatever its reward pays for, so the reward is the way a person tells the agent what to achieve \cite{sutton2018reinforcement}. AI alignment aims to make AI systems behave in line with human intentions and values \cite{ji2025alignment}. For an RL agent, one part of this aim is a reward that says everything the person means: the goal, the order of the steps, the rules that must not be broken and the preferences to keep when possible.
 
+% I don't know if we should actually mention farm in this part of the paper or it's rather just say a task rarely is a single chain of steps. And so we want to let the user step for things in natural language at least, you know, rather than mentioning LTLF and farm. 
 A task is rarely a single chain of steps. FARM lets the user state four things in natural language: what to do, in which order, what to do in response to an event, and what must never happen. The temporal relations of order, response and prohibition are the vocabulary of the LTLf templates of Section~\ref{sec:sota-ltl}.
 
 Each statement is either hard or soft. A hard statement must hold for the task to count as done. A soft statement is a preference: the agent may give it up, at a cost. This split between constraints and preferences comes from planning (Section~\ref{sec:sota-preferences}) and is carried here into Reward Machines.
 
 \section{No human expert}
+
+% Same here, I don't know if we should just say that we want that our method or we want to get a method that aims to generate without human experts, without actually mentioning farm. Because here we are just literally describing and then a critic model reach blah and then blah so we are literally saying something about the method and this is for me it's not a proposal for me it's just describing part of the method and the same thing happens in the other two parts of this section. 
 ARM-FM relies on a human or on a second model to verify its machines (Section~\ref{sec:critique}). FARM aims at generation without a human expert. The language model only chooses clauses from a fixed catalogue, and a compiler builds the machine from them, so the properties of the machine follow from the construction and do not depend on a reviewer. A critic model still reads the result, but it can only flag clauses; the generator retunes them, and the critic never edits the machine.
 
 \section{Formal and robust generation: Schemas}
 \label{sec:schemas}
 FARM limits the role of the language model. Its answer is bounded: instead of writing a Reward Machine, the model only picks patterns from a fixed catalogue, the Declare templates of Section~\ref{sec:sota-ltl}, and fills them with the propositions of the environment. Any other answer is rejected. Everything after that choice is formal and deterministic. The machine is built from the chosen patterns alone, without the meaning of the propositions, so tasks of the same shape, such as any ``first $a$, then $b$, then $c$'', receive the same machine with only the propositions exchanged. These task schemas (Section~\ref{sec:task-schemas}) make the result predictable and confine the variability of the language model to that one choice. The rewards are designed so that the agent cannot earn reward by going round in circles, and every machine is checked for such loops.
 
+% Same as before, you have to get the real definition of a proposal inside one of these papers because for me a proposal is not a description of the of the thing you are doing with exact names and components but rather what you want to achieve based on what you have. So in this case you can mention the base paper, the IRMFM, but you should not actually mention Farm. You can say things that the previous methods do wrongly and you want to improve, but I don't think you should literally say the solution to them because we are going to present that later. You should not also mention perhaps the tools, the tools that have not been used in previous methods, for example LTLF. Okay, but you mentioned it here that the temporal relations of order response and pro and prohibitions are the vocabulary of the LTLF templates. Like what the fuck you're just mentioning words that someone that is reading this part will not understand. Therefore this section should be more of a a proposal rather than a description of the paper. And instead of mentioning things such as the LTLF, I would say things like using tools that can encode temporary relationships of order response and prevision, you know, and also mention that we will need a translator from the human intentions to this language and therefore you can present here in the proposal something very cool that is the following. 
+% ```##### Understanding human preferences, temporal relations... 
+%Another thing we need to solve in this is how to catch the human preferences and %underscore any temporal relationship, put up any kind of other condition in the right %shape, so everything can be compiled for this. No other tool other than LLMs or %foundational models, whatever you want to call them in this paper, or their solution, %but state here that what we want to do is really underscore the human preferences.
+%''' But we need to present this properly and not, as I said it, like this has to be properly stated and shaped. 
+
+% Then, on the first section of the next chapter, we are going to solve and say how we solve these things with the right tools. 
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                     FARM                                    %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% !!! ATTENTIO CLAUDE: This chapter has been written before the last changes of the pipeline. Most of what is written is holding and does not need to get updated, but since the last experiments flagged a lot of problems with the current farm process, we need to improve and change how we describe stuff in here. Most likely just changing rather than improving, but we also have to add new parts that have been added and Most of the work goes into into our part of the work which makes sense and is the last part of the pipeline that is deterministic before the critic. Inside this part, the section that got most updates was the rewards things, so put a close look at that part. and review everything carefully, every fact, every stop, all by keeping the nice and understandable flow of the text, not super technical but still readable and giving all the facts as they have, if formulas need to be applied, give them diagrams where they should go and all the writing tips you have. 
+
+% Also, many parts of this could go into a section in the appendix. I would be in the B appendix, like in the very second one, that has the implementation details. Some parts are not really needed in the explanation of how this process works and are more sm are more about what we did to make it work. Therefore, it's not about the method, it's about the implementation behind it. And I don't think it should appear in the main part of the paper, therefore you can't refactor stuff from here to the appendixes. 
+
+% Also for the examples and everything you should definitely get the wordings for examples and names right and not something that an robot would do. A robot would start with IDs and numbers instead of names and tags that are easily recognizable. That's what you should do. When you name something like example 2 maybe if you have not mentioned it in a long time recall what it was if you have a better name than example 2 change it to example wood example whatever you know give it them a name make them recognizable not super expressive with a lot of wording you can make perhaps only one or two words One word could be nice, two words is okay as well, and that is something you should keep along the way, not only for steps, not only for examples, not only for those stuff, but in general keep those ideas. Make people reading humans and not machines. 
 
 \chapter{FARM: A Formal Approach to Reward Machine Generation}
 \label{chap:farm}
@@ -359,6 +412,10 @@ FARM limits the role of the language model. Its answer is bounded: instead of wr
 % TODO: not yet
 % Draft notes kept from the earlier text: say what is used and why (why formal methods, what they
 % are meant to achieve) and point to what the state of the art chapter already stated.
+
+
+% Here what I suggest we do is start from what I mentioned earlier in the proposal, because the proposal again is not a list of how to solve things, but rather what we want to achieve from what has been done. And now, in the introduction of this part, we have to say how we are going to solve the Facts and things we set on the proposal. 
+% Like we say, for understanding the human preferences or their and blah blah we use LLMs. To encode these preferences we use LTLF. To translate this into something the LLM can easily understand, we use the templates from IBM NL to LTLF. To convert that LTLF into something we can use, we use flat. And then we add our tweaks to make the reward machines really encode everything we have.  or similar you know
 
 \section{Global overview of the pipeline}
 \label{sec:overview}
@@ -449,11 +506,11 @@ Three tasks in the DoorKey environment of ARM-FM run through the chapter. The en
 \end{enumerate}
 Each step ends by applying itself to the three tasks, and its output is the input of the next step: Step~1 gives the clauses and their formulas, Step~2 the automata, Step~3 their product, Step~4 the Reward Machine and Step~5 the verdict of the critic.
 
-\section{Step 1 · A language model chooses template clauses}
+\section{Step 1 · Task intepretation and formalization}
 \label{sec:step1}
-The first step reads the task and the description of the environment and returns one LTLf formula per clause (Figure~\ref{fig:step1}).
+In the first step, the task and the description of the environment are understood and transformed into a formal representations (Figure~\ref{fig:step1}).
 
-A language model first chooses the clauses. A clause names one of eight templates, the propositions it applies to and a priority, hard or soft. The output is restricted to this form, so nothing else reaches the compiler. The template of each clause then writes its LTLf formula.
+A large language model first chooses the \textbf{clauses} that translate the task into the IBM representation (expanded by our method). A clause names one of eight \textbf{templates}, the \textbf{propositions} it applies to and a \textbf{priority, hard or soft}. The output is restricted to this form, so nothing else reaches the compiler. The template of each clause then writes its LTLf formula.
 
 \begin{figure}[H]
 \centering
@@ -478,17 +535,27 @@ A language model first chooses the clauses. A clause names one of eight template
 \draw[farm flow] (cl) -- (ibm);
 \draw[farm flow] (ibm) -- (ltl);
 \end{tikzpicture}
-\caption[Step 1 of FARM]{Step 1. The language model chooses the clauses, each a template with its propositions and a priority, and the template of each clause writes its LTLf formula. A stack stands for one item per clause.}
+\caption[Step 1 of FARM]{Step 1. The language model chooses the clauses, each a template with its propositions and a priority, and the template of each clause writes its LTLf formula.}
 \label{fig:step1}
 \end{figure}
 
 \subsection{IBM nl2ltl}
-IBM's nl2ltl \cite{fuggitti2023nl2ltl} converts a sentence into an LTLf formula. It keeps one class per Declare template \cite{pesic2006declarative}; each class holds the LTLf definition of its template and builds the formula from the propositions given to it. Its default engine asks a GPT model for the template and its arguments. FARM replaces that engine and keeps the template classes (Appendix~\ref{app:implementation}).
-% What will go here: how the engine and the template classes fit together, and why the default engine is not used.
+IBM's nl2ltl \cite{fuggitti2023nl2ltl} is a tool that goes from natural language to LTLf. In short, an LLM chooses which templates to use, then each template has a fixed direct mapping into LTLf formulas, where the only thing that changes are the propositions. 
+
+In the pipeline, all the work comes from the LLM choosing the right templates and filling in the appropriate propositions. The templates are fixed and the LLM only says which one to use and which propositions to fill in. That is why they are called templates: they are a fixed pattern with holes to fill in.
+
+Now, the agent has to solve the complex task of understanding the natural language, the temporal requirements and the dependencies between the task parts: steps, rules and goals.
+
+Its default engine asks a GPT model for the template and its arguments. FARM replaces that engine and keeps the template classes (Appendix~\ref{app:implementation}). We implemented a few extra engines that allow other LLM providers to be pluged id, plus the prompts so any developer can use their own LLM-based assistants to do the task (LLMs which tend to be cheaper and smarted such as Claude, Codex, etc.). This also allowed the experiments to use the same Foundational Model as the Base paper (Arm-FM) to have a fair comparison.
+
+Furthermore, the original code only had five of the eight templates, so FARM adds the other three, and in the future, more can be added but the proper LTLf formulas have to be provided while keeping in mind that they really need to be valid ones that provide something the others can not do by themselves.
+% Maybe these two sections move them to 'implementation details' + the 'new templates' to it or to the 'future work'
+
 
 \subsection{Templates}
 Table~\ref{tab:templates} lists the eight templates with their LTLf definitions in IBM's library.
 % Task LTLs and RM examples go to Appendix~\ref{app:templates}.
+
 
 \begin{table}[H]
 \centering
@@ -509,26 +576,47 @@ ChainResponse$(a,b)$ & $\mathrm{G}\,(a \rightarrow \mathrm{X}\,b)$ & every $a$ i
 NotCoExistence$(a,b)$ & $\mathrm{F}\,a \rightarrow \neg\,\mathrm{F}\,b$ & if $a$ ever happens, $b$ never does & rule \\ \bottomrule
 \end{tabular}
 \end{table}
+% !!! IMPORTANT, I've seen a few tables with different formats, you have to check them all and make them equal: same place of the description (below the table) same layout / lines / dividers / size of text...
 
-\subsection{Two kinds of templates: goals and rules}
-A clause is a goal if a step in which no proposition holds leaves it unsatisfied, and a rule if that step leaves it satisfied. Existence and ExistenceTwo are goals: they ask for something to happen. The other six templates are rules, Precedence included: they hold while nothing happens, and a later event may break them. The compiler applies the test to the DFA of each clause, so no list of templates is needed.
+% here we need a small reference on how to read the LTLf formulas, and a small explanation of the kind temaples that can look confusing for example the Diferencia entre Response y Precedence
+%```
+%it would be for this response that a B can appear without an A, but if an A appears %since there is a depth now, a B must appear in the future, while on the precedents A %can appear with no B, but if any B appears, it means that an earlier A had been %created.
+%```
+% and others
+
+
+
+\paragraph{Two kinds of templates: goals and rules:} A clause is a goal if a step in which no proposition holds leaves it unsatisfied, and a rule if that step leaves it satisfied. Existence and ExistenceTwo are goals: they ask for something to happen. The other six templates are rules, Precedence included: they hold while nothing happens, and a later event may break them. The compiler applies the test to the DFA of each clause, so no list of templates is needed.
+% Select a better tag than paragraph since is not fitting nice here
+
 % Goals versus rules: one test. What will go here: why the distinction matters for final states and for progress.
 
 \subsection{Adaptation to Reward Machine generation (prompt)}
+% same as before, this whole section could go on implementation details, this so we keep the section on what the method does rather that what we worked out to do it / implement it
 The default prompt of IBM's engine is a few-shot list that allows five of the eight templates, with examples about business applications such as Slack or Salesforce, no definitions and no description of the environment. The prompt of FARM covers all eight templates. It gives the model the catalogue with a definition of each template, a table from typical phrases to templates, worked examples, the rules for choosing hard or soft, the environment description in Markdown, the task and, on a retry, the comments of the critic. The propositions the model may use come from the environment description, so the same prompt serves any environment.
 % What will go here: the prompt sections in order, with an excerpt; the planned prompt ablations.
 
 \subsection{Hard and soft clauses}
-Each clause carries a priority that the model chooses for that clause alone. The model marks a clause soft only when the task uses explicit preference language such as ``if possible'' or ``ideally''; every other clause is hard. The priority never changes the formula. A hard clause must hold for the task to be completed. A soft clause is a preference: breaking it costs reward but does not prevent finishing (Step~4). IBM's templates have no such notion, since ``never touch the lava'' and ``if possible, never touch the lava'' are the same Absence clause, so the priority has to come from the prompt.
+% this can stay here since is an important part of the method. the prompt itself can go to implementation, but the current text here stays bc is good
+Each clause carries a \textbf{priority that the model chooses for that clause alone}. The model marks a clause soft only when the task uses explicit preference language such as ``if possible'' or ``ideally''; every other clause is hard. The priority never changes the formula. A hard clause must hold for the task to be completed. A soft clause is a preference: breaking it costs reward but does not prevent finishing (Step~4). IBM's templates have no such notion, since ``never touch the lava'' and ``if possible, never touch the lava'' are the same Absence clause, so the priority has to come from the prompt.
 % What will go here: the wording the prompt uses to tell hard from soft, with the examples.
 
 \subsection{Task schemas}
 \label{sec:task-schemas}
-Steps 2 to 4 use only the template and the priority of each clause and the place each proposition fills, never what a proposition means. Tasks with the same clauses up to the propositions therefore receive the same machine with the names exchanged, and the clauses with the propositions left open form a task schema. Each running example stands for its schema: a task such as ``gather wood, then stone, then iron'' would have the clauses of example 1 with \texttt{has\_wood}, \texttt{has\_stone} and \texttt{has\_iron}, and the same machine. The priority belongs to the schema, so example 3 with a hard Absence would give a different machine, with a rejecting well. Two tasks of the same shape share a machine only when the generator gives them the same clauses.
+With this method of generation, we acchieve something very important: tasks with the same shape, get the same machine but with different propositions. Same shape, same nodes, same transitions, same rewards. Only change the propositions on those transitions.
+
+% say here what (which) steps are '2' aed '4', same as '3' the examples or whatever, give them a name that makes sense, and somenone can recognize do not name just names and explain them next too it. + this paragraph is hard to read, simplify the wording and slip it into a few sub paragrapsh
+Steps 2 to 4 use only the template and the priority of each clause and the place each proposition fills, never what a proposition means. Tasks with the same clauses up to the propositions therefore receive the same machine with the names exchanged, and the clauses with the propositions left open form a task schema. Each running example stands for its schema: a task such as ``gather wood, then stone, then iron'' would have the same shape as ``attend the cliendt prepare the order, serve the food'' . ins this case: 
+
+% Show the templates & the LTLfs so you can show both examples have the same shape and therefore the same 'schema'. do not show the machine since that depends on the priority
+
+The priority belongs to the schema, so example 3 with a hard Absence would give a different machine, with a rejecting well. Two tasks of the same shape share a machine only when the generator gives them the same clauses.
 
 \subsection{Running examples: from task to formulas}
 \label{sec:run-step1}
 Table~\ref{tab:running} gives the clauses that the language model chose for each running example and the LTLf formula that the template of each clause wrote. The sequence of example 1 becomes three goals, one Existence for each step, and two Precedence rules that fix their order. Example 2 joins the goal with a ChainResponse rule, the template for ``right away''. In example 3 the word ``ideally'' makes the Absence of a lost key soft, and its formula is the same as that of a hard Absence.
+
+% I would tell you redo these examples because at least the first one is not holding for what I see in life in the running tests. The first task has three existences and I would say the LLM running on the pipeline we would only select the last precedence, sorry, the last existence and both precedents. instead of three existence and two precedence. The existence has key and existence door open are more or less gathered by the precedence clauses and the existence goal. Therefore three clauses are enough for this task. Remove the other two. I would say that Task two and three hold as they are right now, so you can keep them. But ask the agent running staff to generate them again. 
 
 \begin{table}[H]
 \centering
