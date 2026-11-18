@@ -664,6 +664,7 @@ FL-AT, the Formal Language--Automaton Transmogrifier \cite{transmogrifier2020}, 
 
 MONA \cite{henriksen1995mona} is a decision procedure for that logic: to decide a formula it builds the minimal DFA of its models. FARM uses a fork of FL-AT to get more information from the inner states of this tool, such as the internal structure of the automaton or how MONA flags different states (Appendix~\ref{app:implementation}).
 % Also here, check this last sentence I added because we do add extra stuff and we do change the mona to get information out of the different stages of the of the process, but I don't know exactly what it is, how it matters and everything, so more or less explain it here. what we are getting and then references not reference the next one of the next sections where we use this and it is on the step four our post process because we get part of this information out of Mona to get better reward machines just state which part of the inner state we get And for which section we use it, and more or less for which intention, briefly everything. 
+% We need to explain here on what is mona based: what it uses to convert the LTLf into a DFA, and how it does it.
 
 % What will go here: the encoding of LTLf in MONA's input and the format of the automaton it returns.
 
@@ -815,7 +816,12 @@ The reward of an edge counts the clause automata that accept after the step, so 
 
 \section{Step 4 · Post-process}
 \label{sec:step4}
-The fourth step is specific to FARM and turns the product into a Reward Machine. For every clause, each product state is labelled as satisfied, pending (not yet satisfied but still possible) or violated (no longer satisfiable). The labels are computed exactly, by reachability on the DFA of each clause. Hard clauses prune the machine and decide the final states, soft clauses only change rewards, and the rewards are assigned last (Figure~\ref{fig:step4}).
+The fourth step is specific to FARM and turns the product into a Reward Machine that is robust and efficient. In essence, on this step FARM identifies final states, sends failed states to a rejecting sink, prunes unreachible states, merges MONA's start states, rewires parts of the machine for \texttt{hard} clauses, and assigns rewards to each transition.  
+
+% This text was on this setion and made no sense, it was nos explaining in a brief the whole stef and just explained how A PART of the whole process works, nonesenes. Move this information where it belongs if not duplicated. such as on the 'States manamement' where you can rewrite it better and wiret it nicely
+% ```
+% For every clause, each product state is labelled as satisfied, pending (not yet satisfied but still possible) or violated (no longer satisfiable). The labels are computed exactly, by reachability on the DFA of each clause. Hard clauses prune the machine and decide the final states, soft clauses only change rewards, and the rewards are assigned last (Figure~\ref{fig:step4}).
+% '''
 
 \begin{figure}[H]
 \centering
@@ -840,18 +846,62 @@ The fourth step is specific to FARM and turns the product into a Reward Machine.
 
 \subsection{Merging MONA's start state}
 \label{sec:start-merge}
-MONA gives each rule clause a ``no step yet'' start that is left on the first step and never re-entered. When that start goes to the same state as its idle successor on every input, the successor becomes the start and the old start is dropped. Otherwise the machine is unchanged. Without the merge, an idle first step would still pay progress.
+As advanced in the previous section, MONA gives each rule clause a ``no step yet'' start that is left on the first step and never re-entered. When that start goes to the same state as its idle successor on every input, the successor becomes the start and the old start is dropped. Otherwise the machine is unchanged. Without the merge, an idle first step would still pay progress.
+
+% WE need to explain here how this state is identified and how it is merged with the idle successor. We also need to explain why this is important for the reward assignment (If it is at all), and why it is not a problem to merge them. we aim to redce the size of the final RM / simply the RM
+
 % What will go here: the merge conditions and their effect on the test tasks.
 
-\subsection{Identifying final states}
+\subsection{States}
+% This section may need a full rewrite dude, is a bit off but part of the information is right
+% Get a right explainaton of the 'satisfied', the other two can be inferred from it. 
+For every clause, each product state is labelled as satisfied (as when the automata accepts the input), pending (not yet satisfied but still possible) or violated (no longer satisfiable). The labels are computed exactly, by reachability on the DFA of each clause. 
+
+% This fact I dont think belongs here, check where to add it
+Hard clauses prune the machine and decide the final states, soft clauses only change rewards, and the rewards are assigned last (Figure~\ref{fig:step4}).
+
+\paragraph{Identifying final states}
 A final state is a state in which every hard clause is satisfied, and only a task with a hard goal has one. Soft clauses never affect the final condition: a preference broken on the way still allows the task to finish, at a cost.
 % What will go here: a worked example with one hard goal and one soft rule.
 
-\subsection{Sending failed states to a rejecting sink}
+\paragraph{Sending failed states to a rejecting sink}
+% This will need update ont he values and part of the explanation, but the idea is right.
 An edge into a state where a hard clause is violated goes to a single shared well, a rejecting state that ends the episode with a penalty. The penalty adds to the $-1$ of the break the charge for every item open in the state the edge leaves (Section~\ref{sec:well-charge}), so the edges into the one well differ in their reward. In a task with a hard goal, the same happens to states from which no final state can be reached. A hard clause that is only pending, such as a Response still waiting for its answer, blocks finishing but does not end the episode.
 % What will go here: the well in the example machines and why one well is enough.
 
 \subsection{Reward assignment}
+% After the last changes this section became much more complex. I think a full rewrite is needed. Most ideas still hold, but have to bet shaped aroun the 'getting closer to finishing a task or a rule pays, and stepping back from it or getting a new thing to do costs.' and the 'Finished > started > not started >= soft break > hard break' ordering. Also now all are units rather than decimals. we still aim for no loops, no farming etc. but now the way in wihch thins are computed has changed and we still try to get the reward shaping by getting closer to the goal or 'completing tasks'. now we needed, after empirical evidence showed how fragile the exaact value assigment is, to re asign the exact values and tune them to follow the inequalieties. as it will be seen on the experimentation (I think, I dont know yet if we will show it all or just mention it) if any of the inequalities did not hold, the agents:
+% - decided to not do anything, since they 'were scared of starting the task and fail' <inequalty not holded>
+% - farming bc of loops <inequalty not holded>
+% etc <inequalty not holded>
+% ...
+% http://192.168.1.225:3200/TFM-schema-rm-rl/reward-shaping-audit/ and http://192.168.1.225:3200/TFM-schema-rm-rl/reward-rules/ have a lot of these for the new rules. get to know only the onse that matter. here is the list
+% ```
+% [23:33:54] These are the rules you said go in the paper (17 Nov, 19:03 and 19:12). All of them stay in the code for now; you'll clean up later.
+
+% **In the reward section of the paper**
+% - **R1:** progress pay for each stage done.
+% - **R2:** completion pay when the task is finished.
+% - **R3:** the well, a flat -1 for breaking a hard rule.
+% - **R5:** a soft rule broken costs a fixed amount.
+% - **R6:** a soft rule broken again costs again.
+% - **R7:** finishing with a soft rule still pending costs extra.
+% - **R4 and R8:** one optional pair, off by default. R4 is the well's charge for what's still open; R8 is the end judgment. Your reason: breaking a rule already costs more than letting the episode run out.
+
+% **In other parts of the paper**
+% - **R16:** what ends the episode, stated as a fact rather than a rule.
+% - **R11 and R12:** hard structure and the gate that stops loops from paying. They go in the part after FL-AT builds the first machine, not the reward section.
+% - **R13:** where the reward comes from, as something users can change.
+
+% **Left out of the paper**
+% - **R14:** discount.
+% - **R15:** scaling.
+% - **R17:** ARM-FM pay.
+% - **R9:** the flat time-limit penalty.
+% - **R10:** the promise cost. You called it "nonsense, we just get rid of it", and it was marked for deletion. On 18 Nov you brought the same idea back as a small charge on the machine's idle loops while a promise is open, and it's being tested on vs off in round 6. If the test shows it earns its place, its paper placement needs your call again.
+% '''
+% STill cover all the details that are really important, being carefull with the implementaion ones etc
+
 The rewards follow one rule for every task: getting closer to finishing a task or a rule pays, and stepping back from it or getting a new thing to do costs. The new thing to do can come from the agent, which broke a rule, or from the environment, which changed so that the instructions now ask for a reaction. FARM treats the task as a to-do list. Every clause, goal or rule, hard or soft, is an item that counts the steps it still needs. Each step done pays $+0.1$, and each step back or step of new work costs $-0.1$. When the episode ends, each item still open is charged, $-1$ if it is hard and $-0.5$ if it is soft, and a goal is a hard item. A few constants complete the rewards (Table~\ref{tab:rewards}).
 
 Progress follows the potential-based form of Ng et al.~\cite{ng1999policy}: a transition from $u$ to $u'$ adds
@@ -973,6 +1023,7 @@ The graph reads as in Section~\ref{sec:rule-only}: u1 is a state to leave, and p
 
 \subsection{Running examples: from the product to the Reward Machine}
 \label{sec:run-step4}
+% I dont know what this comments below this one say, those were not written by me, the human. Yet I want to say that: follow them if them make sense (be critic) and again update this section bc it needs a rewrite, simplicication / the righ examples
 % TODO after the to-do-list rewards (Slice 3 of feat/rule-only-rewards) are committed: rebuild rm-ex1..3 (.tex and
 % .txt) from the stored clauses, no LLM call (.git/agent-memory/plans/rule-only-rewards/thesis-examples-s3/), and
 % update the text below, Listing lst:farm-example1 and Appendix G. Rebuild checked 2026-11-11 against the old code:
@@ -1021,9 +1072,9 @@ Example 1 shrinks from 14 states to five. State u1 is reached after the key, u3 
 \label{fig:ex1-rm}
 \end{figure}
 
-\section{Step 5 · The critic: review, retries and thinking level}
+\section{Step 5 · The critic}
 \label{sec:step5}
-The fifth step shows a second model, the critic, the task, the clauses and the compiled machine together with the warnings of the compiler. The critic accepts the result or flags the clauses it judges wrong, and on a flag the generator tries again with the comments of the critic (Figure~\ref{fig:step5}). The critic never edits the machine.
+The fifth step shows to the critic (a second LLM), the task, the clauses and the compiled machine together with the warnings of the compiler. The critic accepts the result or flags the clauses it judges wrong, and on a flag the generator tries again with the comments of the critic (Figure~\ref{fig:step5}). The critic never edits the machine, it just accepts or rejects the result.
 
 \begin{figure}[H]
 \centering
@@ -1044,31 +1095,41 @@ The fifth step shows a second model, the critic, the task, the clauses and the c
 \label{fig:step5}
 \end{figure}
 
+Since both LLMs can hallucinate, a mistake on the accepted version if both a failure by the generator and the critic: one for doing it and the other for not detecting it. The guarantees of the machine come from the compiler (Chapter~\ref{chap:proposal}), not from the LLMs. Yet, the different gates and what was observed on the running examples suggest that FARM is robust enought to produce correct machines in practice (Section~\ref{sec:run-step5}).
+
 \subsection{A review step for the final version}
 Only the choice of clauses is non-deterministic, so a single review at the end covers the whole pipeline.
 % What will go here: what the critic receives and what it is asked to check.
 
-\subsection{LLMs can hallucinate}
-A critic model can hallucinate as well as the generator \cite{huang2025survey}. Its verdict therefore only decides whether the generator tries again; the guarantees of the machine come from the compiler (Chapter~\ref{chap:proposal}).
-% What will go here: a case where the critic accepted a wrong clause set or rejected a right one.
-
-\subsection{Different LLMs for generation and critique}
-Generator and critic are configured separately. By default the generator is deepseek-v4.1-flash and the critic glm-5.3-flash, so the two roles use different models.
-% What will go here: the effect of using the same model in both roles.
-
-\subsection{Number of iterations}
-The generator has three attempts by default, configurable from one to ten. Only rejections by the critic use up an attempt; a failure of the provider is retried without cost.
-% N iterations; recommended: X.
 
 \subsection{Fixing mistakes}
 When the critic flags a clause, the generator receives the comments in its prompt and proposes new clauses, from which the compiler rebuilds the machine.
 % What will go here: an example of a flagged clause set and its repair.
 
+\subsection{Different LLMs for generation and critique}
+Generator and critic are configured separately. By default the generator is deepseek-v4.1-flash and the critic glm-5.3-flash, so the two roles use different models.
+% What will go here: the effect of using the same model in both roles.
+
+
 \subsection{Flagging clauses whose states cannot occur in the environment}
-Some clauses lead to machine states that the environment can never reach, for example a door that opens before the key is held. The critic flags these clauses, and the generator retunes them. The critic does not delete states.
+Some clauses lead to machine states that the environment can never reach, for example a door that opens before the key is held. The critic flags these clauses, and the generator retunes them. Again, the critic does not delete states, and if they are not possible reachible on the real state, is fine. More about this on the next chapter (Section~\ref{sec:limitations}).
 % What will go here: an example from the DoorKey constraints. Simplify the machine.
 
-\subsection{Thinking level of the models}
+% idea: reduce the number of final states.
+
+
+\subsection{Things to keep in mind}
+
+\paragraph{LLMs can hallucinate}
+A critic model can hallucinate as well as the generator \cite{huang2025survey}. Its verdict therefore only decides whether the generator tries again; the guarantees of the machine come from the compiler (Chapter~\ref{chap:proposal}).
+% What will go here: a case where the critic accepted a wrong clause set or rejected a right one.
+
+\paragraph{Number of iterations}
+The generator has three attempts by default, configurable from one to ten. Only rejections by the critic use up an attempt; a failure of the provider is retried without cost.
+% N iterations; recommended: X. if not recomented at least the ones we are going to use or say that 'there is not specific for this, the exact number we use comes form the empirical evaluation <references to the section>'
+
+
+\paragraph{Thinking level of the models}
 A single reasoning level applies to the generator and to the critic. The default is none.
 % What will go here: the effect of the reasoning level on the clauses chosen.
 
@@ -1079,6 +1140,8 @@ The critic accepted the three machines of Step~4 at the first attempt, each time
 \section{The output format}
 \label{sec:output-format}
 FARM writes each machine in the plain-text format of ARM-FM (Listing~\ref{lst:armfm-doorkey}) and extends it. Listing~\ref{lst:farm-example1} shows the machine of the first running example.
+
+% yeah more stuff need to be added here... check the other agent things... + explain a bit each one of the main fields
 
 \noindent\begin{minipage}{\linewidth}
 \lstinputlisting[style=rm,caption={The Reward Machine FARM generates for the first running example.},label={lst:farm-example1}]{images/farm/rm-ex1.txt}
@@ -1097,6 +1160,8 @@ Appendix~\ref{app:running} lists the machine of a task made only of rules, where
 \section{Details}
 
 \subsection{Contributions}
+% I would say we need to add here waaaay more. if it is too big lets move it to the appendix
+
 FARM adds the following to the pipeline it builds on.
 \begin{itemize}
     \item A prompt that covers all eight Declare templates and serves any environment, because the propositions and their meaning come from the environment description (Section~\ref{sec:step1}).
@@ -1118,6 +1183,14 @@ The labelling functions and the state descriptions then follow ARM-FM, which tur
 \section{Unknown facts}
 \section{Shortest path}
 \section{Human language can be misleading}
+\section{idk}
+Things like the following are not handled by FARM, and the user must avoid them in the task description or in the environment.
+
+% wirte here things like states that are not reachible, or the transitions that appear but can never be taken: those only mke the output bigger and ugglier, but since they can't be reached, the agent will nede see them and therefore not need to learn them, nor they will be noise. yet there are ways to not get any of them but that goes through writing LTLf formulas, which is not the point of FARM. 
+
+% We faced some of these issues in the live tests, and we flagged them. get to know it all and see what can realy be solved on a future work and what does not
+
+---
 % LLMs infer, but when not everything is defined they fall back to x.
 % Natural-language tasks therefore still need some guidelines.
 % Limitations of the reward design, to be written (comments only, no prose yet):
@@ -1146,6 +1219,7 @@ The labelling functions and the state descriptions then follow ARM-FM, which tur
 
 \chapter{Evaluation methodology}
 \label{chap:evaluation}
+% This also needs very hard update from what we did
 % How to prove, test and verify that FARM works.
 The baseline is ARM-FM as described in its paper. No official code is available, so the baseline is rebuilt from the appendices of the paper and, for the MiniGrid tasks, from the prompts and machines in the first author's public repository \cite{armfm_code}. Parts that neither source documents, such as the framing of later generator and critic rounds, are reconstructed. Requests to the authors for further material went unanswered, so the rebuilt baseline may differ from the original and the results compare FARM with this reconstruction.
 
@@ -1162,6 +1236,7 @@ The learning runs train the same learner on the same tasks with different machin
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                   RESULTS                                   %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% This also needs very hard update from what we did
 
 \chapter{Results}
 \label{chap:results}
@@ -1186,6 +1261,7 @@ The learning runs train the same learner on the same tasks with different machin
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                 CONCLUSIONS                                 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% This also needs very hard update from what we did
 
 \chapter{Conclusions}
 \label{chap:conclusions}
