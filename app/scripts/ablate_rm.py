@@ -9,7 +9,7 @@ from dataclasses import asdict, fields, replace
 from pathlib import Path
 
 from src.arm_fm import ArtifactBundle, BundleValidationError, load_bundle
-from src.arm_fm.generation import pair_state_descriptions
+from src.arm_fm.generation import pair_state_descriptions, skipped_descriptions_note
 from src.benchmark.traces import NO_PART
 from src.compiler import (
     ClauseProposal,
@@ -20,6 +20,7 @@ from src.compiler import (
     build_compilation_result,
     compile_dfas,
     compiler_machine_to_paper,
+    machine_too_large,
     serialize_paper_reward_machine,
 )
 from src.config import Configuration, PriorityLevel
@@ -159,6 +160,7 @@ def _ablate(CONFIG: Configuration, off: str, destination: Path) -> str:
     if not unchanged:
         _redescribe(CONFIG, source, bundle, result)
     bundle.save(destination, overwrite=CONFIG.overwrite)
+    embedded = embedded and not bundle.descriptions_skipped
     if not unchanged and embedded:
         # The same local-server embedding the other bundles use (``embed-larm --embedding-server``).
         try:
@@ -275,8 +277,19 @@ def _redescribe(
     """Describe the changed states again; the embeddings follow after the save.
 
     ``tag_states`` returns only the descriptions, not the raw answers, so the call is recorded by
-    its model in ``ablation.description_model``, not as attempts.
+    its model in ``ablation.description_model``, not as attempts. A machine too large for the
+    tagger gets none, as in ``generate-larm``: its bundle trains one-hot only.
     """
+    if machine_too_large(result.text):
+        note = skipped_descriptions_note(result.text)
+        print_warning(f"ablate-rm: {note}")
+        bundle.state_descriptions = {}
+        bundle.embeddings = {}
+        bundle.manifest.generation["state_descriptions_skipped"] = note
+        bundle.manifest.stage_status["descriptions"] = "pending"
+        bundle.manifest.stage_status.pop("embeddings", None)
+        bundle.manifest.effective_settings.pop("embedding", None)
+        return
     model = source.manifest.effective_settings.get("generator_model") or CONFIG.generator_model
     print(
         f"ablate-rm: the states changed, so the {len(bundle.reward_machine.states)} state "
@@ -298,6 +311,9 @@ def _redescribe(
     descriptions = tag_states(engine, bundle.manifest.task, result, print_warning)
     bundle.state_descriptions = pair_state_descriptions(result, descriptions)
     bundle.embeddings = {}
+    # A source that was too large for the tagger is described now that the machine is smaller.
+    bundle.manifest.generation.pop("state_descriptions_skipped", None)
+    bundle.manifest.stage_status["descriptions"] = "complete"
     bundle.manifest.stage_status.pop("embeddings", None)
     bundle.manifest.effective_settings.pop("embedding", None)
     # The server path of embed_larm embeds with CONFIG's model and no context prefix.

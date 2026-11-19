@@ -19,6 +19,8 @@ from src.compiler import (
     PaperRewardMachine,
     RewardSwitches,
     compiler_machine_to_paper,
+    machine_too_large,
+    machine_view,
     parse_paper_reward_machine,
     serialize_paper_reward_machine,
 )
@@ -718,7 +720,8 @@ def _compiler_bundle(
     result: CompilationResult, engine: object | None, CONFIG: Configuration
 ) -> ArtifactBundle:
     descriptions = pair_state_descriptions(result, result.state_descriptions)
-    if result.labeling_source and descriptions:
+    # A machine too large for the state tagger has no descriptions to wait for.
+    if result.labeling_source and (descriptions or machine_too_large(result.text)):
         bundle = build_compiler_bundle(
             result,
             labeling_source=result.labeling_source,
@@ -798,6 +801,18 @@ def _finish_compiler_bundle(
         }
     )
     bundle.manifest.errors = [item.error for item in attempts if item.error]
+    if machine_too_large(result.text):
+        bundle.manifest.generation["state_descriptions_skipped"] = skipped_descriptions_note(
+            result.text
+        )
+
+
+def skipped_descriptions_note(text: str) -> str:
+    """Why a machine over the prompt bound has no state descriptions or embeddings."""
+    return (
+        f"the machine text is {len(text)} characters, over {Configuration.MACHINE_PROMPT_MAX_CHARS}: "
+        "no state descriptions or embeddings, train it with rm_state_encoding: one_hot"
+    )
 
 
 # ======================================================================================
@@ -852,7 +867,7 @@ def generate_compiler_labeling(
             family="compiler",
             environment_markdown=compiled.environment.markdown,
             task=task,
-            reward_machine=compiled.text,
+            reward_machine=machine_view(compiled.text),
             api=labeling_api,
             history=history,
             **context,

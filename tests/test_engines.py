@@ -11,7 +11,14 @@ from nl2ltl.declare.base import TemplateEnum
 from openai import BadRequestError
 
 from src.arm_fm.generation import _extract_artifact, _refine_labeling
-from src.compiler import materialize_proposal, parse_paper_reward_machine
+from src.compiler import (
+    PaperRewardMachine,
+    RuntimeTransition,
+    materialize_proposal,
+    parse_paper_reward_machine,
+    serialize_paper_reward_machine,
+)
+from src.config import Configuration
 from src.engines import (
     CONTEXT_EXCEEDED,
     AntigravityEngine,
@@ -419,6 +426,44 @@ class EngineTests(unittest.TestCase):
         self.assertEqual([request[-1] for request in requests], ["declare_proposal", "critic"])
         self.assertIn('[{"pattern": "Existence"}]', requests[1][2])
         self.assertIn("- Rule-only task", requests[1][2])
+
+    def test_machine_over_the_prompt_bound_reaches_the_critics_as_a_summary(self) -> None:
+        states = tuple(f"u{index}" for index in range(40))
+        transitions = tuple(
+            RuntimeTransition("u0", "a&!b", state, 1.0 if state == "u1" else 0.0)
+            for state in states[1:]
+        )
+        machine = PaperRewardMachine(states, "u0", transitions, final_states=("u7",))
+        text = serialize_paper_reward_machine(machine)
+        requests = []
+
+        def request(model, system, user, schema, name):
+            requests.append(user)
+            return '{"accepted":true,"feedback":"ok"}'
+
+        engine = GenericEngine(ENVIRONMENT, "test-model", "Test", request)
+        for bound in (len(text), len(text) - 1):  # the text at the bound, then one over it
+            with patch.object(Configuration, "MACHINE_PROMPT_MAX_CHARS", bound):
+                engine.review_candidate("Finish", "[]", text, ())
+                engine.review_labeling(
+                    "Finish",
+                    text,
+                    "api",
+                    "labeling",
+                    clauses_json="[]",
+                    state_descriptions_json="{}",
+                    nodes_json="[]",
+                    propositions_json="{}",
+                )
+
+        for whole in (requests[0], requests[1]):
+            self.assertIn(text, whole)
+        for summary in (requests[2], requests[3]):
+            self.assertIn("FINAL_STATES: u7", summary)
+            self.assertIn("(40 in all)", summary)
+            self.assertIn("TRANSITION_FUNCTION: 39 rows, not listed", summary)
+            self.assertIn("REWARD_FUNCTION: 1 row, not listed", summary)
+            self.assertNotIn("(u0, a&!b)", summary)
 
     def test_generic_engine_tags_states(self) -> None:
         requests = []

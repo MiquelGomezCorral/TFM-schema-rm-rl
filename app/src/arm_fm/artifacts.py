@@ -78,12 +78,22 @@ class ArtifactBundle:
     raw_responses: list[dict[str, Any]] = field(default_factory=list)
     execution_evidence: list[dict[str, Any]] = field(default_factory=list)
 
-    def validate(self, *, require_complete: bool = False, described: bool = True) -> list[str]:
+    @property
+    def descriptions_skipped(self) -> bool:
+        """Whether the machine was too large for the state tagger: no descriptions, one-hot only."""
+        return "state_descriptions_skipped" in self.manifest.generation
+
+    def validate(
+        self, *, require_complete: bool = False, described: bool | None = None
+    ) -> list[str]:
         """Return diagnostics, or raise for malformed structure.
 
         ``described`` False leaves the state descriptions and embeddings out of both checks: a
-        one-hot run never reads them.
+        one-hot run never reads them. Left out, it is False for a bundle whose descriptions
+        were skipped and True otherwise.
         """
+        if described is None:
+            described = not self.descriptions_skipped
         if not self.manifest.task.strip():
             raise BundleValidationError("Bundle task must be nonempty")
         if self.reward_machine is None:
@@ -181,7 +191,12 @@ class ArtifactBundle:
     @property
     def generation_complete(self) -> bool:
         """Whether the RM, labeling and description stages are all accepted."""
-        return self._complete_stages() >= _GENERATION_STAGES
+        stages = (
+            _GENERATION_STAGES - {"descriptions"}
+            if self.descriptions_skipped
+            else _GENERATION_STAGES
+        )
+        return self._complete_stages() >= stages
 
     def _complete_stages(self) -> set[str]:
         return {

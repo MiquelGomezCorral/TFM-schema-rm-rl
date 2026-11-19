@@ -15,6 +15,8 @@ from .rm_format import (
     RuntimeTransition,
     RuntimeValidationError,
     compiler_machine_to_paper,
+    machine_too_large,
+    machine_view,
     paper_to_structure,
     parse_paper_reward_machine,
     parse_reward_machine,

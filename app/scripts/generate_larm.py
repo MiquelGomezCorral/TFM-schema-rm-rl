@@ -130,7 +130,7 @@ def _accepted_compiler_bundle(
     """
     bundle = generate_compiler_bundle((result,), None, CONFIG)[0]
     record_bundle_role_models(bundle, CONFIG, run_stats)
-    if destination is not None:
+    if destination is not None and result.embeddings:  # none for a machine over the prompt bound
         write_embedding_artifact(result, destination)
         record_bundle_embeddings(bundle, result, destination)
     return bundle

@@ -32,7 +32,9 @@ propositions in guards. A machine may also carry `ACCEPTING_STATES`,
 `HARD_FAILED_REWARD`, `SOFT_FAILED_REWARD`, and `PENDING_PROMISES` lines: they set the
 charge when the environment ends the episode and are not transitions. Use it to
 understand which propositions matter and how the machine advances. Never derive an
-observation fact from the RM state, its progress, or its reward.
+observation fact from the RM state, its progress, or its reward. A large machine arrives as
+a summary: each table is replaced by its row count and `not listed`; the propositions below
+are what to cover.
 
 ### State descriptions
 An ordered JSON object mapping node identifiers (`u0`, `u1`, ...) to the machine progress
