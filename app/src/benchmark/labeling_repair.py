@@ -31,7 +31,6 @@ from src.config import Configuration
 from src.engines import ImmediateEngineError, RetryableEngineError
 from src.prompts import read_prompt, render_prompt
 
-from .reference_labels import MINIGRID_LABELERS
 from .traces import (
     BundleRef,
     TraceRecord,
@@ -41,7 +40,7 @@ from .traces import (
     replay_in_bundle,
     write_json,
 )
-from .walks import Walks
+from .walks import Walks, walkable
 
 MISSING, LOAD, CRASH, WRONG, OK = "missing", "load", "crash", "wrong", "ok"
 CLASSES = (MISSING, LOAD, CRASH, WRONG, OK)
@@ -76,13 +75,14 @@ class Check:
 
 @dataclass(frozen=True)
 class Traces:
-    """What a card's labelings are checked on: its plan traces, plus random walks in a MiniGrid env.
+    """What a card's labelings are checked on: its plan traces, plus random walks in some envs.
 
     Plans visit only the states their author planned, so a labeling is ``ok`` only when plans and
     walks both agree with the reference labels. The walks come in blocks of fresh layouts: block 0
     is a bundle's first check and repair round ``n`` is graded on block ``n``, so a repair is never
-    graded on the layouts that showed its failure. The other envs hand their events to the
-    labeling, so they keep the plan check alone (``walks`` is None).
+    graded on the layouts that showed its failure. Walks run in the four MiniGrid envs, the shop
+    and the service room (``walkable``); the other envs hand their events to the labeling, so they
+    keep the plan check alone (``walks`` is None).
     """
 
     plans: Sequence[TraceRecord]
@@ -91,8 +91,7 @@ class Traces:
     @classmethod
     def of(cls, plans: Sequence[TraceRecord], layouts: int) -> "Traces":
         """The traces of one card, from its plan records (at least one)."""
-        minigrid = plans[0].gym_id.startswith(tuple(MINIGRID_LABELERS))
-        return cls(plans, Walks(plans[0], layouts) if minigrid else None)
+        return cls(plans, Walks(plans[0], layouts) if walkable(plans[0].gym_id) else None)
 
     def block(self, number: int) -> list[TraceRecord]:
         """The plan traces and the walks of block ``number``."""

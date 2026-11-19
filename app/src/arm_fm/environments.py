@@ -7,7 +7,7 @@ success rule), so the training loops stay environment-agnostic. Families: MiniGr
 import copy
 import random
 from collections.abc import Callable, Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -59,6 +59,27 @@ def terminated_with_reward(terminated: bool, env_reward: float) -> bool:
 def make_environment(environment_id: str, **kwargs: Any) -> Any:
     """Create one registered Gymnasium environment by its id."""
     return gym.make(environment_id, **kwargs)
+
+
+def level_step_limit(env: gym.Env) -> int | None:
+    """The most steps one episode of ``env`` runs, or None when it names no limit.
+
+    MiniGrid ends an episode at ``max_steps``, Craftium at ``max_timesteps`` (before its frame
+    skip), and any registered environment may carry ``max_episode_steps``; the smallest one set
+    wins.
+    """
+    limits = (
+        getattr(env.unwrapped, "max_steps", None),
+        getattr(env.unwrapped, "max_timesteps", None),
+        env.spec.max_episode_steps if env.spec else None,
+    )
+    return min((int(limit) for limit in limits if limit), default=None)
+
+
+def gym_step_limit(gym_id: str, **env_kwargs: Any) -> int | None:
+    """The step limit of the level ``gym_id`` makes with ``env_kwargs`` (see ``level_step_limit``)."""
+    with closing(make_environment(gym_id, **env_kwargs)) as env:
+        return level_step_limit(env)
 
 
 def make_run_environment(CONFIG: Configuration, index: int = 0) -> RunEnvironment:
@@ -221,6 +242,7 @@ class RewardMachineObservation(gym.Wrapper):
         CONFIG: Configuration,
     ) -> None:
         super().__init__(env)
+        _check_pay_assumptions(bundle, env, CONFIG)
         machine = bundle.reward_machine
         self.reward_machine = RewardMachineEnvironment(
             env,
@@ -282,6 +304,25 @@ class RewardMachineObservation(gym.Wrapper):
         return {"image": image, self.state_key: self.state_vectors[state]}
 
 
+def _check_pay_assumptions(bundle: ArtifactBundle, env: gym.Env, CONFIG: Configuration) -> None:
+    """Refuse a bundle whose hard break charge was priced for another gamma or step limit.
+
+    Only a bundle made with ``hard_ceiling`` depends on them (its manifest records the values it
+    assumed); the charge is the discounted soft ceiling of that gamma and step limit.
+    """
+    recorded = bundle.manifest.effective_settings
+    if not recorded.get("hard_ceiling"):
+        return
+    priced = (recorded.get("gamma"), recorded.get("step_limit"))
+    run = (CONFIG.gamma, level_step_limit(env))
+    if priced != run:
+        raise ValueError(
+            f"{CONFIG.bundle} prices the hard break for gamma {priced[0]} and step limit "
+            f"{priced[1]}, but this run has gamma {run[0]} and step limit {run[1]}; "
+            "run rebuild-rewards with the run's values"
+        )
+
+
 def one_hot_state_names(machine: PaperRewardMachine) -> list[str]:
     """The machine's state names in one-hot slot order: slot ``i`` is the ``i``-th sorted name.
 
@@ -302,7 +343,13 @@ def _reward_machine_inputs(
     if CONFIG.bundle is None:
         raise ValueError("reward_source rm or both needs a bundle in the run config")
     bundle = load_bundle(CONFIG.bundle)
-    bundle.validate(require_complete=True)
+    one_hot = CONFIG.rm_state_encoding == "one_hot"
+    if not one_hot and bundle.manifest.generation.get("rewards_rebuilt", {}).get("dropped"):
+        raise ValueError(
+            f"{CONFIG.bundle}: rebuild-rewards dropped its state descriptions and embeddings "
+            "(they were written for the old moves); train it with rm_state_encoding: one_hot"
+        )
+    bundle.validate(require_complete=True, described=not one_hot)
     if CONFIG.shuffle_embeddings_seed is not None:
         permutation = embedding_permutation(bundle.embeddings, CONFIG.shuffle_embeddings_seed)
         bundle.embeddings = {

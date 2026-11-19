@@ -4,7 +4,7 @@ import unittest
 
 from src.arm_fm.runtime import RewardMachineRuntime
 from src.compiler import parse_paper_reward_machine, serialize_reward_machine
-from src.compiler.reward_layer import RewardSwitches, build_reward_machine
+from src.compiler.reward_layer import RewardSwitches, build_reward_machine, hard_break_charge
 
 # F goal: unsatisfied until `goal` is seen, then it stays satisfied.
 GOAL = {
@@ -136,10 +136,12 @@ class RewardLayerTests(unittest.TestCase):
         self.assertEqual(len(machine.states), 3)
 
     def test_a_broken_soft_rule_pays_the_break_and_a_pending_soft_goal_pays_at_the_finish(self):
-        # A soft rule: the break pays -5 and, as the break and the start share a component, no
+        # A soft rule: each break pays -5 and, as the break and the start share a component, no
         # progress. Finishing pays 11 (1 progress + 10) whether or not the rule held.
         never_lava = ((GOAL, NO_LAVA), (False, True), ("goal", "lava"))
-        self.assertEqual(rewards_of(*never_lava, [{"lava"}, {"lava"}, {"goal"}]), [-5.0, 0.0, 11.0])
+        self.assertEqual(
+            rewards_of(*never_lava, [{"lava"}, {"lava"}, {"goal"}]), [-5.0, -5.0, 11.0]
+        )
         self.assertEqual(rewards_of(*never_lava, [{"goal"}]), [11.0])
 
         # A soft goal: finishing without it pays -5; holding it adds nothing.
@@ -196,8 +198,8 @@ class RewardLayerTests(unittest.TestCase):
     def test_a_soft_rule_pays_every_new_break_with_the_recurrent_penalty_and_once_without(self):
         never_lava = ((NO_LAVA,), (True,), ("lava",))
 
-        # A step that breaks it again while still broken is free; the rule re-arms on the next.
-        self.assertEqual(rewards_of(*never_lava, [{"lava"}, {"lava"}]), [-5.0, 0.0])
+        # A step that breaks it again while still broken pays too: every break costs.
+        self.assertEqual(rewards_of(*never_lava, [{"lava"}, {"lava"}]), [-5.0, -5.0])
         self.assertEqual(rewards_of(*never_lava, [{"lava"}, set(), {"lava"}]), [-5.0, 0.0, -5.0])
         self.assertEqual(
             rewards_of(*never_lava, [{"lava"}, set(), {"lava"}], recurrent_soft_penalty=False),
@@ -267,6 +269,38 @@ class RewardLayerTests(unittest.TestCase):
         # A hard break pays the well plus the same charge: three stages owed, not the one open rule.
         well = play([{"a"}, {"lava"}])[-1]
         self.assertEqual((well.destination, well.reward), (paper.rejecting_states[0], -40.0))
+
+    def test_the_hard_break_costs_the_discounted_soft_ceiling_only_where_soft_rules_repeat(self):
+        # k S (1 - g^T) / (1 - g) plus one progress unit, k soft breaks a step; k S T at g 1;
+        # never under the flat 10 + 1.
+        self.assertAlmostEqual(hard_break_charge(1, 0.99, 300, 1), -(1 - 0.99**300) / 0.01 - 1)
+        self.assertAlmostEqual(hard_break_charge(1, 0.99, 300, 2), -2 * (1 - 0.99**300) / 0.01 - 1)
+        self.assertEqual(hard_break_charge(1, 1, 300, 2), -601)
+        self.assertEqual(hard_break_charge(1, 0.9, 5, 1), -11)
+
+        def well_charges(soft, **switches):
+            clauses = (GOAL, NO_LAVA, *soft)
+            priorities = (False, False, *[True] * len(soft))
+            machine = build_reward_machine(
+                clauses, priorities, RewardSwitches(**switches)
+            ).reward_machine
+            return {
+                transition.reward
+                for transition in machine.transitions
+                if transition.destination in machine.rejecting_states
+            }
+
+        ceiling = {"hard_ceiling": True, "gamma": 0.99, "step_limit": 300, "soft_break_cost": 1}
+        (one,) = well_charges((KEY,), **ceiling)
+        self.assertAlmostEqual(one, hard_break_charge(1, 0.99, 300, 1), places=6)
+        (two,) = well_charges((KEY, BOUNCE), **ceiling)
+        self.assertAlmostEqual(two, hard_break_charge(1, 0.99, 300, 2), places=6)
+        # No soft rule, charge-once soft rules, or the rule off: the flat well.
+        self.assertEqual(well_charges((), **ceiling), {-10.0})
+        self.assertEqual(well_charges((KEY,), **ceiling, recurrent_soft_penalty=False), {-10.0})
+        self.assertEqual(well_charges((KEY,)), {-10.0})
+        with self.assertRaisesRegex(ValueError, "step limit"):
+            well_charges((KEY,), hard_ceiling=True)
 
     def test_a_hard_goal_that_a_hard_rule_forbids_is_rejected(self):
         forbids_goal = {
