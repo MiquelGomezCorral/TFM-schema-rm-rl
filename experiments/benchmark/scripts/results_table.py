@@ -286,7 +286,28 @@ def flags_of(
         flags.append(f"farming: RM path laps in {farming:.2f} of last-300k episodes")
     if shared:
         flags.append(f"shared no-RM run of {shared.replace('bench__', '')}")
+    if soft := judge.get("soft_only"):
+        flags.append(soft_only_flag(soft))
     return flags
+
+
+def soft_only_flag(soft: dict) -> str:
+    """The flag of a soft-only card, which has no pass or fail (rule D3).
+
+    Its soft breaks and label changes per episode, beside the idle plan's, say whether the agent
+    learned the rule; the soft clauses still open at the end are shown apart. A missing mean
+    reads n/a.
+    """
+    breaks, idle_breaks = soft["mean_soft_breaks"], soft["idle_mean_soft_breaks"]
+    changes, idle_changes = soft["mean_label_changes"], soft["idle_mean_label_changes"]
+    if None in (breaks, idle_breaks, changes, idle_changes):
+        return "soft-only, no success: n/a (a mean is missing)"
+    active = "" if changes > idle_changes else "; NOT more active than the idle plan"
+    return (
+        f"soft-only, no success: {f2(breaks)} soft breaks per episode (idle plan {f2(idle_breaks)}), "
+        f"{f2(soft['mean_soft_open'])} soft open at the end (idle {f2(soft['idle_mean_soft_open'])}), "
+        f"{f2(changes, 1)} label changes (idle {f2(idle_changes, 1)}){active}"
+    )
 
 
 def drifted_keys(old: dict, judge: dict) -> list[str]:
@@ -341,6 +362,7 @@ def run_row(exp: Path, seed: int, folder: Path, card: dict, crashed: set) -> dic
         else None,
         "judge_file": state,
         "fired": cols.get("fired_success"),
+        "soft_only": bool(judge.get("soft_only")),
         "judged": judge.get("mean_judged_success"),
         "raw_judged": judge.get("mean_raw_judged_success"),
         "non_empty": judge.get("mean_non_empty_success"),
@@ -374,10 +396,14 @@ def table_line(row: dict) -> str:
     breaks = f"{f2(row['hard_breaks'])} / {f2(row['soft_breaks'])}"
     # A judged run with no verdict: no hard rule has a trigger, so none could fire.
     fired = "n/a" if row["fired"] is None and row["judged"] is not None else f2(row["fired"])
+    if row["soft_only"]:  # no success: the flags column holds the figures
+        judged = raw = non_empty = "soft-only"
+    else:
+        judged, raw, non_empty = f2(row["judged"]), f2(row["raw_judged"]), f2(row["non_empty"])
     return (
         f"| {row['suite']} | {row['card']} | {row['arm']} | {row['seed']} | {row['env']} | {run} "
         f"| {row['judge_file']} | {fired} | {f2(row['env_success_test'])} "
-        f"| {f2(row['judged'])} | {f2(row['raw_judged'])} | {f2(row['non_empty'])} | {untested} "
+        f"| {judged} | {raw} | {non_empty} | {untested} "
         f"| {f2(row['greedy_final'])} / {f2(row['sampled_final'])} "
         f"| {thousands(row['step_greedy_0.8'])} / {thousands(row['step_sampled_0.8'])} "
         f"| {breaks} | {row['env_return_total_pos_neg']} | {row['rm_return_total_pos_neg']} "
@@ -557,7 +583,10 @@ def markdown(table: list[dict], cards: dict, bundles: dict, runs_root: Path) -> 
         "machine; farming (RM path laps in at least half of the last-300k-step training episodes); shared "
         "no-RM run; judge crashed; timed out (the run was stopped by the time box; judged from its last or "
         "best model, or not judged).\n"
-        "- A `judge crashed` row keeps its old-format judge.json (judged shown is the old judge's).\n\n"
+        "- A `judge crashed` row keeps its old-format judge.json (judged shown is the old judge's).\n"
+        "- A soft-only card (every clause soft) has no success: its judged columns read soft-only and its "
+        "flags give the soft breaks, the soft clauses open at the end and the label changes per episode "
+        "beside the idle plan's (rule D3).\n\n"
         "## Table\n\n" + head + "\n" + "\n".join(table_line(r) for r in table) + "\n\n"
         "## What changed against judge.v1.json\n\n"
         f"Runs compared: {rejudged} re-judged with an old judge.json kept as judge.v1.json.\n\n"

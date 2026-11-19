@@ -49,6 +49,7 @@ ASYMMETRY = (
     "ARM-FM machines get 0 at the time limit."
 )
 NOT_EVALUATED = "not evaluated"
+SOFT_ONLY = "soft-only"  # shown instead of a success figure: a card of only soft clauses has none
 SEED_TARGET = 3
 UNTESTED_BELOW = 0.5  # a hard clause activated in fewer test episodes than this is "untested"
 CANNOT_START_ABOVE = 0.5  # a run is flagged when more of its test episodes could not start
@@ -82,7 +83,11 @@ METRICS = (
     ("untested rules", "untested_rules"),
     ("hard breaks", "hard_breaks"),
     ("soft breaks", "soft_breaks"),
+    ("idle plan soft breaks (soft-only card)", "idle_soft_breaks"),
     ("open at end", "open_at_end"),
+    ("idle plan open at end (soft-only card)", "idle_soft_open"),
+    ("label changes (soft-only card)", "label_changes"),
+    ("idle plan label changes (soft-only card)", "idle_label_changes"),
     ("first env success", "first_env_success_step"),
     ("last-3 eval success", "eval_success_last3"),
     ("env return", "env_return"),
@@ -182,13 +187,26 @@ def judge_columns(folder: Path) -> dict:
     ``judge.json`` holds the episode means (``mean_*``, see ``test_rl.JUDGE_MEANS``). Open at end
     is the mean number of clauses still open, hard and soft together; a missing mean stays empty.
     The least activated hard clause is the lowest ``activated_share`` among the hard clauses that
-    have a trigger (low: the judged success may be an empty pass).
+    have a trigger (low: the judged success may be an empty pass). A soft-only card has no success:
+    its three success columns read ``soft-only``, and its soft breaks, clauses open at the end and
+    label changes per episode come beside the idle plan's.
     """
     judge = read_json(folder / "judge.json")
     if not judge:
         return {"judged_success": NOT_EVALUATED, "fired_success": NOT_EVALUATED}
     columns = {key: judge.get(f"mean_{key}") for key in JUDGE_KEYS}
     columns["fired_success"] = fired_success(judge)
+    soft = judge.get("soft_only")  # a card of only soft clauses: no success figure, see test_rl
+    if soft:
+        columns.update(
+            dict.fromkeys(("judged_success", "raw_judged_success", "non_empty_success"), SOFT_ONLY)
+        )
+        columns.update(
+            idle_soft_breaks=soft["idle_mean_soft_breaks"],
+            idle_soft_open=soft["idle_mean_soft_open"],
+            label_changes=soft["mean_label_changes"],
+            idle_label_changes=soft["idle_mean_label_changes"],
+        )
     hard_open, soft_open = judge.get("mean_hard_open"), judge.get("mean_soft_open")
     columns["open_at_end"] = None if None in (hard_open, soft_open) else hard_open + soft_open
     hard = [

@@ -499,18 +499,16 @@ def product_card(first: Mapping[str, Any], second: Mapping[str, Any]) -> dict[st
     """A card that holds both cards' rules, for the judge to score the product machine.
 
     The environment is the first card's with the setup flags merged (``siren`` and ``box`` both on,
-    both ``require`` lists); ``expect`` is both cards' clauses. The solving and wrong plans do not
-    carry over, as they were written for one card.
+    both ``require`` lists); ``expect`` is both cards' clauses. The solving and wrong plans and the
+    ``also_ok`` alternatives do not carry over: the product is scored on ``expect`` only.
 
     Raises:
-        ValueError: If the cards differ in environment page, gym id or layout, set one setup key
-            to two values, or use ``also_ok`` (alternatives do not combine).
+        ValueError: If the cards differ in environment page, gym id or layout, or set one setup
+            key to two values.
     """
     for key in ("description", "family", "gym_id", "layout", "layout_seed", "observation"):
         if first["env"].get(key) != second["env"].get(key):
             raise ValueError(f"the cards differ in env.{key}")
-    if first.get("also_ok") or second.get("also_ok"):
-        raise ValueError("cards with also_ok alternatives cannot be combined")
     card = copy.deepcopy(dict(first))
     card["id"] = f"{first['id']}+{second['id']}"
     card["task"] = f"{first['task']} {second['task']}"
@@ -518,6 +516,8 @@ def product_card(first: Mapping[str, Any], second: Mapping[str, Any]) -> dict[st
         first["env"]["env_kwargs"], second["env"]["env_kwargs"]
     )
     card["expect"] = [*first["expect"], *(c for c in second["expect"] if c not in first["expect"])]
-    card.update(template=None, goal=False, plans={}, paraphrases=[], train=False, forced=[])
+    card.update(
+        template=None, goal=False, plans={}, paraphrases=[], train=False, forced=[], also_ok=[]
+    )
     card["notes"] = f"Product of {first['id']} and {second['id']}."
     return card

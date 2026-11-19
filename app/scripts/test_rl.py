@@ -40,6 +40,7 @@ import textwrap
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, fields
+from itertools import pairwise
 from pathlib import Path
 from statistics import fmean
 from typing import Any
@@ -89,6 +90,7 @@ from src.benchmark import (
     make_record,
     write_json,
 )
+from src.benchmark.plans import run_plan
 from src.config import Configuration
 
 CPU = torch.device("cpu")  # training may hold the GPU
@@ -129,6 +131,23 @@ SERVED_DEFINITION = (
     "served_count: the order_served events in the episode's reference labels; served_success: "
     "served_count >= 1. Promises open at the step limit do not affect either; judged_success "
     "is unchanged."
+)
+# A card whose clauses are all soft has no pass or fail (rule D3): the judge reports the soft breaks
+# per episode, the clauses still open at the end apart, and how often the labels changed, beside the
+# idle plan's figures.
+SOFT_ONLY_IDLE_PLAN = [{"do": "wait", "n": 1000}]
+SOFT_ONLY_NAMES = ("soft_breaks", "soft_open", "label_changes")
+SOFT_ONLY_DEFINITION = (
+    "soft-only card: it has no hard clause, so judged_success is true except in cannot-start "
+    "episodes (the machine ended the episode before the agent could act, see cannot_start) and "
+    "says nothing about the soft rules. soft_breaks: soft clauses broken, per episode; soft_open: "
+    "soft clauses still open at the end, per episode, apart from soft_breaks; label_changes: steps "
+    "whose reference labels differ from the step before, per episode (an agent that does nothing "
+    "only sees the world's own events). idle_*: the same figures for a plan that waits, on the "
+    "same reset seeds. A Response clause is never broken, it only stays open, so its failures "
+    "show in soft_open. The agent learned the rule when neither mean_soft_breaks nor "
+    "mean_soft_open is above the idle plan's, one of them is below it, and mean_label_changes "
+    "is above idle_mean_label_changes."
 )
 CANNOT_START_DEFINITION = (
     "cannot_start: the machine ended the episode in a final state, the environment did not, and "
@@ -584,12 +603,13 @@ class JudgeRecorder:
 
     def write(self, directory: Path, count: int) -> None:
         """Save the episodes to ``<directory>/agent-traces/ep<k>.json``, verdicts to ``judge.json``."""
-        episodes, start_labels = [], {}
+        episodes, start_labels, seeds = [], {}, []
         act = self.policy.new_act()
         # Epsilon-random actions draw from the action space, which evaluation leaves unseeded.
         self.run.env.action_space.seed(self.config.seed)
         for index, reset in enumerate(self.policy.resets(count)[:count]):
             played = self._rollout(act, reset)
+            seeds.append(int(reset["seed"]))
             rollout, rm_rewards = played.rollout, played.rm_rewards
             if played.start_labels is not None:
                 start_labels[rollout.reset_seed] = played.start_labels
@@ -618,6 +638,11 @@ class JudgeRecorder:
                     ),
                     **verdict,
                     **served,
+                    **(
+                        {"label_changes": _label_changes(rollout.labels)}
+                        if self.card.soft_only
+                        else {}
+                    ),
                     "env_success": record.env_success,
                     **_return_split("env", rollout.env_rewards),
                     **_return_split("rm", rm_rewards),
@@ -636,6 +661,7 @@ class JudgeRecorder:
             **machine_header(self.machine, start_labels or None),
             **judge_means(episodes),
             **self._optional_summary(episodes),
+            **self._soft_only_summary(episodes, seeds),
             "activated_share": activated_share(episodes),
             "rule_pass_rates": rule_pass_rates(episodes),
             "per_episode": episodes,
@@ -653,6 +679,29 @@ class JudgeRecorder:
         if self.config.rm_state_encoding == "one_hot":
             summary["rm_state_encoding"] = "one_hot"
         return summary
+
+    def _soft_only_summary(
+        self, episodes: list[dict[str, Any]], seeds: list[int]
+    ) -> dict[str, Any]:
+        """The soft-only block of ``judge.json``: the agent's means beside the idle plan's, played
+        on the same reset seeds; empty for every card with a hard clause."""
+        if not self.card.soft_only:
+            return {}
+        idle = []
+        for seed in seeds:
+            rollout = run_plan(self.card.env, SOFT_ONLY_IDLE_PLAN, seed)
+            verdict = judge_trace(self.card.expect, rollout.labels).to_dict()
+            idle.append({**verdict, "label_changes": _label_changes(rollout.labels)})
+        return {
+            "soft_only": {
+                "definition": SOFT_ONLY_DEFINITION,
+                **judge_means(episodes, SOFT_ONLY_NAMES),
+                **{
+                    f"idle_{key}": value
+                    for key, value in judge_means(idle, SOFT_ONLY_NAMES).items()
+                },
+            }
+        }
 
     def _rollout(self, act: Callable[[Any], int], reset: dict[str, object]) -> Played:
         """One test episode: the reference labels after every step, the RM rewards, whether the
@@ -733,6 +782,11 @@ def judge_means(
 ) -> dict[str, float | None]:
     """The ``mean_<name>`` entries of ``judge.json``, one per name (``JUDGE_MEANS`` by default)."""
     return {f"mean_{name}": _mean(episodes, name) for name in names}
+
+
+def _label_changes(labels: list[dict[str, bool]]) -> int:
+    """The steps whose reference labels differ from the step before (see ``SOFT_ONLY_DEFINITION``)."""
+    return sum(before != after for before, after in pairwise(labels))
 
 
 def _served_fields(labels: list[dict[str, bool]]) -> dict[str, int | bool]:

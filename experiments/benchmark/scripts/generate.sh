@@ -147,12 +147,14 @@ pass_suite() {
 
 pass_ablation() {
   have "$BENCH/complex/ablation.json" || return 0
-  local card switch cards
+  local card switch cards source
   cards=$(card_ids "$BENCH/complex/ablation.json") || exit 1
   for card in $cards; do
+    # The card's FARM bundle is in the suite that holds the card (complex, or forcing for lanes-rules).
+    source=$(compgen -G "$BENCH/*/bundles/farm/$card" | head -n 1 || true)
     for switch in $ABLATION_SWITCHES; do
       run ablation "$PYTHON" app/main.py ablate-rm \
-        --bundle "$BENCH/complex/bundles/farm/$card" --off "$switch" \
+        --bundle "${source:-$BENCH/complex/bundles/farm/$card}" --off "$switch" \
         --output "$BENCH/ablation/bundles/$card/off-$switch"
     done
   done

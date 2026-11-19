@@ -164,8 +164,9 @@ directions are reported apart and never pooled.
 Runs expand from each suite's `runs.yaml`; `run-suite` and `aggregate-suite` and the wrapper scripts
 `experiments/benchmark/scripts/train.sh` and `experiments/benchmark/scripts/evaluate.sh` come from the
 runs slice. The `runs.yaml` key `only` is a list of card ids or the path of a JSON card file whose
-ids are used: the ablation suite reads its cards from `complex/tasks.json` and takes its 3 ids from
-`complex/ablation.json`.
+ids are used: the ablation suite reads its cards from `complex/tasks.json` and `forcing/tasks.json` (its
+`tasks` key is a list) and takes its 3 ids from `complex/ablation.json` (`lanes-rules`, `cx-goal-one-rule`,
+`cx-goal-many-rules`; the Lanes card replaced `cx-rules-only` on 2026-11-19).
 
 In order: `run-suite --suite <runs.yaml> --dry-run`, then without `--dry-run`, then
 `test-rl --judge` over the finished runs, then `aggregate-suite --suite <runs.yaml> --output <dir>`.
@@ -401,10 +402,10 @@ work.
 
 ```bash
 dotenv -f .env run --no-override -- env PYTHONPATH=app python experiments/benchmark/scripts/build_ablation.py \
-    cx-rules-only cx-goal-one-rule cx-goal-many-rules
+    lanes-rules cx-goal-one-rule cx-goal-many-rules
 ```
 
-Runs `ablate-rm` on `complex/bundles/farm/<card>` for each reward switch in `OFF_PARTS` (`progress`,
+Runs `ablate-rm` on the card's FARM bundle (`complex/bundles/farm/<card>`, or `forcing/bundles/farm/lanes-rules`) for each reward switch in `OFF_PARTS` (`progress`,
 `well`, `soft_break`, `soft_pending`, `end_judgment`, `recurrent_soft_penalty`) and writes
 `ablation/bundles/<card>/off-<switch>/`. Then it checks each one against its source and prints one
 line each: `labeling.py` byte-equal, loads and validates complete, not too simple, the text changed

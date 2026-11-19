@@ -78,6 +78,11 @@ class Card:
         return [*self.expect, *(clause for option in self.also_ok for clause in option)]
 
     @property
+    def soft_only(self) -> bool:
+        """True when there are clauses and all are soft: no pass or fail then (rule D3), see ``judge.json``."""
+        return bool(self.expect) and all(clause[2] == "soft" for clause in self.expect)
+
+    @property
     def uses_chain_response(self) -> bool:
         return self.template == "ChainResponse" or any(
             clause[0] == "ChainResponse" for clause in self.all_clauses
