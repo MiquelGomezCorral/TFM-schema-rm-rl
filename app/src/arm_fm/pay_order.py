@@ -56,15 +56,27 @@ class PayOrder(NamedTuple):
         return text if self.stall is None else f"{text}; stall, hard promise open {self.stall:g}"
 
 
-def pay_order_of(bundle: ArtifactBundle, gamma: float, step_limit: int | None) -> PayOrder:
+def pay_order_of(
+    bundle: ArtifactBundle, gamma: float, step_limit: int | None, soft_breaks_per_step: int
+) -> PayOrder:
     """``pay_order`` of a bundle's machine, with the promise cost and the soft rules from its manifest.
 
-    A bundle that stores no clauses is read as having a soft rule.
+    A bundle that stores no clauses is read as having a soft rule. A step charges at most
+    ``soft_breaks_per_step`` soft breaks of the cost the manifest records: the assumption the
+    hard ceiling makes (``CONFIG.soft_breaks_per_step``).
     """
+    settings = bundle.manifest.effective_settings
     clauses = bundle.manifest.generation.get("clauses")
     soft_rules = clauses is None or any(clause[2] == "soft" for clause in clauses)
-    promise_cost = bool(bundle.manifest.effective_settings.get("reward_promise_cost"))
-    return pay_order(bundle.reward_machine, gamma, step_limit, promise_cost, soft_rules)
+    break_cost = settings.get("soft_break_cost", Configuration.soft_break_cost)
+    soft_step_cap = soft_breaks_per_step * break_cost if soft_rules else 0.0
+    return pay_order(
+        bundle.reward_machine,
+        gamma,
+        step_limit,
+        bool(settings.get("reward_promise_cost")),
+        soft_step_cap,
+    )
 
 
 def pay_order(
@@ -72,7 +84,7 @@ def pay_order(
     gamma: float,
     step_limit: int | None,
     promise_cost: bool = False,
-    soft_rules: bool = True,
+    soft_step_cap: float = math.inf,
 ) -> PayOrder:
     """What ``machine`` pays for each ending over ``step_limit`` steps (one when None) at ``gamma``.
 
@@ -85,8 +97,10 @@ def pay_order(
     time-limit penalty is left out: every episode that times out pays it, discounted to almost
     nothing. With ``promise_cost`` (the machine charges it) a pay of exactly the promise cost is
     the ``stall``, not a soft break: the machine alone cannot tell them apart, so a break that
-    costs the same as the promise cost reads as a stall. Without ``soft_rules`` a task has no
-    soft break: a negative edge is then a step back from progress.
+    costs the same as the promise cost reads as a stall. ``soft_step_cap`` is the most a step
+    can charge for soft breaks (the soft breaks per step assumed, times the break cost): a step
+    or a loop the machine would charge more for reads as this much. A task without soft rules
+    has a cap of 0, so no soft break: a negative edge is then a step back from progress.
     """
     steps = step_limit or 1
     ends = {*machine.final_states, *machine.rejecting_states}
@@ -125,14 +139,12 @@ def pay_order(
             and abs(rate - Configuration.PROMISE_COST_REWARD) < _EPSILON
         )
 
-    breaks = [
-        pay
-        for pay in (
-            None if stalls(worst_edge) else worst_edge,
-            None if stalls(loop) else streamed,
-        )
-        if soft_rules and pay is not None and pay < 0
-    ]
+    floor = -soft_step_cap
+    edge_pay = None if worst_edge is None or stalls(worst_edge) else max(worst_edge, floor)
+    stream_pay = (
+        None if loop is None or stalls(loop) else max(loop, floor) * discounted_steps(steps, gamma)
+    )
+    breaks = [pay for pay in (edge_pay, stream_pay) if pay is not None and pay < 0]
     hard_breaks = [
         reward for _, destination, reward in edges if destination in machine.rejecting_states
     ]

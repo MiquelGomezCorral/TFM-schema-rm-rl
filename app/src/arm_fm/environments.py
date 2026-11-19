@@ -305,20 +305,32 @@ class RewardMachineObservation(gym.Wrapper):
 
 
 def _check_pay_assumptions(bundle: ArtifactBundle, env: gym.Env, CONFIG: Configuration) -> None:
-    """Refuse a bundle whose hard break charge was priced for another gamma or step limit.
+    """Refuse a bundle whose hard break charge was priced for another gamma, step limit or breaks.
 
     Only a bundle made with ``hard_ceiling`` depends on them (its manifest records the values it
-    assumed); the charge is the discounted soft ceiling of that gamma and step limit.
+    assumed); the charge is the discounted soft ceiling of that gamma and step limit, for that
+    many soft breaks per step.
     """
     recorded = bundle.manifest.effective_settings
     if not recorded.get("hard_ceiling"):
         return
-    priced = (recorded.get("gamma"), recorded.get("step_limit"))
-    run = (CONFIG.gamma, level_step_limit(env))
+    priced = (
+        recorded.get("gamma"),
+        recorded.get("step_limit"),
+        recorded.get("soft_breaks_per_step"),
+    )
+    run = (CONFIG.gamma, level_step_limit(env), CONFIG.soft_breaks_per_step)
     if priced != run:
+        breaks = (
+            f"{priced[2]} soft breaks per step"
+            if priced[2] is not None
+            else "unrecorded soft breaks per step (built before soft_breaks_per_step was "
+            "recorded; rebuild it)"
+        )
         raise ValueError(
-            f"{CONFIG.bundle} prices the hard break for gamma {priced[0]} and step limit "
-            f"{priced[1]}, but this run has gamma {run[0]} and step limit {run[1]}; "
+            f"{CONFIG.bundle} prices the hard break for gamma {priced[0]}, step limit "
+            f"{priced[1]} and {breaks}, but this run has gamma {run[0]}, "
+            f"step limit {run[1]} and {run[2]} soft breaks per step; "
             "run rebuild-rewards with the run's values"
         )
 

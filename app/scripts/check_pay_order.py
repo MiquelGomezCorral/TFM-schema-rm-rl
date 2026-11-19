@@ -3,9 +3,8 @@
 No model call and nothing written. The walk is ``src.arm_fm.pay_order``.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
 
 from src.arm_fm import gym_step_limit, load_bundle
 from src.arm_fm.pay_order import pay_order_of
@@ -13,21 +12,24 @@ from src.config import Configuration
 
 
 def check_pay_order(
+    CONFIG: Configuration,
     bundles: Sequence[Path],
     gamma: float | None = None,
-    step_limit: int | None = Configuration.step_limit,
-    gym_id: str | None = Configuration.gym_id,
-    env_kwargs: Mapping[str, Any] | None = None,
+    soft_breaks_per_step: int | None = None,
 ) -> list[str]:
     """One line per bundle: its folder, the endings from best to worst pay, ok or the broken pair.
 
-    ``gamma`` and the step limit that streams of soft breaks run over come from the arguments;
-    else the bundle's manifest records them (a bundle made with the hard ceiling does), else
-    gamma is the default and the step limit is one step. ``gym_id`` and ``env_kwargs`` read the
-    step limit from the level they make (a bundle stores no level, so the caller names it).
+    ``gamma``, the step limit and the soft breaks per step that streams of soft breaks run over
+    come from the arguments; else the bundle's manifest records them (a bundle made with the hard
+    ceiling does), else gamma and the soft breaks per step are the defaults and the step limit is
+    one step. ``gamma`` and ``soft_breaks_per_step`` are None when omitted (``CONFIG`` cannot say
+    "omitted"). The step limit is ``CONFIG.step_limit``, else the one of the level
+    ``CONFIG.gym_id`` and ``CONFIG.env_kwargs`` make (a bundle stores no level, so the caller
+    names it).
     """
-    if step_limit is None and gym_id:
-        step_limit = gym_step_limit(gym_id, **(env_kwargs or {}))
+    step_limit = CONFIG.step_limit
+    if step_limit is None and CONFIG.gym_id:
+        step_limit = gym_step_limit(CONFIG.gym_id, **CONFIG.env_kwargs)
     lines = []
     for folder in bundles:
         bundle = load_bundle(folder)
@@ -37,6 +39,14 @@ def check_pay_order(
         recorded = bundle.manifest.effective_settings
         discount = gamma if gamma is not None else recorded.get("gamma", Configuration.gamma)
         limit = step_limit if step_limit is not None else recorded.get("step_limit")
-        order = pay_order_of(bundle, discount, limit)
-        lines.append(f"{folder}: {order.summary()} (gamma {discount}, step limit {limit})")
+        breaks = (
+            soft_breaks_per_step
+            if soft_breaks_per_step is not None
+            else recorded.get("soft_breaks_per_step", Configuration.soft_breaks_per_step)
+        )
+        order = pay_order_of(bundle, discount, limit, breaks)
+        lines.append(
+            f"{folder}: {order.summary()} "
+            f"(gamma {discount}, step limit {limit}, soft breaks per step {breaks})"
+        )
     return lines

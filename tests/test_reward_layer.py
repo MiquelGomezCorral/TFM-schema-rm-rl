@@ -291,9 +291,12 @@ class RewardLayerTests(unittest.TestCase):
             }
 
         ceiling = {"hard_ceiling": True, "gamma": 0.99, "step_limit": 300, "soft_break_cost": 1}
+        # The breaks per step are the user's setting (default 1), not the soft clause count.
         (one,) = well_charges((KEY,), **ceiling)
         self.assertAlmostEqual(one, hard_break_charge(1, 0.99, 300, 1), places=6)
-        (two,) = well_charges((KEY, BOUNCE), **ceiling)
+        (still_one,) = well_charges((KEY, BOUNCE), **ceiling)
+        self.assertAlmostEqual(still_one, hard_break_charge(1, 0.99, 300, 1), places=6)
+        (two,) = well_charges((KEY, BOUNCE), **ceiling, soft_breaks_per_step=2)
         self.assertAlmostEqual(two, hard_break_charge(1, 0.99, 300, 2), places=6)
         # No soft rule, charge-once soft rules, or the rule off: the flat well.
         self.assertEqual(well_charges((), **ceiling), {-10.0})

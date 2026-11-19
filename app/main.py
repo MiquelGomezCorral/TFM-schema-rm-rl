@@ -42,6 +42,14 @@ from src.config import REASONING_LEVELS, Configuration
 from src.utils import GenerationHooks, print_warning
 
 
+def positive_int(text: str) -> int:
+    """Argparse type for a count of at least 1."""
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"{text} is not a positive integer")
+    return value
+
+
 def cmd_generate_rm(args: argparse.Namespace) -> None:
     """Generate a Reward Machine from parsed CLI configuration."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
@@ -106,18 +114,17 @@ def cmd_ablate_rm(args: argparse.Namespace) -> None:
 def cmd_rebuild_rewards(args: argparse.Namespace) -> None:
     """Rebuild a compiler bundle's Reward Machine rewards with the current reward layer."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
-    # args_to_dataclass drops None, so an omitted --gamma would read as the default: pass the raw arg.
-    if not rebuild_rewards(CONFIG, args.destination, args.gamma):
+    # args_to_dataclass drops None, so an omitted --gamma or --soft-breaks-per-step would read as
+    # the default: pass the raw args.
+    if not rebuild_rewards(CONFIG, args.destination, args.gamma, args.soft_breaks_per_step):
         sys.exit(1)
 
 
 def cmd_check_pay_order(args: argparse.Namespace) -> None:
     """Print the order in which each bundle's Reward Machine pays the ways an episode can end."""
-    print(
-        "\n".join(
-            check_pay_order(args.bundles, args.gamma, args.step_limit, args.gym_id, args.env_kwargs)
-        )
-    )
+    CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    # args_to_dataclass drops None, so an omitted flag would read as the default: pass the raw args.
+    print("\n".join(check_pay_order(CONFIG, args.bundles, args.gamma, args.soft_breaks_per_step)))
 
 
 def cmd_import_paper_bundle(args: argparse.Namespace) -> None:
@@ -624,6 +631,12 @@ if __name__ == "__main__":
         help="The run's discount for the hard ceiling (default: the bundle's recorded one)",
     )
     rebuild_parser.add_argument(
+        "--soft-breaks-per-step",
+        type=positive_int,
+        help="How many soft rules can break on one step in this environment and task; the hard "
+        "ceiling assumes it (default: the bundle's recorded one, else 1)",
+    )
+    rebuild_parser.add_argument(
         "--gym-id", help="The level's gym id; its step limit sets the hard ceiling"
     )
     rebuild_parser.add_argument(
@@ -648,6 +661,12 @@ if __name__ == "__main__":
     pay_parser.add_argument("bundles", nargs="+", type=Path, help="Bundle folders")
     pay_parser.add_argument(
         "--gamma", type=float, help="The run's discount (default: the bundle's, else 0.99)"
+    )
+    pay_parser.add_argument(
+        "--soft-breaks-per-step",
+        type=positive_int,
+        help="How many soft rules can break on one step, as in rebuild-rewards "
+        "(default: the bundle's, else 1)",
     )
     pay_parser.add_argument(
         "--gym-id", help="The level's gym id; its step limit is how long a soft break stream runs"

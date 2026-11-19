@@ -90,9 +90,10 @@ class RewardSwitches:
     switches only change the rewards (and, for the end judgment, the machine's end lines).
 
     ``hard_ceiling`` is off by default and needs ``step_limit``, the level's step limit: it
-    prices the hard break above the discounted soft ceiling for ``gamma`` (see
-    ``hard_break_charge``). The manifest records both, so a run can refuse a bundle priced for
-    other values.
+    prices the hard break above the discounted soft ceiling for ``gamma`` and for
+    ``soft_breaks_per_step``, how many soft rules can break on one step (see
+    ``hard_break_charge``). The manifest records all three, so a run can refuse a bundle priced
+    for other values.
     """
 
     reward_progress: bool = Configuration.reward_progress
@@ -106,6 +107,7 @@ class RewardSwitches:
     hard_ceiling: bool = Configuration.hard_ceiling
     gamma: float = Configuration.gamma
     step_limit: int | None = Configuration.step_limit
+    soft_breaks_per_step: int = Configuration.soft_breaks_per_step
 
     @classmethod
     def from_config(cls, CONFIG: Configuration) -> Self:
@@ -555,7 +557,10 @@ def hard_break_charge(
     times ``breaks_per_step`` times ``(1 - gamma ** step_limit) / (1 - gamma)`` (``step_limit``
     for ``gamma`` 1) at the start of the episode, and a later hard break discounts both alike.
     The charge is that ceiling, or the flat well charge when that is more, plus one progress unit.
+    Raises ``ValueError`` when ``breaks_per_step`` is below 1.
     """
+    if breaks_per_step < 1:
+        raise ValueError(f"soft_breaks_per_step must be at least 1, got {breaks_per_step}")
     ceiling = breaks_per_step * soft_break_cost * discounted_steps(step_limit, gamma)
     return -(max(-Configuration.WELL_REWARD, ceiling) + Configuration.PROGRESS_REWARD)
 
@@ -569,9 +574,9 @@ def _well_charge(soft_clauses: Sequence[int], switches: RewardSwitches) -> float
     """What the edge into the well pays by itself: the flat well charge, or the ceiling charge.
 
     The ceiling rule applies to a machine whose soft breaks repeat and cost something; any other
-    machine keeps the flat charge. A step can break every soft clause at once, so the ceiling
-    counts them all (shortcut: two clauses that never break on one step still both count; the
-    charge is then higher than needed, never too low).
+    machine keeps the flat charge. The ceiling assumes ``soft_breaks_per_step`` soft breaks on
+    one step, the user's setting: it depends on the environment and the task, not on the clause
+    count.
     """
     repeats = (
         switches.hard_ceiling
@@ -582,7 +587,10 @@ def _well_charge(soft_clauses: Sequence[int], switches: RewardSwitches) -> float
     if not repeats:
         return Configuration.WELL_REWARD
     return hard_break_charge(
-        switches.soft_break_cost, switches.gamma, switches.step_limit, len(soft_clauses)
+        switches.soft_break_cost,
+        switches.gamma,
+        switches.step_limit,
+        switches.soft_breaks_per_step,
     )
 
 
