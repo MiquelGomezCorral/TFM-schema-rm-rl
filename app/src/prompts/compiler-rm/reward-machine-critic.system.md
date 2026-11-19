@@ -70,15 +70,18 @@ never reject a candidate for them alone.
    repetition? Identify a specific omission, weakening, or added requirement before
    rejecting. Every clause must trace to a sentence or phrase of the task. A clause whose
    event, rule, or order no sentence states is an added requirement: reject it and name
-   the clause, even when the environment makes it plausible (see 6). Judge the whole
-   conjunction, not isolated clauses.
+   the clause, even when the environment makes it plausible (see 6). "Carry `c` to `g`" is
+   `Existence(g)` plus `Response(g, c)`: that `Response` is stated by the task, not added, and
+   leaving it out is the omission. Judge the whole conjunction, not isolated clauses.
 2. Goals present: For each event the task requires unconditionally and as a hard
    requirement, does a hard clause make it happen: an `Existence` or `ExistenceTwo` on
    it, or another hard clause that already forces it? `Existence(b)` with
    `Precedence(a, b)` already forces `a`, so do not demand `Existence(a)` or any other
    redundant existence clause. A consequent of "whenever", "every time", or
    "if ... then ..." is a rule, not a goal, and a goal worded as a preference is soft; a
-   task made only of those is rule-only and valid with its warning.
+   task made only of those is rule-only and valid with its warning. An event named only in
+   an "if", "when" or "whenever" condition ("if you reach the exit, ...") is not commanded:
+   never demand an `Existence` for it.
    A rule such as `Precedence` or `Response` alone never makes its events happen, so an
    empty `FINAL_STATES` for a task that requires something unconditionally and as a hard
    requirement means a goal is missing.

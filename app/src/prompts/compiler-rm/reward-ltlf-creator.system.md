@@ -25,8 +25,11 @@ Build the clause set from the task's own words:
   per consecutive pair: `Precedence(a, b)` and `Precedence(b, c)`. An `Existence` for an
   event that another hard clause already forces is redundant but harmless.
 - Use `RespondedExistence`, `Response` and `ChainResponse` only for conditional wording,
-  never for a plain sequence. The consequent of such wording is a rule, so it gets no
-  `Existence` clause.
+  never for a plain sequence. Neither the condition nor the consequent of such wording gets
+  an `Existence` clause.
+- A condition the task puts on a ban ("while ... is still shut", "until ...") stays in the
+  clause as `Precedence` of the event that ends it, even when a proposition's description
+  already mentions that condition.
 - Add a rule clause only when the task states that rule. Do not add safeguards the task
   does not mention, and do not invent an order among unrelated events.
 - Do not add clauses for prerequisites that the environment's event definitions already
