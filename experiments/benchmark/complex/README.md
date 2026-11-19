@@ -22,7 +22,8 @@ cards keep their fixed room and draw new event timings.
 
 Key-drop rules: `key_lost` means dropping the key while the door is still closed. `cx-rules-only` and
 `cx-goal-one-rule` run on BlockedUnlockPickup, like `cx-goal-many-rules`, where a key-first run must
-drop the key to move the ball (D10 card revision).
+drop the key to move the ball (D10 card revision). The soft `Absence(key_lost)` cards have no `also_ok`
+for it: `Precedence(door_open, key_lost)` would be weaker (rule in `templates/README.md`).
 
 Card fix 2: `cx-sequence`, `cx-goal-one-rule` and `cx-goal-many-rules` mark the orders the world
 forces anyway in a `forced` list (indices into `expect`); those clauses are optional extras when

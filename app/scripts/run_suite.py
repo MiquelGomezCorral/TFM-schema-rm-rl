@@ -144,13 +144,14 @@ def bundle_path(spec: dict, card_id: str, arm: str, variant: str | None) -> Path
 def load_suite(path: Path) -> dict:
     """Read a ``runs.yaml`` and its task cards, checking the keys and the arms.
 
+    ``tasks`` is one card file or a list of them (the ablation suite takes cards from two suites).
     ``only`` is a list of card ids or the repo-relative path of a JSON card file; the file's
     ids, in file order, replace the path, so ``spec["only"]`` is a list after this call.
 
     Raises:
         ValueError: If a key, arm or learner entry is missing or unknown, ``reward_source`` is
-            not ``rm`` or ``both``, or ``only`` is a path that is not a card file with a
-            non-empty ``cards`` list.
+            not ``rm`` or ``both``, a card id appears more than once across the task files, or
+            ``only`` is a path that is not a card file with a non-empty ``cards`` list.
     """
     spec = yaml.safe_load(path.read_text(encoding="utf-8"))
     missing = [key for key in SUITE_KEYS if key not in spec]
@@ -169,7 +170,15 @@ def load_suite(path: Path) -> dict:
         absent = [key for key in LEARNER_KEYS if key not in learner]
         if absent:
             raise ValueError(f"{path}: learner {name} lacks {', '.join(absent)}")
-    spec["cards"] = json.loads((ROOT / spec["tasks"]).read_text(encoding="utf-8"))["cards"]
+    task_files = [spec["tasks"]] if isinstance(spec["tasks"], str) else spec["tasks"]
+    spec["cards"] = [
+        card
+        for task_file in task_files
+        for card in json.loads((ROOT / task_file).read_text(encoding="utf-8"))["cards"]
+    ]
+    repeated = [card_id for card_id, n in Counter(c["id"] for c in spec["cards"]).items() if n > 1]
+    if repeated:
+        raise ValueError(f"{path}: card ids found more than once in tasks: {', '.join(repeated)}")
 
     only = spec.get("only")
     if isinstance(only, str):

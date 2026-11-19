@@ -1,10 +1,11 @@
-"""Build the ablation bundles of complex cards from their FARM bundles, then check them.
+"""Build the ablation bundles of the ablation cards from their FARM bundles, then check them.
 
 Usage (repository root, `RM_RL_env`):
     PYTHONPATH=app python experiments/benchmark/scripts/build_ablation.py CARD [CARD ...] \
         [--variants progress well ...] [--check-only] [--root experiments/benchmark]
 
-For each card and variant it runs `ablate-rm` on `<root>/complex/bundles/farm/<card>` and writes
+For each card and variant it runs `ablate-rm` on the card's FARM bundle (`<root>/<suite>/bundles/farm/<card>`,
+the suite that holds the card: complex, or forcing for `lanes-rules`) and writes
 `<root>/ablation/bundles/<card>/off-<variant>/`. Variants default to every switch in `OFF_PARTS`
 (`progress`, `well`, `soft_break`, `soft_pending`, `end_judgment`, `recurrent_soft_penalty`). An
 existing `off-<variant>` folder is kept, not rebuilt: delete it to rebuild it. Only
@@ -85,7 +86,7 @@ def check(variant: str, bundle_dir: Path, source_dir: Path) -> tuple[dict, list[
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("cards", nargs="+", help="complex card ids, e.g. cx-rules-only")
+    parser.add_argument("cards", nargs="+", help="ablation card ids, e.g. lanes-rules")
     parser.add_argument("--variants", nargs="+", choices=list(OFF_PARTS), default=list(OFF_PARTS))
     parser.add_argument("--check-only", action="store_true", help="do not build, only check")
     parser.add_argument(
@@ -98,7 +99,9 @@ def main() -> None:
 
     failures = 0
     for card in args.cards:
-        source = args.root / "complex/bundles/farm" / card
+        source = next(
+            args.root.glob(f"*/bundles/farm/{card}"), args.root / "complex/bundles/farm" / card
+        )
         destinations = {
             v: args.root / "ablation/bundles" / card / f"off-{v}" for v in args.variants
         }
