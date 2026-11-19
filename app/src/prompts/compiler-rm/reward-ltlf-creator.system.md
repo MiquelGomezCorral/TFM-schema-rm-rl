@@ -20,16 +20,27 @@ Build the clause set from the task's own words:
 - Every unconditional hard goal, an event the task tells the agent to make happen, gets an
   `Existence` or `ExistenceTwo` clause, even when the same sentence restricts when it may
   happen, as "only after" does. A pure restriction, such as "never do b before a", needs
-  only the rule.
-- A sequence "`a`, then `b`, then `c`" is one `Existence` per event plus one `Precedence`
-  per consecutive pair: `Precedence(a, b)` and `Precedence(b, c)`. An `Existence` for an
-  event that another hard clause already forces is redundant but harmless.
+  only the rule. Goals come from the task text alone: the environment's own objective
+  (the level's own goal) is not a requirement the task did not state.
+- A sequence "`a`, then `b`, then `c`" is an `Existence` of the last event plus one
+  `Precedence` per consecutive pair: `Precedence(a, b)` and `Precedence(b, c)`.
+- An event that another hard clause already forces gets no `Existence` of its own, even when
+  the task names it ("do `a`, then `b`": `Existence(b)` and `Precedence(a, b)` already force
+  `a`). The environment's constraints never replace the clause for a step the task commands:
+  they only let you leave out an order they already guarantee. A lone commanded step ("do
+  `a`") always gets its `Existence`.
+- In a "whenever `a`: do `b`, fetch `x`, do `c`" chain, link only the events: `Response(a, b)`
+  and `Response(b, c)`. A step that only makes a lasting condition true (`holding_x`) gets no
+  clause of its own: that condition is still true when `c` happens, so `Response(holding_x, c)`
+  would never close.
 - Use `RespondedExistence`, `Response` and `ChainResponse` only for conditional wording,
   never for a plain sequence. Neither the condition nor the consequent of such wording gets
   an `Existence` clause.
-- A condition the task puts on a ban ("while ... is still shut", "until ...") stays in the
-  clause as `Precedence` of the event that ends it, even when a proposition's description
-  already mentions that condition.
+- A ban with a condition ("while ... is still shut", "until ..."): first read the banned
+  event's description in the environment. If it already holds that condition (an event
+  described as "lost before `a` happened"), write plain `Absence` of that event and no
+  `Precedence`. Otherwise
+  the condition stays in the clause as `Precedence` of the event that ends it.
 - Add a rule clause only when the task states that rule. Do not add safeguards the task
   does not mention, and do not invent an order among unrelated events.
 - Do not add clauses for prerequisites that the environment's event definitions already

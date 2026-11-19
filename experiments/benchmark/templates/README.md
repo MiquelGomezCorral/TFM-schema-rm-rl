@@ -49,6 +49,22 @@ Card fix 2:
 - `tpl-absence-3-nogoal`, `tpl-precedence-1-nogoal`, `tpl-precedence-3-nogoal` and
   `tpl-responded-existence-2-nogoal` have one reading in every wording.
 
+Two forms of an ordered task (2026-11-19, prompt loop n6; the complex cards follow it too): "A, then B"
+has form A (one `Existence` per event, no order) and form B (`Existence` of the last event plus a
+`Precedence` chain). A card lists the other form in `also_ok` only where the level forces the order, so
+the two accept the same runs: `door_open` before the box, key before door before goal or ball, and
+`at_exit` ending the episode so a toggle always comes before it. Steps the level forces
+(`door_open`, `blocker_moved`, `has_door_key`) may also carry their own `Existence`
+(`cx-goal-one-rule`, `cx-goal-many-rules`). Not valid, so not listed:
+- ServiceRoom carry cards (`tpl-chain-response-N-goal`, `cx-box`): both forms accept a box dropped
+  before the exit, which "carry the box to the exit" forbids; only `Response(at_exit, holding_box)` says it.
+- An order the level does not force (ball before key, `tpl-precedence-1-goal`, `cx-goal-many-rules`)
+  keeps its `Precedence`; per-event `Existence` alone lets the key go first.
+Cards with also_ok from this rule: `tpl-existence-1/2/3-goal`, `tpl-existence-two-1/2/3-goal`,
+`tpl-response-1/2/3-goal`, `tpl-precedence-1-goal`, `tpl-precedence-4-goal`,
+`tpl-responded-existence-1/2/3-goal`, `cx-sequence`, `cx-goal-one-rule`, `cx-goal-many-rules`.
+The Absence, NotCoExistence and `tpl-precedence-2/3` goal cards have one step and no second form.
+
 ## Contents
 
 - `tasks.json`: the cards.

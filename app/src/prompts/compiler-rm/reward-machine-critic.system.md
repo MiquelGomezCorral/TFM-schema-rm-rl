@@ -75,12 +75,14 @@ never reject a candidate for them alone.
    leaving it out is the omission. Judge the whole conjunction, not isolated clauses.
 2. Goals present: For each event the task requires unconditionally and as a hard
    requirement, does a hard clause make it happen: an `Existence` or `ExistenceTwo` on
-   it, or another hard clause that already forces it? `Existence(b)` with
-   `Precedence(a, b)` already forces `a`, so do not demand `Existence(a)` or any other
-   redundant existence clause. A consequent of "whenever", "every time", or
+   it, or another hard clause that already forces it? `Existence(b)` with `Precedence(a, b)`
+   already forces `a`, so do not demand `Existence(a)` or any other redundant existence
+   clause. The environment's constraints never make a commanded step happen: they only let a
+   clause leave out an order they already guarantee, so a lone commanded step needs its own
+   `Existence`. A consequent of "whenever", "every time", or
    "if ... then ..." is a rule, not a goal, and a goal worded as a preference is soft; a
    task made only of those is rule-only and valid with its warning. An event named only in
-   an "if", "when" or "whenever" condition ("if you reach the exit, ...") is not commanded:
+   an "if", "when" or "whenever" condition ("if `a` happens, ...") is not commanded:
    never demand an `Existence` for it.
    A rule such as `Precedence` or `Response` alone never makes its events happen, so an
    empty `FINAL_STATES` for a task that requires something unconditionally and as a hard
@@ -89,7 +91,10 @@ never reject a candidate for them alone.
    ordered wording ("do a before b", "a, then b", a listed sequence). Such a task needs a hard `Existence` on that event, or another
    hard clause that forces it, plus the order clause. `Precedence` alone is a missing goal.
 3. Template and argument order: Is each template the right one, with its propositions
-   in the order the definition above gives? `Precedence(a, b)` puts `a` first.
+   in the order the definition above gives? `Precedence(a, b)` puts `a` first. "Very next
+   step", "next move", "right after" is `ChainResponse`: a `Response` there drops the timing.
+   A `Response(a, b)` whose `a` is a lasting condition (`holding_x`) and `b` a one-step
+   event never closes: reject it and name the clause.
 4. Priority: Is each clause hard unless the task words it as a preference, with a
    preference cue such as those above? A clause scoped by such a cue is soft even when it
    contains "never" or "must". Without a cue, a categorical "never", "must", "before", or
@@ -157,6 +162,12 @@ must happen, and the order sentence does not turn it into a restriction. Reject 
 For the task "Whenever a happens, b must follow", a hard `Response(a, b)` alone is
 correct. The machine has no final state and the compiler warns that the task is
 rule-only; accept it, because `b` is a consequent, not a goal.
+
+For the task "Do not let a happen unless b has happened earlier", a hard `Precedence(b, a)`
+alone is correct, with an empty `FINAL_STATES` and the rule-only warning. `a` is only
+restricted, never commanded. Accept it; do not ask for `Existence(a)`:
+
+{"accepted": true, "feedback": "NO CHANGES NEEDED: a is only restricted, not commanded, so Precedence(b, a) alone is the rule and no goal is missing."}
 
 ## Verdict
 

@@ -24,27 +24,33 @@ Pick the template from the task's own wording:
 | a command: "eventually", "make sure `a` happens", "reach `a`", "do `a`" (never the condition of an "if") | `Existence(a)` |
 | "twice", "at two different moments" | `ExistenceTwo(a)` |
 | "never", "do not ever" | `Absence(a)` |
-| "if `a` (ever) happens, `b` must also happen", "... before or after `a`" (`b` may come first) | `RespondedExistence(a, b)` |
+| "if `a` (ever) happens, `b` must also happen", "`a` means `b` too / as well", "... before or after `a`" (`b` may come first) | `RespondedExistence(a, b)` |
 | "whenever / every time / each time / if / when / should `a`, `b` must happen", "`b` afterwards / later / at that moment" | `Response(a, b)` |
 | "after", "only after", "not before", "never `b` before `a`", "first `a`, then `b` is allowed" | `Precedence(a, b)`, plus `Existence(b)` when `b` is required |
-| "do not `b` until / unless `a`", "do not `b` while `a` has not happened yet" (still closed, still off) | `Precedence(a, b)`: the ban ends once `a` has happened, even when `b`'s description already mentions `a`. A bare "never `b`" stays `Absence(b)` |
+| "do not `b` until / unless `a`", "do not `b` while `a` has not happened yet" (still closed, still off) | First read `b`'s description. When it already holds the condition (an event defined as "lost before `a` happened"), the ban is plain `Absence(b)`. Otherwise `Precedence(a, b)`: the ban ends once `a` has happened. A bare "never `b`" stays `Absence(b)` |
 | "carry / bring `c` to `a`", "reach `a` with / holding `c`" | `Existence(a)` + `Response(a, c)`; `Existence(c)` alone lets `c` be held anywhere |
-| "whenever `a`: do `b`, then `c`, then `d`" | `Response(a, b)`, `Response(b, c)`, `Response(c, d)`: each step follows the one before it, never all from `a` |
-| a command "do `a` before `b`", "do `a`, then `b`", "first `a`, then `b`" | `Existence(a)` + `Precedence(a, b)`, plus `Existence(b)` when `b` is also commanded |
-| a listed sequence "`a`, `b`, `c`, and then `d`" | `Existence` of every listed event, and `Precedence` between each consecutive pair; no order between events the list does not relate |
+| "whenever `a`: do `b`, then `c`, then `d`" | `Response(a, b)`, `Response(b, c)`, `Response(c, d)`: each step follows the one before it, never all from `a`; a step that is only a lasting condition ("fetch the item", `holding_x`) gets no clause |
+| a command "do `a` before `b`", "do `a`, then `b`", "first `a`, then `b`" | `Existence(a)` + `Precedence(a, b)`; when `b` is also commanded, `Existence(b)` + `Precedence(a, b)`, which already forces `a` |
+| a listed sequence "`a`, `b`, `c`, and then `d`" | `Existence` of the last event and `Precedence` between each consecutive pair, which already force the earlier events; no order between events the list does not relate |
 | "right after", "immediately after", "in the very next step" | `ChainResponse(a, b)` |
 | "never both", "not both during the episode" | `NotCoExistence(a, b)` |
 
-In an "if `a` ..." sentence, only "`b` also" or "before or after" means `RespondedExistence`;
-any other "`b` must" is `Response`. The event of an "if / whenever / each time" condition is
+In an "if `a` ..." sentence, only "`b` also / too / as well" or "before or after" means
+`RespondedExistence`; any other "`b` must" is `Response`. The event of an "if / whenever / each time" condition is
 not a goal: it gets no `Existence`. An unconditional "do `a` at some point" is `Existence(a)`.
 "Next step" always means `ChainResponse`.
 
+`Response(a, b)` needs `b` at or after the last step `a` is true. When `a` is a condition that
+lasts (`holding_x`) and `b` a one-step event, it never closes if `b` happens while `a` still
+holds. In a chain, skip a step that is only such a condition and link the events around it:
+"whenever `a`: take `b`, fetch `x`, do `c`, then `d`" is `Response(a, b)`, `Response(b, c)`,
+`Response(c, d)`, with nothing for the fetch.
+
 Worked examples, with neutral identifiers:
 
-- "Do `b` only after `a`": `Existence(b)` hard and `Precedence(a, b)` hard, not
-  `Precedence` alone, which requires nothing. Together they already force `a`, so an
-  extra `Existence(a)` is harmless but not needed.
+- "Do `b` only after `a`", "Do `a`, then `b`": `Existence(b)` hard and `Precedence(a, b)`
+  hard, not `Precedence` alone, which requires nothing. Together they already force `a`, so
+  leave out `Existence(a)`.
 - "If `a` happens, `b` should also happen at some point": `RespondedExistence(a, b)` hard,
   not `Response(a, b)`, because the wording does not put `b` after `a`.
 - "Whenever `a` happens, `b` must happen in the very next step": `ChainResponse(a, b)` hard,
@@ -55,13 +61,16 @@ Worked examples, with neutral identifiers:
   `Response(a, c)` or `Precedence(b, a)` hard, and nothing else. `a` is a condition, not a
   goal: an `Existence(a)` would force the agent to reach it.
 - "Do not `b` while `a` has not happened yet" ("while the gate is still shut", "until `a`"):
-  `Precedence(a, b)`, not `Absence(b)`, even when the description of `b` already contains that
-  condition: the clause must keep the condition the task states. "Try not to" makes it soft.
+  first read the description of `b`. If it already contains that condition (`b` is "dropped
+  while the gate is shut"), the ban is `Absence(b)`: no `Precedence`. Otherwise it is
+  `Precedence(a, b)`, so the clause keeps the condition the task states. "Try not to" makes
+  it soft.
 - "Do `c`, and preferably `b` right after `a`": `Existence(c)` hard and
   `ChainResponse(a, b)` soft. Do not add a `Precedence` or any other order rule the task
   never states.
-- "Do `a`, `b`, and then `c`": `Existence` hard on `a`, `b`, and `c`, with `Precedence(a, b)`
-  and `Precedence(b, c)` hard. Do not add `Precedence(a, c)`; the chain already implies it.
+- "Do `a`, `b`, and then `c`": `Existence(c)` hard with `Precedence(a, b)` and
+  `Precedence(b, c)` hard; the chain forces `a` and `b`. Do not add `Precedence(a, c)`; the
+  chain already implies it.
 
 <!-- priorities -->
 
