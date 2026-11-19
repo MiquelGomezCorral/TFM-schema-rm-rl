@@ -35,7 +35,8 @@ class ClauseState(StrEnum):
     """Where one clause's DFA stands: done, still open, or unable to accept again.
 
     The label belongs to the DFA state. A soft rule's violated state may still be left in the
-    Reward Machine when the recurrent soft penalty is on.
+    Reward Machine when the recurrent soft penalty is on, unless ``fold_soft_absence`` folds it
+    into a satisfied twin (``_violated_twins``).
     """
 
     SATISFIED = "satisfied"
@@ -65,6 +66,9 @@ class _Product:
     labels: dict[str, tuple[ClauseState, ...]]  # per product state, one label per clause
     # per product state, the chain-weighted stages each clause still owes (the one owed measure)
     open_steps: dict[str, tuple[int, ...]]
+    # per edge, the soft clauses it breaks that no label shows: their violated state was folded
+    # into a twin (see ``_violated_twins``), so the destination reads as kept
+    breaks: dict[_Edge, tuple[int, ...]]
 
 
 @dataclass(frozen=True)
@@ -86,7 +90,8 @@ class RewardSwitches:
     The defaults are the ``Configuration`` class defaults, and the field names are its field
     names. Completion is never switched off. ``reward_end_judgment`` and ``reward_promise_cost``
     are off by default. ``soft_break_cost`` is what one soft break costs, in pay units. The
-    recurrent soft penalty changes the machine's structure (see ``_rearm_violated``); the other
+    recurrent soft penalty and ``fold_soft_absence`` (on by default; it needs the penalty on)
+    change the machine's structure (see ``_rearm_violated`` and ``_violated_twins``); the other
     switches only change the rewards (and, for the end judgment, the machine's end lines).
 
     ``hard_ceiling`` is off by default and needs ``step_limit``, the level's step limit: it
@@ -103,6 +108,7 @@ class RewardSwitches:
     reward_end_judgment: bool = Configuration.reward_end_judgment
     reward_promise_cost: bool = Configuration.reward_promise_cost
     recurrent_soft_penalty: bool = Configuration.recurrent_soft_penalty
+    fold_soft_absence: bool = Configuration.fold_soft_absence
     soft_break_cost: float = Configuration.soft_break_cost
     hard_ceiling: bool = Configuration.hard_ceiling
     gamma: float = Configuration.gamma
@@ -122,8 +128,10 @@ def build_reward_machine(
 
     ``soft[i]`` marks clause ``i`` soft; the others are hard. With ``recurrent_soft_penalty`` a
     soft rule's violated state takes the start state's edges, so each new break pays again
-    instead of once per episode. Without a hard goal clause the machine has no final
-    state (a rule-only task) and progress aims at the states where no clause is pending. With
+    instead of once per episode; with ``fold_soft_absence`` a soft Absence's violated state then
+    folds into the satisfied state it equals, so its break is a priced loop. Without a hard goal
+    clause the machine has no final state (a rule-only task) and progress aims at the states where
+    no clause is pending. With
     ``reward_end_judgment`` the machine carries an end judgment for the stages still owed where
     the environment ends the episode; without it the runtime pays the flat time-limit penalty on
     a truncated step that did not terminate, and nothing on a termination. The other
@@ -147,7 +155,7 @@ def build_reward_machine(
     hard_goal = any(_is_goal(dfas[index]) for index in hard_clauses)
 
     rearm = [switches.recurrent_soft_penalty and is_soft for is_soft in soft]
-    product = _clause_product(dfas, rearm)
+    product = _clause_product(dfas, rearm, switches.fold_soft_absence)
     edges, finals = _prune_by_hard_clauses(product, hard_clauses, hard_goal)
     initial, edges = _drop_pre_step_start(edges, product, finals)
     priced, paying = _price_edges(edges, product, finals, soft_clauses, switches)
@@ -239,7 +247,7 @@ def _rearm_violated(dfa: dict, by_state: dict[str, ClauseState]) -> dict:
 
     A violated state drops its own edges and takes the start's: a step that would not break
     the rule goes where it would from the start, and a step that would break it again stays,
-    already paid. No state is added.
+    charged again as a new break (``_breaks``). No state is added.
     """
     start = dfa["initial_state"]
     violated = {state for state, label in by_state.items() if label is ClauseState.VIOLATED}
@@ -261,6 +269,56 @@ def _rearm_violated(dfa: dict, by_state: dict[str, ClauseState]) -> dict:
                 state if destination in violated else destination
             )
     return rearmed
+
+
+def _is_absence(dfa: dict, by_state: dict[str, ClauseState]) -> bool:
+    """Whether ``dfa`` is ``Absence``'s shape: every live state breaks on the one proposition.
+
+    A state that is not violated goes to a violated state when the proposition holds and to a
+    live one when it does not, so a break is charged alike from every live state. Only then is a
+    violated state's twin safe to fold (``_violated_twins``). The DFA of a template that repeats
+    its proposition (``NotCoExistence(x, x)``) is this one too.
+    """
+    if len(dfa["alphabet"]) != 1:
+        return False
+
+    edges = _dfa_edges(dfa)
+    (name,) = dfa["alphabet"]
+    for state, label in by_state.items():
+        if label is ClauseState.VIOLATED:
+            continue
+        broken = by_state[_destination(edges, state, dfa["alphabet"], {name: True})]
+        clean = by_state[_destination(edges, state, dfa["alphabet"], {name: False})]
+        if broken is not ClauseState.VIOLATED or clean is ClauseState.VIOLATED:
+            return False
+    return True
+
+
+def _violated_twins(rearmed: dict, by_state: dict[str, ClauseState]) -> dict[str, str]:
+    """Map each violated state of a re-armed DFA to a satisfied state with the same exits.
+
+    The two are twins when every guard leads to the same state once the violated state counts as
+    the twin. A twin's clause state can stand for it in the product: the rows are the same and
+    only the label differs, which the edge into the violated state (``_Product.breaks``) carries.
+    A violated state with no twin is left out.
+    """
+    exits = defaultdict(set)
+    for (source, guard), destination in rearmed["transitions"].items():
+        exits[source].add((guard, destination))
+
+    def exits_as(state: str, violated: str, twin: str) -> set[tuple[str, str]]:
+        return {(guard, twin if end == violated else end) for guard, end in exits[state]}
+
+    satisfied = sorted(state for state, label in by_state.items() if label is ClauseState.SATISFIED)
+    twins = {}
+    for violated in sorted(
+        state for state, label in by_state.items() if label is ClauseState.VIOLATED
+    ):
+        for twin in satisfied:
+            if exits_as(violated, violated, twin) == exits_as(twin, violated, twin):
+                twins[violated] = twin
+                break
+    return twins
 
 
 def _steps_to_accept(dfa: dict) -> dict[str, int]:
@@ -351,7 +409,7 @@ def _open_steps(dfa: dict, by_state: dict[str, ClauseState], weight: int) -> dic
     }
 
 
-def _clause_product(dfas: Sequence[dict], rearm: Sequence[bool]) -> _Product:
+def _clause_product(dfas: Sequence[dict], rearm: Sequence[bool], fold: bool) -> _Product:
     # Labels come from the original DFAs: the re-armed state would read as pending, and its
     # break would never be paid.
     clause_labels = [_clause_labels(dfa) for dfa in dfas]
@@ -359,6 +417,16 @@ def _clause_product(dfas: Sequence[dict], rearm: Sequence[bool]) -> _Product:
     copies = [
         _rearm_violated(dfa, by_state) if rearm_clause else deepcopy(dfa)
         for dfa, by_state, rearm_clause in zip(dfas, clause_labels, rearm, strict=True)
+    ]
+    # A soft Absence has a broken state equal to a satisfied one: the clause is one state, and its
+    # break an edge mark. FL-AT merges parallel edges, so the fold happens on the product.
+    twins = [
+        _violated_twins(used, by_state)
+        if fold and rearm_clause and _is_absence(dfa, by_state)
+        else {}
+        for dfa, used, by_state, rearm_clause in zip(
+            dfas, copies, clause_labels, rearm, strict=True
+        )
     ]
     # Steps are measured on the DFAs the product uses, before FL-AT touches them. Chain weights
     # come from the original DFAs, like the labels.
@@ -368,25 +436,50 @@ def _clause_product(dfas: Sequence[dict], rearm: Sequence[bool]) -> _Product:
         for used, by_state, weight in zip(copies, clause_labels, chain_weights, strict=True)
     ]
     machine = automatas_to_rm(copies, [1] * len(dfas))
+
+    # Product states that differ only by a folded violated state are one: the first stands in.
+    folded = {
+        state: tuple(twin.get(name, name) for twin, name in zip(twins, clause_states, strict=True))
+        for state, clause_states in machine["state_tuples"].items()
+    }
+    stand_in: dict[tuple[str, ...], str] = {}
+    for state, clause_states in folded.items():
+        stand_in.setdefault(clause_states, state)
+    standing = {state: stand_in[clause_states] for state, clause_states in folded.items()}
+    kept = [state for state, stand in standing.items() if state == stand]
+
     labels = {
         state: tuple(
             by_state[clause_state]
-            for by_state, clause_state in zip(clause_labels, clause_states, strict=True)
+            for by_state, clause_state in zip(clause_labels, folded[state], strict=True)
         )
-        for state, clause_states in machine["state_tuples"].items()
+        for state in kept
     }
     open_steps = {
         state: tuple(
             steps[clause_state]
-            for steps, clause_state in zip(clause_steps, clause_states, strict=True)
+            for steps, clause_state in zip(clause_steps, folded[state], strict=True)
         )
-        for state, clause_states in machine["state_tuples"].items()
+        for state in kept
     }
-    edges = [
-        _Edge(source, guard, destination)
-        for (source, guard), (destination, _) in machine["transitions"].items()
-    ]
-    return _Product(machine["initial_state"], machine["alphabet"], edges, labels, open_steps)
+    edges = []
+    breaks = {}
+    for (source, guard), (destination, _) in machine["transitions"].items():
+        if standing[source] != source:
+            continue  # a folded state's exits are its stand-in's
+        edge = _Edge(source, guard, standing[destination])
+        edges.append(edge)
+        entered = machine["state_tuples"][destination]
+        broke = tuple(
+            clause
+            for clause, (twin, name) in enumerate(zip(twins, entered, strict=True))
+            if name in twin
+        )
+        if broke:
+            breaks[edge] = broke
+    return _Product(
+        standing[machine["initial_state"]], machine["alphabet"], edges, labels, open_steps, breaks
+    )
 
 
 # ======================================================================================
@@ -518,7 +611,8 @@ def _price_edges(
             reward += Configuration.TASK_COMPLETION_REWARD
         for clause in soft_clauses:
             before, after = labels[edge.source][clause], labels[edge.destination][clause]
-            term = _soft_term(before, after, finishing, switches)
+            broke = clause in product.breaks.get(edge, ()) or _breaks(before, after, switches)
+            term = _soft_term(broke, after, finishing, switches)
             waits = (before is ClauseState.PENDING) != (after is ClauseState.PENDING)
             if term or (waits and progress[edge]):
                 paying.add(clause)
@@ -532,16 +626,14 @@ def _breaks(before: ClauseState, after: ClauseState, switches: RewardSwitches) -
 
     With the recurrent soft penalty a re-armed violated state only stays violated on a step that
     breaks the rule again, so staying violated is a new break; without it, the break was paid.
+    A folded violated state is never read here: its breaks are ``_Product.breaks``.
     """
     entered = before is not ClauseState.VIOLATED
     return after is ClauseState.VIOLATED and (entered or switches.recurrent_soft_penalty)
 
 
-def _soft_term(
-    before: ClauseState, after: ClauseState, finishing: bool, switches: RewardSwitches
-) -> float:
+def _soft_term(broke: bool, after: ClauseState, finishing: bool, switches: RewardSwitches) -> float:
     """A soft clause pays when it breaks, and how it ends when the task finishes."""
-    broke = _breaks(before, after, switches)
     term = -switches.soft_break_cost if broke and switches.reward_soft_break else 0.0
     if finishing and switches.reward_soft_pending:
         term += _FINISH_REWARD[after]
@@ -618,12 +710,15 @@ def _progress(edges: Sequence[_Edge], product: _Product, finals: set[str]) -> di
     }
 
     def paid_stages(edge: _Edge) -> int:
+        broken = product.breaks.get(edge, ())
         return sum(
             before - after
-            for before, after, label in zip(
-                owed[edge.source], owed[edge.destination], labels[edge.destination], strict=True
+            for clause, (before, after, label) in enumerate(
+                zip(
+                    owed[edge.source], owed[edge.destination], labels[edge.destination], strict=True
+                )
             )
-            if label is not ClauseState.VIOLATED
+            if label is not ClauseState.VIOLATED and clause not in broken
         )
 
     return {

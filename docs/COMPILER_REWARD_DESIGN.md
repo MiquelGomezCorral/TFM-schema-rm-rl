@@ -334,18 +334,35 @@ the finished RM.
   - Each violated state drops its own edges and copies the edges of the DFA's start state (MONA's
     "no step yet" state). A copied edge keeps its destination, except that an edge into a violated
     state loops on the state instead: a step that breaks the rule again while it is still broken
-    is free, and the rule is armed again on the next step.
+    is charged again as a new break, and the rule is armed again on the next step.
   - No state is added and no table is needed. Hard clauses, and every clause with the switch off,
     reach FL-AT unchanged. The input DFAs are not mutated.
 - **[run] Shape.** Each of the four templates has a start `S1`, an idle twin `S2` with the same
   successors, and one absorbing violated state; no copied edge points back at `S1`, so the start
   merge still applies. A single soft rule keeps its RM state count.
+- **[code] A soft `Absence` folds its broken state.** The re-armed violated state has the same
+  exits as `S2`, so `_violated_twins` pairs them and `_clause_product` folds each product state that
+  differs only by that state into one. The break stays as an edge mark (`_Product.breaks`) that
+  `_price_edges` charges and `_progress` does not refund, so every trace pays as before and
+  `lanes-rules` shrinks from 5 states to 2 (start and well). It applies to a soft `Absence` only
+  (`_is_absence`: one proposition, and every live state breaks on it, so a break is charged alike
+  from all of them); `Precedence`, `ChainResponse` and `NotCoExistence` have the same twin and are
+  left as they were.
+  - The fold is the setting `fold_soft_absence` (on by default; `--no-fold-soft-absence` on
+    `generate-rm` and `generate-larm`). It needs the recurrent soft penalty: with the penalty off
+    nothing is re-armed and nothing folds. The manifest records it. With it off the machine is the
+    one the layer built before the fold, state for state.
+  - `rebuild-rewards` and `ablate-rm` keep the recorded value and cannot change the states, so
+    they refuse a bundle that records no `fold_soft_absence` when the fold would change its
+    states (a soft `Absence`): it was made without the fold, so it has to be rebuilt (generated
+    again). `rebuild-rewards --charge-once` needs a bundle built with `--no-fold-soft-absence`:
+    charging once brings back the broken state that the fold removed.
 - **[run] The supervisor's examples** (`x` and `y` are the template's `a` and `b`, `-` is a step
   with neither). With the switch on, each row charges:
 
   | Template | Steps | Charges |
   |---|---|---|
-  | `Absence(x)` | `x x` | 1 |
+  | `Absence(x)` | `x x` | 2 |
   | `Absence(x)` | `x !x x` | 2 |
   | `Precedence(x, y)` | `x y y` | 0 |
   | `Precedence(x, y)` | `y - y x` | 2 |
@@ -358,9 +375,10 @@ the finished RM.
   With the switch off, each row charges at most 1.
 
 - **[decision] The charge is per new break.** A step that breaks the rule again while it is still
-  broken is free, and the rule is armed again on the next step. `Absence(x)` on `x x x` charges 1,
-  on `x - x x` charges 2; `Precedence(x, y)` on `y y` charges 1. The accepted `ChainResponse`
-  result `x x -` = 1 is one instance of this.
+  broken is charged again as a new break, and a clean step arms the rule again. `Absence(x)` on
+  `x x x` charges 3, on `x - x x` charges 3; `Precedence(x, y)` on `y y` charges 2. The accepted
+  `ChainResponse` result `x x -` = 1 stays: the first `x` opens the answer owed, the second `x`
+  breaks it and is charged once, and the clean step after it breaks nothing.
 - **[run] Progress is re-scored.** A violated clause counts 0 and the re-armed rule's clean state
   is accepting, so the rule owes 0 before and after a break and the break step pays -0.5 plus no
   progress for that rule. (Before 2026-11-11 the re-arm joined the clean and the broken product
