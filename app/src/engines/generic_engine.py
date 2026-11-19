@@ -6,6 +6,7 @@ from time import sleep
 
 from openai import BadRequestError
 
+from src.compiler.rm_format import machine_view
 from src.config import Configuration
 from src.models import EnvironmentDescription
 from src.prompts import read_prompt, render_prompt
@@ -146,7 +147,7 @@ class GenericEngine:
                 environment_markdown=self.environment.markdown,
                 task=task,
                 clauses_json=clauses_json,
-                reward_machine=candidate_rm,
+                reward_machine=machine_view(candidate_rm),
                 warnings="\n".join(f"- {warning}" for warning in warnings),
             ),
             critic_schema(),
@@ -174,7 +175,7 @@ class GenericEngine:
                 "labeling_reviewer",
                 environment_markdown=self.environment.markdown,
                 task=task,
-                reward_machine=candidate_rm,
+                reward_machine=machine_view(candidate_rm),
                 api=api,
                 labeling=labeling,
                 **context,

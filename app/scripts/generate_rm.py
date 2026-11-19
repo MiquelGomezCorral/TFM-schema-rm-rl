@@ -22,6 +22,7 @@ from src.arm_fm.generation import (
     clear_call_records,
     generate_compiler_labeling,
     pair_state_descriptions,
+    skipped_descriptions_note,
     state_identifiers,
 )
 from src.compiler import (
@@ -30,6 +31,7 @@ from src.compiler import (
     RewardSwitches,
     build_compilation_result,
     compile_dfas,
+    machine_too_large,
     materialize_proposal,
 )
 from src.config import Configuration
@@ -338,6 +340,11 @@ class _Pipeline:
         if not self.CONFIG.state_descriptions:
             self.progress.stage_skip(PipelineStep.STATE_DESCRIPTIONS)
             return compiled
+        if machine_too_large(compiled.text):
+            # The tagger reads the whole machine and the compiler keeps no per-state description.
+            self.progress.stage_skip(PipelineStep.STATE_DESCRIPTIONS)
+            self.progress.warn(skipped_descriptions_note(compiled.text))
+            return compiled
         self.progress.start(PipelineStep.STATE_DESCRIPTIONS)
 
         def count_failed_request(message: str) -> None:
@@ -436,7 +443,7 @@ class _Pipeline:
     def _embed_states(self, compiled: CompilationResult) -> CompilationResult:
         """Embed the accepted state descriptions through the configured local server."""
         CONFIG = self.CONFIG
-        if not CONFIG.embeddings:
+        if not CONFIG.embeddings or machine_too_large(compiled.text):  # no descriptions to embed
             self.progress.stage_skip(PipelineStep.EMBEDDINGS)
             return compiled
         self.progress.start(PipelineStep.EMBEDDINGS)

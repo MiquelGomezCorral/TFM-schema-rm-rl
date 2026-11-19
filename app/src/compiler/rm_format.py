@@ -35,6 +35,11 @@ _JUDGMENT_PARTS = {
     "SOFT_FAILED_REWARD",
     "PENDING_PROMISES",
 }
+# The serialized text's tables: a machine view counts their rows instead of listing them.
+TRANSITION_HEADING = "TRANSITION_FUNCTION:"
+REWARD_HEADING = "REWARD_FUNCTION:"
+PENDING_HEADING = "PENDING_PROMISES:"
+_VIEW_NAMES = 12
 
 
 class RuntimeValidationError(ValueError):
@@ -388,18 +393,71 @@ def serialize_paper_reward_machine(machine: PaperRewardMachine) -> str:
     if judgment is not None:
         lines.append(f"HARD_FAILED_REWARD: {_format_reward(judgment.hard_failed_reward)}")
         lines.append(f"SOFT_FAILED_REWARD: {_format_reward(judgment.soft_failed_reward)}")
-    lines.append("TRANSITION_FUNCTION:")
+    lines.append(TRANSITION_HEADING)
     lines.extend(f"({item.source}, {item.condition}) -> {item.destination}" for item in transitions)
-    lines.append("REWARD_FUNCTION:")
+    lines.append(REWARD_HEADING)
     lines.extend(
         f"({item.source}, {item.condition}, {item.destination}) -> {_format_reward(item.reward)}"
         for item in transitions
         if item.reward != 0
     )
     if judgment is not None:
-        lines.append("PENDING_PROMISES:")
+        lines.append(PENDING_HEADING)
         lines.extend(f"{state}: hard {hard}, soft {soft}" for state, hard, soft in judgment.pending)
     return "\n".join(lines) + "\n"
+
+
+# ======================================================================================
+#                                      PROMPT VIEW
+# ======================================================================================
+
+
+def machine_too_large(text: str) -> bool:
+    """Whether a machine's text is above ``Configuration.MACHINE_PROMPT_MAX_CHARS``.
+
+    The tables grow with the product of the clause automata, so a prompt cannot carry them whole:
+    it reads ``machine_view``, and the state tagger and the embeddings are skipped.
+    """
+    return len(text) > Configuration.MACHINE_PROMPT_MAX_CHARS
+
+
+def machine_view(text: str) -> str:
+    """Return the machine text a prompt carries: whole, or a summary when it is too large.
+
+    The summary keeps the header lines (initial, final and rejecting states, the end charges),
+    each cut to its first names and their total, and replaces each table by its row count.
+    """
+    if not machine_too_large(text):
+        return text
+
+    header: list[str] = []
+    row_counts: dict[str, int] = {}
+    table = None
+    for line in text.splitlines():
+        if line in (TRANSITION_HEADING, REWARD_HEADING, PENDING_HEADING):
+            table = line
+            row_counts[table] = 0
+        elif table is not None:
+            if line.strip():
+                row_counts[table] += 1
+        else:
+            header.append(_cut_names(line))
+
+    note = "(Summary: the tables are too large to list; each is replaced by its row count.)"
+    tables = [
+        f"{heading} {count} {'row' if count == 1 else 'rows'}, not listed"
+        for heading, count in row_counts.items()
+    ]
+    return "\n".join([*header, note, *tables]) + "\n"
+
+
+def _cut_names(line: str) -> str:
+    """Cut a ``KEY: a, b, c`` header line to its first names and the total."""
+    key, _, value = line.partition(":")
+    names = [name.strip() for name in value.split(",")]
+    if len(names) <= _VIEW_NAMES:
+        return line
+    return f"{key}: {', '.join(names[:_VIEW_NAMES])}, ... ({len(names)} in all)"
 
 
 def compiler_machine_to_paper(

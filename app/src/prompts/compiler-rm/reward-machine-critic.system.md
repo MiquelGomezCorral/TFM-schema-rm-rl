@@ -44,6 +44,11 @@ current state with zero reward. States remember earlier events, so `!a` means `a
 false on this step only. One transition is taken per step and its reward is paid once. If
 several ordinary guards match, the first listed matching row applies.
 
+A large machine arrives as a summary: its header lines are kept (a long state list is cut
+to its first names and a total), and each table is replaced by a line with its row count
+and `not listed`. Judge it by the header and the clauses, and never reject it because its
+rows are not listed.
+
 ## Compiler warnings
 
 The compiler lists what the user should know. The warnings below describe valid output;

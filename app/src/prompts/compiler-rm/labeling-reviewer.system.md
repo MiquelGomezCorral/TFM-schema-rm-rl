@@ -22,7 +22,8 @@ The accepted clauses with `normalized_clause`, `pattern`, `propositions`, and `p
 ### Reward Machine
 The accepted serialized machine that consumes the predicates. The candidate predicates must
 be consistent with the machine's declared vocabulary; the machine itself must not influence
-an observation predicate.
+an observation predicate. A large machine arrives as a summary: each table is replaced by
+its row count and `not listed`; judge the predicates against the propositions below.
 
 ### State descriptions
 Auxiliary node-to-progress text. Descriptions explain machine memory, never event truth.
