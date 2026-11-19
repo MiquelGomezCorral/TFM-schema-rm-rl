@@ -180,10 +180,13 @@ python app/main.py generate-larm --mode compiler \
   --environment experiments/dev/arm-fm/<env>/environment.md \
   --task "<task text>" \
   --bundle outputs/bundles/<Env>-1 \
+  --gym-id <gym id> [--env-kwargs '{"max_steps": 200}'] \
   --embeddings
 ```
 
-One command does the whole compiler path: the LLM picks the clauses, the compiler builds the RM, one critic
+`--gym-id` (with `--env-kwargs`) or `--step-limit` names the level: the hard break is priced above the
+worst stream of soft breaks over its step limit (`--no-hard-ceiling` keeps the flat -10 and needs no
+level). One command does the whole compiler path: the LLM picks the clauses, the compiler builds the RM, one critic
 checks the clauses against the task and the RM, then the state descriptions and the labeling functions are
 generated and the descriptions are embedded. `--no-critic` turns the critic off (a warning says every result is
 then accepted unchecked).
@@ -192,7 +195,7 @@ To look at a compiler RM alone, without a bundle, use `generate-rm` (it also dra
 
 ```bash
 python app/main.py generate-rm --environment experiments/dev/arm-fm/<env>/environment.md \
-  --task "<task text>" --output <name> --svg
+  --task "<task text>" --output <name> --svg --step-limit <steps>
 ```
 
 ## 3. Generate the paper bundle (ARM-FM RM + descriptions + embeddings)

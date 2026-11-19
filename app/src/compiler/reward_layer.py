@@ -95,11 +95,11 @@ class RewardSwitches:
     ``minimize_machine`` (off by default; see ``_merge_equivalent``); the other switches only
     change the rewards (and, for the end judgment, the machine's end lines).
 
-    ``hard_ceiling`` is off by default and needs ``step_limit``, the level's step limit: it
-    prices the hard break above the discounted soft ceiling for ``gamma`` and for
-    ``soft_breaks_per_step``, how many soft rules can break on one step (see
+    ``hard_ceiling`` is on by default. Where soft rules repeat it needs ``step_limit``, the
+    level's step limit: it prices the hard break above the discounted soft ceiling for ``gamma``
+    and for ``soft_breaks_per_step``, how many soft rules can break on one step (see
     ``hard_break_charge``). The manifest records all three, so a run can refuse a bundle priced
-    for other values.
+    for other values. Off, the hard break costs the flat ``Configuration.WELL_REWARD``.
     """
 
     reward_progress: bool = Configuration.reward_progress
@@ -122,6 +122,19 @@ class RewardSwitches:
         """The switches a run's configuration sets."""
         return cls(**{item.name: getattr(CONFIG, item.name) for item in fields(cls)})
 
+    def prices_soft_stream(self, soft_rules: bool) -> bool:
+        """Whether the hard break is priced above a stream of soft breaks (the ceiling applies).
+
+        It does where the ceiling is on and a soft rule's breaks repeat and cost something; any
+        other machine keeps the flat well charge.
+        """
+        return (
+            self.hard_ceiling
+            and self.recurrent_soft_penalty
+            and self.reward_soft_break
+            and soft_rules
+        )
+
 
 def build_reward_machine(
     dfas: Sequence[dict], soft: Sequence[bool], switches: RewardSwitches | None = None
@@ -140,15 +153,13 @@ def build_reward_machine(
     ``switches`` default to the ``Configuration`` class defaults. With ``minimize_machine`` the
     priced states that no step sequence can tell apart are merged into one.
     Raises ``ValueError`` on a non-total DFA, conflicting clauses, a positive reward cycle, or
-    ``hard_ceiling`` without a ``step_limit``.
+    a ``hard_ceiling`` that prices repeating soft breaks without a ``step_limit``.
     """
     switches = switches or RewardSwitches()
     if len(dfas) != len(soft):
         raise ValueError(
             f"Expected one DFA per clause, got {len(dfas)} DFAs for {len(soft)} clauses"
         )
-    if switches.hard_ceiling and switches.step_limit is None:
-        raise ValueError("hard_ceiling needs the level's step limit (step_limit)")
 
     for index, dfa in enumerate(dfas):
         _check_complete(index, dfa)
@@ -675,14 +686,13 @@ def _well_charge(soft_clauses: Sequence[int], switches: RewardSwitches) -> float
     one step, the user's setting: it depends on the environment and the task, not on the clause
     count.
     """
-    repeats = (
-        switches.hard_ceiling
-        and switches.recurrent_soft_penalty
-        and switches.reward_soft_break
-        and bool(soft_clauses)
-    )
-    if not repeats:
+    if not switches.prices_soft_stream(bool(soft_clauses)):
         return Configuration.WELL_REWARD
+    if switches.step_limit is None:
+        raise ValueError(
+            "the hard ceiling prices repeating soft breaks over the level's step limit: "
+            "give the level (step_limit, or gym_id and env_kwargs) or turn the ceiling off"
+        )
     return hard_break_charge(
         switches.soft_break_cost,
         switches.gamma,

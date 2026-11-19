@@ -8,10 +8,11 @@ a machine cannot tell what the world forces, so every figure is what the machine
 import itertools
 import math
 from collections.abc import Sequence
+from dataclasses import fields
 from typing import NamedTuple
 
 from src.compiler import PaperRewardMachine
-from src.compiler.reward_layer import discounted_steps
+from src.compiler.reward_layer import RewardSwitches, discounted_steps
 from src.config import Configuration
 
 from .artifacts import ArtifactBundle
@@ -56,6 +57,60 @@ class PayOrder(NamedTuple):
         return text if self.stall is None else f"{text}; stall, hard promise open {self.stall:g}"
 
 
+def record_pay_order(bundle: ArtifactBundle) -> dict:
+    """Check the pay order of a bundle just built and record it in its manifest; report only.
+
+    The gamma, step limit and soft breaks per step are the ones the manifest records (the
+    reward switches the machine was priced with). ``effective_settings["pay_order"]`` keeps
+    ``ok``, the mildest hard break charge and the summary line, and is returned. ``ok`` is None
+    when the check did not run: with no step limit it would judge a horizon that is not the
+    run's, and an error in it must not lose a bundle that cost model calls; the summary says
+    which.
+    """
+    settings = bundle.manifest.effective_settings
+    record = {"ok": None, "hard_charge": None, "summary": "not checked: no step limit"}
+    if settings.get("step_limit") is not None:
+        try:
+            order = pay_order_of(
+                bundle, settings["gamma"], settings["step_limit"], settings["soft_breaks_per_step"]
+            )
+        except Exception as error:  # report only: never fail the run that made the bundle
+            record["summary"] = f"check failed: {type(error).__name__}: {error}"
+        else:
+            record = {
+                "ok": order.broken is None,
+                "hard_charge": order.pay["hard break"],
+                "summary": order.summary(),
+            }
+    settings["pay_order"] = record
+    return record
+
+
+def has_soft_rules(bundle: ArtifactBundle) -> bool:
+    """Whether the bundle's task has a soft clause; a bundle that stores no clauses is read as yes."""
+    clauses = bundle.manifest.generation.get("clauses")
+    return clauses is None or any(clause[2] == "soft" for clause in clauses)
+
+
+def ceiling_priced(bundle: ArtifactBundle) -> bool:
+    """Whether the hard break charge is the ceiling, so it depends on gamma, step limit and breaks.
+
+    Only a bundle made with ``hard_ceiling`` and with repeating soft breaks is (its manifest records
+    the values it assumed); the others pay the flat well charge whatever the run's values are. A
+    manifest that records no ``hard_ceiling`` predates it.
+    """
+    recorded = bundle.manifest.effective_settings
+    switches = RewardSwitches(
+        **{"hard_ceiling": False}
+        | {
+            item.name: recorded[item.name]
+            for item in fields(RewardSwitches)
+            if item.name in recorded
+        }
+    )
+    return switches.prices_soft_stream(has_soft_rules(bundle))
+
+
 def pay_order_of(
     bundle: ArtifactBundle, gamma: float, step_limit: int | None, soft_breaks_per_step: int
 ) -> PayOrder:
@@ -66,10 +121,8 @@ def pay_order_of(
     hard ceiling makes (``CONFIG.soft_breaks_per_step``).
     """
     settings = bundle.manifest.effective_settings
-    clauses = bundle.manifest.generation.get("clauses")
-    soft_rules = clauses is None or any(clause[2] == "soft" for clause in clauses)
     break_cost = settings.get("soft_break_cost", Configuration.soft_break_cost)
-    soft_step_cap = soft_breaks_per_step * break_cost if soft_rules else 0.0
+    soft_step_cap = soft_breaks_per_step * break_cost if has_soft_rules(bundle) else 0.0
     return pay_order(
         bundle.reward_machine,
         gamma,

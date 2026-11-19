@@ -68,6 +68,8 @@ class Job:
     id: str
     environment: str
     task: str
+    gym_id: str  # the card's level: its step limit prices the hard break of the machine
+    env_kwargs: str  # JSON of the level's keyword arguments
 
 
 def generate_suite(options: SuiteOptions) -> None:
@@ -138,17 +140,20 @@ def _load_jobs(options: SuiteOptions) -> list[Job]:
     jobs = []
     for card in data["cards"]:
         card_id, task = card.get("id"), card.get("task")
-        environment = (card.get("env") or {}).get("description")
+        env = card.get("env") or {}
+        environment, gym_id = env.get("description"), env.get("gym_id")
         if not all(
-            isinstance(value, str) and value.strip() for value in (card_id, task, environment)
+            isinstance(value, str) and value.strip()
+            for value in (card_id, task, environment, gym_id)
         ):
             raise ValueError(
-                f"{options.tasks}: card {card_id!r} needs id, task and env.description"
+                f"{options.tasks}: card {card_id!r} needs id, task, env.description and env.gym_id"
             )
-        jobs.append(Job(card_id, environment, task))
+        level = (gym_id, json.dumps(env.get("env_kwargs") or {}))
+        jobs.append(Job(card_id, environment, task, *level))
         if options.paraphrases:
             for number, paraphrase in enumerate(card.get("paraphrases", []), start=1):
-                jobs.append(Job(f"{card_id}~p{number}", environment, paraphrase))
+                jobs.append(Job(f"{card_id}~p{number}", environment, paraphrase, *level))
     if options.only:
         known = {job.id for job in jobs} | {job.id.split("~")[0] for job in jobs}
         unknown = set(options.only) - known
@@ -204,6 +209,10 @@ def _generate(job: Job, options: SuiteOptions) -> tuple[dict, int]:
         job.environment,
         "--task",
         job.task,
+        "--gym-id",
+        job.gym_id,
+        "--env-kwargs",
+        job.env_kwargs,
         "--bundle",
         str(directory),
     ]

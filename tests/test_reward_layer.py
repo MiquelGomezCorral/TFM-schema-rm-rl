@@ -2,7 +2,10 @@
 
 import itertools
 import unittest
+from types import SimpleNamespace
 
+from scripts.rebuild_rewards import rebuild_switches
+from src.arm_fm.pay_order import ceiling_priced, pay_order, record_pay_order
 from src.arm_fm.runtime import RewardMachineRuntime
 from src.compiler import parse_paper_reward_machine, serialize_reward_machine
 from src.compiler.reward_layer import (
@@ -13,6 +16,7 @@ from src.compiler.reward_layer import (
     build_reward_machine,
     hard_break_charge,
 )
+from src.config import Configuration
 
 # F goal: unsatisfied until `goal` is seen, then it stays satisfied.
 GOAL = {
@@ -105,6 +109,23 @@ PRECEDENCE = {
 }
 
 
+def never(name):
+    """G !name, the shape of NO_LAVA on another proposition."""
+    return {
+        "alphabet": {name},
+        "states": {"R0", "R1", "R2"},
+        "initial_state": "R0",
+        "accepting_states": {"R1"},
+        "transitions": {
+            ("R0", f"!{name}"): "R1",
+            ("R0", name): "R2",
+            ("R1", f"!{name}"): "R1",
+            ("R1", name): "R2",
+            ("R2", ""): "R2",
+        },
+    }
+
+
 def response(trigger, answer, name):
     """G(trigger -> F answer) as MONA gives it: a start state `<name>S` that its idle step leaves."""
     start, open_, owed = f"{name}S", f"{name}R", f"{name}Q"
@@ -188,11 +209,11 @@ class RewardLayerTests(unittest.TestCase):
         self.assertEqual(len(machine.states), 3)
 
     def test_a_broken_soft_rule_pays_the_break_and_a_pending_soft_goal_pays_at_the_finish(self):
-        # A soft rule: each break pays -5 and, as the break and the start share a component, no
-        # progress. Finishing pays 11 (1 progress + 10) whether or not the rule held.
+        # A soft rule: each break pays -1 (the default cost) and, as the break and the start share
+        # a component, no progress. Finishing pays 11 (1 progress + 10) whether or not the rule held.
         never_lava = ((GOAL, NO_LAVA), (False, True), ("goal", "lava"))
         self.assertEqual(
-            rewards_of(*never_lava, [{"lava"}, {"lava"}, {"goal"}]), [-5.0, -5.0, 11.0]
+            rewards_of(*never_lava, [{"lava"}, {"lava"}, {"goal"}]), [-1.0, -1.0, 11.0]
         )
         self.assertEqual(rewards_of(*never_lava, [{"goal"}]), [11.0])
 
@@ -219,7 +240,8 @@ class RewardLayerTests(unittest.TestCase):
         )
         for switch, setup, steps, expected in rows:
             with self.subTest(switch):
-                on = {"reward_end_judgment": True}
+                # The flat well: the hard ceiling would price this well edge above -10.
+                on = {"reward_end_judgment": True, "hard_ceiling": False}
                 self.assertEqual(rewards_of(*setup, steps, **{**on, switch: False}), expected)
 
         well_off = build_reward_machine(*lava[:2], RewardSwitches(reward_well=False))
@@ -251,11 +273,11 @@ class RewardLayerTests(unittest.TestCase):
         never_lava = ((NO_LAVA,), (True,), ("lava",))
 
         # A step that breaks it again while still broken pays too: every break costs.
-        self.assertEqual(rewards_of(*never_lava, [{"lava"}, {"lava"}]), [-5.0, -5.0])
-        self.assertEqual(rewards_of(*never_lava, [{"lava"}, set(), {"lava"}]), [-5.0, 0.0, -5.0])
+        self.assertEqual(rewards_of(*never_lava, [{"lava"}, {"lava"}]), [-1.0, -1.0])
+        self.assertEqual(rewards_of(*never_lava, [{"lava"}, set(), {"lava"}]), [-1.0, 0.0, -1.0])
         self.assertEqual(
             rewards_of(*never_lava, [{"lava"}, set(), {"lava"}], recurrent_soft_penalty=False),
-            [-5.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
         )
 
     def test_folding_a_soft_absence_removes_its_broken_state_and_never_changes_the_pay(self):
@@ -412,11 +434,20 @@ class RewardLayerTests(unittest.TestCase):
 
     def test_the_hard_break_costs_the_discounted_soft_ceiling_only_where_soft_rules_repeat(self):
         # k S (1 - g^T) / (1 - g) plus one progress unit, k soft breaks a step; k S T at g 1;
-        # never under the flat 10 + 1.
-        self.assertAlmostEqual(hard_break_charge(1, 0.99, 300, 1), -(1 - 0.99**300) / 0.01 - 1)
-        self.assertAlmostEqual(hard_break_charge(1, 0.99, 300, 2), -2 * (1 - 0.99**300) / 0.01 - 1)
-        self.assertEqual(hard_break_charge(1, 1, 300, 2), -601)
-        self.assertEqual(hard_break_charge(1, 0.9, 5, 1), -11)
+        # never under the flat 10 + 1. Rows: S, k, g, T, charge.
+        table = (
+            (1, 1, 0.99, 300, -96.0959),  # the default pricing
+            (2.5, 1, 0.99, 300, -238.7398),
+            (1, 2, 0.99, 300, -191.1918),
+            (5, 1, 0.99, 300, -476.4796),
+            (1, 1, 1, 300, -301),
+            (1, 2, 1, 300, -601),
+            (1, 1, 0.9, 5, -11),  # the flat well, not the ceiling, is the larger
+        )
+        for cost, breaks, gamma, limit, expected in table:
+            with self.subTest(cost=cost, breaks=breaks, gamma=gamma, limit=limit):
+                charge = hard_break_charge(cost, gamma, limit, breaks)
+                self.assertAlmostEqual(charge, expected, places=4)
 
         def well_charges(soft, **switches):
             clauses = (GOAL, NO_LAVA, *soft)
@@ -430,7 +461,9 @@ class RewardLayerTests(unittest.TestCase):
                 if transition.destination in machine.rejecting_states
             }
 
-        ceiling = {"hard_ceiling": True, "gamma": 0.99, "step_limit": 300, "soft_break_cost": 1}
+        # The defaults price the ceiling at S 1, g 0.99, one break a step: only the level's step
+        # limit is left to name.
+        ceiling = {"step_limit": 300}
         # The breaks per step are the user's setting (default 1), not the soft clause count.
         (one,) = well_charges((KEY,), **ceiling)
         self.assertAlmostEqual(one, hard_break_charge(1, 0.99, 300, 1), places=6)
@@ -438,12 +471,100 @@ class RewardLayerTests(unittest.TestCase):
         self.assertAlmostEqual(still_one, hard_break_charge(1, 0.99, 300, 1), places=6)
         (two,) = well_charges((KEY, BOUNCE), **ceiling, soft_breaks_per_step=2)
         self.assertAlmostEqual(two, hard_break_charge(1, 0.99, 300, 2), places=6)
-        # No soft rule, charge-once soft rules, or the rule off: the flat well.
-        self.assertEqual(well_charges((), **ceiling), {-10.0})
+        # No soft rule (it needs no step limit), charge-once soft rules, or the rule off: the flat
+        # well.
+        self.assertEqual(well_charges(()), {-10.0})
         self.assertEqual(well_charges((KEY,), **ceiling, recurrent_soft_penalty=False), {-10.0})
-        self.assertEqual(well_charges((KEY,)), {-10.0})
+        self.assertEqual(well_charges((KEY,), hard_ceiling=False), {-10.0})
         with self.assertRaisesRegex(ValueError, "step limit"):
-            well_charges((KEY,), hard_ceiling=True)
+            well_charges((KEY,))
+
+    def test_the_default_pricing_passes_the_pay_order_where_the_flat_one_fails(self):
+        # A hard and a soft Absence: a stream of soft breaks costs more than the flat hard break
+        # (S 5: -475 against -10), so breaking the hard rule would pay better.
+        clauses, priorities, names = (NO_LAVA, never("spill")), (False, True), ("lava", "spill")
+        for label, switches, passes in (
+            ("default", {"step_limit": 300}, True),
+            ("flat S 5", {"hard_ceiling": False, "soft_break_cost": 5.0}, False),
+        ):
+            with self.subTest(label):
+                layer = build_reward_machine(clauses, priorities, RewardSwitches(**switches))
+                text = serialize_reward_machine(layer.reward_machine)
+                machine = parse_paper_reward_machine(text, propositions=names)
+                self.assertEqual(pay_order(machine, 0.99, 300).broken is None, passes)
+
+    def test_a_rebuild_keeps_the_pricing_the_bundle_records_unless_the_command_gives_another(self):
+        config = Configuration(step_limit=300)
+        made_at_s5 = {"soft_break_cost": 5.0, "gamma": 0.99, "soft_breaks_per_step": 1}
+        # Rows: the options given, what the bundle records, then the cost and ceiling of the
+        # rebuild and where each came from.
+        rows = (
+            ({}, made_at_s5, 5.0, False, ("bundle", "bundle: made before the ceiling, so flat")),
+            ({"hard_ceiling": False}, made_at_s5, 5.0, False, ("bundle", "command")),
+            ({"hard_ceiling": True}, made_at_s5, 5.0, True, ("bundle", "command")),
+            (
+                {"hard_ceiling": True, "soft_break_cost": 1.0},
+                made_at_s5,
+                1.0,
+                True,
+                ("command", "command"),
+            ),
+            (
+                {},
+                {},
+                1.0,
+                False,
+                ("default: the bundle records none", "bundle: made before the ceiling, so flat"),
+            ),
+        )
+        for given, settings, cost, ceiling, origins in rows:
+            with self.subTest(given=given, settings=settings):
+                bundle = SimpleNamespace(
+                    manifest=SimpleNamespace(effective_settings=settings),
+                    reward_machine=SimpleNamespace(judgment=None),
+                )
+                switches, origin = rebuild_switches(config, bundle, given)
+                self.assertEqual((switches.soft_break_cost, switches.hard_ceiling), (cost, ceiling))
+                self.assertEqual((origin["soft_break_cost"], origin["hard_ceiling"]), origins)
+                self.assertEqual((switches.step_limit, origin["step_limit"]), (300, "command"))
+        bundle = SimpleNamespace(
+            manifest=SimpleNamespace(effective_settings={}),
+            reward_machine=SimpleNamespace(judgment=None),
+        )
+        switches, origin = rebuild_switches(Configuration(), bundle, {})
+        self.assertEqual(
+            (switches.step_limit, origin["step_limit"]), (None, "none: not recorded, not given")
+        )
+
+    def test_a_pay_order_check_that_cannot_run_is_recorded_and_never_raises(self):
+        for step_limit, summary in (
+            (None, "not checked: no step limit"),
+            (300, "check failed: "),  # no machine to walk
+        ):
+            with self.subTest(step_limit=step_limit):
+                settings = {"gamma": 0.99, "step_limit": step_limit, "soft_breaks_per_step": 1}
+                manifest = SimpleNamespace(effective_settings=settings, generation={})
+                record = record_pay_order(SimpleNamespace(manifest=manifest, reward_machine=None))
+                self.assertIsNone(record["ok"])
+                self.assertTrue(record["summary"].startswith(summary))
+                self.assertEqual(settings["pay_order"], record)
+
+    def test_only_a_bundle_priced_by_the_ceiling_ties_training_to_gamma_and_step_limit(self):
+        hard, soft = [["Existence", ["a"], "hard"]], [["Absence", ["b"], "soft"]]
+        ceiling = {"hard_ceiling": True}
+        # Rows: recorded settings, stored clauses (None: none stored), whether the ceiling prices it.
+        rows = (
+            (ceiling, hard + soft, True),
+            (ceiling, None, True),
+            (ceiling, hard, False),  # no soft rule: the flat well, whatever gamma the run uses
+            ({}, hard + soft, False),  # made before the ceiling existed
+            ({**ceiling, "recurrent_soft_penalty": False}, hard + soft, False),
+        )
+        for settings, clauses, expected in rows:
+            with self.subTest(settings=settings, clauses=clauses):
+                generation = {} if clauses is None else {"clauses": clauses}
+                manifest = SimpleNamespace(effective_settings=settings, generation=generation)
+                self.assertEqual(ceiling_priced(SimpleNamespace(manifest=manifest)), expected)
 
     def test_a_hard_goal_that_a_hard_rule_forbids_is_rejected(self):
         forbids_goal = {

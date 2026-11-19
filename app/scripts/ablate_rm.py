@@ -206,14 +206,19 @@ def _recorded_switches(source: ArtifactBundle) -> RewardSwitches:
     """The reward switches the source was made with; one that records none paid the defaults.
 
     The end judgment was on by default before it became off by default, so a bundle that does
-    not record it had it when its machine carries one.
+    not record it had it when its machine carries one. The hard ceiling was off by default before
+    it became on, so a bundle that does not record it paid the flat hard break.
     """
     settings = source.manifest.effective_settings
     recorded = {
         item.name: settings[item.name] for item in fields(RewardSwitches) if item.name in settings
     }
     return RewardSwitches(
-        **{"reward_end_judgment": source.reward_machine.judgment is not None, **recorded}
+        **{
+            "reward_end_judgment": source.reward_machine.judgment is not None,
+            "hard_ceiling": False,
+            **recorded,
+        }
     )
 
 
@@ -248,6 +253,9 @@ def _ablated_bundle(
     bundle.manifest.generation["compiler_text"] = compiler_text
     bundle.manifest.validation.pop("critic", None)
     bundle.manifest.effective_settings["critic_model"] = None
+    bundle.manifest.effective_settings.pop(
+        "pay_order", None
+    )  # the source's check, not this machine's
     bundle.manifest.generation.update(
         first_attempt=False, refined=False, attempt_classification="ablated"
     )

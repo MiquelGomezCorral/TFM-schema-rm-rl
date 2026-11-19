@@ -6,21 +6,25 @@ Usage (repository root, `RM_RL_env`, MONA on the PATH):
 
 For each card of `experiments/benchmark/forcing/tasks.json` it compiles the card's `expect` clauses
 through the project's own compiler (DECLARE template -> LTLf -> MONA DFA -> Reward Machine, default
-reward switches), adds the hand-written `labeling.py` (only the machine's propositions) and the
+reward switches priced over the card's level, recorded in the manifest), adds the hand-written `labeling.py` (only the machine's propositions) and the
 hand-written state descriptions below, and saves the bundle to
 `experiments/benchmark/forcing/bundles/farm/<card-id>/`. The embeddings come from the second command
 (local server on 127.0.0.1:8934); until then the bundle is not complete.
 """
 
 import argparse
+from dataclasses import asdict
 from pathlib import Path
 
 from flat_tool import compile_dfa
 from pylogics.syntax.ltl import Atomic
 
+from src.arm_fm.environments import gym_step_limit
 from src.arm_fm.generation import build_compiler_bundle
+from src.arm_fm.pay_order import record_pay_order
 from src.benchmark.cards import load_cards
 from src.benchmark.declare_judge import ltlf_of
+from src.compiler import RewardSwitches
 from src.compiler.ltlf import to_flat_syntax
 from src.compiler.pipeline import ClauseProposal, Proposal, build_compilation_result
 from src.config import PriorityLevel
@@ -128,13 +132,19 @@ def build_card(card, destination: Path, *, overwrite: bool) -> Path:
     environment = EnvironmentDescription.from_file(card.env["description"], code=True)
     proposal = proposal_of(card.task, card.expect)
     dfas = tuple(compile_dfa(clause.ltlf_formula) for clause in proposal.clauses)
-    result = build_compilation_result(environment, proposal, dfas)
+    # The default pricing, over the step limit of the card's level.
+    switches = RewardSwitches(
+        step_limit=gym_step_limit(card.env["gym_id"], **card.env.get("env_kwargs", {}))
+    )
+    result = build_compilation_result(environment, proposal, dfas, switches)
     used = {name for _, propositions, _ in card.expect for name in propositions}
     bundle = build_compiler_bundle(
         result,
         labeling_source=labeling_source(used),
         state_descriptions=DESCRIPTIONS[card.id],
     )
+    bundle.manifest.effective_settings.update(asdict(switches))
+    print(record_pay_order(bundle)["summary"])
     bundle.manifest.provenance = {
         "generator": "hand-written",
         "status": "reconstructed",

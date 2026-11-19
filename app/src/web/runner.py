@@ -209,6 +209,7 @@ class RunController:
                     output=Path(request.output_filename),
                     critic=request.critic,
                     recurrent_soft_penalty=request.recurrent_soft_penalty,
+                    hard_ceiling=False,  # the form names no level, so no step limit to price over
                     reasoning=request.reasoning,
                     attempts=request.attempts,
                     labeling=request.labeling,
