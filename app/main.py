@@ -283,6 +283,13 @@ if __name__ == "__main__":
         "the same pay; needs the recurrent soft penalty (default: enabled)",
     )
     generate_parser.add_argument(
+        "--minimize-machine",
+        action=argparse.BooleanOptionalAction,
+        default=Configuration.minimize_machine,
+        help="Merge the states that pay the same and lead to the same states on every step, and "
+        "carry the same end facts: fewer states, the same pay (default: disabled)",
+    )
+    generate_parser.add_argument(
         "--soft-break-cost",
         type=float,
         default=Configuration.soft_break_cost,
@@ -433,6 +440,14 @@ if __name__ == "__main__":
         default=Configuration.fold_soft_absence,
         help="compiler mode only: fold a soft Absence's broken state into the satisfied state it "
         "equals (fewer states, the same pay); needs the recurrent soft penalty (default: enabled)",
+    )
+    larm_parser.add_argument(
+        "--minimize-machine",
+        action=argparse.BooleanOptionalAction,
+        default=Configuration.minimize_machine,
+        help="compiler mode only: merge the states that pay the same and lead to the same states "
+        "on every step, and carry the same end facts (fewer states, the same pay) "
+        "(default: disabled)",
     )
     larm_parser.add_argument(
         "--soft-break-cost",
