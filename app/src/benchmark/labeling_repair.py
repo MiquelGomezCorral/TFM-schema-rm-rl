@@ -26,7 +26,7 @@ from typing import Any
 from src.arm_fm.artifacts import ArtifactBundle
 from src.arm_fm.generation import extract_labeling_code
 from src.arm_fm.runtime import load_labeling_functions
-from src.compiler import serialize_paper_reward_machine
+from src.compiler import machine_view, serialize_paper_reward_machine
 from src.config import Configuration
 from src.engines import ImmediateEngineError, RetryableEngineError
 from src.prompts import read_prompt, render_prompt
@@ -259,14 +259,18 @@ def _ask(generator: Generator, user: str, repair: Repair) -> str:
 
 
 def repair_prompt(bundle: ArtifactBundle, check: Check) -> str:
-    """The repair request: what the pipeline gave the generator, the labeling and its failure."""
+    """The repair request: what the pipeline gave the generator, the labeling and its failure.
+
+    A machine over ``Configuration.MACHINE_PROMPT_MAX_CHARS`` goes in as its summary, as it does
+    for the labeling generator.
+    """
     manifest = bundle.manifest
     return render_prompt(
         "repair",
         "labeling_repair",
         environment_markdown=str(manifest.inputs.get("environment_markdown", "")),
         task=manifest.task,
-        reward_machine=serialize_paper_reward_machine(bundle.reward_machine),
+        reward_machine=machine_view(serialize_paper_reward_machine(bundle.reward_machine)),
         api=str(manifest.api_definitions.get("labeling", "")),
         labeling=bundle.labeling_source,
         failure=failure_text(check),

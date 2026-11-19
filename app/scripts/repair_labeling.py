@@ -10,7 +10,8 @@ A repaired bundle whose generation stopped at labeling still lacks descriptions 
 its ``<name>.status.json`` says ``pipeline-failed`` and ``run-suite`` has no data for it. The run
 ends by finishing those bundles: the arm's own description stage with the bundle's generator, then
 ``embed-larm`` through the embedding server, then the status goes to ``complete`` with the
-generation outcome kept in ``generation_status`` and ``generation_reason``. It also finishes
+generation outcome kept in ``generation_status`` and ``generation_reason``. A machine over the
+prompt bound skips the description and embedding stages, as in ``generate-larm``. It also finishes
 bundles repaired by an earlier run or by the agent step, and resumes one that stopped half way.
 """
 
@@ -23,7 +24,11 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 from src.arm_fm.artifacts import ArtifactBundle
-from src.arm_fm.generation import StageAttempt, request_state_descriptions
+from src.arm_fm.generation import (
+    StageAttempt,
+    request_state_descriptions,
+    skipped_descriptions_note,
+)
 from src.benchmark import CardError
 from src.benchmark.labeling_repair import (
     DONE_OUTCOMES,
@@ -62,6 +67,7 @@ from src.benchmark.traces import (
     read_json,
     write_json,
 )
+from src.compiler import machine_too_large, serialize_paper_reward_machine
 from src.config import Configuration
 from src.models import EnvironmentDescription
 from src.utils import get_engine, print_warning
@@ -316,10 +322,16 @@ def _describe(CONFIG: Configuration, step: Finish) -> None:
 
     The machine and ``labeling.py`` are not touched: the bundle is rewritten with the two stages
     marked ``complete`` and the descriptions added. A bundle that already has descriptions (a
-    stopped earlier run) skips the request.
+    stopped earlier run) skips the request. A machine over the prompt bound gets none, as in
+    ``generate-larm``: the bundle records ``state_descriptions_skipped`` and trains one-hot only.
     """
     bundle, started = step.bundle, time.monotonic()
-    if not bundle.state_descriptions:
+    text = serialize_paper_reward_machine(bundle.reward_machine)
+    if machine_too_large(text):
+        note = skipped_descriptions_note(text)
+        print_warning(f"{step.ref.key}: {note}")
+        bundle.manifest.generation["state_descriptions_skipped"] = note
+    elif not bundle.state_descriptions:
         markdown = bundle.manifest.inputs["environment_markdown"]
         environment = EnvironmentDescription(Path(bundle.manifest.environment), "", markdown, ())
         engine = get_engine(CONFIG, environment, generator_model(bundle), warn=print_warning)
@@ -333,7 +345,9 @@ def _describe(CONFIG: Configuration, step: Finish) -> None:
         step.calls = len(attempts)
     step.wall_time_s = round(time.monotonic() - started, 1)
     if not step.error:
-        bundle.manifest.stage_status.update(labeling="complete", descriptions="complete")
+        bundle.manifest.stage_status["labeling"] = "complete"
+        if not bundle.descriptions_skipped:
+            bundle.manifest.stage_status["descriptions"] = "complete"
         bundle.save(step.ref.path, overwrite=True)
 
 
@@ -341,7 +355,8 @@ def _embed_and_finish(CONFIG: Configuration, step: Finish) -> None:
     """Embed the descriptions with the pipeline's own ``embed-larm`` server path, then mark it done."""
     ref, started = step.ref, time.monotonic()
     try:
-        embed_larm(replace(CONFIG, bundle=ref.path, embeddings=True))
+        if not step.bundle.descriptions_skipped:  # no descriptions, so no embeddings
+            embed_larm(replace(CONFIG, bundle=ref.path, embeddings=True))
     except Exception as error:  # the server, the bundle files and the cache can each fail
         step.error = f"{type(error).__name__}: {error}"
         return

@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import unittest
+from types import SimpleNamespace
 from unittest.mock import ANY, Mock, patch
 
 from httpx import Request, Response
@@ -11,6 +12,7 @@ from nl2ltl.declare.base import TemplateEnum
 from openai import BadRequestError
 
 from src.arm_fm.generation import _extract_artifact, _refine_labeling
+from src.benchmark.labeling_repair import Check, repair_prompt
 from src.compiler import (
     PaperRewardMachine,
     RuntimeTransition,
@@ -427,7 +429,7 @@ class EngineTests(unittest.TestCase):
         self.assertIn('[{"pattern": "Existence"}]', requests[1][2])
         self.assertIn("- Rule-only task", requests[1][2])
 
-    def test_machine_over_the_prompt_bound_reaches_the_critics_as_a_summary(self) -> None:
+    def test_machine_over_the_prompt_bound_reaches_the_prompts_as_a_summary(self) -> None:
         states = tuple(f"u{index}" for index in range(40))
         transitions = tuple(
             RuntimeTransition("u0", "a&!b", state, 1.0 if state == "u1" else 0.0)
@@ -435,7 +437,17 @@ class EngineTests(unittest.TestCase):
         )
         machine = PaperRewardMachine(states, "u0", transitions, final_states=("u7",))
         text = serialize_paper_reward_machine(machine)
+        bundle = SimpleNamespace(
+            manifest=SimpleNamespace(
+                inputs={"environment_markdown": "env"},
+                task="Finish",
+                api_definitions={"labeling": "api"},
+            ),
+            reward_machine=machine,
+            labeling_source="labeling",
+        )
         requests = []
+        repairs = []
 
         def request(model, system, user, schema, name):
             requests.append(user)
@@ -455,10 +467,11 @@ class EngineTests(unittest.TestCase):
                     nodes_json="[]",
                     propositions_json="{}",
                 )
+                repairs.append(repair_prompt(bundle, Check("missing")))
 
-        for whole in (requests[0], requests[1]):
+        for whole in (requests[0], requests[1], repairs[0]):
             self.assertIn(text, whole)
-        for summary in (requests[2], requests[3]):
+        for summary in (requests[2], requests[3], repairs[1]):
             self.assertIn("FINAL_STATES: u7", summary)
             self.assertIn("(40 in all)", summary)
             self.assertIn("TRANSITION_FUNCTION: 39 rows, not listed", summary)
