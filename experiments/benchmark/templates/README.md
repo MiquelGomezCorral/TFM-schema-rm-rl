@@ -7,8 +7,10 @@ The eight templates: Existence, ExistenceTwo, Absence, Response, Precedence, Cha
 RespondedExistence and NotCoExistence. Each template has three tasks with a goal and three without
 one: 8 × 3 × 2 = 48 cards. Card ids read `tpl-<template>-<k>-<goal|nogoal>`, with `k` from 1 to 3.
 
-Only the cards with `k = 1` are trained (16 per arm). The other two per template and goal mode are
-generated and checked but not trained. The 16 trained cards also carry three extra wordings of the
+Only the cards with `k = 1` are trained (14 per arm: `tpl-precedence-1-nogoal` and
+`tpl-not-co-existence-1-nogoal` stopped training on 2026-11-18, since a wait plan passes them and the
+goal cards of their templates test the rule). The other two per template and goal mode are
+generated and checked but not trained. The 16 `k = 1` cards also carry three extra wordings of the
 task, to see whether different phrasings give the same machine. The cards stay `draft` until the
 author approves them.
 
