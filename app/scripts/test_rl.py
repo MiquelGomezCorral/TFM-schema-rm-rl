@@ -102,6 +102,7 @@ FIXED_LAYOUT_NOTES = {
     "ppo": "fixed layout: the test seeds do not change the map, so this is not an unseen-map test",
 }
 FRAME_MS, LAST_FRAME_MS = 180, 2000
+GIF_TILE_PIXELS = 32
 # The per-episode judge fields ``judge.json`` averages.
 JUDGE_MEANS = (
     "raw_judged_success",
@@ -422,7 +423,10 @@ def load_policy(config: Configuration, run: RunEnvironment, directory: Path, mod
 
 # Each family's picture of an env's current state, taken from the task env under the wrappers.
 RENDERERS: dict[str, Callable[[gym.Env], Image.Image]] = {
-    "minigrid": lambda env: Image.fromarray(env.get_frame(highlight=True, tile_size=24)),
+    # Shop and Lanes draw their own ``picture``; any other MiniGrid env keeps MiniGrid's frame.
+    "minigrid": lambda env: Image.fromarray(
+        getattr(env, "picture", env.get_frame)(tile_size=GIF_TILE_PIXELS)
+    ),
     "craftium": lambda env: Image.fromarray(env.last_observation).convert("RGB"),
 }
 
