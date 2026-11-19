@@ -98,7 +98,11 @@ def write_run_outputs(
         _preflight_labeling_bundles(CONFIG, output_paths)
     if CONFIG.embeddings:
         preflight_paths(
-            [embedding_artifact_path(CONFIG, path.stem) for path in output_paths],
+            [
+                embedding_artifact_path(CONFIG, path.stem)
+                for path, result in zip(output_paths, results, strict=True)
+                if result.embeddings  # a task with none writes no artifact
+            ],
             overwrite=CONFIG.overwrite,
             kind="Embedding artifact(s)",
         )
@@ -275,10 +279,17 @@ def _write_embedding_artifacts(
     output_paths: tuple[Path, ...],
     CONFIG: Configuration,
     progress: Progress,
-) -> tuple[Path, ...]:
-    """Persist one embedding artifact per accepted task and return their paths."""
+) -> tuple[Path | None, ...]:
+    """Persist one embedding artifact per accepted task and return their paths.
+
+    A task with no embeddings (its machine is over the prompt bound) gets no artifact: its path is
+    ``None``, as for ``generate-larm``.
+    """
     written = []
     for result, output_path in zip(results, output_paths, strict=True):
+        if not result.embeddings:
+            written.append(None)
+            continue
         destination = embedding_artifact_path(CONFIG, output_path.stem)
         write_embedding_artifact(result, destination)
         progress(f"State embeddings: {destination}")

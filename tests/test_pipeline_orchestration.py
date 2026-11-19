@@ -35,6 +35,7 @@ from src.utils import (
     StepState,
     load_step_trace,
     setup_environment_and_engines,
+    write_run_outputs,
 )
 from src.utils.generation_pipeline import derive_output_paths
 
@@ -856,6 +857,29 @@ class OrchestrationTests(unittest.TestCase):
             ):
                 generate_rm(CONFIG)
             self.saved.assert_not_called()
+
+    def test_machine_over_the_prompt_bound_gets_no_embedding_artifact(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = Configuration(
+                environment="demo.md", tasks=["a", "b"], output="out.rm", embeddings=True
+            )
+            config.EMBEDDINGS_PATH = root / "embeddings"
+            embedded = replace(result(), embeddings={"u0": [1.0, 0.0]})
+            too_large = result("x" * (Configuration.MACHINE_PROMPT_MAX_CHARS + 1))
+            paths = (root / "out-1.rm", root / "out-2.rm")
+            # An earlier run left this file; the over-bound task writes none, so it must not abort.
+            old = root / "embeddings" / "out-2" / "embeddings.json"
+            old.parent.mkdir(parents=True)
+            old.write_text("old", encoding="utf-8")
+
+            written = write_run_outputs((embedded, too_large), paths, config, Mock(), [{}, {}])
+
+            self.assertEqual(
+                [item.embedding_path for item in written],
+                [root / "embeddings" / "out-1" / "embeddings.json", None],
+            )
+            self.assertEqual(old.read_text(encoding="utf-8"), "old")
 
     def test_embeddings_stage_is_single_text_cached_and_persisted(self):
         requests = []
