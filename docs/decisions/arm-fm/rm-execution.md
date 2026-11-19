@@ -38,7 +38,8 @@ without changing how labels, transitions, and rewards are interpreted.
   States remember earlier events; a false proposition now does not erase recorded progress.
   The one exception is a broken soft rule when recurrent soft rules are on: its state takes the
   start state's edges, so the rule watches for the next break. That break was already paid, and
-  recorded goal progress is kept; only the progress reward is re-scored.
+  recorded goal progress is kept; only the progress reward is re-scored. A folded soft `Absence`
+  (`fold_soft_absence`, on by default) never leaves its state; its break is only charged.
 - Entering a final or rejecting state ends the episode, as do the environment's own termination
   and its time limit, for every RM-wrapped run. When the environment ends the episode and the RM
   text has a `PENDING_PROMISES` section, that step adds the end judgment: `HARD_FAILED_REWARD`
@@ -237,3 +238,17 @@ each is a gap to close when a card needs it.
   progress (either-or hand-offs, steps only a `Precedence` names, progress paid into a soft break),
   all accepted for now. The undiscounted progress stays; switching to discounted shaping is decided
   after the shop runs ([reward layer](../../COMPILER_REWARD_DESIGN.md)).
+- 2026-11-19: Soft `Absence` folds into an edge charge by default (`fold_soft_absence`), so it adds no
+  state; kept as a switch for the later settings study (user).
+- 2026-11-19, user-approved: the default pay prices a hard break above any stream of soft breaks. A
+  soft break costs 1 and the hard ceiling is on, so a hard break costs
+  `-(max(10, N*S*(1-g^T)/(1-g)) + 1)`, with `S` the soft break cost, `N` the soft breaks one step can
+  charge (1), `g` = `Configuration.gamma` and `T` the level's step limit (`--gym-id` with
+  `--env-kwargs`, or `--step-limit`): -96.0959 at T300 for one soft clause. A machine with no soft
+  rule keeps -10; `--hard-ceiling/--no-hard-ceiling` sets it. Generation refuses before the LLM call
+  without a level, and every bundle records its pay-order verdict in
+  `effective_settings["pay_order"]` (`ok`, or `not checked: no step limit` or
+  `check failed: <error>` with a warning). Why: with the old defaults (soft break cost 5, flat -10) the
+  worst stream of soft breaks cost more than one hard break, so breaking the hard rule paid better:
+  the forcing card `lanes-rules` paid -475 for that stream against -10
+  ([reward layer](../../COMPILER_REWARD_DESIGN.md)).

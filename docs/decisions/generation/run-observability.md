@@ -83,7 +83,9 @@ diagnostics to reproduce a failed run without changing compilation semantics.
 - Logs include validated proposal data, critic verdicts, LTLf clauses, complete DFA data,
   serialized Reward Machines, validated node descriptions and labeling source, and embedding
   metadata, and whether recurrent soft rules are on (also in the step trace, the steps report and
-  ARM-FM bundle settings), but never explicitly include credentials, environment
+  ARM-FM bundle settings), and every bundle's pay-order verdict (`effective_settings["pay_order"]`
+  in its manifest: `ok`, or `not checked: no step limit` or `check failed: <error>` with a
+  warning), but never explicitly include credentials, environment
   variables, request headers, full prompts, or raw provider response objects.
 - The persistent log is plain text without ANSI escape sequences, and the UI uses text
   labels with color rather than color alone to identify state.
@@ -134,3 +136,5 @@ keeps their association visible when a trace is reopened.
   first final or rejecting state, as training does, so a no-goal ARM-FM card is judged against its
   final state too. Known limit: when two guards of a state overlap, the runtime takes the stored
   transition and the check records no problem, so a pass or fail can depend on that choice.
+- 2026-11-19: Every bundle records its pay-order verdict in its manifest, and generation stops before
+  the LLM call when the default pricing has no level to price over (user decision).

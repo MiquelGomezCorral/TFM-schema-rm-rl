@@ -234,8 +234,16 @@ thing whichever arm produced it.
   get the same attempt limit (up to 10).
 - Both pipelines receive the same card wording, environment file, generator and critic.
 - A results table without the time-limit asymmetry line, or with pooled cross-critic numbers, is wrong.
-- With every reward switch at its default, compiled RM text is byte-identical to the text from
-  before the switches existed.
+- With every reward switch at its default, the compiler builds one reference machine; a switch set
+  away from its default changes it and is recorded in the bundle. Since 2026-11-19 (user) the
+  default pay is a soft break cost of 1 with the hard ceiling on: a hard break costs `-(max(10, N*S*(1-g^T)/(1-g)) + 1)`, with `S`
+  the soft break cost, `N` the soft breaks one step can charge (1), `g` = `Configuration.gamma` and
+  `T` the level's step limit, so -96.0959 at T300 for one soft clause; a machine with no soft rule
+  keeps -10 (`--hard-ceiling/--no-hard-ceiling`). The level comes from `--gym-id` and `--env-kwargs`
+  or `--step-limit`; `generate-suite` passes each card's own, and generation refuses before the LLM
+  call without one. Every bundle records its pay-order verdict in
+  `effective_settings["pay_order"]`: `ok`, or `not checked: no step limit` or
+  `check failed: <error>` with a warning.
 - Labeling repair never edits a Reward Machine and never replaces the class recorded before repair.
   A repaired or agent-fixed bundle is still a failure in the failure rate.
 - A MiniGrid labeling is `ok`, `fixed` or `fixed-by-agent` only when the plan check and the random-walk
