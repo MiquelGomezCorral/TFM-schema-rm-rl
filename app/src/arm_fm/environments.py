@@ -26,6 +26,7 @@ from src.config import Configuration
 
 from . import (
     forced_starts,  # noqa: F401  registers the Cleared and KeyHeld forced-start ids
+    forcing_envs,  # noqa: F401  registers MiniGrid-Lanes-v0 and MiniGrid-KeyGift-v0
     service_room,  # noqa: F401  registers MiniGrid-ServiceRoom-v0
     shop,  # noqa: F401  registers MiniGrid-Shop-v0 and MiniGrid-Shop-Pot-v0
 )
