@@ -33,7 +33,9 @@ tasks, while keeping the generator and critic responsibilities stable.
 - Clause formulas follow IBM exactly; for example `Precedence(a, b)` means no `b` before `a`
   and also holds when neither occurs. Hard and soft never change a formula. Soft changes rewards
   and, with recurrent soft rules on (the default), re-arms a broken soft rule so its next
-  break pays again: the broken DFA state gets the start state's edges, never a new state. Hard
+  break pays again: the broken DFA state gets the start state's edges, never a new state. With
+  `fold_soft_absence` on (the default), a soft `Absence` adds no state at all: its break is
+  charged on the edge and the machine stays where it was. Hard
   changes the RM structure (a hard violation leads to the rejecting state and a pending hard
   obligation blocks finishing). The reward layer is described in
   `docs/COMPILER_REWARD_DESIGN.md`.
@@ -41,8 +43,15 @@ tasks, while keeping the generator and critic responsibilities stable.
   hold together (no final is reachable), but it does not check soft preferences against the hard
   part: a preference that every way of finishing must break is charged at every new break when
   recurrent soft rules are on, and the task's wording is trusted not to ask for that. With n
-  forced breaks, finishing pays 1 - 0.5n plus progress: about a timeout's -1 (the goal still open)
-  at n = 4, and no more than the rejecting state's -2 (-1 plus the open goal) from n = 6-7.
+  forced breaks, finishing pays 10 - n at the default soft break cost of 1, plus progress. A
+  timeout with the goal still open costs `time_limit_penalty` (-5), or with the end judgment on
+  (off by default) -10 per hard stage still owed, so no single n is the break-even point. Since
+  2026-11-19 (user) a hard break costs more
+  than any stream of soft breaks over the level's step limit (the hard ceiling, on by default):
+  `-(max(10, N*S*(1-g^T)/(1-g)) + 1)`, with `S` the soft break cost, `N` the soft breaks one step
+  can charge (1), `g` = `Configuration.gamma` and `T` the level's step limit, so -96.0959 at T300
+  for one soft clause; hard-only machines keep -10 (`--hard-ceiling/--no-hard-ceiling`), so
+  breaking a hard rule never pays better than breaking soft ones.
 - In compiler mode, one critic reviews the compiled candidate after RM construction: it receives
   the environment, task, validated clauses, and the compiled RM with its final and rejecting
   states and compile warnings. It returns a strict acceptance decision and nonempty feedback,
