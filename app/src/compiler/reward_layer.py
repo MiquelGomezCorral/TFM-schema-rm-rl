@@ -88,6 +88,11 @@ class RewardSwitches:
     are off by default. ``soft_break_cost`` is what one soft break costs, in pay units. The
     recurrent soft penalty changes the machine's structure (see ``_rearm_violated``); the other
     switches only change the rewards (and, for the end judgment, the machine's end lines).
+
+    ``hard_ceiling`` is off by default and needs ``step_limit``, the level's step limit: it
+    prices the hard break above the discounted soft ceiling for ``gamma`` (see
+    ``hard_break_charge``). The manifest records both, so a run can refuse a bundle priced for
+    other values.
     """
 
     reward_progress: bool = Configuration.reward_progress
@@ -98,6 +103,9 @@ class RewardSwitches:
     reward_promise_cost: bool = Configuration.reward_promise_cost
     recurrent_soft_penalty: bool = Configuration.recurrent_soft_penalty
     soft_break_cost: float = Configuration.soft_break_cost
+    hard_ceiling: bool = Configuration.hard_ceiling
+    gamma: float = Configuration.gamma
+    step_limit: int | None = Configuration.step_limit
 
     @classmethod
     def from_config(cls, CONFIG: Configuration) -> Self:
@@ -118,13 +126,16 @@ def build_reward_machine(
     the environment ends the episode; without it the runtime pays the flat time-limit penalty on
     a truncated step that did not terminate, and nothing on a termination. The other
     ``switches`` default to the ``Configuration`` class defaults.
-    Raises ``ValueError`` on a non-total DFA, conflicting clauses, or a positive reward cycle.
+    Raises ``ValueError`` on a non-total DFA, conflicting clauses, a positive reward cycle, or
+    ``hard_ceiling`` without a ``step_limit``.
     """
     switches = switches or RewardSwitches()
     if len(dfas) != len(soft):
         raise ValueError(
             f"Expected one DFA per clause, got {len(dfas)} DFAs for {len(soft)} clauses"
         )
+    if switches.hard_ceiling and switches.step_limit is None:
+        raise ValueError("hard_ceiling needs the level's step limit (step_limit)")
 
     for index, dfa in enumerate(dfas):
         _check_complete(index, dfa)
@@ -495,7 +506,7 @@ def _price_edges(
                 if switches.reward_end_judgment
                 else 0.0
             )
-            well = Configuration.WELL_REWARD if switches.reward_well else 0.0
+            well = _well_charge(soft_clauses, switches) if switches.reward_well else 0.0
             priced.append((edge, round(well + charge + promise_cost, 9)))
             continue
 
@@ -514,15 +525,65 @@ def _price_edges(
     return priced, paying
 
 
+def _breaks(before: ClauseState, after: ClauseState, switches: RewardSwitches) -> bool:
+    """Whether a step breaks a soft clause: it enters the violated state.
+
+    With the recurrent soft penalty a re-armed violated state only stays violated on a step that
+    breaks the rule again, so staying violated is a new break; without it, the break was paid.
+    """
+    entered = before is not ClauseState.VIOLATED
+    return after is ClauseState.VIOLATED and (entered or switches.recurrent_soft_penalty)
+
+
 def _soft_term(
     before: ClauseState, after: ClauseState, finishing: bool, switches: RewardSwitches
 ) -> float:
     """A soft clause pays when it breaks, and how it ends when the task finishes."""
-    broke = before is not ClauseState.VIOLATED and after is ClauseState.VIOLATED
+    broke = _breaks(before, after, switches)
     term = -switches.soft_break_cost if broke and switches.reward_soft_break else 0.0
     if finishing and switches.reward_soft_pending:
         term += _FINISH_REWARD[after]
     return term
+
+
+def hard_break_charge(
+    soft_break_cost: float, gamma: float, step_limit: int, breaks_per_step: int
+) -> float:
+    """The hard break charge that no stream of soft breaks can outweigh, in the run's discounting.
+
+    ``breaks_per_step`` soft breaks every step for ``step_limit`` steps cost ``soft_break_cost``
+    times ``breaks_per_step`` times ``(1 - gamma ** step_limit) / (1 - gamma)`` (``step_limit``
+    for ``gamma`` 1) at the start of the episode, and a later hard break discounts both alike.
+    The charge is that ceiling, or the flat well charge when that is more, plus one progress unit.
+    """
+    ceiling = breaks_per_step * soft_break_cost * discounted_steps(step_limit, gamma)
+    return -(max(-Configuration.WELL_REWARD, ceiling) + Configuration.PROGRESS_REWARD)
+
+
+def discounted_steps(steps: int, gamma: float) -> float:
+    """What ``steps`` steps of one unit each add up to at discount ``gamma``."""
+    return steps if gamma == 1 else (1 - gamma**steps) / (1 - gamma)
+
+
+def _well_charge(soft_clauses: Sequence[int], switches: RewardSwitches) -> float:
+    """What the edge into the well pays by itself: the flat well charge, or the ceiling charge.
+
+    The ceiling rule applies to a machine whose soft breaks repeat and cost something; any other
+    machine keeps the flat charge. A step can break every soft clause at once, so the ceiling
+    counts them all (shortcut: two clauses that never break on one step still both count; the
+    charge is then higher than needed, never too low).
+    """
+    repeats = (
+        switches.hard_ceiling
+        and switches.recurrent_soft_penalty
+        and switches.reward_soft_break
+        and bool(soft_clauses)
+    )
+    if not repeats:
+        return Configuration.WELL_REWARD
+    return hard_break_charge(
+        switches.soft_break_cost, switches.gamma, switches.step_limit, len(soft_clauses)
+    )
 
 
 def _progress(edges: Sequence[_Edge], product: _Product, finals: set[str]) -> dict[_Edge, float]:

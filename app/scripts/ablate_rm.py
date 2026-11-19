@@ -29,12 +29,13 @@ from src.utils import get_engine, ltlf_of, preflight_paths, print_warning
 from .embed_larm import embed_larm
 from .generate_rm import tag_states
 
-# Command-line name -> the RewardSwitches field it switches off. The promise cost is not an
-# ablation (``rebuild-rewards`` turns it on), and the soft-break cost is a number, not a switch.
+# Command-line name -> the RewardSwitches field it switches off. The promise cost and the hard
+# ceiling are not ablations (``rebuild-rewards`` sets them), and the soft-break cost, gamma and
+# step limit are numbers, not switches.
 OFF_PARTS = {
     item.name.removeprefix("reward_"): item.name
     for item in fields(RewardSwitches)
-    if item.type is bool and item.name != "reward_promise_cost"
+    if item.type is bool and item.name not in {"reward_promise_cost", "hard_ceiling"}
 }
 OFF_CHOICES = (NO_PART, *OFF_PARTS)
 

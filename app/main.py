@@ -1,6 +1,7 @@
 """Application command-line entry point."""
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from scripts import (
     SuiteOptions,
     ablate_rm,
     aggregate_suite,
+    check_pay_order,
     check_plans,
     cross_critic,
     embed_larm,
@@ -104,8 +106,18 @@ def cmd_ablate_rm(args: argparse.Namespace) -> None:
 def cmd_rebuild_rewards(args: argparse.Namespace) -> None:
     """Rebuild a compiler bundle's Reward Machine rewards with the current reward layer."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
-    if not rebuild_rewards(CONFIG, args.destination):
+    # args_to_dataclass drops None, so an omitted --gamma would read as the default: pass the raw arg.
+    if not rebuild_rewards(CONFIG, args.destination, args.gamma):
         sys.exit(1)
+
+
+def cmd_check_pay_order(args: argparse.Namespace) -> None:
+    """Print the order in which each bundle's Reward Machine pays the ways an episode can end."""
+    print(
+        "\n".join(
+            check_pay_order(args.bundles, args.gamma, args.step_limit, args.gym_id, args.env_kwargs)
+        )
+    )
 
 
 def cmd_import_paper_bundle(args: argparse.Namespace) -> None:
@@ -592,8 +604,65 @@ if __name__ == "__main__":
         default=Configuration.soft_break_cost,
         help="What one soft break costs, in pay units (default: %(default)s)",
     )
+    rebuild_parser.add_argument(
+        "--charge-once",
+        dest="recurrent_soft_penalty",
+        action="store_const",
+        const=False,
+        help="Charge each soft rule once (turn the recurrent soft penalty off); without it the "
+        "bundle keeps the setting it records",
+    )
+    rebuild_parser.add_argument(
+        "--hard-ceiling",
+        action="store_true",
+        help="Price the hard break above the discounted soft ceiling where soft rules repeat; "
+        "needs --gym-id or --step-limit, and the run's --gamma",
+    )
+    rebuild_parser.add_argument(
+        "--gamma",
+        type=float,
+        help="The run's discount for the hard ceiling (default: the bundle's recorded one)",
+    )
+    rebuild_parser.add_argument(
+        "--gym-id", help="The level's gym id; its step limit sets the hard ceiling"
+    )
+    rebuild_parser.add_argument(
+        "--step-limit", type=int, help="The level's step limit, instead of reading it from --gym-id"
+    )
+    rebuild_parser.add_argument(
+        "--env-kwargs",
+        type=json.loads,
+        help="JSON keyword arguments of the level --gym-id makes, e.g. '{\"max_steps\": 150}'",
+    )
     rebuild_parser.add_argument("--overwrite", action="store_true")
     rebuild_parser.set_defaults(func=cmd_rebuild_rewards)
+
+    # ======================================================================================
+    #                                     check-pay-order
+    # ======================================================================================
+    pay_parser = subparsers.add_parser(
+        "check-pay-order",
+        help="Print the order in which bundles' machines pay finished, started, not started, "
+        "soft break and hard break, and the first pair out of order",
+    )
+    pay_parser.add_argument("bundles", nargs="+", type=Path, help="Bundle folders")
+    pay_parser.add_argument(
+        "--gamma", type=float, help="The run's discount (default: the bundle's, else 0.99)"
+    )
+    pay_parser.add_argument(
+        "--gym-id", help="The level's gym id; its step limit is how long a soft break stream runs"
+    )
+    pay_parser.add_argument(
+        "--step-limit",
+        type=int,
+        help="The level's step limit, instead of --gym-id (default: the bundle's, else one step)",
+    )
+    pay_parser.add_argument(
+        "--env-kwargs",
+        type=json.loads,
+        help="JSON keyword arguments of the level --gym-id makes, e.g. '{\"max_steps\": 150}'",
+    )
+    pay_parser.set_defaults(func=cmd_check_pay_order)
 
     # ======================================================================================
     #                                   import-paper-bundle

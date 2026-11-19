@@ -78,8 +78,12 @@ class ArtifactBundle:
     raw_responses: list[dict[str, Any]] = field(default_factory=list)
     execution_evidence: list[dict[str, Any]] = field(default_factory=list)
 
-    def validate(self, *, require_complete: bool = False) -> list[str]:
-        """Return diagnostics, or raise for malformed structure."""
+    def validate(self, *, require_complete: bool = False, described: bool = True) -> list[str]:
+        """Return diagnostics, or raise for malformed structure.
+
+        ``described`` False leaves the state descriptions and embeddings out of both checks: a
+        one-hot run never reads them.
+        """
         if not self.manifest.task.strip():
             raise BundleValidationError("Bundle task must be nonempty")
         if self.reward_machine is None:
@@ -87,14 +91,14 @@ class ArtifactBundle:
                 raise BundleValidationError("reward machine is missing")
             return ["reward machine is missing"]
 
-        diagnostics = self._consistency_diagnostics()
+        diagnostics = self._consistency_diagnostics(described)
         if require_complete:
-            diagnostics.extend(self._completeness_diagnostics())
+            diagnostics.extend(self._completeness_diagnostics(described))
             if diagnostics:
                 raise BundleValidationError("; ".join(diagnostics))
         return diagnostics
 
-    def _consistency_diagnostics(self) -> list[str]:
+    def _consistency_diagnostics(self, described: bool = True) -> list[str]:
         """Check that the RM, labeling, descriptions and embeddings describe the same states."""
         diagnostics: list[str] = []
         expected_propositions = (
@@ -106,6 +110,8 @@ class ArtifactBundle:
             load_labeling_functions(self.labeling_source, self.labeling_propositions)
         except RuntimeValidationError as error:
             diagnostics.append(str(error))
+        if not described:
+            return diagnostics
         if set(self.state_descriptions) != set(self.reward_machine.states):
             diagnostics.append("state descriptions do not align with RM states")
         if self.embeddings and set(self.embeddings) != set(self.state_descriptions):
@@ -118,13 +124,18 @@ class ArtifactBundle:
                 diagnostics.append(f"embedding for {state!r} must be numeric")
         return diagnostics
 
-    def _completeness_diagnostics(self) -> list[str]:
+    def _completeness_diagnostics(self, described: bool = True) -> list[str]:
         """Check that every generation stage finished and every recorded check passed."""
         diagnostics: list[str] = []
-        missing_stages = (_GENERATION_STAGES | {"embeddings"}) - self._complete_stages()
+        stages = (
+            _GENERATION_STAGES | {"embeddings"}
+            if described
+            else _GENERATION_STAGES - {"descriptions"}
+        )
+        missing_stages = stages - self._complete_stages()
         if missing_stages:
             diagnostics.append("incomplete stages: " + ", ".join(sorted(missing_stages)))
-        if not self.embeddings:
+        if described and not self.embeddings:
             diagnostics.append("embeddings are missing")
         for check in ("structural", "critic"):
             if (

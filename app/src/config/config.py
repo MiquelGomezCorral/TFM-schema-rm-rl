@@ -235,6 +235,13 @@ class Configuration:
     # What one soft break costs, in pay units (paid as a negative reward); to be tested at 2.5, 2,
     # 1.5 and 1.
     soft_break_cost: float = 5 * PROGRESS_REWARD
+    # Off by default: where soft rules repeat, the hard break (the edge into the well) costs one
+    # progress unit more than the worst stream of soft breaks the run can discount
+    # (``hard_break_charge``). It needs the run's ``gamma`` and the level's step limit, which a
+    # bundle records so ``train-rl`` can refuse another run. ``step_limit`` None: ``rebuild-rewards``
+    # reads it from ``gym_id`` and ``env_kwargs``.
+    hard_ceiling: bool = False
+    step_limit: int | None = None
     # Reward switches for the ablation: off, a term pays 0 (completion is never switched off).
     # Progress; the well's flat charge (the well stays a rejecting sink); a soft rule's break; a
     # soft rule still pending at the finish; the end judgment (each stage a clause still owes

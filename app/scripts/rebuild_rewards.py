@@ -9,7 +9,8 @@ from dataclasses import asdict, replace
 from datetime import date
 from pathlib import Path
 
-from src.arm_fm import load_bundle
+from src.arm_fm import gym_step_limit, load_bundle
+from src.arm_fm.pay_order import pay_order_of
 from src.compiler import PaperRewardMachine, compile_dfas
 from src.config import Configuration
 from src.utils import preflight_paths, print_warning
@@ -20,15 +21,24 @@ REBUILD_RULE = "whole-unit pay, owed-stage charge, soft break without refund"
 PROMISE_COST_RULE = "promise cost (-0.1 on every step while a hard promise is open)"
 
 
-def rebuild_rewards(CONFIG: Configuration, destination: Path) -> bool:
+def rebuild_rewards(CONFIG: Configuration, destination: Path, gamma: float | None = None) -> bool:
     """Write ``destination``: ``CONFIG.bundle`` with today's rewards for its stored clauses.
 
     The machine is rebuilt from the clauses and the reward switches the bundle records (clause,
-    LTLf, MONA, reward layer); ``CONFIG.reward_promise_cost`` turns the promise cost on, and
-    ``CONFIG.soft_break_cost`` always sets the soft-break cost. Only the rewards (and the numbers
+    LTLf, MONA, reward layer); ``CONFIG.reward_promise_cost`` turns the promise cost on,
+    ``CONFIG.recurrent_soft_penalty`` False charges each soft rule once, and
+    ``CONFIG.hard_ceiling`` prices the hard break above the discounted soft ceiling (see
+    ``hard_break_charge``) for ``gamma`` and the level's step limit: ``CONFIG.step_limit``,
+    else the limit of the level ``CONFIG.gym_id`` and ``CONFIG.env_kwargs`` make, else the
+    bundle's recorded one. Only a ceiling bundle records a step limit, and only it builds the
+    level. ``gamma`` None keeps the bundle's recorded discount (``CONFIG.gamma`` cannot say
+    "omitted"). ``CONFIG.soft_break_cost`` always sets the soft-break cost. The
+    manifest records every setting. Only the rewards (and the numbers
     of the end judgment) may differ from the stored machine: the states, guards that move, and
     the states the end judgment covers must match, so the labeling, state descriptions and
-    embeddings stay valid and are copied as they are. In the copy only ``reward_machine.txt`` and
+    embeddings stay valid and are copied as they are, unless the soft rules are charged once:
+    that moves the way out of a broken-rule state, so the copy drops them (see below). In the
+    copy only ``reward_machine.txt`` and
     the manifest change: the attempts and raw responses keep what the model wrote, and the critic
     verdict stays as given at generation time, with a ``rewards_rebuilt`` note in the manifest.
 
@@ -52,44 +62,85 @@ def rebuild_rewards(CONFIG: Configuration, destination: Path) -> bool:
     environment, proposal = _stored_task(CONFIG, bundle)
     dfas = compile_dfas(proposal, CONFIG)
     recorded = _recorded_switches(bundle)
+    ceiling = recorded.hard_ceiling or CONFIG.hard_ceiling
+    step_limit = recorded.step_limit
+    if ceiling and CONFIG.step_limit is not None:
+        step_limit = CONFIG.step_limit
+    elif ceiling and CONFIG.gym_id:
+        step_limit = gym_step_limit(CONFIG.gym_id, **CONFIG.env_kwargs)
     switches = replace(
         recorded,
         reward_promise_cost=recorded.reward_promise_cost or CONFIG.reward_promise_cost,
+        recurrent_soft_penalty=recorded.recurrent_soft_penalty and CONFIG.recurrent_soft_penalty,
         soft_break_cost=CONFIG.soft_break_cost,
+        hard_ceiling=ceiling,
+        gamma=recorded.gamma if gamma is None else gamma,
+        step_limit=step_limit,
     )
+    if switches.hard_ceiling and switches.step_limit is None:
+        print_warning(
+            "rebuild-rewards: the hard ceiling needs the level's step limit; "
+            "pass --gym-id or --step-limit"
+        )
+        return False
     result, machine = _build(environment, proposal, dfas, switches)
 
-    if _frame(machine) != _frame(bundle.reward_machine):
+    # Charging each soft rule once ends the way back out of a broken-rule state, so it may change
+    # where moves lead; the states, and so the labeling, stay.
+    moved = switches.recurrent_soft_penalty != recorded.recurrent_soft_penalty
+    if _frame(machine, moves=not moved) != _frame(bundle.reward_machine, moves=not moved):
         print_warning(
             f"rebuild-rewards: {CONFIG.bundle}: the rebuild changes more than the rewards "
             "(states, guards or end judgment); regenerate the bundle instead"
         )
         return False
 
-    bundle.reward_machine = machine
-    bundle.manifest.generation["compiler_text"] = result.text
-    bundle.manifest.generation["rewards_rebuilt"] = {
+    rebuilt = {
         "date": date.today().isoformat(),
         "rule": PROMISE_COST_RULE if switches.reward_promise_cost else REBUILD_RULE,
         "note": "the critic verdict was given on the rewards before this rebuild",
     }
+    if moved:
+        # The descriptions and embeddings were written for the old moves; a run that reads them
+        # is refused (see ``_reward_machine_inputs``), a one-hot run does not need them.
+        rebuilt["dropped"] = ["state_descriptions", "embeddings"]
+        rebuilt["note"] += (
+            "; the soft rules are now charged once, so the broken-rule states lead nowhere: "
+            "the state descriptions and embeddings, written for the old moves, are dropped "
+            "and the bundle trains one-hot only"
+        )
+        bundle.state_descriptions, bundle.embeddings = {}, {}
+        bundle.manifest.stage_status.update(descriptions="pending", embeddings="pending")
+        print_warning(
+            "rebuild-rewards: the soft rules are now charged once: the state descriptions and "
+            "embeddings are dropped from the copy; train it with rm_state_encoding: one_hot"
+        )
+    bundle.reward_machine = machine
+    bundle.manifest.generation["compiler_text"] = result.text
+    bundle.manifest.generation["rewards_rebuilt"] = rebuilt
     bundle.manifest.effective_settings.update(asdict(switches))
     bundle.save(destination, overwrite=CONFIG.overwrite)
     print(f"rebuild-rewards: {destination}: rewards rebuilt from {CONFIG.bundle}")
+    limit = switches.step_limit if switches.hard_ceiling else CONFIG.step_limit
+    order = pay_order_of(bundle, switches.gamma, limit)
+    print(
+        f"rebuild-rewards: pay order: {order.summary()} (gamma {switches.gamma}, step limit {limit})"
+    )
     return True
 
 
-def _frame(machine: PaperRewardMachine) -> tuple:
+def _frame(machine: PaperRewardMachine, moves: bool = True) -> tuple:
     """What a reward rebuild keeps: states, finals, end judgment and every transition that moves.
 
     A loop that stays put is left out: the promise cost makes the idle loops of a state with a
     promise open into priced transitions, and a loop with no reward is the same as none. The end
-    judgment is kept as the states it covers: its counts and failed rewards are pay.
+    judgment is kept as the states it covers: its counts and failed rewards are pay. Without
+    ``moves`` the transitions are left out too.
     """
-    moves = {
+    kept = {
         (item.source, item.condition, item.destination)
         for item in machine.transitions
-        if item.source != item.destination
+        if moves and item.source != item.destination
     }
     judgment = machine.judgment
     judged = (
@@ -103,5 +154,5 @@ def _frame(machine: PaperRewardMachine) -> tuple:
         machine.final_states,
         machine.rejecting_states,
         judged,
-        moves,
+        kept,
     )
