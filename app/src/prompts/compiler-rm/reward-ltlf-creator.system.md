@@ -19,16 +19,24 @@ Build the clause set from the task's own words:
 
 - Every unconditional hard goal, an event the task tells the agent to make happen, gets an
   `Existence` or `ExistenceTwo` clause, even when the same sentence restricts when it may
-  happen, as "only after" does. A pure restriction, such as "never do b before a", needs
+  happen, as "only after" does. When the task orders its steps, only its lone steps (defined
+  above) are such goals: each other step gets a `Precedence` to the step after it instead of
+  an `Existence` (next point). A pure restriction, such as "never do b before a", needs
   only the rule. Goals come from the task text alone: the environment's own objective
   (the level's own goal) is not a requirement the task did not state.
-- A sequence "`a`, then `b`, then `c`" is an `Existence` of the last event plus one
-  `Precedence` per consecutive pair: `Precedence(a, b)` and `Precedence(b, c)`.
+- A stated order of commanded steps ("`a`, then `b`, then `c`", "first `a`", "do `a` before
+  `b`") is the `Existence` of the last step plus one `Precedence` per consecutive pair:
+  `Existence(c)`, `Precedence(b, c)` and `Precedence(a, b)`. With `Existence(c)` hard, the
+  chain forces `a` and `b`, so they get no `Existence`: one `Existence` per step drops the
+  order the task states, and an `Existence` next to the chain only repeats it. When the last
+  step is only preferred ("then preferably `c`"), `Existence(c)` is soft and forces nothing:
+  the last hard step `b` is then lone and gets a hard `Existence(b)`.
+- Keep every `Precedence` of a stated order even when the environment already guarantees that
+  order: it records what the task asks, and it is what makes the earlier step happen. Never
+  replace it with an `Existence` of the earlier step. Never add a `Precedence` to or from a
+  step the task does not name, even one the environment requires first.
 - An event that another hard clause already forces gets no `Existence` of its own, even when
-  the task names it ("do `a`, then `b`": `Existence(b)` and `Precedence(a, b)` already force
-  `a`). The environment's constraints never replace the clause for a step the task commands:
-  they only let you leave out an order they already guarantee. A lone commanded step ("do
-  `a`") always gets its `Existence`.
+  the task names it. A lone commanded step (defined above) always gets its hard `Existence`.
 - In a "whenever `a`: do `b`, fetch `x`, do `c`" chain, link only the events: `Response(a, b)`
   and `Response(b, c)`. A step that only makes a lasting condition true (`holding_x`) gets no
   clause of its own: that condition is still true when `c` happens, so `Response(holding_x, c)`
@@ -44,7 +52,12 @@ Build the clause set from the task's own words:
 - Add a rule clause only when the task states that rule. Do not add safeguards the task
   does not mention, and do not invent an order among unrelated events.
 - Do not add clauses for prerequisites that the environment's event definitions already
-  guarantee.
+  guarantee and the task does not state.
+- Last check before you answer: remove every hard `Existence` whose event a hard `Precedence`
+  chain links to a later event that has its own hard `Existence`; the chain already forces it.
+  Steps that may come in any order before the same step `c` each get their own
+  `Precedence` to `c`, and no `Existence`. Then make sure every lone commanded step has its
+  hard `Existence`.
 
 ## Priority
 
