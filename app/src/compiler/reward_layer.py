@@ -91,8 +91,9 @@ class RewardSwitches:
     names. Completion is never switched off. ``reward_end_judgment`` and ``reward_promise_cost``
     are off by default. ``soft_break_cost`` is what one soft break costs, in pay units. The
     recurrent soft penalty and ``fold_soft_absence`` (on by default; it needs the penalty on)
-    change the machine's structure (see ``_rearm_violated`` and ``_violated_twins``); the other
-    switches only change the rewards (and, for the end judgment, the machine's end lines).
+    change the machine's structure (see ``_rearm_violated`` and ``_violated_twins``), and so does
+    ``minimize_machine`` (off by default; see ``_merge_equivalent``); the other switches only
+    change the rewards (and, for the end judgment, the machine's end lines).
 
     ``hard_ceiling`` is off by default and needs ``step_limit``, the level's step limit: it
     prices the hard break above the discounted soft ceiling for ``gamma`` and for
@@ -109,6 +110,7 @@ class RewardSwitches:
     reward_promise_cost: bool = Configuration.reward_promise_cost
     recurrent_soft_penalty: bool = Configuration.recurrent_soft_penalty
     fold_soft_absence: bool = Configuration.fold_soft_absence
+    minimize_machine: bool = Configuration.minimize_machine
     soft_break_cost: float = Configuration.soft_break_cost
     hard_ceiling: bool = Configuration.hard_ceiling
     gamma: float = Configuration.gamma
@@ -135,7 +137,8 @@ def build_reward_machine(
     ``reward_end_judgment`` the machine carries an end judgment for the stages still owed where
     the environment ends the episode; without it the runtime pays the flat time-limit penalty on
     a truncated step that did not terminate, and nothing on a termination. The other
-    ``switches`` default to the ``Configuration`` class defaults.
+    ``switches`` default to the ``Configuration`` class defaults. With ``minimize_machine`` the
+    priced states that no step sequence can tell apart are merged into one.
     Raises ``ValueError`` on a non-total DFA, conflicting clauses, a positive reward cycle, or
     ``hard_ceiling`` without a ``step_limit``.
     """
@@ -159,6 +162,8 @@ def build_reward_machine(
     edges, finals = _prune_by_hard_clauses(product, hard_clauses, hard_goal)
     initial, edges = _drop_pre_step_start(edges, product, finals)
     priced, paying = _price_edges(edges, product, finals, soft_clauses, switches)
+    if switches.minimize_machine:
+        initial, priced = _merge_equivalent(initial, priced, product, finals, soft_clauses)
     machine = _structure(initial, priced, finals, product, soft_clauses)
     if not switches.reward_end_judgment:
         machine = replace(machine, judgment=None)
@@ -742,6 +747,109 @@ def _has_positive_cycle(machine: RewardMachineStructure) -> bool:
         if not improved:
             return False
     return True
+
+
+# ======================================================================================
+#                                    EQUIVALENT STATES
+# ======================================================================================
+
+
+def _merge_equivalent(
+    initial: str,
+    priced: Sequence[tuple[_Edge, float]],
+    product: _Product,
+    finals: set[str],
+    soft_clauses: Sequence[int],
+) -> tuple[str, list[tuple[_Edge, float]]]:
+    """Merge the states that no sequence of steps tells apart; return the start and the edges.
+
+    Partition refinement, Mealy-style because the pay sits on the transitions: two states are one
+    when, on every full valuation of the propositions, they pay the same and go to states that
+    are one, and they carry the same end facts: both final, both the well, or the same ``_owed``
+    stages (what the end judgment and the end charge read). A state with no matching edge stays
+    and pays 0, as the runtime does. The first state of each block stands in for it; the others
+    and their edges are dropped.
+    shortcut: the valuations are enumerated, so the cost doubles with each proposition (with 12
+    propositions the build went from 22.6 s to 45.7 s), upgrade to a symbolic walk of the guards
+    when a machine needs many more.
+    """
+    same = _stand_ins(priced, product, finals, soft_clauses)
+    merged = [
+        (edge._replace(destination=same[edge.destination]), reward)
+        for edge, reward in priced
+        if same[edge.source] == edge.source
+    ]
+    return same[initial], merged
+
+
+def _stand_ins(
+    priced: Sequence[tuple[_Edge, float]],
+    product: _Product,
+    finals: set[str],
+    soft_clauses: Sequence[int],
+) -> dict[str, str]:
+    """Map each state to the first state it cannot be told apart from (itself when none)."""
+    rows = _step_rows(priced, sorted(product.alphabet))
+    facts: dict[object, int] = {}
+    block = {}
+    for state in rows:
+        end_fact = (
+            "final"
+            if state in finals
+            else "well"
+            if state == _WELL
+            else _owed(product.open_steps[state], soft_clauses)
+        )
+        block[state] = facts.setdefault(end_fact, len(facts))
+
+    while True:
+        signatures: dict[tuple, int] = {}
+        refined = {
+            state: signatures.setdefault(
+                (block[state], tuple((block[destination], reward) for destination, reward in row)),
+                len(signatures),
+            )
+            for state, row in rows.items()
+        }
+        if len(signatures) == len(set(block.values())):
+            break
+        block = refined
+
+    first: dict[int, str] = {}
+    return {state: first.setdefault(block[state], state) for state in rows}
+
+
+def _step_rows(
+    priced: Sequence[tuple[_Edge, float]], alphabet: Sequence[str]
+) -> dict[str, list[tuple[str, float]]]:
+    """Per state, where each full valuation of ``alphabet`` leads and what it pays.
+
+    A valuation that no edge matches stays and pays 0, as the runtime does.
+    """
+    outgoing = defaultdict(list)
+    for edge, reward in priced:
+        outgoing[edge.source].append(
+            (parse_boolean_guard(edge.guard, alphabet), edge.destination, reward)
+        )
+    states = dict.fromkeys(name for edge, _ in priced for name in (edge.source, edge.destination))
+    valuations = [
+        dict(zip(alphabet, values, strict=True))
+        for values in itertools.product((False, True), repeat=len(alphabet))
+    ]
+    return {
+        state: [
+            next(
+                (
+                    (destination, reward)
+                    for guard, destination, reward in outgoing[state]
+                    if evaluate_boolean_guard(guard, valuation)
+                ),
+                (state, 0.0),
+            )
+            for valuation in valuations
+        ]
+        for state in states
+    }
 
 
 # ======================================================================================

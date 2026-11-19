@@ -1,10 +1,18 @@
 """Reward layer contracts on hand-built clause DFAs (no MONA needed)."""
 
+import itertools
 import unittest
 
 from src.arm_fm.runtime import RewardMachineRuntime
 from src.compiler import parse_paper_reward_machine, serialize_reward_machine
-from src.compiler.reward_layer import RewardSwitches, build_reward_machine, hard_break_charge
+from src.compiler.reward_layer import (
+    RewardSwitches,
+    _Edge,
+    _Product,
+    _stand_ins,
+    build_reward_machine,
+    hard_break_charge,
+)
 
 # F goal: unsatisfied until `goal` is seen, then it stays satisfied.
 GOAL = {
@@ -81,6 +89,20 @@ RESPONSE = {
         ("Q", "!y"): "Q",
     },
 }
+# Precedence(a, b): `b` before any `a` breaks it for good; once `a` is seen the rule is met.
+PRECEDENCE = {
+    "alphabet": {"a", "b"},
+    "states": {"W", "S", "V"},
+    "initial_state": "W",
+    "accepting_states": {"W", "S"},
+    "transitions": {
+        ("W", "a"): "S",
+        ("W", "!a&!b"): "W",
+        ("W", "!a&b"): "V",
+        ("S", ""): "S",
+        ("V", ""): "V",
+    },
+}
 
 
 def response(trigger, answer, name):
@@ -110,6 +132,20 @@ def rewards_of(clauses, soft, propositions, steps, **switches):
     text = serialize_reward_machine(machine)
     runtime = RewardMachineRuntime(parse_paper_reward_machine(text, propositions=propositions))
     return [runtime.step({name: name in step for name in propositions}).reward for step in steps]
+
+
+def stand_ins(follows, open_steps, finals=()):
+    """``_stand_ins`` on states that go to ``follows[state]`` on ``x``, stay on ``!x`` and pay 0.
+
+    ``open_steps`` gives each state's stages owed per clause; clause 1 is the soft one.
+    """
+    priced = [
+        (_Edge(state, guard, destination), 0.0)
+        for state, step in follows.items()
+        for guard, destination in (("!x", state), ("x", step))
+    ]
+    product = _Product("", {"x"}, [], {}, open_steps, {})
+    return _stand_ins(priced, product, set(finals), (1,))
 
 
 class RewardLayerTests(unittest.TestCase):
@@ -243,6 +279,72 @@ class RewardLayerTests(unittest.TestCase):
         # Only an Absence folds: here the fold used to charge the `a` that the clean state forgives.
         first_step_only = ((FIRST_STEP_ONLY,), (True,), ("a",))
         self.assertEqual(rewards_of(*first_step_only, [set(), {"a"}]), [0.0, 0.0])
+
+    def test_minimizing_merges_states_and_keeps_every_pay_and_end(self):
+        props = ("goal", "lava", "a", "b")
+        # The Absence fold is off, so the soft rule's broken state is left for the minimization.
+        # The soft Precedence pays on a broken start, so only its pay tells its start from its end.
+        switches = {"fold_soft_absence": False, "reward_end_judgment": True}
+
+        def machine(minimize):
+            built = build_reward_machine(
+                (GOAL, NO_LAVA, PRECEDENCE),
+                (False, True, True),
+                RewardSwitches(minimize_machine=minimize, **switches),
+            )
+            return parse_paper_reward_machine(
+                serialize_reward_machine(built.reward_machine), propositions=props
+            )
+
+        def play(paper, valuations):
+            runtime, seen = RewardMachineRuntime(paper), []
+            for valuation in valuations:
+                moved = runtime.step(valuation)
+                end = paper.judgment
+                kind = (
+                    "final"
+                    if moved.destination in paper.final_states
+                    else "well"
+                    if moved.destination in paper.rejecting_states
+                    else (moved.destination in end.accepting, end.end_charge(moved.destination))
+                )
+                seen.append((moved.reward, kind))
+            return seen
+
+        full, minimal = machine(False), machine(True)
+        self.assertLess(len(minimal.states), len(full.states))
+
+        every_valuation = [
+            dict(zip(props, values, strict=True))
+            for values in itertools.product((False, True), repeat=len(props))
+        ]
+        for episode in itertools.product(every_valuation, repeat=3):
+            self.assertEqual(play(minimal, episode), play(full, episode))
+
+    def test_states_that_step_alike_stay_apart_when_an_end_fact_differs(self):
+        apart = {"a": "a", "b": "b"}
+        cases = {
+            "same facts (control)": ({"a": (1, 1), "b": (1, 1)}, (), {"a": "a", "b": "a"}),
+            "a hard stage owed": ({"a": (1, 0), "b": (0, 0)}, (), apart),
+            "a soft stage owed": ({"a": (0, 1), "b": (0, 0)}, (), apart),
+            "a hard against a soft stage": ({"a": (1, 0), "b": (0, 1)}, (), apart),
+            "final": ({"a": (0, 0), "b": (0, 0)}, ("b",), apart),
+            "well": ({"a": (0, 0), "W": (0, 0)}, (), {"a": "a", "W": "W"}),
+        }
+        for name, (open_steps, finals, expected) in cases.items():
+            with self.subTest(name):
+                follows = {state: state for state in open_steps}
+                self.assertEqual(stand_ins(follows, open_steps, finals), expected)
+
+    def test_states_that_differ_only_two_steps_ahead_are_told_apart(self):
+        # s0 -> s1 -> s2 ends owing a hard stage; t0 -> t1 -> t2 owes nothing, so the first pass
+        # splits only s1 from t1 and a second one is needed to split s0 from t0.
+        follows = {"s0": "s1", "s1": "s2", "s2": "s2", "t0": "t1", "t1": "t2", "t2": "t2"}
+        open_steps = dict.fromkeys(follows, (0, 0)) | {"s2": (1, 0)}
+        self.assertEqual(
+            stand_ins(follows, open_steps),
+            {"s0": "s0", "s1": "s1", "s2": "s2", "t0": "t0", "t1": "t0", "t2": "t0"},
+        )
 
     def test_without_a_final_progress_runs_toward_the_states_where_no_answer_is_owed(self):
         for soft in (False, True):

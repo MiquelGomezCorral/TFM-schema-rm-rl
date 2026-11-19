@@ -30,14 +30,15 @@ from .embed_larm import embed_larm
 from .generate_rm import tag_states
 
 # Command-line name -> the RewardSwitches field it switches off. The promise cost and the hard
-# ceiling are not ablations (``rebuild-rewards`` sets them), the soft Absence fold pays the same
-# (it only changes the states), and the soft-break cost, gamma and step limit are numbers, not
-# switches.
+# ceiling are not ablations (``rebuild-rewards`` sets them), the soft Absence fold and the state
+# minimization pay the same (they only change the states), and the soft-break cost, gamma and
+# step limit are numbers, not switches.
 OFF_PARTS = {
     item.name.removeprefix("reward_"): item.name
     for item in fields(RewardSwitches)
     if item.type is bool
-    and item.name not in {"reward_promise_cost", "hard_ceiling", "fold_soft_absence"}
+    and item.name
+    not in {"reward_promise_cost", "hard_ceiling", "fold_soft_absence", "minimize_machine"}
 }
 OFF_CHOICES = (NO_PART, *OFF_PARTS)
 
