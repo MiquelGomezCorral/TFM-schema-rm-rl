@@ -5,10 +5,11 @@ carries the expected template, and the agent trained on it does the task.
 
 The eight templates: Existence, ExistenceTwo, Absence, Response, Precedence, ChainResponse,
 RespondedExistence and NotCoExistence. Each template has three tasks with a goal and three without
-one: 8 × 3 × 2 = 48 cards, plus `tpl-precedence-4-goal`, the goal twin of `tpl-precedence-1-nogoal` (49 cards).
+one: 8 × 3 × 2 = 48 cards, plus `tpl-precedence-4-goal`, the goal twin of `tpl-precedence-1-nogoal` (49 hard
+cards), plus 28 soft cards (77 cards in all, see "Soft cards" below).
 Card ids read `tpl-<template>-<k>-<goal|nogoal>`, with `k` from 1 to 3 (4 for that twin).
 
-Only the cards with `k = 1` are trained, plus `tpl-precedence-4-goal` (13 per arm: `tpl-precedence-1-nogoal` and
+Only the cards with `k = 1` are trained, plus `tpl-precedence-4-goal` (13 per arm of the hard cards: `tpl-precedence-1-nogoal` and
 `tpl-not-co-existence-1-nogoal` stopped training on 2026-11-18, since a wait plan passes them and the
 goal cards of their templates test the rule; `tpl-chain-response-1-goal` and `-1-nogoal` stopped on
 2026-11-19: a fall in the plain service room does not turn the agent, so the next-move rule is unfair
@@ -64,6 +65,42 @@ Cards with also_ok from this rule: `tpl-existence-1/2/3-goal`, `tpl-existence-tw
 `tpl-response-1/2/3-goal`, `tpl-precedence-1-goal`, `tpl-precedence-4-goal`,
 `tpl-responded-existence-1/2/3-goal`, `cx-sequence`, `cx-goal-one-rule`, `cx-goal-many-rules`.
 The Absence, NotCoExistence and `tpl-precedence-2/3` goal cards have one step and no second form.
+
+## Soft cards (2026-11-19)
+
+28 cards word a rule as a wish ("try to ...", "preferably ...") and mark it soft in `expect`, so every
+template has soft coverage next to its hard cards. Ids read `tpl-<template>-soft-<k>-<goal|nogoal>`,
+`k` from 1 to 3 as for the hard cards; `k = 1` is trained (15 per arm, 28 with the hard ones) and
+carries three extra wordings; the rest are generated and checked only.
+
+- Goal cards (21): the soft rule plus a hard goal. The agent must act, and the soft rule is the
+  tempting thing to break on the way (a shortcut, or an order that is faster the wrong way). Doing
+  nothing fails the hard goal. Existence, ExistenceTwo, Precedence, ChainResponse, RespondedExistence
+  and NotCoExistence have three each; Absence adds `tpl-absence-soft-1-goal` and Response adds `-1-` and
+  `-2-` (`cx-goal-one-rule` and `cx-goal-many-rules` are the other two soft Absence goal cards, and
+  `cx-goal-many-rules` the other soft Response one), so each has three.
+- No-goal cards (7): soft only (rule D3: no pass or fail, soft breaks per episode), in a world that
+  fires its own events: a siren, a forced box fall, or zombies in the Lanes level. An idle agent breaks
+  the rule in every episode, so it does not look good. The seven are `tpl-existence-soft-1-nogoal`
+  and `tpl-responded-existence-soft-1-nogoal` (siren room), `tpl-chain-response-soft-1-nogoal` (box
+  falls), and `tpl-existence-two-soft-1-nogoal`, `tpl-absence-soft-1-nogoal`,
+  `tpl-precedence-soft-1-nogoal` and `tpl-not-co-existence-soft-1-nogoal` (Lanes). Soft Absence and
+  Response no-goal cards already existed (`lanes-rules`, `cx-rules-only`, `keygift-soft`). All seven
+  are trained (idle shows as a soft break).
+- Every card has a plan that keeps the rule and a plan that breaks it (`breaks` lists the clauses it
+  breaks), and an idle plan breaks something on every card. The judge checks `breaks` on each card's
+  `event_seeds` (1, 2, 3 for the ServiceRoom cards, 1, 3, 4 for the Lanes cards, the layout seed 1 for
+  the key-level cards); a wider check on seeds 1 to 5 found one keep plan that is not seed-proof:
+  the side-lane guard of `tpl-absence-soft-1-nogoal` loses one zombie on seed 2. The machine of the
+  expected clauses pays keep > soft break > idle on those plans.
+- No soft card carries `also_ok` (S2 rule: a stricter reading is only safe where the level forces the
+  order, and none of these soft readings is). The ServiceRoom and Lanes soft cards use
+  `env_reward_matches: false`, like the hard ones: the environment pays at the exit only when its own
+  `require` holds, and Lanes never ends.
+- A level that never forces the trigger stays out of the no-goal set (DoorKey, UnlockPickup,
+  BlockedUnlockPickup, KeyCorridor: an idle agent passes a soft-only card there). Nothing makes the
+  agent drop the key in UnlockPickup or DoorKey, so `tpl-not-co-existence-soft-2-goal` and `-3-` break
+  the rule by a deliberate detour and test the soft reading of the template, not a shortcut.
 
 ## Contents
 
