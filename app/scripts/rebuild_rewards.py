@@ -21,7 +21,12 @@ REBUILD_RULE = "whole-unit pay, owed-stage charge, soft break without refund"
 PROMISE_COST_RULE = "promise cost (-0.1 on every step while a hard promise is open)"
 
 
-def rebuild_rewards(CONFIG: Configuration, destination: Path, gamma: float | None = None) -> bool:
+def rebuild_rewards(
+    CONFIG: Configuration,
+    destination: Path,
+    gamma: float | None = None,
+    soft_breaks_per_step: int | None = None,
+) -> bool:
     """Write ``destination``: ``CONFIG.bundle`` with today's rewards for its stored clauses.
 
     The machine is rebuilt from the clauses and the reward switches the bundle records (clause,
@@ -32,8 +37,10 @@ def rebuild_rewards(CONFIG: Configuration, destination: Path, gamma: float | Non
     else the limit of the level ``CONFIG.gym_id`` and ``CONFIG.env_kwargs`` make, else the
     bundle's recorded one. Only a ceiling bundle records a step limit, and only it builds the
     level. ``gamma`` None keeps the bundle's recorded discount (``CONFIG.gamma`` cannot say
-    "omitted"). ``CONFIG.soft_break_cost`` always sets the soft-break cost. The
-    manifest records every setting. Only the rewards (and the numbers
+    "omitted"), and so does ``soft_breaks_per_step`` None (the soft breaks per step the ceiling
+    assumes; a bundle that records none has the ``Configuration`` default).
+    ``CONFIG.soft_break_cost`` always sets the soft-break cost. The manifest records every
+    setting. Only the rewards (and the numbers
     of the end judgment) may differ from the stored machine: the states, guards that move, and
     the states the end judgment covers must match, so the labeling, state descriptions and
     embeddings stay valid and are copied as they are, unless the soft rules are charged once:
@@ -73,6 +80,9 @@ def rebuild_rewards(CONFIG: Configuration, destination: Path, gamma: float | Non
         reward_promise_cost=recorded.reward_promise_cost or CONFIG.reward_promise_cost,
         recurrent_soft_penalty=recorded.recurrent_soft_penalty and CONFIG.recurrent_soft_penalty,
         soft_break_cost=CONFIG.soft_break_cost,
+        soft_breaks_per_step=(
+            recorded.soft_breaks_per_step if soft_breaks_per_step is None else soft_breaks_per_step
+        ),
         hard_ceiling=ceiling,
         gamma=recorded.gamma if gamma is None else gamma,
         step_limit=step_limit,
@@ -122,9 +132,10 @@ def rebuild_rewards(CONFIG: Configuration, destination: Path, gamma: float | Non
     bundle.save(destination, overwrite=CONFIG.overwrite)
     print(f"rebuild-rewards: {destination}: rewards rebuilt from {CONFIG.bundle}")
     limit = switches.step_limit if switches.hard_ceiling else CONFIG.step_limit
-    order = pay_order_of(bundle, switches.gamma, limit)
+    order = pay_order_of(bundle, switches.gamma, limit, switches.soft_breaks_per_step)
     print(
-        f"rebuild-rewards: pay order: {order.summary()} (gamma {switches.gamma}, step limit {limit})"
+        f"rebuild-rewards: pay order: {order.summary()} (gamma {switches.gamma}, "
+        f"step limit {limit}, soft breaks per step {switches.soft_breaks_per_step})"
     )
     return True
 
