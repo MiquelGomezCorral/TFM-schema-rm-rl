@@ -21,7 +21,7 @@ from gymnasium.wrappers import FrameStackObservation, GrayscaleObservation, Resi
 from minigrid.wrappers import ImgObsWrapper, RGBImgPartialObsWrapper
 from torch import Tensor, nn
 
-from src.compiler import RuntimeValidationError
+from src.compiler import PaperRewardMachine, RuntimeValidationError
 from src.config import Configuration
 
 from . import (
@@ -90,9 +90,7 @@ def make_run_environment(CONFIG: Configuration, index: int = 0) -> RunEnvironmen
     if rm_inputs is None:
         return run
     try:
-        env = RewardMachineObservation(
-            run.env, *rm_inputs, CONFIG.reward_source, CONFIG.time_limit_penalty
-        )
+        env = RewardMachineObservation(run.env, *rm_inputs, CONFIG)
     except Exception:
         run.env.close()
         raise
@@ -201,13 +199,15 @@ ENVIRONMENT_FAMILIES: dict[str, Callable[[Configuration], RunEnvironment]] = {
 
 
 class RewardMachineObservation(gym.Wrapper):
-    """Add the RM state embedding to observations and the RM fields to ``info``.
+    """Add the RM state encoding to observations and the RM fields to ``info``.
 
     ``RewardMachineEnvironment`` is not a ``gym.Env`` (``gym.Wrapper`` would reject it), so
     this wrapper composes one over the preprocessed env and delegates reset and step to it:
     one RM update per step, the episode ends on an RM final or rejecting state, the reward
     follows ``reward_source``, RM reset on env reset. Observations are
-    ``{"image": obs, "rm_embedding": phi(u)}`` with phi(u_I) after reset. ``info`` gains
+    ``{"image": obs, "rm_embedding": phi(u)}`` with phi(u_I) after reset; with
+    ``rm_state_encoding: one_hot`` the key is ``rm_state`` and phi(u) is the one-hot vector of
+    the state's position in ``one_hot_state_names(machine)``. ``info`` gains
     ``env_reward``, ``rm_reward``, ``rm_state`` and ``rm_accept`` (state is final, or accepting
     where the environment ended the episode of a machine with no final).
     """
@@ -217,8 +217,7 @@ class RewardMachineObservation(gym.Wrapper):
         env: gym.Env,
         bundle: ArtifactBundle,
         labeling: Mapping[str, Callable[[object], bool]],
-        reward_source: str,
-        time_limit_penalty: float,
+        CONFIG: Configuration,
     ) -> None:
         super().__init__(env)
         machine = bundle.reward_machine
@@ -226,25 +225,31 @@ class RewardMachineObservation(gym.Wrapper):
             env,
             RewardMachineRuntime(machine, propositions=bundle.labeling_propositions),
             labeling,
-            reward_source=reward_source,
+            reward_source=CONFIG.reward_source,
         )
-        self.reward_machine.time_limit_penalty = time_limit_penalty
+        self.reward_machine.time_limit_penalty = CONFIG.time_limit_penalty
         self.final_states = frozenset(machine.final_states)
         self.judged = machine.judgment is not None
         self.accepting_states = frozenset(machine.judgment.accepting if self.judged else ())
         self.accepted = False
-        self.embeddings = {
-            state: np.asarray(vector, dtype=np.float32)
-            for state, vector in bundle.embeddings.items()
-        }
 
-        # Embedding values are negative too, so the space is unbounded.
-        dimension = len(self.embeddings[machine.initial_state])
-        self.observation_space = spaces.Dict(
-            {
-                "image": env.observation_space,
-                "rm_embedding": spaces.Box(-np.inf, np.inf, (dimension,), np.float32),
+        if CONFIG.rm_state_encoding == "one_hot":
+            states = one_hot_state_names(machine)
+            self.state_key = "rm_state"
+            identity = np.eye(len(states), dtype=np.float32)
+            self.state_vectors = dict(zip(states, identity, strict=True))
+            state_space = spaces.Box(0.0, 1.0, (len(states),), np.float32)
+        else:
+            self.state_key = "rm_embedding"
+            self.state_vectors = {
+                state: np.asarray(vector, dtype=np.float32)
+                for state, vector in bundle.embeddings.items()
             }
+            # Embedding values are negative too, so the space is unbounded.
+            dimension = len(self.state_vectors[machine.initial_state])
+            state_space = spaces.Box(-np.inf, np.inf, (dimension,), np.float32)
+        self.observation_space = spaces.Dict(
+            {"image": env.observation_space, self.state_key: state_space}
         )
 
     def reset(self, *, seed: int | None = None, options: dict | None = None):
@@ -273,7 +278,16 @@ class RewardMachineObservation(gym.Wrapper):
         return (terminated or self.judged) and self.accepted
 
     def _observation(self, image: np.ndarray, state: str) -> dict[str, np.ndarray]:
-        return {"image": image, "rm_embedding": self.embeddings[state]}
+        return {"image": image, self.state_key: self.state_vectors[state]}
+
+
+def one_hot_state_names(machine: PaperRewardMachine) -> list[str]:
+    """The machine's state names in one-hot slot order: slot ``i`` is the ``i``-th sorted name.
+
+    A one-hot slot means one state of one machine, so a run records these names and a policy
+    loads only onto a machine with the same list.
+    """
+    return sorted(machine.states)
 
 
 def _reward_machine_inputs(
@@ -347,7 +361,7 @@ class MultiTaskEnvironment(gym.Env):
             ):
                 raise ValueError(
                     f"Task {name!r} differs from {self.names[0]!r} in observation space, "
-                    "action space or RM embedding dimension; tasks in one run must match"
+                    "action space or RM state input size; tasks in one run must match"
                 )
         self.observation_space = first.observation_space
         self.action_space = first.action_space

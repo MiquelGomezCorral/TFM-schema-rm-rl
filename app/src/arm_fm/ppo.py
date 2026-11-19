@@ -48,6 +48,7 @@ from typing import Any
 
 import numpy as np
 import torch
+import yaml
 from gymnasium import Env, Wrapper, spaces
 from gymnasium.vector import AutoresetMode, SyncVectorEnv
 from stable_baselines3.common.utils import set_random_seed
@@ -56,6 +57,7 @@ from torch.distributions.categorical import Categorical
 
 from src.config import Configuration
 
+from .artifacts import load_bundle
 from .dqn import (
     EpisodeTracker,
     RunRecorder,
@@ -64,7 +66,12 @@ from .dqn import (
     rm_embedding_branch,
 )
 from .dqn import evaluation_resets as task_evaluation_resets
-from .environments import MultiTaskEnvironment, RunEnvironment, make_run_environment
+from .environments import (
+    MultiTaskEnvironment,
+    RunEnvironment,
+    make_run_environment,
+    one_hot_state_names,
+)
 
 TRAIN_COLUMNS = (
     "global_step",
@@ -210,14 +217,39 @@ def load_ppo_agent(path: Path, run: RunEnvironment, device: torch.device) -> PPO
     return agent.to(device)
 
 
-def _load_initial_weights(agent: PPOAgent, path: Path, device: torch.device) -> None:
-    """Load a saved run's ``agent.pt`` into ``agent``; a different space is a clear error."""
+def _load_initial_weights(agent: PPOAgent, CONFIG: Configuration, device: torch.device) -> None:
+    """Load the ``agent.pt`` of ``CONFIG.init_from`` into ``agent``.
+
+    Raises:
+        ValueError: If the saved run or this one has a one-hot machine state and the state names
+            differ (a slot means one state of one machine), or the saved weights do not fit this
+            run's observation or action space.
+    """
+    path = CONFIG.init_from / "agent.pt"
+    saved_config = CONFIG.init_from / "config.yaml"
+    saved = (
+        yaml.safe_load(saved_config.read_text(encoding="utf-8")) if saved_config.is_file() else {}
+    )
+    source = saved.get("rm_state_names")
+    target = (
+        one_hot_state_names(load_bundle(CONFIG.bundle).reward_machine)
+        if CONFIG.rm_state_encoding == "one_hot"
+        else None
+    )
+    if source != target:  # both None for embedding runs
+        raise ValueError(
+            f"init_from {CONFIG.init_from} does not fit this machine: a one-hot slot means one "
+            f"state of one machine; saved one-hot states {source or 'none (embedding)'}, this "
+            f"run's {target or 'none (embedding)'}. Point init_from at a run with the same "
+            f"rm_state_encoding (for one_hot, the same state names), or drop init_from"
+        )
     try:
         agent.load_state_dict(torch.load(path, map_location=device))
     except RuntimeError as error:
         raise ValueError(
-            f"{path} does not fit this run's observation or action space (image size, RM "
-            f"embedding size or action count differ): {error}"
+            f"{path} does not fit this run's observation or action space (image size, RM state "
+            f"input size or action count differ). Point init_from at a run of the same "
+            f"environment and RM embedding model, or drop init_from. Torch says: {error}"
         ) from error
 
 
@@ -257,9 +289,10 @@ def _orthogonal(layer: nn.Module, std: float) -> None:
 
 
 class PPOAgent(nn.Module):
-    """Encoder features plus an optional RM-embedding branch, one shared hidden layer, two heads.
+    """Encoder features plus an optional RM-state input, one shared hidden layer, two heads.
 
-    Observations are dicts of batched tensors: ``image`` and, with an RM, ``rm_embedding``.
+    Observations are dicts of batched tensors: ``image`` and, with an RM, ``rm_embedding`` (through
+    the embedding branch) or ``rm_state`` (the one-hot machine state, concatenated as it is).
     """
 
     def __init__(
@@ -272,9 +305,12 @@ class PPOAgent(nn.Module):
         rm_feature_count = 0
         if isinstance(observation_space, spaces.Dict):
             image_space = observation_space["image"]
-            dimension = observation_space["rm_embedding"].shape[0]
-            rm_feature_count = dimension // 4
-            self.rm_embedding = rm_embedding_branch(dimension)
+            if "rm_state" in observation_space.spaces:
+                rm_feature_count = observation_space["rm_state"].shape[0]
+            else:
+                dimension = observation_space["rm_embedding"].shape[0]
+                rm_feature_count = dimension // 4
+                self.rm_embedding = rm_embedding_branch(dimension)
 
         with torch.no_grad():
             image_feature_count = encoder(torch.zeros((1, *image_space.shape))).shape[1]
@@ -294,6 +330,8 @@ class PPOAgent(nn.Module):
         features = self.encoder(observation["image"])
         if self.rm_embedding is not None:
             features = torch.cat([features, self.rm_embedding(observation["rm_embedding"])], dim=1)
+        elif "rm_state" in observation:
+            features = torch.cat([features, observation["rm_state"]], dim=1)
         return self.hidden(features)
 
     def get_value(self, observation: Observation) -> Tensor:
@@ -572,7 +610,7 @@ class PPOLearner:
         action_count = int(run.env.action_space.n)
         agent = PPOAgent(run.make_encoder(), observation_space, action_count).to(device)
         if CONFIG.init_from is not None:
-            _load_initial_weights(agent, CONFIG.init_from / "agent.pt", device)
+            _load_initial_weights(agent, CONFIG, device)
         # A fine-tune start restores weights only: PPO keeps no observation or reward
         # normalization statistics, and the optimizer (Adam moments, annealed learning rate)
         # restarts, because the saved run's schedule ended and the new task is a new problem.

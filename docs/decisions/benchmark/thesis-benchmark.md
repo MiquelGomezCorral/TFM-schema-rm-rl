@@ -46,6 +46,10 @@ thing whichever arm produced it.
   non-empty success follow the corrected one, and a run is flagged when more than half of its test
   episodes cannot start. The 5% limit is reported beside, not applied. Same rule for every arm
   (user, 2026-11-14).
+- **Shop served success.** Shop cards also record `served_count` and `served_success` (at least one
+  client served) per test episode, from the reference labels. It is the shop's reported success;
+  promises open at the 600-step limit do not affect it. `judged_success` and the columns built on it
+  are unchanged (user, 2026-11-16).
 - **Shared no-RM run.** The no-RM agent never sees the card text, so one no-RM run is trained per
   identical training configuration (the `train-rl` config without the name, and the seed) and
   judged against every card sharing it, whatever suite asks. The owner of a key is, in order: a
@@ -106,6 +110,14 @@ thing whichever arm produced it.
 - **Prompts.** Each pipeline keeps its own prompts. ARM-FM runs as its authors ran it, without worked
   examples; FARM keeps its examples as part of the method. The paper states the asymmetry and any gain
   from the examples is a result to show. No control run.
+- **Environment descriptions.** A description is written as by someone who knows little about reward
+  machines: plain world facts, no rule names, machine examples or hints toward an expected machine.
+  FARM's generator prompt may gain general, environment-agnostic rules and examples before the
+  method freeze; each change and its date are recorded here (2026-11-16: one trigger followed by
+  ordered steps becomes a chain of Responses) (user, 2026-11-16).
+- **One-hot machine state.** `rm_state_encoding: one_hot` gives the learner the machine state as one
+  slot per state instead of the text embedding. It is a diagnostic learner input, not an arm: its
+  runs are labeled one-hot and never pooled with embedding runs (user, 2026-11-16).
 - **Layouts.** Training uses procedural layouts. Evaluation uses a fixed set of eval seeds per
   environment, the same for every run and arm.
 - **Paraphrases.** The claim is clause identity: the same clauses give the same machine and so the same

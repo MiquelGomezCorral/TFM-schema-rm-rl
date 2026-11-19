@@ -19,7 +19,8 @@ and state embeddings in the same environment, with no training:
     python app/main.py test-rl --run <run folder> --bundle <bundle> --judge <card.json>
 
 The card gives the setup (``env_kwargs``) and the rules. The run is refused, before any test work,
-when the bundle's observation space (its embedding size) is not the one the policy trained on.
+when the bundle's observation space (its RM state input size, or for a one-hot policy its state
+names) is not the one the policy trained on.
 ``--shuffle-embeddings SEED`` permutes the embeddings among the machine's states (a control for
 "does the policy read what the state means"), with the bundle's own or, without ``--bundle``, the
 run's own machine. These tests write ``<run>/transfer/<name>/`` (``test.json``, ``judge.json``,
@@ -58,11 +59,18 @@ from src.arm_fm.dqn import (
     select_action,
 )
 from src.arm_fm.dqn import evaluate as evaluate_dqn
-from src.arm_fm.environments import RewardMachineObservation, RunEnvironment, make_environment
+from src.arm_fm.environments import (
+    RewardMachineObservation,
+    RunEnvironment,
+    make_environment,
+    one_hot_state_names,
+)
 from src.arm_fm.ppo import MODEL_FILES, fixed_layout, load_ppo_agent, model_folder
 from src.arm_fm.ppo import evaluate as evaluate_ppo
 from src.arm_fm.ppo import evaluation_resets as evaluation_resets_ppo
 from src.arm_fm.runtime import RewardMachineRuntime
+from src.arm_fm.shop import ENV_ID as SHOP_ENV_ID
+from src.arm_fm.shop import POT_ENV_ID as SHOP_POT_ENV_ID
 from src.arm_fm.transfer import embedding_permutation
 from src.benchmark import (
     RM_RETURN_DEFINITION,
@@ -113,6 +121,14 @@ JUDGE_MEANS = (
     "rm_return_positive",
     "rm_return_negative",
     "length",
+)
+# Shop cards also judge by clients served; the fields are absent from every other card's judge.json.
+SHOP_GYM_IDS = (SHOP_ENV_ID, SHOP_POT_ENV_ID)
+SHOP_JUDGE_MEANS = ("served_count", "served_success")
+SERVED_DEFINITION = (
+    "served_count: the order_served events in the episode's reference labels; served_success: "
+    "served_count >= 1. Promises open at the step limit do not affect either; judged_success "
+    "is unchanged."
 )
 CANNOT_START_DEFINITION = (
     "cannot_start: the machine ended the episode in a final state, the environment did not, and "
@@ -199,7 +215,7 @@ def _test_run(
     CONFIG: Configuration, directory: Path, gifs: int, judge: Path | None
 ) -> dict[str, object]:
     saved = yaml.safe_load((directory / "config.yaml").read_text(encoding="utf-8"))
-    trained = _run_config(saved, CONFIG.eval_seed_base)
+    trained = run_config(saved, CONFIG.eval_seed_base)
     config, transfer = trained, None
     if CONFIG.bundle is not None or CONFIG.shuffle_embeddings_seed is not None:
         config, transfer = _transferred_config(CONFIG, saved, judge)
@@ -209,8 +225,8 @@ def _test_run(
     run = make_run_environment(config)
     try:
         if transfer and CONFIG.bundle is not None:
-            _check_same_spaces(trained, run, CONFIG.bundle)
-        policy = _load_policy(config, run, directory, CONFIG.test_model)
+            _check_same_spaces(trained, saved, run, CONFIG.bundle)
+        policy = load_policy(config, run, directory, CONFIG.test_model)
         # Built first: a card that does not fit the run fails before any test work.
         judge_recorder = JudgeRecorder(config, run, policy, judge) if judge is not None else None
         out.mkdir(parents=True, exist_ok=True)
@@ -242,7 +258,7 @@ def _test_run(
     return row
 
 
-def _run_config(
+def run_config(
     saved: dict[str, Any], seed_base: int, overrides: dict[str, Any] | None = None
 ) -> Configuration:
     """The run's own settings, rebuilt from its ``config.yaml``, testing from ``seed_base``.
@@ -293,7 +309,7 @@ def _transferred_config(
             "env_kwargs": dict(card.env["env_kwargs"]),
         }
         parts.append(f"{CONFIG.bundle.parent.name}-{CONFIG.bundle.name}")
-    config = _run_config(saved, CONFIG.eval_seed_base, overrides)
+    config = run_config(saved, CONFIG.eval_seed_base, overrides)
     if seed is not None:
         parts.append(f"shuffled-s{seed}")
     bundles = (
@@ -316,19 +332,34 @@ def _transferred_config(
     return config, record
 
 
-def _check_same_spaces(trained: Configuration, tested: RunEnvironment, bundle: Path) -> None:
+def _check_same_spaces(
+    trained: Configuration, saved: dict[str, Any], tested: RunEnvironment, bundle: Path
+) -> None:
     """Refuse a bundle whose observations or actions differ from what the policy trained on.
 
-    The RM embedding size is part of the observation, so a bundle embedded with another model
-    fails here, in words, instead of as a weight-shape error.
+    The RM state input size is part of the observation, so a bundle embedded with another model
+    fails here, in words, instead of as a weight-shape error. A one-hot policy also needs the
+    same state names: a slot means one state of one machine, whatever the width.
     """
+    policy_states = saved.get("rm_state_names")  # None: an embedding policy
+    machine_states = (
+        one_hot_state_names(load_bundle(bundle).reward_machine) if policy_states else None
+    )
+    if policy_states != machine_states:
+        raise TransferError(
+            f"{bundle} does not fit the policy (rm_state): it was trained on the one-hot "
+            f"states {policy_states}, the bundle's machine has {machine_states}. Pass a --bundle "
+            f"whose machine has the same state names, or retrain the policy on this bundle"
+        )
     reference = make_run_environment(trained)
     try:
         for name in ("observation_space", "action_space"):
             seen, wanted = getattr(tested.env, name), getattr(reference.env, name)
             if seen != wanted:
                 raise TransferError(
-                    f"{bundle} does not fit the policy ({name}): {_space_difference(wanted, seen)}"
+                    f"{bundle} does not fit the policy ({name}): {_space_difference(wanted, seen)}. "
+                    "Pass a --bundle for the same environment and RM embedding model as the "
+                    "policy's training bundle, or retrain the policy on this bundle"
                 )
     finally:
         reference.env.close()
@@ -350,7 +381,8 @@ def _shape(space: spaces.Space | None) -> object:
     return "missing" if space is None else getattr(space, "shape", space)
 
 
-def _load_policy(config: Configuration, run: RunEnvironment, directory: Path, model: str) -> Policy:
+def load_policy(config: Configuration, run: RunEnvironment, directory: Path, model: str) -> Policy:
+    """Load the ``model`` weights saved in run folder ``directory`` as a policy playing in ``run``."""
     if config.algorithm == "ppo":
         agent = load_ppo_agent(directory / MODEL_FILES[model], run, CPU)
 
@@ -520,13 +552,14 @@ class JudgeRecorder:
         self.run = run
         self.policy = policy
         self.suite, self.card = load_card(card_path)
+        gym_id = self.card.env.get("gym_id")
+        self.shop = gym_id in SHOP_GYM_IDS
         self.machine = load_bundle(config.bundle).reward_machine if config.bundle else None
         self.expected = expected_length(self.card)
         if config.task_bundles:
             raise CardError(
                 f"{card_path}: the judge does not take a task_bundles run: one card judges one task"
             )
-        gym_id = self.card.env.get("gym_id")
         if gym_id != config.gym_id:
             raise CardError(
                 f"{card_path}: the card is for {gym_id!r}, the run plays {config.gym_id!r}"
@@ -571,6 +604,7 @@ class JudgeRecorder:
             expected = self.expected
             cannot_start = episode_cannot_start(length, ended, expected)
             raw_success, raw_non_empty = verdict.pop("success"), verdict.pop("non_empty_success")
+            served = _served_fields(rollout.labels) if self.shop else {}
             episodes.append(
                 {
                     "file": name,
@@ -583,6 +617,7 @@ class JudgeRecorder:
                         length, ended, expected, START_SHARE_STRICT
                     ),
                     **verdict,
+                    **served,
                     "env_success": record.env_success,
                     **_return_split("env", rollout.env_rewards),
                     **_return_split("rm", rm_rewards),
@@ -600,11 +635,24 @@ class JudgeRecorder:
             **length_header(self.expected),
             **machine_header(self.machine, start_labels or None),
             **judge_means(episodes),
+            **self._optional_summary(episodes),
             "activated_share": activated_share(episodes),
             "rule_pass_rates": rule_pass_rates(episodes),
             "per_episode": episodes,
         }
         write_json(directory / "judge.json", summary, indent=2)
+
+    def _optional_summary(self, episodes: list[dict[str, Any]]) -> dict[str, Any]:
+        """Judge fields only some runs carry, so every other ``judge.json`` stays as it was."""
+        summary: dict[str, Any] = {}
+        if self.shop:
+            summary = {
+                "served_definition": SERVED_DEFINITION,
+                **judge_means(episodes, SHOP_JUDGE_MEANS),
+            }
+        if self.config.rm_state_encoding == "one_hot":
+            summary["rm_state_encoding"] = "one_hot"
+        return summary
 
     def _rollout(self, act: Callable[[Any], int], reset: dict[str, object]) -> Played:
         """One test episode: the reference labels after every step, the RM rewards, whether the
@@ -680,9 +728,17 @@ def rule_pass_rates(episodes: list[dict[str, Any]]) -> list[float]:
     ]
 
 
-def judge_means(episodes: list[dict[str, Any]]) -> dict[str, float | None]:
-    """The ``mean_<name>`` entries of ``judge.json``, one per ``JUDGE_MEANS`` name."""
-    return {f"mean_{name}": _mean(episodes, name) for name in JUDGE_MEANS}
+def judge_means(
+    episodes: list[dict[str, Any]], names: tuple[str, ...] = JUDGE_MEANS
+) -> dict[str, float | None]:
+    """The ``mean_<name>`` entries of ``judge.json``, one per name (``JUDGE_MEANS`` by default)."""
+    return {f"mean_{name}": _mean(episodes, name) for name in names}
+
+
+def _served_fields(labels: list[dict[str, bool]]) -> dict[str, int | bool]:
+    """A shop episode's clients served (``order_served`` events) and whether it served any."""
+    served_count = sum(step["order_served"] for step in labels)
+    return {"served_count": served_count, "served_success": served_count >= 1}
 
 
 def _mean(episodes: list[dict[str, Any]], name: str) -> float | None:
