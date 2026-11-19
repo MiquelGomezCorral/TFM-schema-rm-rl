@@ -1,0 +1,201 @@
+{
+  "suite": "forcing",
+  "schema": 1,
+  "cards": [
+    {
+      "id": "lanes-guard",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-lanes/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-Lanes-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Never let a zombie through the top lane.",
+      "goal": false,
+      "template": "Absence",
+      "status": "draft",
+      "expect": [
+        ["Absence", ["top_breach"], "hard"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [
+          {"do": "policy", "name": "guard", "ignore": []}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Does nothing for the whole episode: every zombie of the top lane gets through.",
+            "steps": [
+              {"do": "wait", "n": 300}
+            ]
+          },
+          {
+            "breaks": [0],
+            "why": "Guards the side lanes and never goes for a zombie of the top lane, so the top lane is breached.",
+            "steps": [
+              {"do": "policy", "name": "guard", "ignore": ["top"]}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [1, 3, 4],
+      "paraphrases": [
+        "No zombie may get through the top lane.",
+        "Do not allow any zombie to reach the end of the top lane.",
+        "Stop every zombie that walks down the top lane."
+      ],
+      "notes": "Forcing suite. The world forces the trigger: zombies enter the top lane on their own and every one nobody stops gets through 27 steps later, so doing nothing breaks the rule at step 28 or later. The agent must act to keep it. `env_reward_matches` is false: the environment never terminates, so the card contract's env success (terminated with reward) is always false; the environment's own `success` flag (no top breach) is read from `info`."
+    },
+    {
+      "id": "lanes-rules",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-lanes/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-Lanes-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Never let a zombie through the top lane. Try not to let zombies through the other lanes, and try not to step on plants.",
+      "goal": false,
+      "template": null,
+      "status": "draft",
+      "expect": [
+        ["Absence", ["top_breach"], "hard"],
+        ["Absence", ["side_breach"], "soft"],
+        ["Absence", ["plant_trampled"], "soft"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [
+          {"do": "policy", "name": "guard", "ignore": []}
+        ],
+        "wrong": [
+          {
+            "breaks": [0, 1],
+            "why": "Does nothing for the whole episode: zombies get through the top lane and the side lanes.",
+            "steps": [
+              {"do": "wait", "n": 300}
+            ]
+          },
+          {
+            "breaks": [0],
+            "why": "Guards the side lanes and never goes for a zombie of the top lane: the hard rule breaks, the soft ones hold on these seeds.",
+            "steps": [
+              {"do": "policy", "name": "guard", "ignore": ["top"]}
+            ]
+          },
+          {
+            "breaks": [1, 2],
+            "why": "Keeps the top lane, then walks onto every plant before it goes for the side lanes: it tramples plants and loses side-lane zombies. Only soft rules break, the goal is reached.",
+            "steps": [
+              {"do": "policy", "name": "guard", "ignore": ["plants"]}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [1, 3, 4],
+      "paraphrases": [
+        "No zombie may get through the top lane. Try to stop the zombies of the other lanes too, and try to leave the plants alone.",
+        "Do not let any zombie through the top lane. If you can, keep zombies from the other lanes and avoid stepping on plants.",
+        "The top lane must never be breached. Do your best to hold the other lanes and not to walk over the plants."
+      ],
+      "notes": "Forcing suite. Same world as `lanes-guard` with two soft rules. The soft rules do not decide success: the judged success is the hard rule alone. Under the project's default reward switches a hard breach ends the episode in the rejecting well, so an agent that gives up the top lane early stops paying the soft penalties: see the ending-early comparison in `README.md`. The guard breaks the side-lane rule on every seed it was run on (2 to 15 side breaches on seeds 1 to 12; 4, 2 and 4 on the plan seeds 1, 3 and 4): the soft rule is hard to keep."
+    },
+    {
+      "id": "keygift-hard",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-key-gift/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-KeyGift-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Whenever you are holding the key, open the door.",
+      "goal": false,
+      "template": "Response",
+      "status": "draft",
+      "expect": [
+        ["Response", ["has_door_key", "door_open"], "hard"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [
+          {"do": "policy", "name": "keygift", "ignore": []}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Does nothing for the whole episode: the first key lands in the hands and the door is never opened.",
+            "steps": [
+              {"do": "wait", "n": 300}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [
+        "Each time you hold the key, you have to open the door.",
+        "At any moment you carry the key, open the door.",
+        "If the key is in your hands, the door must be opened."
+      ],
+      "notes": "Forcing suite. The world forces the trigger: a key lands in the empty hands about 1 step in 30 and cannot be dropped, so doing nothing leaves the rule open. The agent must go to the door and toggle it. `env_reward_matches` is false for the same reason as in `lanes-guard`."
+    },
+    {
+      "id": "keygift-soft",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-key-gift/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-KeyGift-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Whenever you are holding the key, try to open the door.",
+      "goal": false,
+      "template": "Response",
+      "status": "draft",
+      "expect": [
+        ["Response", ["has_door_key", "door_open"], "soft"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [
+          {"do": "policy", "name": "keygift", "ignore": []}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Does nothing for the whole episode: the key lands in the hands and the door is never opened. The rule is soft, so the agent only pays the soft penalty.",
+            "steps": [
+              {"do": "wait", "n": 300}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [
+        "Each time you hold the key, try to open the door.",
+        "At any moment you carry the key, make an effort to open the door.",
+        "If the key is in your hands, do your best to open the door."
+      ],
+      "notes": "Forcing suite. Same world as `keygift-hard` with a soft rule (no hard clause, so the judged success is always true). Under the default reward switches an open soft promise is charged at the end and each broken one pays 0.5 on its own: doing nothing costs, answering gifts costs nothing."
+    }
+  ]
+}
