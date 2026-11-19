@@ -17,6 +17,7 @@ from .rm_format import (
     compiler_machine_to_paper,
     machine_too_large,
     machine_view,
+    machine_view_note,
     paper_to_structure,
     parse_paper_reward_machine,
     parse_reward_machine,

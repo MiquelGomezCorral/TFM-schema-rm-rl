@@ -134,7 +134,7 @@ def _accepted_compiler_bundle(
     pay = record_pay_order(bundle)
     if pay["ok"] is not True:
         print_warning(f"pay order: {pay['summary']}")
-    if destination is not None and result.embeddings:  # none for a machine over the prompt bound
+    if destination is not None:
         write_embedding_artifact(result, destination)
         record_bundle_embeddings(bundle, result, destination)
     return bundle

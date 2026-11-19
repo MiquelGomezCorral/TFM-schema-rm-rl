@@ -11,15 +11,17 @@ from httpx import Request, Response
 from nl2ltl.declare.base import TemplateEnum
 from openai import BadRequestError
 
-from src.arm_fm.generation import _extract_artifact, _refine_labeling
+from src.arm_fm.generation import _extract_artifact, _refine_labeling, request_state_descriptions
 from src.benchmark.labeling_repair import Check, repair_prompt
 from src.compiler import (
     PaperRewardMachine,
     RuntimeTransition,
+    machine_view,
     materialize_proposal,
     parse_paper_reward_machine,
     serialize_paper_reward_machine,
 )
+from src.compiler.reward_machine import EndJudgment
 from src.config import Configuration
 from src.engines import (
     CONTEXT_EXCEEDED,
@@ -429,8 +431,8 @@ class EngineTests(unittest.TestCase):
         self.assertIn('[{"pattern": "Existence"}]', requests[1][2])
         self.assertIn("- Rule-only task", requests[1][2])
 
-    def test_machine_over_the_prompt_bound_reaches_the_prompts_as_a_summary(self) -> None:
-        states = tuple(f"u{index}" for index in range(40))
+    def test_machine_over_the_prompt_bound_reaches_the_prompts_as_a_state_list(self) -> None:
+        states = tuple(f"u{index}" for index in range(301))
         transitions = tuple(
             RuntimeTransition("u0", "a&!b", state, 1.0 if state == "u1" else 0.0)
             for state in states[1:]
@@ -448,12 +450,18 @@ class EngineTests(unittest.TestCase):
         )
         requests = []
         repairs = []
+        sent, descriptions = [], []
 
         def request(model, system, user, schema, name):
             requests.append(user)
             return '{"accepted":true,"feedback":"ok"}'
 
-        engine = GenericEngine(ENVIRONMENT, "test-model", "Test", request)
+        def request_text(model, system, user):
+            sent.append(user)
+            asked = user.rsplit("state keys:\n", 1)[1].split(", ")
+            return json.dumps(dict.fromkeys(asked, "text"))
+
+        engine = GenericEngine(ENVIRONMENT, "test-model", "Test", request, request_text)
         for bound in (len(text), len(text) - 1):  # the text at the bound, then one over it
             with patch.object(Configuration, "MACHINE_PROMPT_MAX_CHARS", bound):
                 engine.review_candidate("Finish", "[]", text, ())
@@ -468,15 +476,73 @@ class EngineTests(unittest.TestCase):
                     propositions_json="{}",
                 )
                 repairs.append(repair_prompt(bundle, Check("missing")))
+                request_state_descriptions(engine, "env", "Finish", machine, [])
+                descriptions.append(sent.copy())
+                sent.clear()
 
-        for whole in (requests[0], requests[1], repairs[0]):
+        # Under the bound one description request carries the whole text.
+        for whole in (requests[0], requests[1], repairs[0], *descriptions[0]):
             self.assertIn(text, whole)
-        for summary in (requests[2], requests[3], repairs[1]):
+        self.assertEqual(len(descriptions[0]), 1)
+        # Over it, the descriptions come in batches of 20 states, each with only its own lines.
+        batches = descriptions[1]
+        self.assertEqual(len(batches), 16)
+        for number, batch in enumerate(batches):
+            asked = states[20 * number : 20 * (number + 1)]
+            lines = batch.split("STATE_LIST:\n")[1].split("\n\nReturn")[0].splitlines()
+            self.assertEqual([line.split(":")[0] for line in lines], list(asked))
+            self.assertNotIn("more state", batch)
+        for summary in (requests[2], requests[3], repairs[1], batches[0]):
             self.assertIn("FINAL_STATES: u7", summary)
-            self.assertIn("(40 in all)", summary)
-            self.assertIn("TRANSITION_FUNCTION: 39 rows, not listed", summary)
+            self.assertIn("(301 in all)", summary)
+            self.assertIn("TRANSITION_FUNCTION: 300 rows, not listed", summary)
             self.assertIn("REWARD_FUNCTION: 1 row, not listed", summary)
             self.assertNotIn("(u0, a&!b)", summary)
+            self.assertIn("u0: start\n", summary)
+            self.assertIn("u1: in progress; shortest path from the start: a\n", summary)
+            self.assertIn("u7: final: every hard goal is reached; shortest path", summary)
+        # The critics and the labeling prompts list the first 300 states.
+        for summary in (requests[2], requests[3], repairs[1]):
+            self.assertIn("u299: in progress", summary)
+            self.assertNotIn("u300: in progress", summary)
+            self.assertIn("(1 more state not listed)", summary)
+
+    def test_state_list_shows_the_last_steps_of_a_path_and_marks_other_guards(self) -> None:
+        steps = ("a", "b&!c", "d", "!(a&b)", "e", "f")
+        transitions = tuple(
+            RuntimeTransition(f"u{index}", guard, f"u{index + 1}")
+            for index, guard in enumerate(steps)
+        )
+        machine = PaperRewardMachine(
+            tuple(f"u{index}" for index in range(7)), "u0", transitions, final_states=("u6",)
+        )
+
+        with patch.object(Configuration, "MACHINE_PROMPT_MAX_CHARS", 1):
+            view = machine_view(serialize_paper_reward_machine(machine))
+
+        self.assertIn("u2: in progress; shortest path from the start: a then b\n", view)
+        self.assertIn(
+            "u6: final: every hard goal is reached; shortest path from the start: "
+            "... then d then guard over a, b then e then f\n",
+            view,
+        )
+
+    def test_state_list_says_which_stages_a_state_still_owes(self) -> None:
+        transitions = (RuntimeTransition("u0", "a", "u1"), RuntimeTransition("u1", "b", "u2"))
+        judgment = EndJudgment(
+            accepting=("u2",),
+            pending=(("u0", 1, 0), ("u1", 2, 1)),
+            hard_failed_reward=-1.0,
+            soft_failed_reward=-0.5,
+        )
+        machine = PaperRewardMachine(("u0", "u1", "u2"), "u0", transitions, judgment=judgment)
+
+        with patch.object(Configuration, "MACHINE_PROMPT_MAX_CHARS", 1):
+            view = machine_view(serialize_paper_reward_machine(machine))
+
+        self.assertIn("u0: start; owes 1 hard and 0 soft stages\n", view)
+        self.assertIn("u1: in progress; owes 2 hard and 1 soft stages; shortest path", view)
+        self.assertIn("u2: in progress; owes nothing; shortest path", view)
 
     def test_generic_engine_tags_states(self) -> None:
         requests = []

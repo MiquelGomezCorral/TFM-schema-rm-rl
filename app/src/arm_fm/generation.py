@@ -21,6 +21,7 @@ from src.compiler import (
     compiler_machine_to_paper,
     machine_too_large,
     machine_view,
+    machine_view_note,
     parse_paper_reward_machine,
     serialize_paper_reward_machine,
 )
@@ -272,7 +273,7 @@ class _Generation:
                 "labeling_generator",
                 environment=self.environment.markdown,
                 task=self.task,
-                candidate=self.machine_text,
+                candidate=machine_view(self.machine_text),
                 api=self.labeling_api,
                 history=history,
             ),
@@ -281,7 +282,7 @@ class _Generation:
                 "labeling_critic",
                 environment=self.environment.markdown,
                 task=self.task,
-                candidate=self.machine_text,
+                candidate=machine_view(self.machine_text),
                 labeling=source,
             ),
             self.attempts,
@@ -372,28 +373,44 @@ def request_state_descriptions(
 ) -> dict[str, str]:
     """Ask for one description per state of ``machine``; every try is appended to ``attempts``.
 
+    A machine over ``Configuration.MACHINE_PROMPT_MAX_CHARS`` is asked in batches of
+    ``Configuration.TAGGING_BATCH_STATES`` states, each request carrying ``machine_view`` of its
+    batch; any other machine is asked in one request with its whole text.
+
     Raises:
-        RuntimeError: When no reply is accepted within ``MAX_ATTEMPTS`` tries.
+        RuntimeError: When no reply is accepted within ``MAX_ATTEMPTS`` tries for a batch.
     """
-    candidate = ""
+    text = serialize_paper_reward_machine(machine)
+    size = Configuration.TAGGING_BATCH_STATES if machine_too_large(text) else len(machine.states)
+    descriptions: dict[str, str] = {}
+    for start in range(0, len(machine.states), size):
+        states = machine.states[start : start + size]
+        prompt = {
+            "environment": environment_markdown,
+            "task": task,
+            "candidate": machine_view(text, states),
+            "states": ", ".join(states),
+        }
+        descriptions.update(_request_batch_descriptions(engine, prompt, states, attempts))
+    return descriptions
+
+
+def _request_batch_descriptions(
+    engine: object, prompt: dict[str, str], states: Sequence[str], attempts: list[StageAttempt]
+) -> dict[str, str]:
+    """One description request for ``states``, asked again until a reply is accepted."""
+    reply = ""
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
-            candidate = _request_text(
-                engine,
-                "description_generator",
-                environment=environment_markdown,
-                task=task,
-                candidate=serialize_paper_reward_machine(machine),
-                states=", ".join(machine.states),
-            )
-            descriptions = _parse_descriptions(candidate, machine.states)
-            attempts.append(StageAttempt("descriptions", attempt, "accepted", candidate))
+            reply = _request_text(engine, "description_generator", **prompt)
+            descriptions = _parse_descriptions(reply, states)
+            attempts.append(StageAttempt("descriptions", attempt, "accepted", reply))
             return descriptions
         except ContextExceededError:
             raise  # the same request is larger than the context window on every try
         except Exception as error:
             attempts.append(
-                StageAttempt("descriptions", attempt, "failed", candidate, error=str(error))
+                StageAttempt("descriptions", attempt, "failed", reply, error=str(error))
             )
     raise RuntimeError("State-description generation was not accepted within three attempts")
 
@@ -720,8 +737,7 @@ def _compiler_bundle(
     result: CompilationResult, engine: object | None, CONFIG: Configuration
 ) -> ArtifactBundle:
     descriptions = pair_state_descriptions(result, result.state_descriptions)
-    # A machine too large for the state tagger has no descriptions to wait for.
-    if result.labeling_source and (descriptions or machine_too_large(result.text)):
+    if result.labeling_source and descriptions:
         bundle = build_compiler_bundle(
             result,
             labeling_source=result.labeling_source,
@@ -802,17 +818,7 @@ def _finish_compiler_bundle(
     )
     bundle.manifest.errors = [item.error for item in attempts if item.error]
     if machine_too_large(result.text):
-        bundle.manifest.generation["state_descriptions_skipped"] = skipped_descriptions_note(
-            result.text
-        )
-
-
-def skipped_descriptions_note(text: str) -> str:
-    """Why a machine over the prompt bound has no state descriptions or embeddings."""
-    return (
-        f"the machine text is {len(text)} characters, over {Configuration.MACHINE_PROMPT_MAX_CHARS}: "
-        "no state descriptions or embeddings, train it with rm_state_encoding: one_hot"
-    )
+        bundle.manifest.generation["state_list_view"] = machine_view_note(result.text)
 
 
 # ======================================================================================

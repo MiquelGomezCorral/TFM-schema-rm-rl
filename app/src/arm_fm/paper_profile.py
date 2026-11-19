@@ -27,6 +27,7 @@ from typing import Any
 from src.compiler import (
     PaperRewardMachine,
     RuntimeValidationError,
+    machine_view,
     parse_paper_reward_machine,
     serialize_paper_reward_machine,
 )
@@ -231,7 +232,7 @@ def refine_labeling(
     prompts: PaperPrompts, machine: PaperRewardMachine, engines: Engines
 ) -> tuple[str | None, StageResult]:
     """Run the labeling conversation and return the last source that loads for the RM events."""
-    rm_text = serialize_paper_reward_machine(machine)
+    rm_text = machine_view(serialize_paper_reward_machine(machine))
     template = prompts.templates["labeling_generator"]
     if "{REWARD_MACHINE}" not in template:
         raise ValueError("The labeling generator template has no {REWARD_MACHINE} slot")
@@ -520,7 +521,7 @@ def _describe_states(machine: PaperRewardMachine, run: PaperRun) -> dict[str, st
                     "description_generator",
                     environment=run.sources["description_context"],
                     task=run.prompts.mission,
-                    candidate=serialize_paper_reward_machine(machine),
+                    candidate=machine_view(serialize_paper_reward_machine(machine)),
                     states=", ".join(machine.states),
                 ),
                 read_prompt("arm_fm", "description_generator"),
