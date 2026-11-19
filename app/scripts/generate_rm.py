@@ -22,7 +22,6 @@ from src.arm_fm.generation import (
     clear_call_records,
     generate_compiler_labeling,
     pair_state_descriptions,
-    skipped_descriptions_note,
     state_identifiers,
 )
 from src.compiler import (
@@ -32,6 +31,8 @@ from src.compiler import (
     build_compilation_result,
     compile_dfas,
     machine_too_large,
+    machine_view,
+    machine_view_note,
     materialize_proposal,
 )
 from src.config import Configuration
@@ -332,6 +333,15 @@ class _Pipeline:
         self.progress.artifact("Serialized Reward Machine", compiled.text)
         for warning in compiled.warnings:
             self.progress.warn(warning)
+        if machine_too_large(compiled.text):
+            if self.CONFIG.embeddings and self.CONFIG.embedding_context:
+                # The context repeats the machine in every embedding request, and the local server
+                # reads about 2048 tokens (``Configuration.llama_server_command``).
+                raise ImmediateEngineError(
+                    f"embedding_context cannot carry a machine of {len(compiled.text)} characters "
+                    f"(over {Configuration.MACHINE_PROMPT_MAX_CHARS}): rerun without it"
+                )
+            self.progress.warn(machine_view_note(compiled.text))
         self.progress.complete()
         return compiled
 
@@ -339,11 +349,6 @@ class _Pipeline:
         """Tag every machine state, retrying malformed or transient responses locally."""
         if not self.CONFIG.state_descriptions:
             self.progress.stage_skip(PipelineStep.STATE_DESCRIPTIONS)
-            return compiled
-        if machine_too_large(compiled.text):
-            # The tagger reads the whole machine and the compiler keeps no per-state description.
-            self.progress.stage_skip(PipelineStep.STATE_DESCRIPTIONS)
-            self.progress.warn(skipped_descriptions_note(compiled.text))
             return compiled
         self.progress.start(PipelineStep.STATE_DESCRIPTIONS)
 
@@ -443,7 +448,7 @@ class _Pipeline:
     def _embed_states(self, compiled: CompilationResult) -> CompilationResult:
         """Embed the accepted state descriptions through the configured local server."""
         CONFIG = self.CONFIG
-        if not CONFIG.embeddings or machine_too_large(compiled.text):  # no descriptions to embed
+        if not CONFIG.embeddings:
             self.progress.stage_skip(PipelineStep.EMBEDDINGS)
             return compiled
         self.progress.start(PipelineStep.EMBEDDINGS)
@@ -515,8 +520,10 @@ def tag_states(
 
     A machine of more than ``Configuration.TAGGING_BATCH_STATES`` states is described in
     consecutive batches of at most that many; every request carries the whole machine and only
-    its list of states to describe changes. A malformed answer or a transient provider failure
-    is asked again for that batch, at most ``Configuration.TAGGING_ATTEMPTS`` requests in all.
+    its list of states to describe changes. A machine over ``Configuration.MACHINE_PROMPT_MAX_CHARS``
+    is not carried whole: a batch's request carries ``machine_view`` of that batch's states. A
+    malformed answer or a transient provider failure is asked again for that batch, at most
+    ``Configuration.TAGGING_ATTEMPTS`` requests in all.
 
     Raises:
         ImmediateEngineError: Every request of one batch failed.
@@ -540,9 +547,10 @@ def _tag_batch(
     """One tagging request for these states of the machine, asked again when it fails."""
     attempts = Configuration.TAGGING_ATTEMPTS
     last_error: Exception | None = None
+    machine = machine_view(facts["Reward Machine"], nodes)
     for tagging_attempt in range(1, attempts + 1):
         try:
-            return engine.describe_states(task, facts["Clauses"], facts["Reward Machine"], nodes)
+            return engine.describe_states(task, facts["Clauses"], machine, nodes)
         except (RetryableEngineError, ProposalValidationError) as error:
             last_error = error
             warn(f"state tagging request {tagging_attempt}/{attempts} failed: {error}")

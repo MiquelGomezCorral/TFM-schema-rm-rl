@@ -235,14 +235,9 @@ def _generate(job: Job, options: SuiteOptions) -> tuple[dict, int]:
 def _checked(result: dict, job: Job, options: SuiteOptions) -> dict:
     """Fail a generated bundle whose machine does not pay its card's plans; no model call.
 
-    Embeddings follow only a bundle that passes. A card without runnable plans passes. A bundle
-    whose machine was too large for state descriptions is complete here with no embeddings to
-    wait for, and its check runs the same.
+    Embeddings follow only a bundle that passes. A card without runnable plans passes.
     """
-    skipped = (
-        result["status"] == "complete" and load_bundle(options.output / job.id).descriptions_skipped
-    )
-    if result["reason"] != EMBEDDINGS_PENDING and not skipped:
+    if result["reason"] != EMBEDDINGS_PENDING:
         return result
     card = _cards(options).get(job.id.split("~")[0])
     bundle = load_machine_bundle(BundleRef(options.arm, job.id, options.output / job.id, False))

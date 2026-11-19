@@ -14,8 +14,14 @@ from nl2ltl.declare.declare import Existence
 from pylogics.syntax.ltl import Atomic
 
 from scripts.generate_larm import generate_compiler
-from scripts.generate_rm import EMBEDDING_INSTRUCTION, generate_rm
-from src.compiler import CompilationResult, Proposal, RewardSwitches
+from scripts.generate_rm import EMBEDDING_INSTRUCTION, generate_rm, tag_states
+from src.compiler import (
+    CompilationResult,
+    Proposal,
+    RewardSwitches,
+    compiler_machine_to_paper,
+    serialize_paper_reward_machine,
+)
 from src.compiler.reward_machine import RewardMachineStructure, Transition
 from src.config import Configuration, PriorityLevel
 from src.engines import (
@@ -35,7 +41,6 @@ from src.utils import (
     StepState,
     load_step_trace,
     setup_environment_and_engines,
-    write_run_outputs,
 )
 from src.utils.generation_pipeline import derive_output_paths
 
@@ -858,28 +863,28 @@ class OrchestrationTests(unittest.TestCase):
                 generate_rm(CONFIG)
             self.saved.assert_not_called()
 
-    def test_machine_over_the_prompt_bound_gets_no_embedding_artifact(self):
-        with TemporaryDirectory() as directory:
-            root = Path(directory)
-            config = Configuration(
-                environment="demo.md", tasks=["a", "b"], output="out.rm", embeddings=True
-            )
-            config.EMBEDDINGS_PATH = root / "embeddings"
-            embedded = replace(result(), embeddings={"u0": [1.0, 0.0]})
-            too_large = result("x" * (Configuration.MACHINE_PROMPT_MAX_CHARS + 1))
-            paths = (root / "out-1.rm", root / "out-2.rm")
-            # An earlier run left this file; the over-bound task writes none, so it must not abort.
-            old = root / "embeddings" / "out-2" / "embeddings.json"
-            old.parent.mkdir(parents=True)
-            old.write_text("old", encoding="utf-8")
+    def test_machine_over_the_prompt_bound_is_tagged_from_the_state_list_in_batches(self):
+        states = tuple(range(45))
+        transitions = tuple(Transition(state, state + 1, ("done",), 0.0) for state in states[:-1])
+        structure = RewardMachineStructure(states, 0, 44, (), transitions)
+        text = serialize_paper_reward_machine(
+            compiler_machine_to_paper(structure, ENV.proposition_ids)
+        )
+        compiled = CompilationResult(ENV, prop(), structure, text)
+        engine = Mock()
+        engine.describe_states.side_effect = lambda task, clauses, machine, nodes: nodes
 
-            written = write_run_outputs((embedded, too_large), paths, config, Mock(), [{}, {}])
+        with patch.object(Configuration, "MACHINE_PROMPT_MAX_CHARS", len(text) - 1):
+            tag_states(engine, "finish", compiled, Mock())
 
-            self.assertEqual(
-                [item.embedding_path for item in written],
-                [root / "embeddings" / "out-1" / "embeddings.json", None],
-            )
-            self.assertEqual(old.read_text(encoding="utf-8"), "old")
+        requests = [call.args for call in engine.describe_states.call_args_list]
+        self.assertEqual([len(nodes) for *_, nodes in requests], [20, 20, 5])
+        for _, _, machine, nodes in requests:
+            lines = machine.split("STATE_LIST:\n")[1].splitlines()
+            self.assertEqual([line.split(":")[0] for line in lines], list(nodes))
+            self.assertNotIn("(u0, done)", machine)
+        self.assertIn("u0: start", requests[0][2])
+        self.assertIn("u44: final: every hard goal is reached", requests[2][2])
 
     def test_embeddings_stage_is_single_text_cached_and_persisted(self):
         requests = []

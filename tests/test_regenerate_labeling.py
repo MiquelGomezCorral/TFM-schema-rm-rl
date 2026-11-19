@@ -23,13 +23,12 @@ from src.arm_fm.generation import (
     build_compiler_bundle,
     record_bundle_embeddings,
 )
-from src.benchmark.labeling_repair import record_path, status_path
+from src.benchmark.labeling_repair import record_path
 from src.benchmark.traces import find_bundles
 from src.config import Configuration
 
 # ``scripts`` re-exports a function of the same name, so the module is taken from the import table.
 regeneration = sys.modules["scripts.regenerate_labeling"]
-finishing = sys.modules["scripts.repair_labeling"]
 NEW_SOURCE = "def done(env):\n    return False\n"
 
 
@@ -132,32 +131,6 @@ class RegenerateLabelingTests(unittest.TestCase):
             (FAILED, self.original),
         )
         self.assertEqual(_bundle_facts(self.ref)["regenerated_accepted"], False)
-
-    def test_repair_finishes_a_machine_over_the_bound_without_descriptions_or_embeddings(self):
-        bundle = ArtifactBundle.load(self.path)
-        bundle.state_descriptions, bundle.embeddings = {}, {}
-        bundle.manifest.stage_status["descriptions"] = "pending"
-        bundle.manifest.stage_status.pop("embeddings")
-        record = {"outcome": "fixed", "rounds": []}
-        step = finishing.Finish(self.ref, bundle, record, {"status": "pipeline-failed"})
-
-        with (
-            patch.object(Configuration, "MACHINE_PROMPT_MAX_CHARS", 1),
-            patch.object(finishing, "get_engine"),
-            patch.object(finishing, "request_state_descriptions", return_value={}) as describe,
-            patch.object(finishing, "embed_larm") as embed,
-        ):
-            finishing._describe(Configuration(), step)
-            finishing._embed_and_finish(Configuration(), step)
-
-        describe.assert_not_called()
-        embed.assert_not_called()
-        finished = ArtifactBundle.load(self.path)
-        self.assertTrue(finished.descriptions_skipped)
-        self.assertTrue(finished.complete)
-        self.assertNotEqual(finished.manifest.stage_status.get("descriptions"), "complete")
-        status = json.loads(status_path(self.path).read_text(encoding="utf-8"))
-        self.assertEqual(status["status"], "complete")
 
     def test_table_counts_the_original_generation_and_the_regeneration_apart(self):
         # The original generation spent two rejected tries before it was accepted.

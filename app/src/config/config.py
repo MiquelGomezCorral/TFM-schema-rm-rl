@@ -196,11 +196,10 @@ class Configuration:
     # A repeat uses a new provider session, because OpenCode's 400 sticks to the session.
     PROVIDER_RETRIES: ClassVar[int] = 10
     PROVIDER_RETRY_WAIT_S: ClassVar[float] = 1.0
-    # A prompt carries a machine's text whole up to this many characters and a summary above it
-    # (the critics and the labeling generator). A machine over it also skips the state tagger
-    # and the embeddings, so its bundle trains one-hot only. The tables grow with the product of
-    # the clause automata (2.4M characters at 6 clauses, 7.2M at 7, 24M at 9 for shop-boil), and
-    # the model's window is 1M tokens.
+    # A prompt carries a machine's text whole up to this many characters and a state list above
+    # it (the critics, the labeling generator and the state tagger, which reads its batch's
+    # states). The tables grow with the product of the clause automata (2.4M characters at 6
+    # clauses, 7.2M at 7, 24M at 9 for shop-boil), and the model's window is 1M tokens.
     MACHINE_PROMPT_MAX_CHARS: ClassVar[int] = 200_000
     MAX_TASK_CLAUSES: ClassVar[int] = 25
     # The pay unit, in whole units: paid per stage a clause gets closer to done, and charged per

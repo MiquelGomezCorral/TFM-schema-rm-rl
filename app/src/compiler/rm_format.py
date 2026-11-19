@@ -6,6 +6,7 @@ The compiler writes this format and the ARM-FM runtime reads it, so it lives bel
 
 import math
 import re
+from collections import deque
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 
@@ -39,7 +40,14 @@ _JUDGMENT_PARTS = {
 TRANSITION_HEADING = "TRANSITION_FUNCTION:"
 REWARD_HEADING = "REWARD_FUNCTION:"
 PENDING_HEADING = "PENDING_PROMISES:"
+_TABLE_HEADINGS = (TRANSITION_HEADING, REWARD_HEADING, PENDING_HEADING)
+_CONJUNCT = re.compile(r"\s*(!?)\s*([a-z_][a-z0-9_]*)\s*", re.IGNORECASE)
+_GUARD_WORDS = ("true", "false", "else")
 _VIEW_NAMES = 12
+# How many states a view lists (a line is about 150 characters, so this is about 45k), and how
+# many steps of a path it shows.
+_VIEW_STATES = 300
+_VIEW_PATH = 4
 
 
 class RuntimeValidationError(ValueError):
@@ -416,39 +424,157 @@ def machine_too_large(text: str) -> bool:
     """Whether a machine's text is above ``Configuration.MACHINE_PROMPT_MAX_CHARS``.
 
     The tables grow with the product of the clause automata, so a prompt cannot carry them whole:
-    it reads ``machine_view``, and the state tagger and the embeddings are skipped.
+    it reads ``machine_view``, a state list in place of the tables.
     """
     return len(text) > Configuration.MACHINE_PROMPT_MAX_CHARS
 
 
-def machine_view(text: str) -> str:
-    """Return the machine text a prompt carries: whole, or a summary when it is too large.
+def machine_view_note(text: str) -> str:
+    """Tell the user that the prompts read a state list instead of this machine's text."""
+    return (
+        f"the machine text is {len(text)} characters, over {Configuration.MACHINE_PROMPT_MAX_CHARS}: "
+        "the critic and the other prompts read a list of its states, not the machine text"
+    )
 
-    The summary keeps the header lines (initial, final and rejecting states, the end charges),
-    each cut to its first names and their total, and replaces each table by its row count.
+
+def machine_view(text: str, states: Sequence[str] | None = None) -> str:
+    """Return the machine text a prompt carries: whole, or a state list when it is too large.
+
+    The view keeps the header lines (initial, final and rejecting states, the end charges), each
+    cut to its first names and their total, replaces each table by its row count, and lists the
+    states one per line (``_state_lines``): ``states``, or the first ``_VIEW_STATES`` of the
+    machine.
     """
     if not machine_too_large(text):
         return text
 
     header: list[str] = []
-    row_counts: dict[str, int] = {}
-    table = None
+    tables: dict[str, list[str]] = {}
+    rows = None
     for line in text.splitlines():
-        if line in (TRANSITION_HEADING, REWARD_HEADING, PENDING_HEADING):
-            table = line
-            row_counts[table] = 0
-        elif table is not None:
-            if line.strip():
-                row_counts[table] += 1
-        else:
-            header.append(_cut_names(line))
+        if line in _TABLE_HEADINGS:
+            rows = tables.setdefault(line, [])
+        elif rows is None:
+            header.append(line)
+        elif line.strip():
+            rows.append(line)
 
-    note = "(Summary: the tables are too large to list; each is replaced by its row count.)"
-    tables = [
-        f"{heading} {count} {'row' if count == 1 else 'rows'}, not listed"
-        for heading, count in row_counts.items()
+    fields = {key: value.strip() for key, _, value in (line.partition(":") for line in header)}
+    every = _names(fields.get("STATES", ""))
+    listed = every[:_VIEW_STATES] if states is None else states
+    note = (
+        "(Summary: the tables are too large to list, each is replaced by its row count. "
+        "STATE_LIST has one line per state: its role, the stages it still owes when the machine "
+        "says so, and the shortest path of events from the start that reaches it (`a + b`: both "
+        "on one step; `... then`: earlier steps cut; `guard over a, b`: a guard that is not a "
+        "plain conjunction). A path is one way in, so claim only what holds on every way in.)"
+    )
+    counts = [
+        f"{heading} {len(rows)} {'row' if len(rows) == 1 else 'rows'}, not listed"
+        for heading, rows in tables.items()
     ]
-    return "\n".join([*header, note, *tables]) + "\n"
+    unlisted = len(every) - _VIEW_STATES
+    more = [f"({unlisted} more {'state' if unlisted == 1 else 'states'} not listed)"]
+    return (
+        "\n".join(
+            [
+                *map(_cut_names, header),
+                note,
+                *counts,
+                "STATE_LIST:",
+                *_state_lines(listed, fields, tables),
+                *(more if states is None and len(every) > _VIEW_STATES else ()),
+            ]
+        )
+        + "\n"
+    )
+
+
+def _state_lines(
+    listed: Sequence[str], fields: Mapping[str, str], tables: Mapping[str, Sequence[str]]
+) -> list[str]:
+    """One line per state: its role, the stages it still owes, and a shortest way in.
+
+    The roles come from the header lines and the owed stages from the end judgment (a machine
+    without one lists none). The way in is the first path a breadth-first walk from the start
+    finds: the events true on each step.
+    """
+    initial = fields.get("INITIAL_STATE", "")
+    role = {
+        **dict.fromkeys(
+            _names(fields.get("REJECTING_STATES", "")), "well: a hard rule is broken for good"
+        ),
+        **dict.fromkeys(
+            _names(fields.get("FINAL_STATES", "")), "final: every hard goal is reached"
+        ),
+        initial: "start",
+    }
+    owes = dict.fromkeys(_names(fields.get("ACCEPTING_STATES", "")), "owes nothing")
+    for row in tables.get(PENDING_HEADING, ()):
+        if match := _PENDING_ROW.fullmatch(row):
+            owes[match[1]] = f"owes {match[2]} hard and {match[3]} soft stages"
+    entry = _entries(initial, tables.get(TRANSITION_HEADING, ()))
+
+    lines = []
+    for state in listed:
+        facts = [role.get(state, "in progress"), owes.get(state)]
+        if state != initial:
+            facts.append(_way_in(state, entry))
+        lines.append(f"{state}: {'; '.join(filter(None, facts))}")
+    return lines
+
+
+def _entries(initial: str, transitions: Sequence[str]) -> dict[str, tuple[str, str] | None]:
+    """Walk the transition rows breadth first from ``initial``.
+
+    Maps each state the walk reaches to the state before it and the events of that step; the
+    start maps to ``None``.
+    """
+    outgoing: dict[str, list[tuple[str, str]]] = {}
+    for row in transitions:
+        if match := _TRANSITION.fullmatch(row):
+            outgoing.setdefault(match[1], []).append((match[2], match[3]))
+
+    entry: dict[str, tuple[str, str] | None] = {initial: None}
+    queue = deque([initial])
+    while queue:
+        source = queue.popleft()
+        for guard, destination in outgoing.get(source, ()):
+            if destination not in entry:
+                entry[destination] = (source, _events(guard))
+                queue.append(destination)
+    return entry
+
+
+def _way_in(state: str, entry: Mapping[str, tuple[str, str] | None]) -> str:
+    """The last ``_VIEW_PATH`` steps of the first path from the start to ``state``."""
+    if state not in entry:
+        return "not reachable from the start"
+    steps: list[str] = []
+    while entry[state] is not None and len(steps) < _VIEW_PATH:
+        state, events = entry[state]
+        steps.append(events)
+    cut = "... then " if entry[state] is not None else ""
+    return f"shortest path from the start: {cut}{' then '.join(reversed(steps))}"
+
+
+def _events(guard: str) -> str:
+    """The events a guard needs, for a path step.
+
+    A conjunction lists the names not under a negation (``a + b``: both on one step). Any other
+    guard lists every name it mentions, behind ``guard over``, since its truth is not a list.
+    """
+    parts = [_CONJUNCT.fullmatch(part) for part in guard.split("&")]
+    if all(parts):
+        names = [part[2] for part in parts if not part[1] and part[2].lower() not in _GUARD_WORDS]
+        return " + ".join(dict.fromkeys(names)) or "no event"
+    names = [name for name in _IDENTIFIER.findall(guard) if name.lower() not in _GUARD_WORDS]
+    return f"guard over {', '.join(dict.fromkeys(names))}"
+
+
+def _names(value: str) -> list[str]:
+    """The names of a ``KEY: a, b, c`` header value."""
+    return [name.strip() for name in value.split(",") if name.strip()]
 
 
 def _cut_names(line: str) -> str:

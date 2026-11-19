@@ -31,7 +31,7 @@ def embed_larm(CONFIG: Configuration) -> None:
         EmbeddingSettings(model=CONFIG.model or EMBEDDING_MODEL)
     )
     bundle = load_bundle(CONFIG.bundle)
-    diagnostics = bundle.validate(described=True)
+    diagnostics = bundle.validate()
 
     if diagnostics or not bundle.generation_complete:
         raise ValueError("Embedding requires accepted RM, labeling, and description stages")
@@ -55,7 +55,7 @@ def _embed_over_server(CONFIG: Configuration) -> None:
     Baseline and compiler bundles then share one embedding space, model and cache.
     """
     bundle = load_bundle(CONFIG.bundle)
-    if bundle.validate(described=True) or not bundle.generation_complete:
+    if bundle.validate() or not bundle.generation_complete:
         raise ValueError("Embedding requires accepted RM, labeling, and description stages")
 
     settings = EmbeddingSettings(
