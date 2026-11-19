@@ -511,8 +511,8 @@ def record_bundle_role_models(
     The critic verdict is whether a critic accepted the machine. A run without the critic
     records no critic validation: a recorded ``False`` would make
     ``validate(require_complete=True)`` reject the bundle for training. The switches are
-    flat keys (``recurrent_soft_penalty`` and the five ``reward_*``), so ``ablate-rm`` can
-    rebuild the machine with the settings it was made with.
+    flat keys (``recurrent_soft_penalty``, ``soft_break_cost`` and the five ``reward_*``), so
+    ``ablate-rm`` can rebuild the machine with the settings it was made with.
 
     ``run_stats`` is the accepted run's record: its request records join ``raw_responses``
     and its counts go to the stamp. Without it the stamp counts are null.

@@ -29,10 +29,12 @@ from src.utils import get_engine, ltlf_of, preflight_paths, print_warning
 from .embed_larm import embed_larm
 from .generate_rm import tag_states
 
-# Command-line name -> the RewardSwitches field it switches off. A part that is off by default
-# (the promise cost) is not an ablation: ``rebuild-rewards`` turns it on.
+# Command-line name -> the RewardSwitches field it switches off. The promise cost is not an
+# ablation (``rebuild-rewards`` turns it on), and the soft-break cost is a number, not a switch.
 OFF_PARTS = {
-    item.name.removeprefix("reward_"): item.name for item in fields(RewardSwitches) if item.default
+    item.name.removeprefix("reward_"): item.name
+    for item in fields(RewardSwitches)
+    if item.type is bool and item.name != "reward_promise_cost"
 }
 OFF_CHOICES = (NO_PART, *OFF_PARTS)
 
@@ -126,8 +128,10 @@ def _ablate(CONFIG: Configuration, off: str, destination: Path) -> str:
     if serialize_paper_reward_machine(machine) != source_text:
         raise AblationError(
             f"rebuilding {CONFIG.bundle} with the settings it records gives another machine; "
-            "the compiler or a setting the bundle does not record changed since it was made, "
-            "so an ablation would not be comparable to it"
+            "a bundle made before the whole-unit (x10) pay, which records no soft_break_cost, "
+            "needs `rebuild-rewards --output` first; otherwise the compiler or a setting the "
+            "bundle does not record changed since it was made, so an ablation would not be "
+            "comparable to it"
         )
 
     switches = recorded
@@ -192,14 +196,17 @@ def _stored_task(
 
 
 def _recorded_switches(source: ArtifactBundle) -> RewardSwitches:
-    """The reward switches the source was made with; one that records none paid the defaults."""
+    """The reward switches the source was made with; one that records none paid the defaults.
+
+    The end judgment was on by default before it became off by default, so a bundle that does
+    not record it had it when its machine carries one.
+    """
     settings = source.manifest.effective_settings
+    recorded = {
+        item.name: settings[item.name] for item in fields(RewardSwitches) if item.name in settings
+    }
     return RewardSwitches(
-        **{
-            item.name: settings[item.name]
-            for item in fields(RewardSwitches)
-            if item.name in settings
-        }
+        **{"reward_end_judgment": source.reward_machine.judgment is not None, **recorded}
     )
 
 

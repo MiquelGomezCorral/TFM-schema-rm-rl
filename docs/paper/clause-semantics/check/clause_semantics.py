@@ -12,7 +12,7 @@ Usage, from the repository root, inside RM_RL_env:
     PYTHONPATH=app python -W ignore docs/paper/clause-semantics/check/clause_semantics.py
 
 Method: a charge is a step where the soft clause goes from not-violated to violated in the
-reward layer's own product, never a match on -0.5. Rewards come from the runtime on the
+reward layer's own product, never a match on a price. Rewards come from the runtime on the
 reloaded RM text, and each must equal the price the layer gave that edge.
 """
 
@@ -81,8 +81,9 @@ COLUMNS = {
 }
 GOAL_COLUMNS = {"hard": "Hard", "soft-off": "Soft (recurrent off and on alike)"}
 # Response alone, the time limit after the last step: total reward [hard, soft, without the end
-# judgment]. The agent holds the key (x) and the door (y) opens or does not.
-END_EPISODES = {"x y": (0, 0, -0.5), "- -": (0, 0, -0.5), "x - -": (-1.1, -0.6, -0.6)}
+# judgment]. The agent holds the key (x) and the door (y) opens or does not. Whole units: an open
+# `y` costs the stage `x` opened (-1) plus -10 hard, -5 soft or the flat -5 time limit.
+END_EPISODES = {"x y": (0, 0, -5), "- -": (0, 0, -5), "x - -": (-11, -6, -6)}
 GOAL_TAGS = {"kept": "kept", "pending": "open", "late": "open, met after `g` (machine only)"}
 
 
@@ -134,8 +135,10 @@ def selection(pattern: str, propositions: tuple[str, ...], priority: str) -> Pro
     )
 
 
-def build_captured(dfas: list[dict], soft: list[bool], recurrent: bool):
+def build_captured(dfas: list[dict], soft: list[bool], recurrent: bool, judged: bool = False):
     """Run `build_reward_machine` once and keep the product and the priced edges it used.
+
+    `judged` turns the end judgment on; the compiler's default is off.
 
     The numeric RM renumbers states, so the clause labels of a step are only recoverable from
     the layer's own product: wrap its two private stages and read what they receive and return.
@@ -153,9 +156,8 @@ def build_captured(dfas: list[dict], soft: list[bool], recurrent: bool):
 
     reward_layer._clause_product, reward_layer._structure = wrapped_product, wrapped_structure
     try:
-        result = build_reward_machine(
-            copy.deepcopy(dfas), soft, RewardSwitches(recurrent_soft_penalty=recurrent)
-        )
+        switches = RewardSwitches(recurrent_soft_penalty=recurrent, reward_end_judgment=judged)
+        result = build_reward_machine(copy.deepcopy(dfas), soft, switches)
     finally:
         reward_layer._clause_product, reward_layer._structure = clause_product, structure
     return result, captured
@@ -163,12 +165,17 @@ def build_captured(dfas: list[dict], soft: list[bool], recurrent: bool):
 
 @cache
 def compile_machines(
-    pattern: str, propositions: tuple[str, ...], with_goal: bool, formula: str = ""
+    pattern: str,
+    propositions: tuple[str, ...],
+    with_goal: bool,
+    formula: str = "",
+    judged: bool = False,
 ) -> tuple[dict[str, Machine], dict]:
     """The template hard and soft (penalty off, on), alone or next to the hard stand-in goal.
 
     A `formula` (flat LTLf syntax) replaces the template's own, so a variant a reader may expect
-    compiles through the same MONA path; `pattern` then only lends its propositions.
+    compiles through the same MONA path; `pattern` then only lends its propositions. `judged`
+    compiles the machines with the end judgment, which the compiler leaves off by default.
     Returns the machines by version and the template's LTLf, MONA DFA and DFA state labels.
     """
     machines, info = {}, {}
@@ -189,7 +196,7 @@ def compile_machines(
             "labels": {s: label.value for s, label in sorted(_clause_labels(dfas[-1]).items())},
         }
         for recurrent in (False, True):
-            result, captured = build_captured(dfas, soft, recurrent)
+            result, captured = build_captured(dfas, soft, recurrent, judged)
             text = serialize_reward_machine(result.reward_machine)
             version = ("soft-on" if recurrent else "soft-off") if priority == "soft" else "hard"
             if version == "hard" and recurrent:
@@ -490,7 +497,7 @@ def check_alone(pattern: str, machines: dict[str, Machine], walks: dict, expecte
 
 
 def check_goal(pattern: str, walks: dict, bad: list) -> None:
-    """Soft ends at the goal step and pays 0.5 less when the rule is open; hard waits for the rule.
+    """Soft ends at the goal step and pays less when the rule is open; hard waits for the rule.
 
     The progress term is potential-based, so every full run pays the same total once the rule is
     kept; a rule still open at the finish costs `SOFT_PENDING_AT_FINISH_REWARD` more.
@@ -621,7 +628,10 @@ def split_section(report: Report, spec: dict) -> None:
 
 
 def chain_goal_section(report: Report, spec: dict, graphs: Path) -> None:
-    """ChainResponse next to the goal: a break, or an obligation opened on the last step, costs 0.5."""
+    """ChainResponse next to the goal: what a break and an obligation open on the last step cost.
+
+    A break costs the soft break plus the stage its trigger opened, which the break never repays.
+    """
     props = TEMPLATES["ChainResponse"]
     machines, _ = compile_machines("ChainResponse", props, with_goal=True)
     letters = letters_of(props, with_goal=True)
@@ -630,7 +640,7 @@ def chain_goal_section(report: Report, spec: dict, graphs: Path) -> None:
     walks = {t: {v: walk(m, letters, t) for v, m in machines.items()} for t, _, _ in cases}
     cost = {
         "clean": 0.0,
-        "break": CONFIG.SOFT_BREAK_REWARD,
+        "break": -(CONFIG.soft_break_cost + CONFIG.PROGRESS_REWARD),  # one stage owed, no refund
         "open": CONFIG.SOFT_PENDING_AT_FINISH_REWARD,
     }
     clean = {v: total(walks[cases[0][0]][v]) for v in SOFT}  # the first case is the clean finish
@@ -695,7 +705,7 @@ def contrast_cell(walks: dict[str, list[Step]]) -> str:
 def end_section(report: Report) -> None:
     """Response alone, cut off by the time limit: what the end judgment charges for an open `y`."""
     pattern = "Response"
-    machines, _ = compile_machines(pattern, TEMPLATES[pattern], with_goal=False)
+    machines, _ = compile_machines(pattern, TEMPLATES[pattern], with_goal=False, judged=True)
     letters = letters_of(TEMPLATES[pattern], with_goal=False)
     lines = ["| Trace | Hard | Soft | Without the end judgment |", "|---|---|---|---|"]
     for trace, wanted in END_EPISODES.items():
@@ -766,7 +776,7 @@ def main() -> None:
     report = Report(
         out=[
             "# Clause semantics: every trace, walked through the real compiler and runtime",
-            f"Rewards: soft break {number(CONFIG.SOFT_BREAK_REWARD)}, well {number(CONFIG.WELL_REWARD)}, "
+            f"Rewards: soft break {number(-CONFIG.soft_break_cost)}, well {number(CONFIG.WELL_REWARD)}, "
             f"completion {number(CONFIG.TASK_COMPLETION_REWARD)}, "
             f"progress {number(CONFIG.PROGRESS_REWARD)} per step closer to the final (with none, to the "
             f"states where no rule is pending), "

@@ -831,9 +831,10 @@ class OrchestrationTests(unittest.TestCase):
                     "reward_well": False,
                     "reward_soft_break": True,
                     "reward_soft_pending": True,
-                    "reward_end_judgment": True,
+                    "reward_end_judgment": False,
                     "reward_promise_cost": False,
                     "recurrent_soft_penalty": True,
+                    "soft_break_cost": 5.0,
                 },
             )
             self.assertEqual(build.call_args.args[3], RewardSwitches.from_config(CONFIG))
