@@ -39,8 +39,9 @@ def rebuild_rewards(
     level. ``gamma`` None keeps the bundle's recorded discount (``CONFIG.gamma`` cannot say
     "omitted"), and so does ``soft_breaks_per_step`` None (the soft breaks per step the ceiling
     assumes; a bundle that records none has the ``Configuration`` default).
-    ``CONFIG.soft_break_cost`` always sets the soft-break cost. The manifest records every
-    setting. Only the rewards (and the numbers
+    ``CONFIG.soft_break_cost`` always sets the soft-break cost. ``fold_soft_absence`` stays as
+    the bundle records it (a bundle that records none counts as on, and is refused when a soft
+    Absence would now fold). The manifest records every setting. Only the rewards (and the numbers
     of the end judgment) may differ from the stored machine: the states, guards that move, and
     the states the end judgment covers must match, so the labeling, state descriptions and
     embeddings stay valid and are copied as they are, unless the soft rules are charged once:
@@ -96,13 +97,18 @@ def rebuild_rewards(
     result, machine = _build(environment, proposal, dfas, switches)
 
     # Charging each soft rule once ends the way back out of a broken-rule state, so it may change
-    # where moves lead; the states, and so the labeling, stay.
+    # where moves lead; the states, and so the labeling, stay unless the bundle folds a soft Absence
+    # (the fold needs the recurrent penalty, so charging once brings the broken state back).
     moved = switches.recurrent_soft_penalty != recorded.recurrent_soft_penalty
     if _frame(machine, moves=not moved) != _frame(bundle.reward_machine, moves=not moved):
-        print_warning(
-            f"rebuild-rewards: {CONFIG.bundle}: the rebuild changes more than the rewards "
-            "(states, guards or end judgment); regenerate the bundle instead"
+        reason = (
+            "charge-once needs a bundle built with --no-fold-soft-absence"
+            if moved
+            else "the rebuild changes more than the rewards (states, guards or end judgment; a "
+            "soft Absence bundle made before fold_soft_absence folds its broken state now); "
+            "rebuild the bundle (generate it again) instead"
         )
+        print_warning(f"rebuild-rewards: {CONFIG.bundle}: {reason}")
         return False
 
     rebuilt = {

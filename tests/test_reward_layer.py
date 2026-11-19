@@ -36,6 +36,22 @@ NO_LAVA = {
         ("R2", ""): "R2",
     },
 }
+# Not an Absence: `a` breaks the rule on the first step only. Its clean state P forgives `a` where
+# the broken state R, re-armed like the start Q, would charge it again, so they are no twins.
+FIRST_STEP_ONLY = {
+    "alphabet": {"a"},
+    "states": {"P", "Q", "R"},
+    "initial_state": "Q",
+    "accepting_states": {"P", "Q"},
+    "transitions": {
+        ("Q", "a"): "R",
+        ("Q", "!a"): "P",
+        ("P", "a"): "P",
+        ("P", "!a"): "P",
+        ("R", "a"): "R",
+        ("R", "!a"): "R",
+    },
+}
 # A goal that can bounce between two open states before `y` finishes it.
 BOUNCE = {
     "alphabet": {"x", "y"},
@@ -205,6 +221,28 @@ class RewardLayerTests(unittest.TestCase):
             rewards_of(*never_lava, [{"lava"}, set(), {"lava"}], recurrent_soft_penalty=False),
             [-5.0, 0.0, 0.0],
         )
+
+    def test_folding_a_soft_absence_removes_its_broken_state_and_never_changes_the_pay(self):
+        never_lava = ((NO_LAVA,), (True,), ("lava",))
+        steps = [{"lava"}, {"lava"}, set(), {"lava"}]
+
+        def states(**switches):
+            return len(
+                build_reward_machine(
+                    *never_lava[:2], RewardSwitches(**switches)
+                ).reward_machine.states
+            )
+
+        self.assertEqual((states(), states(fold_soft_absence=False)), (1, 2))
+        self.assertEqual(
+            rewards_of(*never_lava, steps), rewards_of(*never_lava, steps, fold_soft_absence=False)
+        )
+        # Nothing is re-armed without the recurrent penalty, so there is nothing to fold.
+        self.assertEqual(states(recurrent_soft_penalty=False), 2)
+
+        # Only an Absence folds: here the fold used to charge the `a` that the clean state forgives.
+        first_step_only = ((FIRST_STEP_ONLY,), (True,), ("a",))
+        self.assertEqual(rewards_of(*first_step_only, [set(), {"a"}]), [0.0, 0.0])
 
     def test_without_a_final_progress_runs_toward_the_states_where_no_answer_is_owed(self):
         for soft in (False, True):

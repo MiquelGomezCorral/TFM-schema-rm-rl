@@ -30,12 +30,14 @@ from .embed_larm import embed_larm
 from .generate_rm import tag_states
 
 # Command-line name -> the RewardSwitches field it switches off. The promise cost and the hard
-# ceiling are not ablations (``rebuild-rewards`` sets them), and the soft-break cost, gamma and
-# step limit are numbers, not switches.
+# ceiling are not ablations (``rebuild-rewards`` sets them), the soft Absence fold pays the same
+# (it only changes the states), and the soft-break cost, gamma and step limit are numbers, not
+# switches.
 OFF_PARTS = {
     item.name.removeprefix("reward_"): item.name
     for item in fields(RewardSwitches)
-    if item.type is bool and item.name not in {"reward_promise_cost", "hard_ceiling"}
+    if item.type is bool
+    and item.name not in {"reward_promise_cost", "hard_ceiling", "fold_soft_absence"}
 }
 OFF_CHOICES = (NO_PART, *OFF_PARTS)
 
@@ -130,9 +132,10 @@ def _ablate(CONFIG: Configuration, off: str, destination: Path) -> str:
         raise AblationError(
             f"rebuilding {CONFIG.bundle} with the settings it records gives another machine; "
             "a bundle made before the whole-unit (x10) pay, which records no soft_break_cost, "
-            "needs `rebuild-rewards --output` first; otherwise the compiler or a setting the "
-            "bundle does not record changed since it was made, so an ablation would not be "
-            "comparable to it"
+            "needs `rebuild-rewards --output` first; a soft Absence bundle made before "
+            "fold_soft_absence, which records none, must be rebuilt (generated again); otherwise "
+            "the compiler or a setting the bundle does not record changed since it was made, so an "
+            "ablation would not be comparable to it"
         )
 
     switches = recorded

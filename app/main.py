@@ -276,6 +276,13 @@ if __name__ == "__main__":
         help="Charge a soft rule's break cost at every new break (default: enabled)",
     )
     generate_parser.add_argument(
+        "--fold-soft-absence",
+        action=argparse.BooleanOptionalAction,
+        default=Configuration.fold_soft_absence,
+        help="Fold a soft Absence's broken state into the satisfied state it equals: fewer states, "
+        "the same pay; needs the recurrent soft penalty (default: enabled)",
+    )
+    generate_parser.add_argument(
         "--soft-break-cost",
         type=float,
         default=Configuration.soft_break_cost,
@@ -419,6 +426,13 @@ if __name__ == "__main__":
         default=True,
         help="compiler mode only: charge a soft rule's break cost at every new break "
         "(default: enabled)",
+    )
+    larm_parser.add_argument(
+        "--fold-soft-absence",
+        action=argparse.BooleanOptionalAction,
+        default=Configuration.fold_soft_absence,
+        help="compiler mode only: fold a soft Absence's broken state into the satisfied state it "
+        "equals (fewer states, the same pay); needs the recurrent soft penalty (default: enabled)",
     )
     larm_parser.add_argument(
         "--soft-break-cost",
