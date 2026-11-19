@@ -31,6 +31,7 @@ from . import (
     shop,  # noqa: F401  registers MiniGrid-Shop-v0 and MiniGrid-Shop-Pot-v0
 )
 from .artifacts import ArtifactBundle, load_bundle
+from .pay_order import ceiling_priced
 from .runtime import RewardMachineEnvironment, RewardMachineRuntime, load_labeling_functions
 from .transfer import embedding_permutation
 
@@ -80,6 +81,17 @@ def gym_step_limit(gym_id: str, **env_kwargs: Any) -> int | None:
     """The step limit of the level ``gym_id`` makes with ``env_kwargs`` (see ``level_step_limit``)."""
     with closing(make_environment(gym_id, **env_kwargs)) as env:
         return level_step_limit(env)
+
+
+def configured_step_limit(CONFIG: Configuration) -> int | None:
+    """The step limit a command's settings name.
+
+    ``CONFIG.step_limit``, else the one of the level ``CONFIG.gym_id`` and ``CONFIG.env_kwargs``
+    make, else None.
+    """
+    if CONFIG.step_limit is None and CONFIG.gym_id:
+        return gym_step_limit(CONFIG.gym_id, **CONFIG.env_kwargs)
+    return CONFIG.step_limit
 
 
 def make_run_environment(CONFIG: Configuration, index: int = 0) -> RunEnvironment:
@@ -307,13 +319,13 @@ class RewardMachineObservation(gym.Wrapper):
 def _check_pay_assumptions(bundle: ArtifactBundle, env: gym.Env, CONFIG: Configuration) -> None:
     """Refuse a bundle whose hard break charge was priced for another gamma, step limit or breaks.
 
-    Only a bundle made with ``hard_ceiling`` depends on them (its manifest records the values it
-    assumed); the charge is the discounted soft ceiling of that gamma and step limit, for that
-    many soft breaks per step.
+    Only a bundle whose charge is the ceiling depends on them (``ceiling_priced``; its manifest
+    records the values it assumed); the charge is the discounted soft ceiling of that gamma and
+    step limit, for that many soft breaks per step.
     """
-    recorded = bundle.manifest.effective_settings
-    if not recorded.get("hard_ceiling"):
+    if not ceiling_priced(bundle):
         return
+    recorded = bundle.manifest.effective_settings
     priced = (
         recorded.get("gamma"),
         recorded.get("step_limit"),

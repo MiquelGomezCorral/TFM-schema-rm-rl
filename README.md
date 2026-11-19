@@ -232,8 +232,13 @@ python app/main.py generate-rm \
   --task "Eventually deliver passengers 1 and 2" \
   --task "Deliver passenger 1 before passenger 2" \
   --output multitaxi.rm \
+  --step-limit 200 \
   --overwrite
 ```
+
+`--step-limit` (or `--gym-id` with `--env-kwargs`) names the episode length the hard break is priced
+over, so breaking a hard rule never pays better than a stream of soft breaks; `--no-hard-ceiling`
+keeps the flat -10 and needs no level.
 
 Each task may contain several ordinary-language requirements. The model normalizes
 them into conjunctive clauses, each an IBM DECLARE template with declared propositions and a

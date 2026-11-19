@@ -24,6 +24,7 @@ from src.arm_fm import (
     record_compiler_failure,
 )
 from src.arm_fm.generation import StageAttempt
+from src.arm_fm.pay_order import record_pay_order
 from src.compiler import CompilationResult
 from src.config import Configuration
 from src.engines import CONTEXT_EXCEEDED
@@ -130,6 +131,9 @@ def _accepted_compiler_bundle(
     """
     bundle = generate_compiler_bundle((result,), None, CONFIG)[0]
     record_bundle_role_models(bundle, CONFIG, run_stats)
+    pay = record_pay_order(bundle)
+    if pay["ok"] is not True:
+        print_warning(f"pay order: {pay['summary']}")
     if destination is not None and result.embeddings:  # none for a machine over the prompt bound
         write_embedding_artifact(result, destination)
         record_bundle_embeddings(bundle, result, destination)

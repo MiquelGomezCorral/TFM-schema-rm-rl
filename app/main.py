@@ -37,6 +37,7 @@ from scripts import (
     trace_bank,
     train_rl,
 )
+from src.arm_fm import configured_step_limit
 from src.arm_fm.ppo import MODEL_FILES
 from src.config import REASONING_LEVELS, Configuration
 from src.utils import GenerationHooks, print_warning
@@ -50,9 +51,62 @@ def positive_int(text: str) -> int:
     return value
 
 
+def add_pricing_arguments(
+    parser: argparse.ArgumentParser, scope: str = "", recorded: bool = False
+) -> None:
+    """The hard-break pricing option and the level whose step limit it prices over.
+
+    ``scope`` starts the help text of the commands where it applies to one mode only. With
+    ``recorded`` the option defaults to None, for a command that keeps what a bundle records.
+    """
+    parser.add_argument(
+        "--hard-ceiling",
+        action=argparse.BooleanOptionalAction,
+        default=None if recorded else Configuration.hard_ceiling,
+        help=f"{scope}Where soft rules repeat, price the hard break above the discounted worst "
+        "stream of soft breaks over the level's step limit; --no-hard-ceiling keeps the flat "
+        "hard break (default: "
+        + ("the bundle's recorded one" if recorded else "%(default)s")
+        + ")",
+    )
+    parser.add_argument(
+        "--gym-id",
+        help=f"{scope}The level's gym id; its step limit is what the hard ceiling prices",
+    )
+    parser.add_argument(
+        "--step-limit",
+        type=int,
+        help=f"{scope}The level's step limit, instead of reading it from --gym-id",
+    )
+    parser.add_argument(
+        "--env-kwargs",
+        type=json.loads,
+        help=f"{scope}JSON keyword arguments of the level --gym-id makes, "
+        "e.g. '{\"max_steps\": 150}'",
+    )
+
+
+def has_pricing_level(CONFIG: Configuration) -> bool:
+    """Set ``CONFIG.step_limit`` from the level named; False after a message when none is named.
+
+    The hard ceiling prices over the step limit, so a build with the ceiling on needs it.
+    """
+    CONFIG.step_limit = configured_step_limit(CONFIG)
+    if CONFIG.hard_ceiling and CONFIG.step_limit is None:
+        print_warning(
+            "the hard ceiling prices soft breaks over the level's step limit; name the level "
+            "with --gym-id <id> [--env-kwargs '{\"max_steps\": 200}'] or --step-limit <steps>, "
+            "or pass --no-hard-ceiling for the flat hard break, which needs none"
+        )
+        return False
+    return True
+
+
 def cmd_generate_rm(args: argparse.Namespace) -> None:
     """Generate a Reward Machine from parsed CLI configuration."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    if not has_pricing_level(CONFIG):
+        sys.exit(1)
     if not generate_rm(CONFIG, GenerationHooks(warning=print_warning)):
         sys.exit(1)
 
@@ -66,6 +120,8 @@ def cmd_render_rm(args: argparse.Namespace) -> None:
 def cmd_generate_larm(args: argparse.Namespace) -> None:
     """Generate one baseline or compiler-adapted ARM-FM bundle."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
+    if CONFIG.mode == "compiler" and not has_pricing_level(CONFIG):
+        sys.exit(1)
     generate_larm(CONFIG)
 
 
@@ -114,9 +170,15 @@ def cmd_ablate_rm(args: argparse.Namespace) -> None:
 def cmd_rebuild_rewards(args: argparse.Namespace) -> None:
     """Rebuild a compiler bundle's Reward Machine rewards with the current reward layer."""
     CONFIG: Configuration = args_to_dataclass(args, Configuration)
-    # args_to_dataclass drops None, so an omitted --gamma or --soft-breaks-per-step would read as
-    # the default: pass the raw args.
-    if not rebuild_rewards(CONFIG, args.destination, args.gamma, args.soft_breaks_per_step):
+    # args_to_dataclass drops None, so an omitted pricing option would read as the default: pass
+    # the raw args.
+    given = {
+        "gamma": args.gamma,
+        "soft_breaks_per_step": args.soft_breaks_per_step,
+        "soft_break_cost": args.soft_break_cost,
+        "hard_ceiling": args.hard_ceiling,
+    }
+    if not rebuild_rewards(CONFIG, args.destination, given):
         sys.exit(1)
 
 
@@ -288,6 +350,7 @@ if __name__ == "__main__":
         default=Configuration.soft_break_cost,
         help="What one soft break costs, in pay units (default: %(default)s)",
     )
+    add_pricing_arguments(generate_parser)
     generate_parser.add_argument(
         "--promise-cost",
         dest="reward_promise_cost",
@@ -440,6 +503,7 @@ if __name__ == "__main__":
         default=Configuration.soft_break_cost,
         help="compiler mode only: what one soft break costs, in pay units (default: %(default)s)",
     )
+    add_pricing_arguments(larm_parser, "compiler mode only: ")
     larm_parser.add_argument(
         "--promise-cost",
         dest="reward_promise_cost",
@@ -622,8 +686,8 @@ if __name__ == "__main__":
     rebuild_parser.add_argument(
         "--soft-break-cost",
         type=float,
-        default=Configuration.soft_break_cost,
-        help="What one soft break costs, in pay units (default: %(default)s)",
+        help="What one soft break costs, in pay units (default: the bundle's recorded one, "
+        f"else {Configuration.soft_break_cost})",
     )
     rebuild_parser.add_argument(
         "--charge-once",
@@ -633,12 +697,7 @@ if __name__ == "__main__":
         help="Charge each soft rule once (turn the recurrent soft penalty off); without it the "
         "bundle keeps the setting it records",
     )
-    rebuild_parser.add_argument(
-        "--hard-ceiling",
-        action="store_true",
-        help="Price the hard break above the discounted soft ceiling where soft rules repeat; "
-        "needs --gym-id or --step-limit, and the run's --gamma",
-    )
+    add_pricing_arguments(rebuild_parser, recorded=True)
     rebuild_parser.add_argument(
         "--gamma",
         type=float,
@@ -649,17 +708,6 @@ if __name__ == "__main__":
         type=positive_int,
         help="How many soft rules can break on one step in this environment and task; the hard "
         "ceiling assumes it (default: the bundle's recorded one, else 1)",
-    )
-    rebuild_parser.add_argument(
-        "--gym-id", help="The level's gym id; its step limit sets the hard ceiling"
-    )
-    rebuild_parser.add_argument(
-        "--step-limit", type=int, help="The level's step limit, instead of reading it from --gym-id"
-    )
-    rebuild_parser.add_argument(
-        "--env-kwargs",
-        type=json.loads,
-        help="JSON keyword arguments of the level --gym-id makes, e.g. '{\"max_steps\": 150}'",
     )
     rebuild_parser.add_argument("--overwrite", action="store_true")
     rebuild_parser.set_defaults(func=cmd_rebuild_rewards)

@@ -410,6 +410,54 @@ the finished RM.
 - **[decision] A soft clause already violated at the start pays nothing,** as before: it is inert,
   and the compile warning names it.
 
+### Pricing the hard break against soft breaks
+
+The pay is in whole units since 2026-11-17 (`Configuration.PROGRESS_REWARD` = 1, finish 10, flat
+well -10); the 0.1 and 0.5 figures in the sections above are from before that change.
+
+- **[run + decision] The defect.** With the old defaults (soft break cost 5, flat hard break -10,
+  recurrent soft charging) a stream of soft breaks costs more than one hard break: the forcing
+  card `lanes-rules` pays -475 at gamma 0.99 over 300 steps for the worst stream of soft breaks
+  against -10 for letting a zombie through the top lane, so breaking the hard rule pays better.
+  `check-pay-order` flags it ("soft break must pay more than hard break"); the E2 runs measured
+  it. Of the 168 clause sets of the benchmark cards (expected clauses and every `also_ok`
+  option), 9 failed that line, and none fails it with the defaults below (offline sweep,
+  2026-11-19, MONA and no model call).
+- **[decision] The default is the ceiling at a soft break cost of 1** (`Configuration.hard_ceiling`
+  on, `soft_break_cost` 1). Where soft rules repeat, the edge into the well charges
+  `-(max(10, N x S x (1 - g^T) / (1 - g)) + 1)`, with `S` the soft break cost, `N` the soft breaks
+  one step can charge (`soft_breaks_per_step`, default 1: it depends on the environment and the
+  task, so the user sets it), `g` the training discount and `T` the level's step limit; `g = 1`
+  reads `(1 - g^T) / (1 - g)` as `T` (`hard_break_charge`, `app/src/compiler/reward_layer.py`).
+  The worst stream of soft breaks, discounted from the first step, costs the ceiling, so one more
+  unit makes the hard break always dearer. `S` 1, `N` 1, `g` 0.99, `T` 300 gives -96.0959; `T` 576,
+  -100.694; at `T` 5 and `g` 0.9 the flat -10 is the larger and stays. A machine with no soft rule,
+  or with `--charge-once`, keeps the flat -10: no stream to outweigh. `S` is 1 because at 2.5 and
+  above the agents learned to idle (E2), and the ceiling already makes the stream safe.
+- **[code] Where `g` and `T` come from.** `g` is `Configuration.gamma`, the discount the trainers
+  use. `T` is the level's step limit, read from the environment (`gym_step_limit`, through
+  `configured_step_limit`): `--gym-id` with `--env-kwargs`, or `--step-limit`. `generate-suite`
+  passes each card's own `env.gym_id` and `env.env_kwargs`. A command that prices a repeating soft
+  break without a level stops before any model call and says so; `--no-hard-ceiling` gives the
+  flat -10 back for the settings study.
+- **[code] The record and the check.** A bundle's manifest records `soft_break_cost`,
+  `soft_breaks_per_step`, `gamma`, `step_limit` and `hard_ceiling` (`effective_settings`), and
+  `train-rl` refuses a run whose gamma, step limit or breaks per step differ from them.
+  `generate-larm` (compiler mode) and `rebuild-rewards` run the pay-order check on the bundle they
+  built and store `effective_settings["pay_order"]` (`ok`, the hard break charge, the summary
+  line); a broken order prints a warning and nothing is refused. With no step limit, or if the check
+  itself fails, the record says `not checked: no step limit` or `check failed: <error>` (`ok` is
+  null) and a warning prints, so a run that cost model calls never loses its bundle.
+  `rebuild-rewards` keeps the pricing a bundle records (cost, ceiling, gamma, breaks per step)
+  unless the command gives another, and its log names each value's origin; a bundle made with the
+  old defaults needs `--soft-break-cost 1 --hard-ceiling` with the level to move to the new ones.
+  A bundle that records no `hard_ceiling` was made before it existed, so it reads as flat.
+- **[run] What it does not fix.** The order "started must pay more than not started" fails on
+  clause shape, not on price: a machine with no `Existence` per milestone (a `Precedence` chain,
+  a rule-only task) has no step that pays progress before the end. 56 of the 111 expected clause
+  sets fail it with the new defaults and with every soft break free of charge, so pricing
+  cannot cure it. The progress pay is unchanged and these cards are only reported.
+
 ### Cleanup passes, in order
 
 1. **Label each clause's DFA states** as satisfied (accepting), pending (not accepting, accepting

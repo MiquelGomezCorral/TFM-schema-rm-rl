@@ -8,9 +8,10 @@ no machine. The accepted machine, its clauses and its state descriptions survive
 descriptions, one attempt for the stage that failed and ``stage_status`` naming it. The manifest
 gets ``provenance.restored_from_log`` (card log, run log, ``labeling_tries``). The role models, the
 attempt limit and the reward switches go in through ``record_bundle_role_models`` (models and
-reasoning from the failed run's stamp, the limit from the log's ``attempt k/N`` lines, the default
-reward switches: they rebuild the log's machine byte for byte, as checked below); the failed run's
-own stamp is kept as it was.
+reasoning from the failed run's stamp, the limit from the log's ``attempt k/N`` lines, the reward
+switches the logs were generated with, ``LOGGED_PRICING`` on the defaults of that time: they
+rebuild the log's machine byte for byte, as checked below); the failed run's own stamp is kept as
+it was.
 
 A log holds no per-try labeling lines (only ``failed after N requests``), so the one recorded
 labeling attempt is not a count of the run. The mark says ``labeling_tries: "unknown"`` and
@@ -30,7 +31,7 @@ import ast
 import json
 import re
 from collections.abc import Sequence
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 from src.arm_fm import ArtifactBundle
@@ -41,6 +42,7 @@ from src.compiler import (
     ClauseProposal,
     CompilationResult,
     Proposal,
+    RewardSwitches,
     build_compilation_result,
     compile_dfas,
     compiler_machine_to_paper,
@@ -50,6 +52,9 @@ from src.models import EnvironmentDescription
 from src.utils import ltlf_of
 
 ENTRY = re.compile(r"^\[total [\d.]+s \| step [\d.]+s\] ", re.MULTILINE)
+# The logs come from runs made before the hard ceiling and a soft break cost of 1 became the
+# defaults: the flat hard break and a soft break cost of 5.
+LOGGED_PRICING = {"soft_break_cost": 5.0, "hard_ceiling": False}
 RESTORABLE_STATUSES = ("pipeline-failed", "provider-error")
 # "Embedding state descriptions" contains "state descriptions", so the embeddings key is first.
 FAILED_STEPS = {
@@ -183,11 +188,14 @@ def restore(folder: Path, name: str) -> str:
         generator_model=stamp.get("generator_model"),
         critic_model=stamp.get("critic_model"),
         reasoning=stamp.get("reasoning", "none"),
+        **LOGGED_PRICING,
         **({"attempts": int(limit.group(1))} if limit else {}),
     )
     bundle.raw_responses.extend(old.raw_responses)
     record_bundle_role_models(bundle, config)  # sets the critic verdict, models, limit, switches
     bundle.manifest.effective_settings.update(old.manifest.effective_settings)
+    # What the machine was really built with, whatever the failed run's record says.
+    bundle.manifest.effective_settings.update(asdict(RewardSwitches(**LOGGED_PRICING)))
     # The stamp is the failed run's own, not the commit of this restore.
     if stamp:
         bundle.manifest.provenance["stamp"] = stamp
@@ -228,7 +236,10 @@ def _rebuild_machine(old: ArtifactBundle, found: dict) -> CompilationResult:
     )
     proposal = Proposal(task=old.manifest.task.strip(), clauses=clauses)
     result = build_compilation_result(
-        environment, proposal, compile_dfas(proposal, Configuration())
+        environment,
+        proposal,
+        compile_dfas(proposal, Configuration()),
+        RewardSwitches(**LOGGED_PRICING),
     )
     if result.text != found["machine"]:
         raise RestoreError("the clauses of the log do not rebuild the log's accepted machine")

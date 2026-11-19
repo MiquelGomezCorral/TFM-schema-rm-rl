@@ -6,7 +6,7 @@ No model call and nothing written. The walk is ``src.arm_fm.pay_order``.
 from collections.abc import Sequence
 from pathlib import Path
 
-from src.arm_fm import gym_step_limit, load_bundle
+from src.arm_fm import configured_step_limit, load_bundle
 from src.arm_fm.pay_order import pay_order_of
 from src.config import Configuration
 
@@ -21,15 +21,15 @@ def check_pay_order(
 
     ``gamma``, the step limit and the soft breaks per step that streams of soft breaks run over
     come from the arguments; else the bundle's manifest records them (a bundle made with the hard
-    ceiling does), else gamma and the soft breaks per step are the defaults and the step limit is
-    one step. ``gamma`` and ``soft_breaks_per_step`` are None when omitted (``CONFIG`` cannot say
+    ceiling does), else gamma and the soft breaks per step are the defaults. With no step limit
+    from either, the line says ``not checked: no step limit``: a one-step horizon is not the
+    run's, so it gets no verdict. ``gamma`` and ``soft_breaks_per_step`` are None when omitted
+    (``CONFIG`` cannot say
     "omitted"). The step limit is ``CONFIG.step_limit``, else the one of the level
     ``CONFIG.gym_id`` and ``CONFIG.env_kwargs`` make (a bundle stores no level, so the caller
     names it).
     """
-    step_limit = CONFIG.step_limit
-    if step_limit is None and CONFIG.gym_id:
-        step_limit = gym_step_limit(CONFIG.gym_id, **CONFIG.env_kwargs)
+    step_limit = configured_step_limit(CONFIG)
     lines = []
     for folder in bundles:
         bundle = load_bundle(folder)
@@ -44,6 +44,11 @@ def check_pay_order(
             if soft_breaks_per_step is not None
             else recorded.get("soft_breaks_per_step", Configuration.soft_breaks_per_step)
         )
+        if limit is None:
+            lines.append(
+                f"{folder}: not checked: no step limit (name it with --gym-id or --step-limit)"
+            )
+            continue
         order = pay_order_of(bundle, discount, limit, breaks)
         lines.append(
             f"{folder}: {order.summary()} "

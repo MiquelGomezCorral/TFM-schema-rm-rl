@@ -241,16 +241,18 @@ class Configuration:
     # A soft Absence's broken state folds into the satisfied state it equals: fewer states, the same
     # pay. It needs ``recurrent_soft_penalty`` on, and a bundle records it.
     fold_soft_absence: bool = True
-    # What one soft break costs, in pay units (paid as a negative reward); to be tested at 2.5, 2,
-    # 1.5 and 1.
-    soft_break_cost: float = 5 * PROGRESS_REWARD
-    # Off by default: where soft rules repeat, the hard break (the edge into the well) costs one
+    # What one soft break costs, in pay units (paid as a negative reward). 1: at 2.5 and above the
+    # agents learned to idle (E2), and a stream of soft breaks is priced by the hard ceiling below.
+    soft_break_cost: float = 1 * PROGRESS_REWARD
+    # On by default: where soft rules repeat, the hard break (the edge into the well) costs one
     # progress unit more than the worst stream of soft breaks the run can discount
-    # (``hard_break_charge``). It needs the run's ``gamma``, the level's step limit and how many
-    # soft rules can break on one step (``soft_breaks_per_step``: it depends on the environment and
-    # the task, so the user sets it), which a bundle records so ``train-rl`` can refuse another
-    # run. ``step_limit`` None: ``rebuild-rewards`` reads it from ``gym_id`` and ``env_kwargs``.
-    hard_ceiling: bool = False
+    # (``hard_break_charge``), so breaking a hard rule never pays better than breaking soft ones.
+    # Off, the hard break costs the flat ``WELL_REWARD`` (a stream of soft breaks can outweigh it).
+    # It needs the run's ``gamma``, the level's step limit and how many soft rules can break on
+    # one step (``soft_breaks_per_step``: it depends on the environment and the task, so the user
+    # sets it), which a bundle records so ``train-rl`` can refuse another run. ``step_limit`` None:
+    # the commands read it from ``gym_id`` and ``env_kwargs`` (``configured_step_limit``).
+    hard_ceiling: bool = True
     step_limit: int | None = None
     soft_breaks_per_step: int = 1
     # Reward switches for the ablation: off, a term pays 0 (completion is never switched off).
