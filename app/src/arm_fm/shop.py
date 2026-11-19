@@ -26,6 +26,7 @@ from typing import NamedTuple
 import numpy as np
 from gymnasium.envs.registration import register
 from minigrid.core.actions import Actions
+from minigrid.core.constants import TILE_PIXELS
 from minigrid.core.grid import Grid
 from minigrid.core.mission import MissionSpace
 from minigrid.core.world_object import Ball, Wall
@@ -40,6 +41,7 @@ from .service_room import (
     _plan,
     cells_of_type,
 )
+from .shop_visuals import render_shop
 
 ENV_ID, POT_ENV_ID = "MiniGrid-Shop-v0", "MiniGrid-Shop-Pot-v0"
 MAX_STEPS = 600
@@ -365,6 +367,13 @@ class ShopEnv(ServiceRoomEnv):
         self.grid.set(*layout.stove, Stove())
         self.grid.set(*layout.switch, Switch())
         self.agent_pos, self.agent_dir = layout.start, START_DIR
+
+    def picture(self, tile_size: int = TILE_PIXELS) -> np.ndarray:
+        """The drawn shop (``shop_visuals``), for pictures made for people.
+
+        Not ``get_frame``: the RGB pixel observation reads that, and it stays MiniGrid's.
+        """
+        return render_shop(self, tile_size, PREPARED_COLOR)
 
     # ============================== episode ==============================
 

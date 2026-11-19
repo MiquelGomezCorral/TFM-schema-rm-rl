@@ -9,6 +9,13 @@ To run the full experiment on an environment (describe it, generate both RMs, tr
 compiler-RM and paper-RM agents, test them on unseen maps and compare them), follow
 [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md).
 
+## Environments at a glance
+
+| Shop | Zombie garden (Lanes) |
+| --- | --- |
+| ![Shop: the agent takes orders and serves food](readme-images/shop.gif) | ![Zombie garden: zombies walk down three lanes](readme-images/lanes.gif) |
+| The agent takes orders, fetches food from the pantry and serves it at the counter; when the siren rings it must silence it. | Zombies walk down three lanes. The top lane must never let one through; the agent should also spare the side lanes and the plants. |
+
 ## Quick start
 
 On Linux or macOS, clone the repository and run the bootstrap script:

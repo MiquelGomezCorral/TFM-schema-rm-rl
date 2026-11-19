@@ -16,8 +16,9 @@ of a card. ``success`` is read at the end of an episode and is not a MiniGrid te
 labeling API: ``experiments/benchmark/envs/minigrid-lanes/`` and
 ``experiments/benchmark/envs/minigrid-key-gift/``.
 
-Import nothing from ``src.arm_fm`` but the service room's grid helpers (``DIRECTIONS``, ``_faces``):
-``environments.py`` imports this module to register the ids.
+Import nothing from ``src.arm_fm`` but the service room's grid helpers (``DIRECTIONS``, ``_faces``)
+and the drawing of the Lanes picture (``lanes_visuals``): ``environments.py`` imports this module to
+register the ids.
 """
 
 from collections import deque
@@ -27,12 +28,13 @@ import numpy as np
 from gymnasium import spaces
 from gymnasium.envs.registration import register
 from minigrid.core.actions import Actions
-from minigrid.core.constants import COLOR_TO_IDX, OBJECT_TO_IDX
+from minigrid.core.constants import COLOR_TO_IDX, OBJECT_TO_IDX, TILE_PIXELS
 from minigrid.core.grid import Grid
 from minigrid.core.mission import MissionSpace
 from minigrid.core.world_object import Ball, Door, Key
 from minigrid.minigrid_env import MiniGridEnv
 
+from .lanes_visuals import render_lanes
 from .service_room import DIRECTIONS, _faces
 
 LANES_ID, KEY_GIFT_ID = "MiniGrid-Lanes-v0", "MiniGrid-KeyGift-v0"
@@ -155,10 +157,21 @@ class LanesEnv(ForcingEnv):
         )
         self.zombies: list[Zombie] = []
         self.plants: list[Plant] = []
+        # What the grid forgets, kept only for ``picture``: the (lane row, step) of every breach
+        # and the cell of every trampled plant. No rule reads them.
+        self.breaches: list[tuple[int, int]] = []
+        self.trampled: list[tuple[int, int]] = []
 
     @staticmethod
     def _gen_mission() -> str:
         return "keep the zombies out of the top lane"
+
+    def picture(self, tile_size: int = TILE_PIXELS) -> np.ndarray:
+        """The drawn garden (``lanes_visuals``), for pictures made for people.
+
+        Not ``get_frame``: the RGB pixel observation reads that, and it stays MiniGrid's.
+        """
+        return render_lanes(self, tile_size, LANE_ROWS, ZOMBIE_PERIOD)
 
     @property
     def success(self) -> bool:
@@ -186,6 +199,7 @@ class LanesEnv(ForcingEnv):
             zip(np.cumsum(gaps).tolist(), rng.random(len(gaps)).tolist(), strict=True)
         )
         self.zombies, self.plants = [], []
+        self.breaches, self.trampled = [], []
         self.event_counts = dict.fromkeys((*LANES_EVENTS, "zombie_spawned", "plant_sprouted"), 0)
 
     def step(self, action):
@@ -214,6 +228,7 @@ class LanesEnv(ForcingEnv):
             self._emit("zombie_killed")
         elif isinstance(cell, Plant):
             self.plants.remove(cell)
+            self.trampled.append(tuple(self.agent_pos))
             self._emit("plant_trampled")
         else:
             return
@@ -229,6 +244,7 @@ class LanesEnv(ForcingEnv):
                 self._put(zombie, x - 1, y)
                 continue
             self.zombies.remove(zombie)
+            self.breaches.append((y, self.step_count))
             self._emit("top_breach" if y == LANE_ROWS[0] else "side_breach")
 
     def _spawn_zombie(self) -> None:
