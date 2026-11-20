@@ -705,3 +705,39 @@ the move report's run folders and are not copied.
 
 **Code.** Card move `0e821b8` (branch `MiquelGomezCorral/tp-response-card`), merged into main as
 `54f2c71`.
+
+### Model comparison: who makes the wrong reward machines (`model-comparison/`), 2026-11-20
+
+**What it shows.** Five generator and critic pairs on the 46 task cards (A deepseek-v4.1-flash + glm-5.3-flash, the
+production pair; B Haiku + luna; C Haiku + glm; D deepseek + luna; E luna + Haiku), then the thinking level of the
+production pair and two fixes. At reasoning `none`, A has 42 of 46 right, and its 3 wrong machines (W5a, U5, S2) are
+deepseek first proposals that glm accepted on call 1; a fourth (O7) was accepted with redundant clauses. At `medium`
+for both models, with the critic wording fix and the G12 card fix, 46 of 46 are right (calls per run 2.35 against
+2.39; median run 6 s against 39 s). On the 38-item critic set glm catches 14 of 28 wrong sets on call 1 at `none`
+and 22 of 28 at `medium`; luna catches 27 and Haiku 28. The critic wording fix removes luna's G12 loop (7.33 rounds
+and 20 of 22 false alarms per run to 1 round and 0 of 2). A DFA equality proof closes a G12 card gap: old G12 runs
+scored right go from 2 of 9 to 6 of 9. New at `medium`: 10 of 66 first proposals are too short (0 of 46 at
+`none`), all rejected by glm. The page shows W5a, U5, S2, O7 and G12 with their task, LTLf and live RM graph at
+`none` and at `medium`, with an "RM text" fold-out.
+
+**Evidence.** The two loop reports, one summary JSON per run for every table row, the critic-set records of all
+critics, the 38 critic items, the G12 equality proof output, the card for the S cases. Limits: one run per case in
+most rows; the 46/46 run changes thinking, critic wording and card together (the earlier `medium` run, m1, came
+before the wording: 19 of 20 on the hard and random cases); the `none` rerun with the new wording was not run
+(budget); the CLI models think hard while the app default is `none`, so arms compare model plus thinking. The
+call logs (55 MB: seconds per call, tokens) are not copied, so those columns are read from the reports; the 172
+critic-set records had their `first_prompt` field removed.
+
+**Files.** `index.html` (built from `data.json`; open it from disk), `graphs/` (the 9 machines drawn as live
+HTML, SVG and RM text), `check/` (`arm_stats.py`, `critic_stats.py`, `loopcrit.py`, `chain_score.py`, `cases.py`,
+`judgments.json`, `equiv.py`, `machines.py`), `evidence/` (1.8 MB). The run tools (`run_arms.sh`,
+`run_critic_set.sh`, the CLI adapter scripts) call models and stay in the plan folder.
+
+**Rerun** (no model call, from the repository root in `RM_RL_env`; the page's last section lists every command):
+`CC_ROOT=$PWD PYTHONPATH=app python docs/paper/model-comparison/check/arm_stats.py A=<evidence>/model-compare/runs/r1/A
+B4=<evidence>/llm-loop/runs/b4/A` for the arm table, `python docs/paper/model-comparison/check/critic_stats.py
+"glm none=...,..." --kinds` for the critic set, `PYTHONPATH=app python docs/paper/model-comparison/check/equiv.py
+'<set 1>' '<set 2>'` for the G12 proof. The graphs: `render-rm --rm-file graphs/<name>.rm --svg-dir <out>.svg --html`.
+
+**Code.** Critic wording `d5ec36e`, G12 card `e56fcff`, CLI adapter `9f12d3a`, merged into main as `57f6a1a`; the
+critic clues the critic set rests on: `3fb0ce0`, merged as `114e5b3`.
