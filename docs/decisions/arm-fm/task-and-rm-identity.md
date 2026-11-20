@@ -114,9 +114,10 @@ tasks, while keeping the generator and critic responsibilities stable.
   when the environment guarantees it, and a missing stated order is a defect; environment facts
   never justify a clause the task did not state.
 - The generator and the critic run at one shared reasoning level (`--reasoning`: `none`, `low`,
-  `medium`, `high`, `max`; default `none`), sent on every provider request of the run. On the
-  OpenCode provider, a model that refuses `none` (HTTP 400: it cannot turn thinking off) gets `low`
-  from that request on, with one warning; the switch uses no provider repeat and no attempt.
+  `medium`, `high`, `max`; default `max` since 2026-11-20), sent on every provider request of the
+  run. On the OpenCode provider, a model that refuses `none` (HTTP 400: it cannot turn thinking off)
+  gets `low` from that request on, with one warning; the switch uses no provider repeat and no
+  attempt. Until 2026-11-20 (superseded): default `none`.
 - Compiler model selection is role-specific: one generator model writes clauses and state
   descriptions; a different critic model reviews the clauses and the compiled RM.
   Create the generator engine and, when the critic is enabled, the critic engine once
@@ -355,3 +356,7 @@ through their inputs and prompts, while both challenge the same generator.
   environment facts. Only a listed hard `Existence` that the other hard clauses imply is a redundancy
   defect; a stated order or "if" rule is never redundant (critic prompt commit `d5ec36e`). This
   reverses the rule that the critic rejects a clause restating an environment-guaranteed order.
+- 2026-11-20 (user): the default reasoning level is `max` for the generator and the critic, which
+  keep one shared level ("max is still cheap enough to use it. dont care about the speed. users wont
+  run this as much as we do"). It was `none`; that default is superseded. A run that sets
+  `--reasoning none` still gets the OpenCode `low` fallback.

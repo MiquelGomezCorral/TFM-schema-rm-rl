@@ -271,7 +271,7 @@ class Configuration:
     reward_end_judgment: bool = False
     # Off by default.
     reward_promise_cost: bool = False
-    reasoning: str = "none"
+    reasoning: str = "max"
     attempts: int = 3
     labeling: bool = False
     state_descriptions: bool = True

@@ -19,20 +19,22 @@ An optional ``replay_summary:`` in the runs.yaml names a ``replay-traces`` summa
 ``machine_check`` per bundle, keyed by the bundle path under the suite's ``bundles:`` folder
 (``<arm>/<card-id>``, or ``<card-id>/off-<switch>`` for ablation); a failed check flags
 ``machine-wrong``, and a bundle with no check stays unknown.
-Every table carries the time-limit asymmetry line, and ``results.csv`` a column with it; at
-fewer than 3 seeds there is no verdict.
+Every table carries a line on how a time-out is paid (``time_out_line``), and ``results.csv`` a
+``time_out`` column per run; at fewer than 3 seeds there is no verdict.
 """
 
 import csv
 import json
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
 from src.benchmark.traces import read_json
+from src.compiler.rm_format import RuntimeValidationError, parse_paper_reward_machine
 from src.config import Configuration
 
 from .run_suite import (
     FINISHED,
+    RM_TIME_LIMIT_PENALTY,
     ROOT,
     SHARED_FILE,
     TIMED_OUT,
@@ -44,9 +46,13 @@ from .run_suite import (
     share_owners,
 )
 
-ASYMMETRY = (
-    "Time-limit asymmetry: FARM machines charge open items at any end; "
-    "ARM-FM machines get 0 at the time limit."
+# How a run's machine pays a time-out (``time_out``), and the table line when no run differs.
+NOT_CHARGED = "not charged when time runs out (end judgment off, time-limit penalty 0)"
+END_JUDGMENT_ON = "charged for the stages still owed at any episode end (end judgment on)"
+NO_MACHINE = "has no readable reward machine yet"
+DEFAULT_TIME_OUT = (
+    "With default settings neither method is charged when time runs out "
+    "(end judgment off, time-limit penalty 0)."
 )
 NOT_EVALUATED = "not evaluated"
 SOFT_ONLY = "soft-only"  # shown instead of a success figure: a card of only soft clauses has none
@@ -113,7 +119,7 @@ COLUMNS = (
     "note",
     "bundle",
     "run_folder",
-    "time_limit_asymmetry",
+    "time_out",
 )
 
 
@@ -244,6 +250,44 @@ def machine_wrong(bundle: Path | None, bundles: Path, replay: dict | None) -> bo
     return None if passed is None else not passed
 
 
+def time_out(run: Run) -> str | None:
+    """How the run's machine pays a time-out; None for the no-RM arm, which has no machine.
+
+    A machine carries an end judgment (a ``PENDING_PROMISES`` section) only when built with it
+    on, off by default since 2026-11-18; one without pays ``RM_TIME_LIMIT_PENALTY``, which
+    ``run_config`` sets on every RM run. A mix is judged when any member's machine is.
+    """
+    if run.bundle is None:
+        return None
+    paths = [ROOT / bundle / "reward_machine.txt" for bundle in run.bundles or (run.bundle,)]
+    try:
+        machines = [parse_paper_reward_machine(path.read_text(encoding="utf-8")) for path in paths]
+    except (OSError, RuntimeValidationError):  # not generated yet, or a machine that does not parse
+        return NO_MACHINE
+    if any(machine.judgment is not None for machine in machines):
+        return END_JUDGMENT_ON
+    if RM_TIME_LIMIT_PENALTY:
+        return f"pays {RM_TIME_LIMIT_PENALTY:g} when time runs out (end judgment off)"
+    return NOT_CHARGED
+
+
+def time_out_line(rows: list[dict]) -> str:
+    """The sentence a results table prints on how its runs pay a time-out.
+
+    The default sentence when no run with a machine is charged; otherwise each way the runs pay,
+    after the arms (with any ablation variant) whose runs paid it.
+    """
+    arms_by_way: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        if row["time_out"]:
+            arm = f"{row['arm']} off-{row['variant']}" if row["variant"] else row["arm"]
+            arms_by_way[row["time_out"]].add(arm)
+    if set(arms_by_way) <= {NOT_CHARGED}:
+        return DEFAULT_TIME_OUT
+    ways = (f"{', '.join(sorted(arms))} {way}" for way, arms in sorted(arms_by_way.items()))
+    return f"Time-out: {'; '.join(ways)}."
+
+
 def owner_note(owner: Owner) -> str:
     """Whose model a shared no-RM run waits for, in what state, and the exit code if known."""
     code = read_json(owner.folder / "resources.json").get("exit_code") if owner.folder else None
@@ -274,7 +318,7 @@ def run_row(run: Run, bundles: Path, replay: dict | None, owner: Owner | None) -
         fired_success=NOT_EVALUATED,
         bundle=str(run.bundle or ""),
         run_folder=str(folder or ""),
-        time_limit_asymmetry=ASYMMETRY,
+        time_out=time_out(run),
     )
     if folder is None:
         return row
@@ -362,8 +406,8 @@ def markdown_table(headers: list[str], rows: list[list]) -> str:
     return "\n".join(lines)
 
 
-def card_section(card: dict, groups: list[dict]) -> str:
-    """One card: its task, clauses and machines, then the arms side by side."""
+def card_section(card: dict, groups: list[dict], time_out_text: str) -> str:
+    """One card: its task, clauses, machines and how they pay a time-out, then the arms side by side."""
     clauses = "; ".join(
         f"{template}({', '.join(props)}) {level}" for template, props, level in card["expect"]
     )
@@ -381,7 +425,7 @@ def card_section(card: dict, groups: list[dict]) -> str:
     )
     return (
         f"### {card['id']}\n\nTask: {card['task']}\n\nClauses: {clauses}\n\n"
-        f"Machines: {machines or 'none (no-RM arm only)'}\n\n{ASYMMETRY}\n\n{table}"
+        f"Machines: {machines or 'none (no-RM arm only)'}\n\n{time_out_text}\n\n{table}"
     )
 
 
@@ -406,12 +450,17 @@ def results_markdown(spec: dict, rows: list[dict], groups: list[dict]) -> str:
         ],
     )
     sections = [
-        card_section(card, [g for g in groups if g["card"] == card["id"]])
+        card_section(
+            card,
+            [g for g in groups if g["card"] == card["id"]],
+            time_out_line([r for r in rows if r["card"] == card["id"]]),
+        )
         for card in spec["cards"]
         if any(g["card"] == card["id"] for g in groups)
     ]
     return (
-        f"# Suite {spec['suite']}\n\n{verdict}\n\n## Runs\n\n{ASYMMETRY}\n\n{run_table}\n\n"
+        f"# Suite {spec['suite']}\n\n{verdict}\n\n## Runs\n\n{time_out_line(rows)}\n\n"
+        f"{run_table}\n\n"
         "## Per card, across arms\n\n" + "\n\n".join(sections) + "\n"
     )
 
@@ -445,7 +494,12 @@ def aggregate_suite(CONFIG: Configuration) -> None:
         writer = csv.DictWriter(file, COLUMNS)
         writer.writeheader()
         writer.writerows(rows)
-    results = {"suite": spec["suite"], "asymmetry": ASYMMETRY, "runs": rows, "cards": groups}
+    results = {
+        "suite": spec["suite"],
+        "time_out": time_out_line(rows),
+        "runs": rows,
+        "cards": groups,
+    }
     (output / "results.json").write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
     markdown = results_markdown(spec, rows, groups)
     (output / "results.md").write_text(markdown, encoding="utf-8")
