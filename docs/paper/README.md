@@ -1049,3 +1049,59 @@ gate and the training queue (about 17 min per FARM seed).
 tasks.json`, the usage paragraph in `docs/LTLF_TASK_LANGUAGE.md` and the tpl-response-1-goal FARM bundles. The scorer
 (`clause_status` in `app/src/benchmark/rm_facts.py`) is unchanged and keeps `forced`. Record:
 `docs/decisions/benchmark/thesis-benchmark.md`, entry of 2026-11-20.
+
+### Shop promise cost: a hard break pays the promise cost of the step limit (`shop-promise-cost/`), 2026-11-20
+
+**What it shows.** Every shop run that learned had an open promise that cost something as the step limit ran out:
+the promise cost (-0.1 a step while a hard promise is open) or the end judgment (each hard promise open at the end
+pays). With either on, 12 of 12 seeds served (round 6 D and E, round 7 B4 and B8b); with both off, 0 of 12 (round 6
+A, B and C and today's probe), since a whole shift of serving then paid only 2 more than one order and a stop. With
+the promise cost on and a well the agent can reach, the step into the well paid -10.1 and ended the episode without
+the promise cost still to come, so on all four of today's shop levels letting the food fall paid more than serving
+(-16.4 against -35.5 on shop-serve, seed 1). Commit `a727b2b` charges that step the promise cost of the whole step
+limit, -70 on the shop: a break at step t pays γ^t(W + cL), at most the cost of keeping the promise to the end.
+After it the solve is the best plan on all eight level variants, and with the promise cost off every machine is
+byte-identical. The round 7 level still trains to 12.21 / 12.07 / 12.21 served, identical to r7-B8b. Today's
+shop-serve still learns 0 of 3: random play never prepares food in 1,000 episodes and the trained agents never pick
+it up. Whether to pay the fetch step, add a slip-free warm-up or accept a known limit is an open user question. The
+same commit replaces the no-goal plan check: the old rule failed 38 of 62 no-goal bundles by construction; the new
+one passes 35 of them, leaves the 275 goal bundles unchanged, catches shop-serve built without its fall rule on 3 of
+3 seeds and finds a real defect in forcing/lanes-rules (a -1 well). The page shows every machine with task, LTLf,
+live RM graph and RM text.
+
+**Evidence.** Copies of the ten bundles the page uses and their four cards; plan pay of the round 6 and 7 and probe
+bundles, and of the four levels built before (`78c666c`) and after the fix with the promise cost on and off; md5 of
+the chain, card and promise sweeps and of every level machine before and after; per seed of 30 training runs (round
+6 A to E, round 7 B4 and B8b, the probe, the regression and today's shop-serve) `judge.json`, `test.json`,
+`summary.json`, `config.yaml` and `eval.csv`, with the configs and logs of the six runs of 2026-11-20; the random
+play, trained agent and scripted plan diagnosis and the fall rate per 1M steps; the plan check of every committed
+bundle before and after, stored and with the end judgment off; two gate records. Limits: the page quotes seed 1 of
+the card's event seeds; the end-judgment-off rebuild gives back no stored no-goal text; rounds 6 and 7 trained with
+a -5 time-limit charge, today's runs with 0; the chain sweep also reads the main checkout's local `outputs/`, and
+the card sweep's trace bank was not recorded; a late break is charged all L steps, not the L - t left (user question
+Q6).
+
+**Files.** `index.html` (built from `data.json`; open it from disk), `graphs/` (eleven machines as live HTML, SVG and
+RM text), `check/` (`machines.py`, `runs_table.py`, `no_fall_rule.py` and `tee.py`, new; `plan_pay.py` and
+`diagnose.py`, pointed at the entry's copies; `pay_table.py`, `fall_rate.py`, `fetch_variant.py`, `chain_sweep.py`,
+`card_sweep.py`, `promise_sweep.py`, `plan_check_all.py` and `compare_checks.py` from the plan folder), `evidence/`
+(`bundles/`, `cards/`, `runs/`, `configs/`, `logs/`, `gate/`, `diagnosis/`, `plan-check/`, the plan pay JSON files
+and the `.out` listings). No weights, agent traces or `episodes.csv`; the sweep outputs and the level bundles stay in
+the plan folder's `shop-well/`. The repository's hooks added blank lines to the copied `labeling.py` files (the same
+code; machine, manifest and state files are byte copies), a final newline to the two gate records, and lint fixes
+to the scripts from the plan folder; the reruns of `plan_pay.py rounds`, `diagnose.py plans`, `fall_rate.py` and
+`machines.py` give the stored outputs (the recorded bundle paths aside).
+
+**Rerun** (no model call, no training, from the repository root in `RM_RL_env`): `PYTHONPATH=app python -W ignore
+docs/paper/shop-promise-cost/check/no_fall_rule.py`, then the same for `check/machines.py`, prints every machine's
+task, clauses, size and well pay and writes `graphs/<name>.rm`; `python docs/paper/shop-promise-cost/check/
+runs_table.py` prints the served counts; `check/plan_pay.py rounds` and `levels` give the plan pay. The page's last
+section lists every command.
+
+**Code.** Commit `a727b2b`, merged as `ee9a803`: the well edge in `_price_edges` (`app/src/compiler/
+reward_layer.py`), the step-limit checks in `app/main.py` and `app/src/arm_fm/environments.py`, the no-goal rule in
+`app/src/benchmark/plan_check.py`, `app/scripts/ablate_rm.py`, `app/scripts/rebuild_rewards.py`,
+`experiments/benchmark/configs/ppo-shop.yaml` and `experiments/benchmark/shop/runs-levels2-5.yaml`, with
+`tests/test_reward_layer.py` and `tests/test_plan_check.py`. Records, changed in the same commit:
+`docs/decisions/arm-fm/rm-execution.md`, `docs/COMPILER_REWARD_DESIGN.md` and
+`docs/decisions/generation/run-observability.md`.
