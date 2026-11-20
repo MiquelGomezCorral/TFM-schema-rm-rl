@@ -1,12 +1,12 @@
 # Complex suite
 
 Harder tasks than the templates: longer, rules only, several hard and soft rules, and rules that react
-to events in the small service room. Six cards, all trained:
+to events in the small service room. Six cards; all but `cx-rules-only` are trained:
 
 | Card | What it tests |
 | --- | --- |
 | `cx-sequence` | A long sequence of steps. |
-| `cx-rules-only` | Rules and no goal. |
+| `cx-rules-only` | Rules and no goal (not trained since 2026-11-20: an idle agent passes it). |
 | `cx-goal-one-rule` | A goal plus one rule. |
 | `cx-goal-many-rules` | A goal plus several hard and soft rules. |
 | `cx-siren` | "Whenever the siren rings, turn it off." |
@@ -44,11 +44,27 @@ about one seed in three never learns it. The same day it also lost the answer wi
 `Existence(box)` but no `Existence(has_door_key)` and no door step: the same trap (solve pay 1, -1, 1, 11), never
 trained. Four answers remain; the later ones are renumbered.
 
+Order audit (2026-11-20): an order the task states is required even when the world forces it, so
+`forced` now keeps only orders the task does not state, and an `also_ok` answer that drops a stated
+order is no longer correct. All three cards state their orders ("and then", "then", "after", "open
+the door with the key", "Then ... and pick up the box") and lost `forced`. `cx-sequence` lost its
+one-Existence-per-step answer, `cx-goal-one-rule` its answer with two Existences and no order, and
+`cx-goal-many-rules` its four remaining answers (none has `Precedence(has_door_key, door_open)`).
+`cx-sequence`'s p3 lists the steps with no order word; it is scored against the same card. On
+2026-11-20 p3 gained the task's closing "and then", and p1's second sentence did too, so every
+wording states the four orders it is scored for.
+
+Card fixes (2026-11-20): `cx-rules-only` stopped training (`train: false`) and left
+`closed-set.json`: an idle agent passes it, and `lanes-rules` (forcing suite) covers rules with no
+goal, as it already does in the ablation suite. It stays a generation card. `cx-goal-one-rule` lost
+its `Response` answer: `Response` is not a step form, so it does not carry the stated order; its
+answer with the `Precedence` and both Existences stays. Training runs seeds 1 to 3.
+
 ## Contents
 
 - `tasks.json`: the cards.
-- `ablation.json`: three of these cards, of different sizes, used to switch off one reward part at a
-  time. It holds notes, not card content: `../ablation/runs.yaml` takes its ids through `only` and
+- `ablation.json`: three cards of different sizes (two of these and the forcing suite's
+  `lanes-rules`), used to switch off one reward part at a time. It holds notes, not card content: `../ablation/runs.yaml` takes its ids through `only` and
   reads the cards from `tasks.json`.
 - `bundles/<arm>/<card-id>/`: the generated machine per arm (`farm` or `arm-fm`).
 - `traces/<card-id>/`: trace records of the scripted plans.
