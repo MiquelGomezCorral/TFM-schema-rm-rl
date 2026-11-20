@@ -3,13 +3,14 @@
 import json
 import os
 import subprocess
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from functools import partial
 from typing import Any
 from uuid import uuid4
 
-from openai import BadRequestError, OpenAI
-from openai.types.chat import ChatCompletion
+import httpx2
+from openai import APIConnectionError, APITimeoutError, BadRequestError, OpenAI
+from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
 from src.config import Configuration
 from src.models import EnvironmentDescription
@@ -21,6 +22,9 @@ from .structured import completion_text, responses_text
 ANTIGRAVITY_AGENT = "schema-rm-provider"
 ANTIGRAVITY_TIMEOUT_SECONDS = 305
 OPENCODE_GO_MODEL = "opencode-go/mimo-v2.5"
+# Longest silence allowed between two streamed OpenCode chunks, not a limit on the whole reply.
+# Streamed W5a replays at max reasoning (2026-11-20) never went 2 s without a chunk.
+OPENCODE_IDLE_TIMEOUT_SECONDS = 120
 PI_TIMEOUT_SECONDS = 305
 # Levels a provider names differently; every other level is sent as is.
 _OPENAI_EFFORT = {"max": "xhigh"}
@@ -182,7 +186,7 @@ class OpenCodeEngine(GenericEngine):
         send is counted in ``resends`` so the request's records include it.
         """
         try:
-            return self._client.chat.completions.create(**request, reasoning_effort=self.reasoning)
+            return self._stream_completion(request)
         except BadRequestError as error:
             # The provider sends no error code and words the refusal differently per request.
             # Observed on glm-5.3-flash (2026-10-25):
@@ -205,7 +209,56 @@ class OpenCodeEngine(GenericEngine):
                 f'model {self.model} does not accept reasoning "none"; '
                 'using "low" for the rest of the run'
             )
-        return self._client.chat.completions.create(**request, reasoning_effort=self.reasoning)
+        return self._stream_completion(request)
+
+    def _stream_completion(self, request: dict[str, Any]) -> ChatCompletion:
+        """Stream one chat completion and return it joined, as a non-streamed request would.
+
+        OpenCode never answers a non-streamed request that runs past about 300 s, and a long
+        reasoning run does. Streamed, the read timeout bounds the silence between two chunks.
+        A stall or a dropped connection mid-stream raises the SDK error a non-streamed request
+        raises, so it stays retryable.
+        """
+        stream = self._client.chat.completions.create(
+            **request,
+            reasoning_effort=self.reasoning,
+            stream=True,
+            stream_options={"include_usage": True},
+            timeout=OPENCODE_IDLE_TIMEOUT_SECONDS,
+        )
+        try:
+            return _joined_completion(stream)
+        except httpx2.TimeoutException as error:
+            raise APITimeoutError(request=stream.response.request) from error
+        except httpx2.TransportError as error:
+            raise APIConnectionError(request=stream.response.request) from error
+
+
+def _joined_completion(chunks: Iterable[ChatCompletionChunk]) -> ChatCompletion:
+    """Join streamed chunks into the reply a non-streamed request returns.
+
+    Each text field of the deltas is concatenated: ``content``, ``refusal`` and the provider's
+    reasoning field, whose name varies (``reasoning_content`` on OpenCode), so callers keep
+    reading it from ``message.model_extra``. The last finish reason and usage win.
+    """
+    head: dict[str, Any] = {}
+    texts: dict[str, list[str]] = {}
+    finish_reason, usage = None, None
+    for chunk in chunks:
+        head = head or {"id": chunk.id, "created": chunk.created, "model": chunk.model}
+        usage = chunk.usage or usage
+        for choice in chunk.choices:  # one choice: the request never sets ``n``
+            finish_reason = choice.finish_reason or finish_reason
+            for key, value in choice.delta.to_dict().items():
+                if isinstance(value, str) and key != "role":
+                    texts.setdefault(key, []).append(value)
+
+    message = {"role": "assistant"} | {key: "".join(parts) for key, parts in texts.items()}
+    choice = {"index": 0, "finish_reason": finish_reason, "message": message}
+    # Built unvalidated, as the SDK builds a non-streamed reply.
+    return ChatCompletion.model_construct(
+        **head, object="chat.completion", choices=[choice], usage=usage
+    )
 
 
 class AntigravityEngine(GenericEngine):

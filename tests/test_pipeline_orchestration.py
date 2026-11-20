@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from nl2ltl.declare.declare import Existence
+from openai.types.chat import ChatCompletionChunk
 from pylogics.syntax.ltl import Atomic
 
 from scripts.generate_larm import generate_compiler
@@ -69,6 +70,18 @@ def result(text="serialized-rm"):
         RewardMachineStructure((0, 1), 0, 1, (), (Transition(0, 1, ("done",), 0.0),)),
         text,
     )
+
+
+def streamed_reply(content):
+    """One OpenCode reply as the streamed chunks the engine reads; ``[]`` is an empty stream."""
+    chunk = {
+        "id": "reply",
+        "object": "chat.completion.chunk",
+        "created": 0,
+        "model": "model",
+        "choices": [{"index": 0, "delta": {"content": content}, "finish_reason": "stop"}],
+    }
+    return [ChatCompletionChunk.model_validate(chunk)]
 
 
 class EmbeddingResponse:
@@ -295,10 +308,6 @@ class OrchestrationTests(unittest.TestCase):
             '"propositions":["done"],"priority":"hard"}]}'
         )
 
-        def answer(content):
-            message = SimpleNamespace(content=content, refusal=None)
-            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
-
         self.critic.verdicts = [CriticResult(True, "ok")]
         warnings = []
         with (
@@ -306,11 +315,7 @@ class OrchestrationTests(unittest.TestCase):
             patch("src.engines.provider_engines.OpenAI") as openai,
         ):
             create = openai.return_value.chat.completions.create
-            create.side_effect = [
-                SimpleNamespace(choices=[]),
-                answer(proposal),
-                answer('["start", "done"]'),
-            ]
+            create.side_effect = [[], streamed_reply(proposal), streamed_reply('["start", "done"]')]
             self.engine = OpenCodeEngine(ENV, "model")
             self.assertTrue(self.execute(hooks=GenerationHooks(warning=warnings.append)))
 
@@ -320,17 +325,13 @@ class OrchestrationTests(unittest.TestCase):
         self.assertIn("OpenCode returned no structured proposal", retry_prompt)
 
     def test_empty_tagging_answer_stays_inside_the_tagging_loop(self):
-        def answer(content):
-            message = SimpleNamespace(content=content, refusal=None)
-            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
-
         proposal = (
             '{"clauses":[{"normalized_clause":"finish done","pattern":"Existence",'
             '"propositions":["done"],"priority":"hard"}]}'
         )
-        empty = SimpleNamespace(choices=[])
+        empty = []
         for tagging, accepted in (
-            ([empty, answer('["start", "done"]')], True),
+            ([empty, streamed_reply('["start", "done"]')], True),
             ([empty, empty, empty], False),
         ):
             self.critic = Engine()
@@ -342,7 +343,7 @@ class OrchestrationTests(unittest.TestCase):
                 patch("src.engines.provider_engines.OpenAI") as openai,
             ):
                 create = openai.return_value.chat.completions.create
-                create.side_effect = [answer(proposal), *tagging]
+                create.side_effect = [streamed_reply(proposal), *tagging]
                 self.engine = OpenCodeEngine(ENV, "model")
                 self.assertEqual(self.execute(hooks=hooks), accepted)
 

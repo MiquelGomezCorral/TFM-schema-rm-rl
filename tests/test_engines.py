@@ -4,12 +4,14 @@ import json
 import os
 import subprocess
 import unittest
+from functools import partial
 from types import SimpleNamespace
 from unittest.mock import ANY, Mock, patch
 
+import httpx2
 from httpx import Request, Response
 from nl2ltl.declare.base import TemplateEnum
-from openai import BadRequestError
+from openai import BadRequestError, OpenAI
 
 from src.arm_fm.generation import _extract_artifact, _refine_labeling, request_state_descriptions
 from src.benchmark.labeling_repair import Check, repair_prompt
@@ -578,6 +580,35 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(engine.request_text("system", "user"), "finished")
         self.assertEqual(sleep.call_count, 2)
         self.assertEqual(renew_session.call_count, 2)
+
+    def test_opencode_stream_cut_mid_reply_is_retryable(self) -> None:
+        chunk = {
+            "id": "reply",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "opencode-model",
+            "choices": [{"index": 0, "delta": {"reasoning_content": "thinking"}}],
+        }
+        # A stall past the idle limit, and a connection dropped mid-reply.
+        for cut in (httpx2.ReadTimeout("timed out"), httpx2.RemoteProtocolError("peer closed")):
+
+            def cut_stream(cut=cut):
+                yield f"data: {json.dumps(chunk)}\n\n".encode()
+                raise cut
+
+            def reply(_request, cut_stream=cut_stream):
+                headers = {"content-type": "text/event-stream"}
+                return httpx2.Response(200, headers=headers, content=cut_stream())
+
+            client = httpx2.Client(transport=httpx2.MockTransport(reply))
+            with (
+                self.subTest(cut=type(cut).__name__),
+                patch.dict(os.environ, {"OPENCODE_API_KEY": "key"}, clear=True),
+                patch("src.engines.provider_engines.OpenAI", partial(OpenAI, http_client=client)),
+            ):
+                engine = OpenCodeEngine(ENVIRONMENT, "opencode-model")
+                with self.assertRaises(RetryableEngineError):
+                    engine.request_text("system", "user")
 
     @patch("src.engines.generic_engine.sleep")
     @patch.object(GenericEngine, "_renew_session")
