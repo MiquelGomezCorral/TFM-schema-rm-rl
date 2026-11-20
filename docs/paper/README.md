@@ -638,10 +638,16 @@ scripted top-and-middle policy). The noise check explains part of it: with 10% r
 three-lane policy loses to top-only (-31.5 against -23.7). A warm start from a behaviour clone of a
 hand-written guard policy (a hack, labelled so on the page) keeps the middle lane and reaches -10.7,
 and still tramples 0.34 to 0.64 plants a game (bar 0.2). The page shows the task, the LTLf, the live
-RM graph and the tables.
+RM graph and the tables. A later section reruns the best warm-start arm (hack) and a plain control, 3
+seeds each, on main `9bd6aeb` (gate passed first): the warm start keeps the top lane, halves side
+breaches (17.15 to 9.85) and doubles kills, but tramples 0.50 plants a game against 0.14 for the plain
+run, so it still fails the plants bar; the plain run never finds the side-lane policy. The numbers equal
+the loop's.
 
 **Evidence.** The judge output of every round, the noise check output (reruns identically), the loop's
-report and rounds, the settings of each key line, the code diff of `ppo_reward_scale`. One sentence of
+report and rounds, the settings of each key line, the code diff of `ppo_reward_scale`, and for the rerun
+on main its judge output (`rerun-main-judge.out`), gate result (`rerun-main-gate.json`) and diff
+(`rerun-main-ppo_reward_scale.diff`). One sentence of
 the loop's report (top-only best at PPO's noise) is stricter than its own table, which has the
 top-and-middle policy ahead to 20% noise; the page follows the table.
 
