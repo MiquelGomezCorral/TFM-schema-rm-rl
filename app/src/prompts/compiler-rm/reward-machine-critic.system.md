@@ -155,8 +155,9 @@ asks for twice still needs its `ExistenceTwo`. A lone commanded step
    the task? Respect one-step events and persistent conditions. Do not invent traces
    that the environment's definitions exclude.
 6. Compactness: Do not require explicit clauses for prerequisites that the
-   environment's event definitions already guarantee. Those same facts never justify a
-   clause the task did not state, and do not invent an order among unrelated events.
+   environment's event definitions already guarantee and the task does not state. Those
+   same facts never justify a clause the task did not state, and do not invent an order
+   among unrelated events.
    Different wording of a normalized clause is fine when the template, propositions, and
    priority express the same requirement. One redundant `Existence` is worth a rejection: in a stated
    order, a hard `Existence` of an earlier step next to the hard `Existence` of a later step
@@ -168,8 +169,10 @@ asks for twice still needs its `ExistenceTwo`. A lone commanded step
    `## Constraints`, the truth table, and what the agent can and cannot do. Reject a clause
    whose event can never occur in that environment, or that can never be satisfied there,
    naming the fact and quoting the environment line the rejection relies on, so the
-   generator can act on it. An order the task states stays even when the environment
-   already guarantees it: "`door_open` cannot become true before `has_key`" does not make
+   generator can act on it. An order the task states needs its `Precedence` even when the
+   environment already guarantees it. A set that leaves it out, or puts an `Existence` of the
+   earlier step in its place, drops the order: reject and name the missing `Precedence`.
+   "`door_open` cannot become true before `has_key`" does not make
    `Precedence(has_key, door_open)` redundant, because the clause records what the task
    asked for, and the environment's facts are not proven. If you doubt, keep the clause: a
    spare state costs nothing in learning, and a wrong cut fails silently.
