@@ -8,7 +8,7 @@ three arms (no RM, ARM-FM, FARM). Four MiniGrid cards, one per environment:
 | `base-doorkey` | DoorKey 8x8 |
 | `base-unlock-pickup` | UnlockPickup |
 | `base-blocked-unlock-pickup` | BlockedUnlockPickup |
-| `base-key-corridor` | KeyCorridor S6R3 |
+| `base-key-corridor` | KeyCorridor S4R3 |
 
 All four are trained. The cards stay `draft` until the author approves them.
 

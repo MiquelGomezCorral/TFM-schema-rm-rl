@@ -130,7 +130,7 @@ class BlockedUnlockPickup(UnlockPickup):
 
 
 class KeyCorridor(ReferenceLabeler):
-    """KeyCorridorS6R3: unlocking clears ``is_locked``, so the locked door is noted once."""
+    """KeyCorridor, any room size: unlocking clears ``is_locked``, so the locked door is noted once."""
 
     def reset(self) -> None:
         super().reset()
@@ -151,11 +151,13 @@ class KeyCorridor(ReferenceLabeler):
         # through gen_obs() is what a generated labeling can do too (runtime._READ_METHODS).
         key_seen = bool((env.gen_obs()["image"][:, :, 0] == OBJECT_TO_IDX["key"]).any())
 
-        # == The locked door's room is the 6x6 block to the right of its cell ==
+        # == The locked door's room is the room_size block to the right of its cell ==
+        # Neighbouring rooms share their wall, so room rows start every room_size - 1 cells.
+        size = env.room_size
         in_room = (
             door_x is not None
-            and door_x <= agent_x <= door_x + 5
-            and 5 * (door_y // 5) <= agent_y <= 5 * (door_y // 5) + 5
+            and door_x <= agent_x < door_x + size
+            and 0 <= agent_y - (size - 1) * (door_y // (size - 1)) < size
         )
         door = env.grid.get(door_x, door_y) if door_x is not None else None
         return {
@@ -171,7 +173,7 @@ MINIGRID_LABELERS: dict[str, type[ReferenceLabeler]] = {
     "MiniGrid-DoorKey-": DoorKey,
     "MiniGrid-UnlockPickup-": UnlockPickup,
     "MiniGrid-BlockedUnlockPickup-": BlockedUnlockPickup,
-    "MiniGrid-KeyCorridorS6R3-": KeyCorridor,
+    "MiniGrid-KeyCorridor": KeyCorridor,
 }
 
 
