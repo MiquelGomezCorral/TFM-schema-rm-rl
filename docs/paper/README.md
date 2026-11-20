@@ -788,8 +788,8 @@ reasoning; one summary and one slim call log per run for loop 2 and the three sh
 replays. Open cost: W5a (`cx-goal-many-rules`) at `max` ended with no machine, six non-streamed calls in
 a row at the SDK's 600 s timeout. Cause: OpenCode never returns a non-streamed reply after about 300 s
 (1,334 logged calls: longest 298.8 s, none between 300 and 600 s); W5a at `max` reasons 12 to 36 K tokens
-at 69 to 125 tokens per second, and streamed the same request came back 6 of 6 times in 154 to 520 s. A
-streaming fix is being implemented and is not merged. Limits: one run per case and level.
+at 69 to 125 tokens per second, and streamed the same request came back 6 of 6 times in 154 to 520 s. The
+streaming fix is merged (see `opencode-streaming/`). Limits: one run per case and level.
 
 **Files.** `index.html` (built from `data.json`; open it from disk), `graphs/` (the two W3a machines as
 live HTML, SVG and RM text), `check/` (`level_stats.py`, `arm_stats.py`, `cases.py`, `chain_score.py`,
@@ -804,7 +804,7 @@ ignore docs/paper/hidden-output-schema/check/level_stats.py low=<runs>/loop2-low
 `PYTHONPATH=app python -W ignore docs/paper/hidden-output-schema/check/sample.py` rebuilds the sample.
 
 **Code.** The sentence in `app/src/prompts/compiler-rm/reward-ltlf-creator.system.md:82-87`, commit
-`42003cf`, merged as `56a482a`. The streaming fix: pending, not merged.
+`42003cf`, merged as `56a482a`. The streaming fix: commit `c5219a2`, merged as `f2c3a49` (`opencode-streaming/`).
 
 ### Benchmark coverage: which rule shapes the final run really tests (`benchmark-coverage/`), 2026-11-20
 
@@ -838,3 +838,173 @@ task, clauses, LTLf and machine size and writes `graphs/<card>.rm`; `render-rm -
 
 **Code.** The cards in `experiments/benchmark/<suite>/tasks.json`; the card fixes are commit `ab27c07`, merged
 as `b3ba9ef`. Scoring in `app/src/benchmark/rm_facts.py`, the test bars in `app/scripts/test_rl.py`.
+
+### KeyCorridor room size: the labeling now reads the room (`keycorridor-room-size/`), 2026-11-20
+
+**What it shows.** The KeyCorridor facts page and the reference labeler assumed 6x6 rooms. On the 4x4 rooms of
+`MiniGrid-KeyCorridorS4R3-v0`, the old generated labelings set `target_room_entered` outside the room before the
+door opened in 155 of 300 random episodes and crashed in 144. After the fix, 0 differ on S4R3, S5R3 and S6R3.
+Pipeline side, not model side. With the fixed labeling (1.5M steps, judged on 100 episodes, learned = at least
+0.8), FARM learns cx-sequence in 3 of 3 seeds (0.91, 0.81, 0.87) and base-key-corridor in 2 of 3 (0.85, 0.82,
+0.00); no-RM learns 0 of 3 on both. The base-key-corridor machine adds Precedence(key_found, has_matching_key):
+the user ruled on 2026-11-20 that "find and acquire the key" states that order, so it counts, but the card that
+says so is being updated in the order-cards change and is not merged yet. The page shows the old and new labeling
+line and both machines with task, LTLf, live RM graph and RM text.
+
+**Evidence.** The labeling checks before and after (old bundles on S4R3, new bundles on three sizes, the paraphrase
+bundles, the fixed reference labeler) and the two bundle gates; the judge tables, queues and run log; per seed of
+the 12 runs `judge.json`, `summary.json`, `eval.csv`, `config.yaml`, `test.json` and `judge.log` (no weights, no
+traces); the 12 run configs; the two S4R3 card copies. Limits: three seeds per arm, one level.
+
+**Files.** `index.html` (built from `data.json`; open it from disk), `graphs/` (the two S4R3 machines as live HTML,
+SVG and RM text, copied from the bundles on main `78c666c`), `check/` (`probe_run.py`, `probe_judge.py`),
+`evidence/` (`checks/`, `judge/`, `runs/`, `configs/`, `cards/`). The labeling check itself is tracked at
+`experiments/benchmark/envs/minigrid-key-corridor/check/room_size_check.py`.
+
+**Rerun** (from the repository root in `RM_RL_env`): `PYTHONPATH=app python
+experiments/benchmark/envs/minigrid-key-corridor/check/room_size_check.py
+experiments/benchmark/complex/bundles/farm/cx-sequence --sizes 4 5 6` (no model call, about 2.5 min per bundle).
+The page's last section has the before row, the graphs and the training queue (about 30 min per seed).
+
+**Code.** Commit `673566d`, merged as `d2d9249`: `app/src/benchmark/reference_labels.py` and the facts pages
+`experiments/benchmark/envs/minigrid-key-corridor/environment.md` and `environment-code.md` read the room size;
+`run-suite` refuses a bundle made for another level. The old S6R3 bundles are archived under
+`experiments/benchmark/{complex,base}/kc-page-s6r3/farm/`.
+
+### OpenCode streaming: long answers now arrive (`opencode-streaming/`), 2026-11-20
+
+**What it shows.** OpenCode never returned a non-streamed reply that took longer than about 300 s. At reasoning
+`max` the generator (`deepseek-v4.1-flash`) reasons 12 to 36 K tokens on W5a (`cx-goal-many-rules`), so each call
+waited the SDK's 600 s and failed: five timeouts in a row and no machine. Every OpenCode completion is now streamed,
+with a 120 s limit on the silence between two chunks, and joined into the reply callers already expect. After the
+fix, W5a at `max` gave an accepted, right machine in 5 of 5 runs (the same machine text each time), the longest
+generator call took 384 s, and none of 59 runs (13 at `max`, 46 at `high`) had a timeout. At `high` it changes
+little: 44 of 46 right before, 43 of 46 after, and the three wrong are model mistakes the critic missed. Pipeline
+side, not model side: the W5a machine is the chain-regression bundle `many-rules-reworded`, judged success 1.0 in 3
+of 3 seeds. This is the streaming fix the hidden-output-schema entry above lists as pending. The page shows W5a's
+task, LTLf, live RM graph and RM text.
+
+**Evidence.** One run record per run (status, clauses, machine, wall time) and a slim call log per run (timing,
+tokens, errors; prompts and schema dropped) for four rounds: before and after, at `max` (27 and 13 runs) and at
+`high` (46 and 46); the W5a run logs; `round-table.out`. Limits: one run per case and level except W5a at `max`;
+the after round at `max` covers 9 of the 27 cases; wrong counts are scored against the cards on main `78c666c`,
+which changed after the before round. The failed W5a run logs five timed-out calls; the hidden-output-schema entry
+counts six.
+
+**Files.** `index.html` (built from `data.json`; open it from disk), `graphs/` (W5a's machine as live HTML, SVG and
+RM text), `tools/` (`round_table.py` with its scorer `arm_stats.py`, `chain_score.py`, `cases.py`, `loopcrit.py`,
+and `slim_calls.py`), `evidence/` (`before-max/`, `after-max/`, `before-high/`, `after-high/`,
+`round-table.out`, and `cards/`, the local cards the scorer reads). Full call logs with prompts stay in the plan
+folder.
+
+**Rerun** (no model call, in `RM_RL_env`): `env -C docs/paper/opencode-streaming/tools CC_ROOT=$PWD
+PYTHONPATH=$PWD/app python -W ignore round_table.py before-max=../evidence/before-max ...`; the page's last section
+has the full command and the graph.
+
+**Code.** Commit `c5219a2`, merged as `f2c3a49`: `OpenCodeEngine._stream_completion` and `_joined_completion` in
+`app/src/engines/provider_engines.py`, `httpx2==2.12.0` in `requirements.txt`, tests in `tests/test_engines.py`
+and `tests/test_pipeline_orchestration.py`.
+
+### Soft-break quality: how often the agent breaks a preference (`soft-break-quality/`), 2026-11-20
+
+**What it shows.** The user's question: "it solves the task, but how well? Is it really following the human
+preferences?" Pass or fail stays goal plus hard rules. The judge used to count a broken soft rule once per episode,
+however often it broke. It now also counts each separate break (a new one starts at the first later step whose
+labels change) and the share of episodes with one. Recomputed from saved test traces, without retraining: on
+cx-goal-one-rule, ARM-FM breaks "try not to drop the key" about 221 times per episode where the old count said
+0.79, while FARM and no-RM break it 0 times; every arm is judged 0 there, so 0 breaks is not care by itself. 26 of
+27 FARM experiments on the two BlockedUnlockPickup cards show 0 breaks (the other, the ablation without the
+soft-break charge, 0.97). On the zombie garden (lanes-rules) the new count puts warm-started runs at 10.25 and
+plain PPO at 16.66, which the old count ranked the other way (1.36 and 1.14). On the forcing suite FARM shows
+1.05 against 10.58 for no-RM, but FARM breaks the hard rule in every episode and ends near step 80; that bundle
+predates `deff802`, carries the old end charge, and is generated again at the freeze. The page also says what one
+break means for each template and shows six machines with task, LTLf, live RM graph and RM text.
+
+**Evidence.** `soft-quality.jsonl`, one row per experiment for 59 experiments (card, task, worktree, arm, episodes,
+judged success, stored and recomputed counts): the recomputed old count matches the stored one in all 59. The
+ARM-FM key-drop series of one seed; two live re-judge tables (`aggregate-suite` with the new code on finished seed-1
+runs, no training) with their suite files. Limits: the live tables are one seed; the agent traces the recompute
+reads stay in the worktrees (about 100 files per seed).
+
+**Files.** `index.html` (built from `data.json`; open it from disk), `graphs/` (six machines as live HTML, SVG and
+RM text; two copied from git-ignored worktree folders), `check/` (`recompute_soft.py`, `label_runs.py`,
+`judge_diff.py`), `evidence/` (`soft-quality.jsonl`, `arm-fm-key-lost.out`, `live/results-ta1/`,
+`live/results-forcing/`, `ta1-cx-goal-one-rule.yaml`, `forcing-lanes-rules.yaml`).
+
+**Rerun** (no model call, no training, from the repository root in `RM_RL_env`): `PYTHONPATH=app python
+docs/paper/soft-break-quality/check/recompute_soft.py OUT.jsonl <worktrees folder>` rebuilds the table from the
+runs' `agent-traces/`; the page's last section has the key-drop series, the judge diff and the graphs.
+
+**Code.** Commit `865b623`, merged as `78c666c`: `_break_count` and the `soft_break_count` and `any_soft_break`
+fields in `app/src/benchmark/declare_judge.py`, their means in `app/scripts/test_rl.py`, the two table columns in
+`app/scripts/aggregate_suite.py`, tests in `tests/test_declare_judge.py`. Record:
+`docs/decisions/benchmark/thesis-benchmark.md`, entry of 2026-11-20.
+
+### Pay order: "started" now means closer to the goal (`pay-order-started/`), 2026-11-20
+
+**What it shows.** Before training, `check-pay-order` checks that a machine pays finished > started > not
+started > soft break > hard break. It called every middle state started, so a state that only remembers a ringing
+siren, and owes more than the start, paid 0 like doing nothing, and the check flagged 41 correct clause sets. A state now
+counts as started only when it owes fewer propositions to a final state than the start does (the shortest path
+that avoids rejecting states). Chain sweep: 106 of 130 card answers and 91 of 108 stored sets passed before, all
+after. Card sweep: 106 to 130 of 130. Promise sweep: 125 of 130 both times. No other verdict changed. The real
+flags stay: the fear-ceiling door edge, the lanes soft-break stream (one hard break costs -1, a stream of soft
+breaks -47.5) and 5 soft cards with the promise cost on. Pipeline side, not model side. The page shows the owed
+count per state of four machines (door before box, never both, cx-siren, key-door-box chain), each with task,
+LTLf, live RM graph and RM text; three of the tasks are illustrative wording and say so.
+
+**Evidence.** The three sweeps before and after (238, 130 and 130 rows; the chain and card sweeps as slim copies
+without per-step traces); the owed counts of the four examples; the check run on the bundles behind the two kept
+flags. Limits: the card sweep's trace bank is not copied, and the chain sweep reads the stored bundles from the
+main checkout.
+
+**Files.** `index.html` (built from `data.json`; open it from disk), `graphs/` (four machines as live HTML, SVG and
+RM text), `check/` (`chain_sweep.py`, `card_sweep.py`, `promise_sweep.py`, `compare.py`, `owed_examples.py`,
+`slim_sweep.py`), `evidence/` (`before/`, `after/`, `owed-examples.out`, `kept-flags.out`).
+
+**Rerun** (no model call, from the repository root in `RM_RL_env`): `PYTHONPATH=app python -W ignore
+docs/paper/pay-order-started/check/owed_examples.py` prints the examples and writes `graphs/*.rm`; `compare.py
+BEFORE.jsonl AFTER.jsonl` lists every change; the page's last section has the three sweeps and the one-bundle
+check (`check-pay-order --step-limit 300`).
+
+**Code.** Commit `865b623`, merged as `78c666c`: `_owed` and the started test in `app/src/arm_fm/pay_order.py`,
+`fewest_true` in `app/src/compiler/reward_machine.py`. Records: `docs/decisions/arm-fm/rm-execution.md` and
+`docs/COMPILER_REWARD_DESIGN.md`, entries of 2026-11-20.
+
+### Until prompt fix: "until" stays an order (`until-prompt-fix/`), 2026-11-20
+
+**What it shows.** At reasoning `max` the production pair (generator `deepseek-v4.1-flash`, critic `glm-5.3-flash`)
+read "do not drop the key while the door is closed until the door has been opened once" as `Absence(key_lost)`, a
+ban for the whole episode, instead of `Precedence(door_open, key_lost)`: 6 of 6 runs on G6 and W5b, each accepted
+by the critic. The prompt's example of a ban the event already holds ("an event described as 'lost before `a`
+happened'") matched the `key_lost` description on the environment pages ("no longer carrying it before opening the
+door") almost word for word, and the critic quoted the rule back. Rewording two existing passages fixed it, with
+no new rule: only a "while ... still shut" condition folds into `Absence`, "until `a`" is always `Precedence(a, b)`,
+and steps listed after a leading "then" keep their order (W5a had dropped it). Before and after: G6 0 of 3 to 4 of
+4, W5b 0 of 3 to 4 of 4, W5a 2 of 3 to 4 of 4; 5 random passing cases 15 of 15; the full 46-case rerun 46 of 46,
+against 44 of 46 for main's last full run at `max`. G2 ("Open the door and pick up the box in the other room.")
+stays unordered. Prompt side, not pipeline side. The practice cited is Anthropic's prompting guide on examples
+("Use examples effectively", and "Be vigilant with examples & details" in its Claude 4 version). The page shows
+G6, W5b, W5a and G2 with task, LTLf, live RM graph and RM text, before and after.
+
+**Evidence.** One run record (task, clauses, critic trail, machine, wall) and one slim call log (prompts and schema
+dropped) per run for six rounds: before (9 runs), the two fix rounds (6 and 3), the regression rerun (3 failing
+and 15 passing) and the full rerun (46); `round-table.out`; the prompt diff. 164 model calls in all, no
+usage-limit error. Limits: main's full run is the older loop-2 sweep (before the shape fix and streaming), not a
+same-prompt control; the targeted before round is. After the fix the critic accepted every first answer, so the
+critic never judged a wrong set under the new wording. The `fix-until/` runs had the "until" edit only.
+
+**Files.** `index.html` (built from `data.json`; open it from disk), `graphs/` (eight machines as live HTML, SVG and
+RM text), `tools/` (`round_table.py`, `run_table.py`, the scorer `arm_stats.py`, `chain_score.py`, `cases.py`,
+`loopcrit.py` as in `opencode-streaming/tools/`, and `slim_calls.py`), `evidence/` (952 KB: `runs/before-max/`,
+`fix-until/`, `fix-then/`, `regression-fail/`, `regression-pass/`, `full-after/`, `round-table.out`,
+`prompt-fix.diff`, and `cards/`, the local cards the scorer reads). Main's full run is read from
+`model-comparison/evidence/llm-loop2/runs/f-max/A/`. Full call logs with prompts and the tools that call the
+models stay in the plan folder.
+
+**Rerun** (no model call, in `RM_RL_env`): `env -C docs/paper/until-prompt-fix/tools CC_ROOT=$PWD
+PYTHONPATH=$PWD/app python -W ignore round_table.py before-max=../evidence/runs/before-max ...` and `run_table.py
+... --cases G2,G6,W5a,W5b`; the page's last section has the full commands and a graph.
+
+**Code.** Commit `40e6614`, merged as `f778643`: `app/src/prompts/compiler-rm/reward-ltlf-creator.system.md` and
+`app/src/prompts/compiler-rm/declare-templates.md`, which the critic prompt shares.

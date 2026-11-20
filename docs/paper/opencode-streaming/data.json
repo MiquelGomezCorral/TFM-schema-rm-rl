@@ -1,0 +1,291 @@
+{
+ "title": "OpenCode streaming: long answers now arrive",
+ "eyebrow": "pipeline fix · generator and critic through OpenCode · 2026-11-20",
+ "subtitle": "OpenCode never returned a non-streamed reply that took longer than about 300 s. At reasoning max the hardest card needs longer, so its run timed out five calls in a row and ended with no machine. Streamed, the same card gave the same right machine in 5 of 5 runs, and 59 runs had no timeout.",
+ "sections": [
+  {
+   "id": "claim",
+   "title": "What it shows",
+   "blocks": [
+    {
+     "type": "callout",
+     "tone": "info",
+     "title": "In plain words",
+     "text": "The generator (deepseek-v4.1-flash) and the critic (glm-5.3-flash) run through OpenCode. A request waits for the whole answer, and OpenCode drops any answer that is not back within about 300 s. At reasoning max the model thinks for 12 to 36 thousand tokens on the card cx-goal-many-rules (case W5a), which takes longer than that. So each call waited the SDK's full 600 s and failed, five times, until the run hit its one-hour cap with no machine. Streaming asks for the answer in pieces as it is written. The timeout now bounds the silence between two pieces (120 s), not the whole answer, so a long answer arrives. Nothing else changed: same prompts, models and cards."
+    },
+    {
+     "type": "stats",
+     "items": [
+      {
+       "value": "0 of 1 to 5 of 5",
+       "label": "W5a runs at reasoning max that ended with an accepted, right machine",
+       "tone": "ok"
+      },
+      {
+       "value": "5 to 0",
+       "label": "timed-out calls at reasoning max (27 runs before, 13 after)",
+       "tone": "ok"
+      },
+      {
+       "value": "384 s",
+       "label": "longest generator call after the fix; two calls over 300 s succeeded (none could before)",
+       "tone": "ok"
+      },
+      {
+       "value": "0 of 59",
+       "label": "runs with a timeout after the fix (13 at max, 46 at high)",
+       "tone": "ok"
+      }
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**Pipeline side, not model side.** The model's answer was fine once it arrived: all five streamed W5a runs gave the same machine text, and the same file trained to judged success 1.0 in 3 of 3 seeds (300 test episodes) as the chain-regression bundle `many-rules-reworded`.",
+      "**At reasoning high** the fix changes little, as expected: answers there rarely pass 300 s. 44 of 46 right before (one timeout), 43 of 46 after (no timeout). The three wrong after are model mistakes the streaming does not touch: W5a dropped a stated \"then\" once, and G6 and W5b read \"until opened once\" as Absence; the critic missed both.",
+      "**The default moved to max.** With long answers working, the project default became reasoning max later the same day (merge `1d99a94`)."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "rounds",
+   "title": "Rounds before and after",
+   "intro": "`tools/round_table.py` on this entry's run records, scored against the cards on main `78c666c`. Right / wrong: the accepted machine is right or not; no machine: the run ended without one. First right: the first judged candidate was right. Gen over 300 s ok: generator calls longer than 300 s that succeeded. Reasoning max: the largest reasoning-token count of one call.",
+   "blocks": [
+    {
+     "type": "table",
+     "columns": [
+      "round",
+      "runs",
+      "right",
+      "wrong",
+      "no machine",
+      "first right",
+      "calls",
+      "call errors (timeouts)",
+      "gen over 300 s ok",
+      "longest gen call s",
+      "wall s median (total)",
+      "reasoning max gen / critic"
+     ],
+     "rows": [
+      [
+       "before, max",
+       "27",
+       "24",
+       "2",
+       "1",
+       "24/27",
+       "57",
+       "5 (5)",
+       "0",
+       "172",
+       "84 (2460)",
+       "12172 / 4096"
+      ],
+      [
+       "before, max, W5a only",
+       "1",
+       "0",
+       "0",
+       "1",
+       "0/1",
+       "5",
+       "5 (5)",
+       "0",
+       "0",
+       "0 (0)",
+       "0 / 0"
+      ],
+      [
+       "after, max",
+       "13",
+       "13",
+       "0",
+       "0",
+       "13/13",
+       "26",
+       "0 (0)",
+       "2: G12-r1 322 s, W5a-r1 384 s",
+       "384",
+       "179 (3434)",
+       "26682 / 23192"
+      ],
+      [
+       "after, max, W5a only",
+       "5",
+       "5",
+       "0",
+       "0",
+       "5/5",
+       "10",
+       "0 (0)",
+       "1: W5a-r1 384 s",
+       "384",
+       "445 (2120)",
+       "26682 / 23192"
+      ],
+      [
+       "before, high",
+       "46",
+       "44",
+       "2",
+       "0",
+       "44/46",
+       "95",
+       "1 (1)",
+       "0",
+       "96",
+       "35 (2336)",
+       "7714 / 4096"
+      ],
+      [
+       "after, high",
+       "46",
+       "43",
+       "3",
+       "0",
+       "43/46",
+       "94",
+       "0 (0)",
+       "0",
+       "251",
+       "29 (1886)",
+       "17422 / 3648"
+      ]
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**Before** is the hidden-output-schema round of the same day (its shape fix already in, no streaming): 27 runs at max (26 cases plus W5a) and 46 at high. **After** is the streamed rerun: at max, 8 cases plus W5a five times; at high, all 46 cases once.",
+      "**Wrong counts depend on today's cards.** The scorer reads the cards on main, which changed after the before round, so its \"wrong 2\" at max may reflect later card edits rather than the model.",
+      "**The failed W5a run shows 0 s and 0 tokens** because no call returned: the five calls are logged only with their error."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "w5a",
+   "title": "The card that timed out: W5a, cx-goal-many-rules",
+   "intro": "Task: *Move the ball away from the door before you take the key. Try not to drop the key while the door is still closed. Whenever you are holding the key, try to have the door open at that moment or open it afterwards. Then open the door with the key and pick up the box in the other room.* (complex suite, MiniGrid-BlockedUnlockPickup-v0).",
+   "blocks": [
+    {
+     "type": "table",
+     "columns": [
+      "run",
+      "status",
+      "calls",
+      "wall s",
+      "machine"
+     ],
+     "rows": [
+      [
+       "before r1",
+       "failed: timeout 3600s, no clauses",
+       "5 generator calls, 600.1 to 600.2 s each, all \"APITimeoutError: Request timed out.\"",
+       "3600 (cap)",
+       "none"
+      ],
+      [
+       "after r1",
+       "accepted",
+       "2 (generator 384 s, critic)",
+       "510.1",
+       "7 states, final u5, rejecting u1"
+      ],
+      [
+       "after r2",
+       "accepted",
+       "2",
+       "445.3",
+       "same text"
+      ],
+      [
+       "after r3",
+       "accepted",
+       "2",
+       "334.9",
+       "same text"
+      ],
+      [
+       "after r4",
+       "accepted",
+       "2",
+       "451.1",
+       "same text (clauses in another order)"
+      ],
+      [
+       "after r5",
+       "accepted",
+       "2",
+       "378.6",
+       "same text"
+      ]
+     ]
+    },
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/cx-goal-many-rules-w5a.html",
+       "height": 520,
+       "alt": "Reward Machine cx-goal-many-rules-w5a: 7 states",
+       "caption": "**`cx-goal-many-rules-w5a`** · BlockedUnlockPickup · 7 states, 70 transitions · final u5, rejecting u1\nTask: *Move the ball away from the door before you take the key. Try not to drop the key while the door is still closed. Whenever you are holding the key, try to have the door open at that moment or open it afterwards. Then open the door with the key and pick up the box in the other room.* After streaming: 5 of 5 runs at reasoning max gave this machine in 335 to 510 s. Before: no machine (5 calls of 600 s, each 'Request timed out').",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Run record `evidence/after-max/W5a-r1.json` (field `machine`), deepseek-v4.1-flash generator and glm-5.3-flash critic at reasoning max, after the streaming fix. Runs r1 to r5 produced this same machine text; their clause sets are the card's expect set. The same text is the chain-regression bundle `many-rules-reworded`, judged 1.0 over 3 seeds x 100 episodes.",
+        "code": "# Task (NL)\nMove the ball away from the door before you take the key. Try not to drop the key while the door is still closed. Whenever you are holding the key, try to have the door open at that moment or open it afterwards. Then open the door with the key and pick up the box in the other room.\n\n# Clauses and LTLf (the clauses of run W5a-r1 at reasoning max (r2 to r5: the same set))\nhard Precedence(blocker_moved, has_door_key): (((~has_door_key)Ublocker_moved)|(G(~has_door_key)))\nsoft Absence(key_lost): (~(Fkey_lost))\nsoft Response(has_door_key, door_open): (G(has_door_key->(Fdoor_open)))\nhard Precedence(has_door_key, door_open): (((~door_open)Uhas_door_key)|(G(~door_open)))\nhard Precedence(door_open, target_picked_up): (((~target_picked_up)Udoor_open)|(G(~target_picked_up)))\nhard Existence(target_picked_up): (Ftarget_picked_up)\n\n# RM text (graphs/cx-goal-many-rules-w5a.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6\nINITIAL_STATE: u0\nFINAL_STATES: u5\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up) -> u0\n(u0, !blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up) -> u1\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up) -> u1\n(u0, !blocker_moved&door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up) -> u1\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&door_open&has_door_key&key_lost&!target_picked_up) -> u1\n(u0, !blocker_moved&door_open&has_door_key&key_lost&target_picked_up) -> u1\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&!target_picked_up) -> u2\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u0, blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up) -> u2\n(u0, blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up) -> u3\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up) -> u1\n(u0, blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up) -> u3\n(u0, blocker_moved&!door_open&has_door_key&key_lost&target_picked_up) -> u1\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up) -> u1\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u0, blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up) -> u1\n(u0, blocker_moved&door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u0, blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up) -> u4\n(u0, blocker_moved&door_open&has_door_key&!key_lost&target_picked_up) -> u5\n(u0, blocker_moved&door_open&has_door_key&key_lost&!target_picked_up) -> u4\n(u0, blocker_moved&door_open&has_door_key&key_lost&target_picked_up) -> u5\n(u2, !door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u2, !door_open&!has_door_key&key_lost&!target_picked_up) -> u2\n(u2, !door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u2, !door_open&has_door_key&!key_lost&!target_picked_up) -> u3\n(u2, !door_open&has_door_key&!key_lost&target_picked_up) -> u1\n(u2, !door_open&has_door_key&key_lost&!target_picked_up) -> u3\n(u2, !door_open&has_door_key&key_lost&target_picked_up) -> u1\n(u2, door_open&!has_door_key&!key_lost&!target_picked_up) -> u1\n(u2, door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u2, door_open&!has_door_key&key_lost&!target_picked_up) -> u1\n(u2, door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u2, door_open&has_door_key&!key_lost&!target_picked_up) -> u4\n(u2, door_open&has_door_key&!key_lost&target_picked_up) -> u5\n(u2, door_open&has_door_key&key_lost&!target_picked_up) -> u4\n(u2, door_open&has_door_key&key_lost&target_picked_up) -> u5\n(u3, !door_open&!key_lost&target_picked_up) -> u1\n(u3, !door_open&key_lost&!target_picked_up) -> u3\n(u3, !door_open&key_lost&target_picked_up) -> u1\n(u3, door_open&!key_lost&!target_picked_up) -> u4\n(u3, door_open&!key_lost&target_picked_up) -> u5\n(u3, door_open&key_lost&!target_picked_up) -> u4\n(u3, door_open&key_lost&target_picked_up) -> u5\n(u4, !door_open&!has_door_key&!key_lost&target_picked_up) -> u5\n(u4, !door_open&!has_door_key&key_lost&!target_picked_up) -> u4\n(u4, !door_open&!has_door_key&key_lost&target_picked_up) -> u5\n(u4, !door_open&has_door_key&!key_lost&!target_picked_up) -> u6\n(u4, !door_open&has_door_key&!key_lost&target_picked_up) -> u5\n(u4, !door_open&has_door_key&key_lost&!target_picked_up) -> u6\n(u4, !door_open&has_door_key&key_lost&target_picked_up) -> u5\n(u4, door_open&!key_lost&target_picked_up) -> u5\n(u4, door_open&key_lost&!target_picked_up) -> u4\n(u4, door_open&key_lost&target_picked_up) -> u5\n(u6, !door_open&!key_lost&target_picked_up) -> u5\n(u6, !door_open&key_lost&!target_picked_up) -> u6\n(u6, !door_open&key_lost&target_picked_up) -> u5\n(u6, door_open&!key_lost&!target_picked_up) -> u4\n(u6, door_open&!key_lost&target_picked_up) -> u5\n(u6, door_open&key_lost&!target_picked_up) -> u4\n(u6, door_open&key_lost&target_picked_up) -> u5\nREWARD_FUNCTION:\n(u0, !blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up, u0) -> -1\n(u0, !blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&!has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&has_door_key&key_lost&!target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&!target_picked_up, u2) -> 1\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up, u3) -> 1\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&!door_open&has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up, u1) -> -100.694\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up, u1) -> -100.694\n(u0, blocker_moved&door_open&!has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up, u4) -> 3\n(u0, blocker_moved&door_open&has_door_key&!key_lost&target_picked_up, u5) -> 14\n(u0, blocker_moved&door_open&has_door_key&key_lost&!target_picked_up, u4) -> 2\n(u0, blocker_moved&door_open&has_door_key&key_lost&target_picked_up, u5) -> 13\n(u2, !door_open&!has_door_key&!key_lost&target_picked_up, u1) -> -101.694\n(u2, !door_open&!has_door_key&key_lost&!target_picked_up, u2) -> -1\n(u2, !door_open&!has_door_key&key_lost&target_picked_up, u1) -> -101.694\n(u2, !door_open&has_door_key&!key_lost&target_picked_up, u1) -> -101.694\n(u2, !door_open&has_door_key&key_lost&!target_picked_up, u3) -> -1\n(u2, !door_open&has_door_key&key_lost&target_picked_up, u1) -> -101.694\n(u2, door_open&!has_door_key&!key_lost&!target_picked_up, u1) -> -101.694\n(u2, door_open&!has_door_key&!key_lost&target_picked_up, u1) -> -101.694\n(u2, door_open&!has_door_key&key_lost&!target_picked_up, u1) -> -101.694\n(u2, door_open&!has_door_key&key_lost&target_picked_up, u1) -> -101.694\n(u2, door_open&has_door_key&!key_lost&!target_picked_up, u4) -> 2\n(u2, door_open&has_door_key&!key_lost&target_picked_up, u5) -> 13\n(u2, door_open&has_door_key&key_lost&!target_picked_up, u4) -> 1\n(u2, door_open&has_door_key&key_lost&target_picked_up, u5) -> 12\n(u3, !door_open&!key_lost&target_picked_up, u1) -> -101.694\n(u3, !door_open&key_lost&!target_picked_up, u3) -> -1\n(u3, !door_open&key_lost&target_picked_up, u1) -> -101.694\n(u3, door_open&!key_lost&!target_picked_up, u4) -> 2\n(u3, door_open&!key_lost&target_picked_up, u5) -> 13\n(u3, door_open&key_lost&!target_picked_up, u4) -> 1\n(u3, door_open&key_lost&target_picked_up, u5) -> 12\n(u4, !door_open&!has_door_key&!key_lost&target_picked_up, u5) -> 11\n(u4, !door_open&!has_door_key&key_lost&!target_picked_up, u4) -> -1\n(u4, !door_open&!has_door_key&key_lost&target_picked_up, u5) -> 10\n(u4, !door_open&has_door_key&!key_lost&!target_picked_up, u6) -> -1\n(u4, !door_open&has_door_key&!key_lost&target_picked_up, u5) -> 6\n(u4, !door_open&has_door_key&key_lost&!target_picked_up, u6) -> -2\n(u4, !door_open&has_door_key&key_lost&target_picked_up, u5) -> 5\n(u4, door_open&!key_lost&target_picked_up, u5) -> 11\n(u4, door_open&key_lost&!target_picked_up, u4) -> -1\n(u4, door_open&key_lost&target_picked_up, u5) -> 10\n(u6, !door_open&!key_lost&target_picked_up, u5) -> 7\n(u6, !door_open&key_lost&!target_picked_up, u6) -> -1\n(u6, !door_open&key_lost&target_picked_up, u5) -> 6\n(u6, door_open&!key_lost&!target_picked_up, u4) -> 1\n(u6, door_open&!key_lost&target_picked_up, u5) -> 12\n(u6, door_open&key_lost&target_picked_up, u5) -> 11\n"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "fix",
+   "title": "The change",
+   "intro": "One method in `app/src/engines/provider_engines.py`: every OpenCode completion is streamed, then joined into the reply a non-streamed request returns, so no caller changes. Every OpenCode call goes through it: generator and critic, and also the tagger, labeling generator and reviewer.",
+   "blocks": [
+    {
+     "type": "text",
+     "text": "**OpenCodeEngine._stream_completion (commit c5219a2)**"
+    },
+    {
+     "type": "code",
+     "text": "# Longest silence allowed between two streamed OpenCode chunks, not a limit on the whole reply.\n# Streamed W5a replays at max reasoning (2026-11-20) never went 2 s without a chunk.\nOPENCODE_IDLE_TIMEOUT_SECONDS = 120\n\ndef _stream_completion(self, request):\n    stream = self._client.chat.completions.create(\n        **request,\n        reasoning_effort=self.reasoning,\n        stream=True,\n        stream_options={\"include_usage\": True},\n        timeout=OPENCODE_IDLE_TIMEOUT_SECONDS,\n    )\n    try:\n        return _joined_completion(stream)   # content, refusal and reasoning text joined; last usage wins\n    except httpx2.TimeoutException as error:\n        raise APITimeoutError(request=stream.response.request) from error   # stays retryable\n    except httpx2.TransportError as error:\n        raise APIConnectionError(request=stream.response.request) from error"
+    }
+   ]
+  },
+  {
+   "id": "evidence",
+   "title": "Evidence, rerun and code",
+   "blocks": [
+    {
+     "type": "list",
+     "items": [
+      "**Run records:** `evidence/before-max/` (27), `after-max/` (13), `before-high/` (46), `after-high/` (46): one `<case>-r<k>.json` per run (status, clauses, machine, wall), a slim call log `<case>-r<k>.calls.jsonl` per run (timing, tokens, errors; prompts and schema dropped by `tools/slim_calls.py`), and the W5a run log `W5a-r1.log` in the two max folders.",
+      "**Table:** `evidence/round-table.out`, the output above.",
+      "**Machine:** `graphs/cx-goal-many-rules-w5a.rm` is the `machine` field of `after-max/W5a-r1.json`, drawn as `.svg` and `.html`.",
+      "**Scripts:** `tools/round_table.py` and its scorer `arm_stats.py`, `chain_score.py`, `cases.py`, `loopcrit.py`; the local cards they read are in `evidence/cards/`, the benchmark cards come from the checkout named by `CC_ROOT`.",
+      "**Limits:** one run per case and level except W5a at max; the after round at max covers 9 of the 27 cases."
+     ]
+    },
+    {
+     "type": "text",
+     "text": "**Rerun (no model call; RM_RL_env, from this entry's tools/ folder)**"
+    },
+    {
+     "type": "code",
+     "text": "env -C docs/paper/opencode-streaming/tools CC_ROOT=$PWD PYTHONPATH=$PWD/app python -W ignore round_table.py \\\n    before-max=../evidence/before-max before-max-W5a=../evidence/before-max@W5a \\\n    after-max=../evidence/after-max after-max-W5a=../evidence/after-max@W5a \\\n    before-high=../evidence/before-high after-high=../evidence/after-high\n# graph\npython app/main.py render-rm --rm-file docs/paper/opencode-streaming/graphs/cx-goal-many-rules-w5a.rm \\\n    --svg-dir docs/paper/opencode-streaming/graphs/cx-goal-many-rules-w5a.svg --html"
+    },
+    {
+     "type": "text",
+     "text": "Code: commit `c5219a2` (merge `f2c3a49`): `app/src/engines/provider_engines.py` (`OpenCodeEngine._stream_completion`, `_joined_completion`), `httpx2==2.12.0` in `requirements.txt`, tests in `tests/test_engines.py` and `tests/test_pipeline_orchestration.py`."
+    }
+   ]
+  }
+ ]
+}

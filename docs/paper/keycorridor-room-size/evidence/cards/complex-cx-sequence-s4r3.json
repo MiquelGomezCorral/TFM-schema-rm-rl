@@ -1,0 +1,124 @@
+{
+ "id": "cx-sequence",
+ "env": {
+  "description": "experiments/benchmark/envs/minigrid-key-corridor/environment.md",
+  "family": "minigrid",
+  "gym_id": "MiniGrid-KeyCorridorS4R3-v0",
+  "env_kwargs": {},
+  "layout": "procedural",
+  "layout_seed": 1,
+  "observation": "symbolic"
+ },
+ "task": "Find the key, pick it up, open the locked door, go into the room, and then pick up the ball.",
+ "goal": true,
+ "template": null,
+ "status": "draft",
+ "expect": [
+  [
+   "Precedence",
+   [
+    "key_found",
+    "has_matching_key"
+   ],
+   "hard"
+  ],
+  [
+   "Precedence",
+   [
+    "has_matching_key",
+    "target_door_open"
+   ],
+   "hard"
+  ],
+  [
+   "Precedence",
+   [
+    "target_door_open",
+    "target_room_entered"
+   ],
+   "hard"
+  ],
+  [
+   "Precedence",
+   [
+    "target_room_entered",
+    "target_picked_up"
+   ],
+   "hard"
+  ],
+  [
+   "Existence",
+   [
+    "target_picked_up"
+   ],
+   "hard"
+  ]
+ ],
+ "also_ok": [],
+ "env_reward_matches": true,
+ "train": true,
+ "plans": {
+  "solve": [
+   {
+    "do": "pickup",
+    "obj": "key"
+   },
+   {
+    "do": "toggle",
+    "obj": "door:locked"
+   },
+   {
+    "do": "drop"
+   },
+   {
+    "do": "pickup",
+    "obj": "ball"
+   }
+  ],
+  "wrong": [
+   {
+    "breaks": [
+     4
+    ],
+    "why": "Takes the key and opens the locked door, then waits outside.",
+    "steps": [
+     {
+      "do": "pickup",
+      "obj": "key"
+     },
+     {
+      "do": "toggle",
+      "obj": "door:locked"
+     },
+     {
+      "do": "wait",
+      "n": 1000
+     }
+    ]
+   },
+   {
+    "breaks": [
+     4
+    ],
+    "why": "Takes the key, then waits: the locked door is never opened.",
+    "steps": [
+     {
+      "do": "pickup",
+      "obj": "key"
+     },
+     {
+      "do": "wait",
+      "n": 1000
+     }
+    ]
+   }
+  ]
+ },
+ "event_seeds": [],
+ "paraphrases": [
+  "First find the key and then pick it up. After that, open the locked door, enter the room, and then pick up the ball.",
+  "Locate the key and take it, unlock and open the door, step into the room, and finish by picking up the ball.",
+  "Find the key, take it, open the locked door, walk into the room behind it, and then pick up the ball."
+ ],
+ "notes": "Five ordered steps (long sequence). Every order is forced by the env, so only the last step can fail. Changed in card fix 2: the four orders are optional extras in scoring (`forced`); Existence(target_picked_up) alone is also a correct output. `key_found` now needs a clear view of the key. Order audit 2026-11-20: the list \"..., go into the room, and then pick up the ball\" states all four orders, and a stated order is required even when the level forces it, so `forced` is gone, Existence(target_picked_up) alone is no longer correct, and the answer with one Existence per step (no order) left `also_ok`. p1 (\"First ... Then ...\") and p2 (\"... and finish by picking up the ball\") state the same orders; p3 lists the steps with no order word. Card fixes 2026-11-20: p3 now ends \"..., and then pick up the ball.\", the form of the task, so it states the four orders it is scored for. p1 now reads \"First find the key and then pick it up. After that, open the locked door, enter the room, and then pick up the ball.\": its second sentence was a list with no order word, which states no order among the door, the room and the ball (the reading of base-unlock-pickup). p2 is unchanged: its list ends with \"and finish by\", like the task's \"and then\". Moved from KeyCorridorS6R3 to KeyCorridorS4R3 on 2026-11-20 (with base-key-corridor): no method learned S6R3 in 71 runs, and on S4R3 FARM learned base-key-corridor on 2 of 3 seeds, no-RM on none (train probe). Before the move, `target_room_entered` in the reference labeler and in the generated labelings used S6R3's 6x6 rooms and turned true outside the room in 106 of 300 random S4R3 episodes; the facts page and the reference labeler now read the room size from `env.room_size`. `expect` and the answer lists are unchanged."
+}

@@ -1,0 +1,361 @@
+{
+ "title": "KeyCorridor room size: a pipeline bug, then a level FARM learns",
+ "eyebrow": "pipeline fix · MiniGrid KeyCorridor S4R3 · 2026-11-20",
+ "subtitle": "The facts page and the reference labeler assumed 6x6 rooms. On the 4x4 rooms of S4R3, the old generated labelings put the agent inside the target room before the door opened in 155 of 300 random episodes. After the fix they differ in 0, and FARM learns cx-sequence in 3 of 3 seeds where no-RM learns none.",
+ "sections": [
+  {
+   "id": "claim",
+   "title": "What it shows",
+   "blocks": [
+    {
+     "type": "callout",
+     "tone": "info",
+     "title": "In plain words",
+     "text": "KeyCorridor levels come in room sizes 4, 5 and 6. The page that tells the model what each proposition means said the target room was a 6x6 block, and the reference labeler that checks generated code used the same number. So the model wrote labeling code with 6 built in. On S4R3, where rooms are 4x4, that code said the agent had entered the locked room while it still stood outside, and often crashed. The machine was not wrong: the words it was given were. Both now read the room size from the environment. With the fix, the generated labelings agree with MiniGrid on all three sizes, and the two KeyCorridor cards could move to the smaller S4R3 level, where training finishes in 1.5M steps."
+    },
+    {
+     "type": "stats",
+     "items": [
+      {
+       "value": "155 to 0",
+       "label": "random S4R3 episodes where target_room_entered turned true outside the room before the door opened (of 300)",
+       "tone": "ok"
+      },
+      {
+       "value": "144 to 0",
+       "label": "random S4R3 episodes where the old labeling crashed (AssertionError)",
+       "tone": "ok"
+      },
+      {
+       "value": "3 of 3 vs 0 of 3",
+       "label": "cx-sequence on S4R3: FARM seeds learned (0.91, 0.81, 0.87) vs no-RM",
+       "tone": "ok"
+      },
+      {
+       "value": "2 of 3 vs 0 of 3",
+       "label": "base-key-corridor on S4R3: FARM seeds learned (0.85, 0.82, 0.00) vs no-RM",
+       "tone": "warn"
+      }
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**Pipeline side, not model side.** The labelings followed the facts page exactly; the facts page and the reference labeler were wrong for any room size but 6. Fixed in commit `673566d` (merge `d2d9249`).",
+      "**Learned** means judged success of at least 0.8 over 100 greedy test episodes (test seeds from 2,000,000), judged on the card's clauses. An idle agent scores 0.00 and the card's scripted plan 1.00 on the same seeds.",
+      "**base-key-corridor counts.** Its new machine adds Precedence(key_found, has_matching_key). The commit scored that a mismatch and called the training a probe only; the user ruled later the same day that \"find and acquire the key\" states that order, so the machine is right and its S4R3 training counts. The card that accepts it is in the order-cards change, which is not merged yet: on main the card still lacks that clause.",
+      "**Level guard.** The same commit makes `run-suite` refuse a bundle whose facts page names another level (\"bundle level mismatch\"). It blocks the five ARM-FM KeyCorridor bundles, still built for S6R3 and generated again at the freeze.",
+      "**One failed seed.** base-key-corridor seed 3 never reached the goal (machine return 0.83, every episode cut at 480 steps)."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "bug",
+   "title": "The bug in one line",
+   "intro": "The same proposition written by the model before and after the facts page changed. The old one hardcodes the 6-cell room (width - 6, rows of 5); the new one reads env.room_size.",
+   "blocks": [
+    {
+     "type": "text",
+     "text": "**target_room_entered, old S6R3 bundle (archived) and new bundle**"
+    },
+    {
+     "type": "code",
+     "text": "# before: experiments/benchmark/complex/kc-page-s6r3/farm/cx-sequence/labeling.py\ndef target_room_entered(env):\n    return env.episode_memory[\"previous_valuation\"] and env.episode_memory[\"previous_valuation\"][\"target_room_entered\"] or (env.agent_pos[0] >= env.width - 6 and 0 <= env.agent_pos[1] - 5 * (max([y2 for x2 in range(env.width) for y2 in range(env.height) for c2 in [env.grid.get(x2, y2)] if c2 is not None and c2.type == \"ball\"], default=env.agent_pos[1]) // 5) <= 5)\n\n# after: experiments/benchmark/complex/bundles/farm/cx-sequence/labeling.py\ndef target_room_entered(env):\n    return (env.episode_memory[\"previous_valuation\"] and env.episode_memory[\"previous_valuation\"][\"target_room_entered\"]) or (env.agent_pos[0] >= env.width - env.room_size and 0 <= env.agent_pos[1] - (env.room_size - 1) * (max([yy for xx in range(env.width) for yy in range(env.height) for cc in [env.grid.get(xx, yy)] if cc is not None and cc.type == \"ball\"], default=env.agent_pos[1]) // (env.room_size - 1)) <= env.room_size - 1)"
+    },
+    {
+     "type": "text",
+     "text": "The facts page row for `target_room_entered` said \"the room's 6x6 block, door cell included\"; it now says \"the room's whole square block\", and the layout paragraph gives both sizes (6x6 on S6R3, a 16x16 grid; 4x4 on S4R3, a 10x10 grid). The step limit line now reads 1080 steps on S6R3 and 480 on S4R3."
+    }
+   ]
+  },
+  {
+   "id": "labeling",
+   "title": "Labeling check, before and after",
+   "intro": "`room_size_check.py`: 300 layouts per level (reset seeds 0 to 299), two episodes each. Random: forward-biased random actions with pickup, drop and toggle. Unlock: pick up the key and open the locked door (the card plan's first two steps), then random actions for up to 300 steps. Every step, each labeling runs in the runtime sandbox and is compared with the reference labeler, and `target_room_entered` also with MiniGrid's own room test.",
+   "blocks": [
+    {
+     "type": "table",
+     "columns": [
+      "labeling",
+      "level",
+      "episodes",
+      "propositions that differ (episodes)",
+      "room entered outside, before the door opened",
+      "crashed"
+     ],
+     "rows": [
+      [
+       "old FARM cx-sequence (S6R3 facts)",
+       "S4R3",
+       "random",
+       "has_matching_key 30, target_door_open 2, target_room_entered 155",
+       "155",
+       "144"
+      ],
+      [
+       "old FARM cx-sequence (S6R3 facts)",
+       "S4R3",
+       "unlock",
+       "has_matching_key 156, target_door_open 156, target_room_entered 156",
+       "156",
+       "149"
+      ],
+      [
+       "old cx-sequence paraphrases ~p1 to ~p3",
+       "S4R3",
+       "random / unlock",
+       "same as above",
+       "155 / 156",
+       "144 / 149"
+      ],
+      [
+       "old FARM base-key-corridor; ARM-FM base-key-corridor, cx-sequence and ~p1 to ~p3",
+       "S4R3",
+       "random / unlock",
+       "same as above",
+       "155 / 156",
+       "144 / 149"
+      ],
+      [
+       "new FARM cx-sequence",
+       "S4R3",
+       "random / unlock",
+       "0",
+       "0",
+       "0"
+      ],
+      [
+       "new FARM cx-sequence ~p1, ~p2, ~p3",
+       "S4R3",
+       "random / unlock",
+       "0",
+       "0",
+       "0"
+      ],
+      [
+       "new FARM cx-sequence",
+       "S5R3",
+       "random / unlock",
+       "0",
+       "0",
+       "0"
+      ],
+      [
+       "new FARM cx-sequence",
+       "S6R3",
+       "random / unlock",
+       "0",
+       "0",
+       "0"
+      ],
+      [
+       "reference labeler, fixed",
+       "S4R3, S5R3, S6R3",
+       "random / unlock",
+       "target_room_entered vs MiniGrid's room: 0",
+       "-",
+       "-"
+      ]
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**The reference fires.** On S4R3 random play the reference turns `target_room_entered` true in 2 of 300 episodes; in unlock play in 238 of 300. So a 0 above means agreement on episodes that do enter the room, not silence.",
+      "**The new base-key-corridor labeling** has no `target_room_entered`; its four propositions matched the reference in all 4,929 comparisons each of the bundle gate (`evidence/checks/gate-base-key-corridor.json`).",
+      "**A second count, same bug.** An earlier probe check counted the old reference labeler itself against MiniGrid's room (another action set, no pickup): wrong in 106 of 300 random episodes on room size 4, 74 on size 5, 0 on size 6. The cx-sequence card note cites that 106; the commit cites the 155 above. Both are real, from different checks."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "training",
+   "title": "Training on S4R3",
+   "intro": "MiniGrid-KeyCorridorS4R3-v0, PPO, 1.5M steps, 3 seeds per arm. Judged on 100 greedy test episodes per seed, on the card copy for S4R3 (`evidence/cards/`). Steps to learn: the first evaluation row (every 50k steps) with greedy exit rate of at least 0.8.",
+   "blocks": [
+    {
+     "type": "table",
+     "columns": [
+      "card",
+      "arm",
+      "seed",
+      "judged success",
+      "learned",
+      "steps to learn",
+      "mean length",
+      "wall"
+     ],
+     "rows": [
+      [
+       "cx-sequence",
+       "FARM",
+       "1",
+       "0.91",
+       "yes",
+       "1,253,376",
+       "76",
+       "32 min"
+      ],
+      [
+       "cx-sequence",
+       "FARM",
+       "2",
+       "0.81",
+       "yes",
+       "1,351,680",
+       "124",
+       "33 min"
+      ],
+      [
+       "cx-sequence",
+       "FARM",
+       "3",
+       "0.87",
+       "yes",
+       "1,351,680",
+       "95",
+       "33 min"
+      ],
+      [
+       "cx-sequence",
+       "no-RM",
+       "1-3",
+       "0.00, 0.00, 0.00",
+       "no",
+       "never",
+       "480",
+       "26 min"
+      ],
+      [
+       "base-key-corridor",
+       "FARM",
+       "1",
+       "0.85",
+       "yes",
+       "1,400,832",
+       "106",
+       "25 min"
+      ],
+      [
+       "base-key-corridor",
+       "FARM",
+       "2",
+       "0.82",
+       "yes",
+       "1,454,080",
+       "117",
+       "25 min"
+      ],
+      [
+       "base-key-corridor",
+       "FARM",
+       "3",
+       "0.00",
+       "no",
+       "never",
+       "480",
+       "26 min"
+      ],
+      [
+       "base-key-corridor",
+       "no-RM",
+       "1-3",
+       "0.00, 0.00, 0.00",
+       "no",
+       "never",
+       "480",
+       "21 min"
+      ],
+      [
+       "scripted, both cards",
+       "idle",
+       "-",
+       "0.00",
+       "-",
+       "-",
+       "480",
+       "-"
+      ],
+      [
+       "scripted, both cards",
+       "solve plan",
+       "-",
+       "1.00",
+       "-",
+       "-",
+       "29",
+       "-"
+      ]
+     ]
+    },
+    {
+     "type": "text",
+     "text": "No-RM sees only MiniGrid's own reward, paid on the final pickup; in 1.5M steps it never got there. The FARM machines pay progress along the stated order (pay order from the bundle gate: cx-sequence finished 15 > started 4 > not started 0 > hard break -10; base-key-corridor 14 > 3 > 0 > -10), and five of six FARM seeds learned the whole task."
+    }
+   ]
+  },
+  {
+   "id": "machines",
+   "title": "The two machines that trained",
+   "intro": "Interactive graphs drawn by the repository's generator (`render-rm --html`). Open the fold-out under each graph for the task, the clauses with their LTLf, and the machine text.",
+   "blocks": [
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/cx-sequence-s4r3.html",
+       "height": 520,
+       "alt": "Reward Machine cx-sequence-s4r3: 7 states",
+       "caption": "**`cx-sequence-s4r3`** · KeyCorridorS4R3 · 7 states, 57 transitions · final u6, rejecting u1\nTask: *Find the key, pick it up, open the locked door, go into the room, and then pick up the ball.* Trained on S4R3, 1.5M steps: FARM learned 3 of 3 seeds (0.91, 0.81, 0.87); no-RM 0 of 3.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "FARM bundle `experiments/benchmark/complex/bundles/farm/cx-sequence` (main `78c666c`, generated at reasoning high after the fix; the runs trained this exact file).",
+        "code": "# Task (NL)\nFind the key, pick it up, open the locked door, go into the room, and then pick up the ball.\n\n# Clauses and LTLf (the bundle's clauses (generated))\nhard Existence(target_picked_up): (Ftarget_picked_up)\nhard Precedence(key_found, has_matching_key): (((~has_matching_key)Ukey_found)|(G(~has_matching_key)))\nhard Precedence(has_matching_key, target_door_open): (((~target_door_open)Uhas_matching_key)|(G(~target_door_open)))\nhard Precedence(target_door_open, target_room_entered): (((~target_room_entered)Utarget_door_open)|(G(~target_room_entered)))\nhard Precedence(target_room_entered, target_picked_up): (((~target_picked_up)Utarget_room_entered)|(G(~target_picked_up)))\n\n# RM text (graphs/cx-sequence-s4r3.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6\nINITIAL_STATE: u0\nFINAL_STATES: u6\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !has_matching_key&!key_found&!target_door_open&!target_picked_up&target_room_entered) -> u1\n(u0, !has_matching_key&!key_found&!target_door_open&target_picked_up&!target_room_entered) -> u1\n(u0, !has_matching_key&!key_found&!target_door_open&target_picked_up&target_room_entered) -> u1\n(u0, !has_matching_key&!key_found&target_door_open&!target_picked_up&!target_room_entered) -> u1\n(u0, !has_matching_key&!key_found&target_door_open&!target_picked_up&target_room_entered) -> u1\n(u0, !has_matching_key&!key_found&target_door_open&target_picked_up&!target_room_entered) -> u1\n(u0, !has_matching_key&!key_found&target_door_open&target_picked_up&target_room_entered) -> u1\n(u0, !has_matching_key&key_found&!target_door_open&!target_picked_up&!target_room_entered) -> u2\n(u0, !has_matching_key&key_found&!target_door_open&!target_picked_up&target_room_entered) -> u1\n(u0, !has_matching_key&key_found&!target_door_open&target_picked_up&!target_room_entered) -> u1\n(u0, !has_matching_key&key_found&!target_door_open&target_picked_up&target_room_entered) -> u1\n(u0, !has_matching_key&key_found&target_door_open&!target_picked_up&!target_room_entered) -> u1\n(u0, !has_matching_key&key_found&target_door_open&!target_picked_up&target_room_entered) -> u1\n(u0, !has_matching_key&key_found&target_door_open&target_picked_up&!target_room_entered) -> u1\n(u0, !has_matching_key&key_found&target_door_open&target_picked_up&target_room_entered) -> u1\n(u0, has_matching_key&!key_found&!target_door_open&!target_picked_up&!target_room_entered) -> u1\n(u0, has_matching_key&!key_found&!target_door_open&!target_picked_up&target_room_entered) -> u1\n(u0, has_matching_key&!key_found&!target_door_open&target_picked_up&!target_room_entered) -> u1\n(u0, has_matching_key&!key_found&!target_door_open&target_picked_up&target_room_entered) -> u1\n(u0, has_matching_key&!key_found&target_door_open&!target_picked_up&!target_room_entered) -> u1\n(u0, has_matching_key&!key_found&target_door_open&!target_picked_up&target_room_entered) -> u1\n(u0, has_matching_key&!key_found&target_door_open&target_picked_up&!target_room_entered) -> u1\n(u0, has_matching_key&!key_found&target_door_open&target_picked_up&target_room_entered) -> u1\n(u0, has_matching_key&key_found&!target_door_open&!target_picked_up&!target_room_entered) -> u3\n(u0, has_matching_key&key_found&!target_door_open&!target_picked_up&target_room_entered) -> u1\n(u0, has_matching_key&key_found&!target_door_open&target_picked_up&!target_room_entered) -> u1\n(u0, has_matching_key&key_found&!target_door_open&target_picked_up&target_room_entered) -> u1\n(u0, has_matching_key&key_found&target_door_open&!target_picked_up&!target_room_entered) -> u4\n(u0, has_matching_key&key_found&target_door_open&!target_picked_up&target_room_entered) -> u5\n(u0, has_matching_key&key_found&target_door_open&target_picked_up&!target_room_entered) -> u1\n(u0, has_matching_key&key_found&target_door_open&target_picked_up&target_room_entered) -> u6\n(u2, !has_matching_key&!target_door_open&!target_picked_up&target_room_entered) -> u1\n(u2, !has_matching_key&!target_door_open&target_picked_up&!target_room_entered) -> u1\n(u2, !has_matching_key&!target_door_open&target_picked_up&target_room_entered) -> u1\n(u2, !has_matching_key&target_door_open&!target_picked_up&!target_room_entered) -> u1\n(u2, !has_matching_key&target_door_open&!target_picked_up&target_room_entered) -> u1\n(u2, !has_matching_key&target_door_open&target_picked_up&!target_room_entered) -> u1\n(u2, !has_matching_key&target_door_open&target_picked_up&target_room_entered) -> u1\n(u2, has_matching_key&!target_door_open&!target_picked_up&!target_room_entered) -> u3\n(u2, has_matching_key&!target_door_open&!target_picked_up&target_room_entered) -> u1\n(u2, has_matching_key&!target_door_open&target_picked_up&!target_room_entered) -> u1\n(u2, has_matching_key&!target_door_open&target_picked_up&target_room_entered) -> u1\n(u2, has_matching_key&target_door_open&!target_picked_up&!target_room_entered) -> u4\n(u2, has_matching_key&target_door_open&!target_picked_up&target_room_entered) -> u5\n(u2, has_matching_key&target_door_open&target_picked_up&!target_room_entered) -> u1\n(u2, has_matching_key&target_door_open&target_picked_up&target_room_entered) -> u6\n(u3, !target_door_open&!target_picked_up&target_room_entered) -> u1\n(u3, !target_door_open&target_picked_up&!target_room_entered) -> u1\n(u3, !target_door_open&target_picked_up&target_room_entered) -> u1\n(u3, target_door_open&!target_picked_up&!target_room_entered) -> u4\n(u3, target_door_open&!target_picked_up&target_room_entered) -> u5\n(u3, target_door_open&target_picked_up&!target_room_entered) -> u1\n(u3, target_door_open&target_picked_up&target_room_entered) -> u6\n(u4, !target_picked_up&target_room_entered) -> u5\n(u4, target_picked_up&!target_room_entered) -> u1\n(u4, target_picked_up&target_room_entered) -> u6\n(u5, target_picked_up) -> u6\nREWARD_FUNCTION:\n(u0, !has_matching_key&!key_found&!target_door_open&!target_picked_up&target_room_entered, u1) -> -10\n(u0, !has_matching_key&!key_found&!target_door_open&target_picked_up&!target_room_entered, u1) -> -10\n(u0, !has_matching_key&!key_found&!target_door_open&target_picked_up&target_room_entered, u1) -> -10\n(u0, !has_matching_key&!key_found&target_door_open&!target_picked_up&!target_room_entered, u1) -> -10\n(u0, !has_matching_key&!key_found&target_door_open&!target_picked_up&target_room_entered, u1) -> -10\n(u0, !has_matching_key&!key_found&target_door_open&target_picked_up&!target_room_entered, u1) -> -10\n(u0, !has_matching_key&!key_found&target_door_open&target_picked_up&target_room_entered, u1) -> -10\n(u0, !has_matching_key&key_found&!target_door_open&!target_picked_up&!target_room_entered, u2) -> 1\n(u0, !has_matching_key&key_found&!target_door_open&!target_picked_up&target_room_entered, u1) -> -10\n(u0, !has_matching_key&key_found&!target_door_open&target_picked_up&!target_room_entered, u1) -> -10\n(u0, !has_matching_key&key_found&!target_door_open&target_picked_up&target_room_entered, u1) -> -10\n(u0, !has_matching_key&key_found&target_door_open&!target_picked_up&!target_room_entered, u1) -> -10\n(u0, !has_matching_key&key_found&target_door_open&!target_picked_up&target_room_entered, u1) -> -10\n(u0, !has_matching_key&key_found&target_door_open&target_picked_up&!target_room_entered, u1) -> -10\n(u0, !has_matching_key&key_found&target_door_open&target_picked_up&target_room_entered, u1) -> -10\n(u0, has_matching_key&!key_found&!target_door_open&!target_picked_up&!target_room_entered, u1) -> -10\n(u0, has_matching_key&!key_found&!target_door_open&!target_picked_up&target_room_entered, u1) -> -10\n(u0, has_matching_key&!key_found&!target_door_open&target_picked_up&!target_room_entered, u1) -> -10\n(u0, has_matching_key&!key_found&!target_door_open&target_picked_up&target_room_entered, u1) -> -10\n(u0, has_matching_key&!key_found&target_door_open&!target_picked_up&!target_room_entered, u1) -> -10\n(u0, has_matching_key&!key_found&target_door_open&!target_picked_up&target_room_entered, u1) -> -10\n(u0, has_matching_key&!key_found&target_door_open&target_picked_up&!target_room_entered, u1) -> -10\n(u0, has_matching_key&!key_found&target_door_open&target_picked_up&target_room_entered, u1) -> -10\n(u0, has_matching_key&key_found&!target_door_open&!target_picked_up&!target_room_entered, u3) -> 2\n(u0, has_matching_key&key_found&!target_door_open&!target_picked_up&target_room_entered, u1) -> -10\n(u0, has_matching_key&key_found&!target_door_open&target_picked_up&!target_room_entered, u1) -> -10\n(u0, has_matching_key&key_found&!target_door_open&target_picked_up&target_room_entered, u1) -> -10\n(u0, has_matching_key&key_found&target_door_open&!target_picked_up&!target_room_entered, u4) -> 3\n(u0, has_matching_key&key_found&target_door_open&!target_picked_up&target_room_entered, u5) -> 4\n(u0, has_matching_key&key_found&target_door_open&target_picked_up&!target_room_entered, u1) -> -10\n(u0, has_matching_key&key_found&target_door_open&target_picked_up&target_room_entered, u6) -> 15\n(u2, !has_matching_key&!target_door_open&!target_picked_up&target_room_entered, u1) -> -11\n(u2, !has_matching_key&!target_door_open&target_picked_up&!target_room_entered, u1) -> -11\n(u2, !has_matching_key&!target_door_open&target_picked_up&target_room_entered, u1) -> -11\n(u2, !has_matching_key&target_door_open&!target_picked_up&!target_room_entered, u1) -> -11\n(u2, !has_matching_key&target_door_open&!target_picked_up&target_room_entered, u1) -> -11\n(u2, !has_matching_key&target_door_open&target_picked_up&!target_room_entered, u1) -> -11\n(u2, !has_matching_key&target_door_open&target_picked_up&target_room_entered, u1) -> -11\n(u2, has_matching_key&!target_door_open&!target_picked_up&!target_room_entered, u3) -> 1\n(u2, has_matching_key&!target_door_open&!target_picked_up&target_room_entered, u1) -> -11\n(u2, has_matching_key&!target_door_open&target_picked_up&!target_room_entered, u1) -> -11\n(u2, has_matching_key&!target_door_open&target_picked_up&target_room_entered, u1) -> -11\n(u2, has_matching_key&target_door_open&!target_picked_up&!target_room_entered, u4) -> 2\n(u2, has_matching_key&target_door_open&!target_picked_up&target_room_entered, u5) -> 3\n(u2, has_matching_key&target_door_open&target_picked_up&!target_room_entered, u1) -> -11\n(u2, has_matching_key&target_door_open&target_picked_up&target_room_entered, u6) -> 14\n(u3, !target_door_open&!target_picked_up&target_room_entered, u1) -> -12\n(u3, !target_door_open&target_picked_up&!target_room_entered, u1) -> -12\n(u3, !target_door_open&target_picked_up&target_room_entered, u1) -> -12\n(u3, target_door_open&!target_picked_up&!target_room_entered, u4) -> 1\n(u3, target_door_open&!target_picked_up&target_room_entered, u5) -> 2\n(u3, target_door_open&target_picked_up&!target_room_entered, u1) -> -12\n(u3, target_door_open&target_picked_up&target_room_entered, u6) -> 13\n(u4, !target_picked_up&target_room_entered, u5) -> 1\n(u4, target_picked_up&!target_room_entered, u1) -> -13\n(u4, target_picked_up&target_room_entered, u6) -> 12\n(u5, target_picked_up, u6) -> 11\n"
+       }
+      },
+      {
+       "src": "graphs/base-key-corridor-s4r3.html",
+       "height": 520,
+       "alt": "Reward Machine base-key-corridor-s4r3: 6 states",
+       "caption": "**`base-key-corridor-s4r3`** · KeyCorridorS4R3 · 6 states, 26 transitions · final u5, rejecting u1\nTask: *Explore the side rooms, find and acquire the key matching the locked target room, return to the corridor, open the target door, and pick up the designated object.* Trained on S4R3, 1.5M steps: FARM learned 2 of 3 seeds (0.85, 0.82, 0.00); no-RM 0 of 3.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "FARM bundle `experiments/benchmark/base/bundles/farm/base-key-corridor` (main `78c666c`, generated at reasoning max after the fix; the runs trained this exact file). The card on main still expects Precedence(has_matching_key, target_door_open), Precedence(target_door_open, target_picked_up) and Existence(target_picked_up) only; the order-cards change that accepts Precedence(key_found, has_matching_key) is not merged yet.",
+        "code": "# Task (NL)\nExplore the side rooms, find and acquire the key matching the locked target room, return to the corridor, open the target door, and pick up the designated object.\n\n# Clauses and LTLf (the bundle's clauses (generated))\nhard Precedence(key_found, has_matching_key): (((~has_matching_key)Ukey_found)|(G(~has_matching_key)))\nhard Precedence(has_matching_key, target_door_open): (((~target_door_open)Uhas_matching_key)|(G(~target_door_open)))\nhard Precedence(target_door_open, target_picked_up): (((~target_picked_up)Utarget_door_open)|(G(~target_picked_up)))\nhard Existence(target_picked_up): (Ftarget_picked_up)\n\n# RM text (graphs/base-key-corridor-s4r3.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5\nINITIAL_STATE: u0\nFINAL_STATES: u5\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !has_matching_key&!key_found&!target_door_open&target_picked_up) -> u1\n(u0, !has_matching_key&!key_found&target_door_open&!target_picked_up) -> u1\n(u0, !has_matching_key&!key_found&target_door_open&target_picked_up) -> u1\n(u0, !has_matching_key&key_found&!target_door_open&!target_picked_up) -> u2\n(u0, !has_matching_key&key_found&!target_door_open&target_picked_up) -> u1\n(u0, !has_matching_key&key_found&target_door_open&!target_picked_up) -> u1\n(u0, !has_matching_key&key_found&target_door_open&target_picked_up) -> u1\n(u0, has_matching_key&!key_found&!target_door_open&!target_picked_up) -> u1\n(u0, has_matching_key&!key_found&!target_door_open&target_picked_up) -> u1\n(u0, has_matching_key&!key_found&target_door_open&!target_picked_up) -> u1\n(u0, has_matching_key&!key_found&target_door_open&target_picked_up) -> u1\n(u0, has_matching_key&key_found&!target_door_open&!target_picked_up) -> u3\n(u0, has_matching_key&key_found&!target_door_open&target_picked_up) -> u1\n(u0, has_matching_key&key_found&target_door_open&!target_picked_up) -> u4\n(u0, has_matching_key&key_found&target_door_open&target_picked_up) -> u5\n(u2, !has_matching_key&!target_door_open&target_picked_up) -> u1\n(u2, !has_matching_key&target_door_open&!target_picked_up) -> u1\n(u2, !has_matching_key&target_door_open&target_picked_up) -> u1\n(u2, has_matching_key&!target_door_open&!target_picked_up) -> u3\n(u2, has_matching_key&!target_door_open&target_picked_up) -> u1\n(u2, has_matching_key&target_door_open&!target_picked_up) -> u4\n(u2, has_matching_key&target_door_open&target_picked_up) -> u5\n(u3, !target_door_open&target_picked_up) -> u1\n(u3, target_door_open&!target_picked_up) -> u4\n(u3, target_door_open&target_picked_up) -> u5\n(u4, target_picked_up) -> u5\nREWARD_FUNCTION:\n(u0, !has_matching_key&!key_found&!target_door_open&target_picked_up, u1) -> -10\n(u0, !has_matching_key&!key_found&target_door_open&!target_picked_up, u1) -> -10\n(u0, !has_matching_key&!key_found&target_door_open&target_picked_up, u1) -> -10\n(u0, !has_matching_key&key_found&!target_door_open&!target_picked_up, u2) -> 1\n(u0, !has_matching_key&key_found&!target_door_open&target_picked_up, u1) -> -10\n(u0, !has_matching_key&key_found&target_door_open&!target_picked_up, u1) -> -10\n(u0, !has_matching_key&key_found&target_door_open&target_picked_up, u1) -> -10\n(u0, has_matching_key&!key_found&!target_door_open&!target_picked_up, u1) -> -10\n(u0, has_matching_key&!key_found&!target_door_open&target_picked_up, u1) -> -10\n(u0, has_matching_key&!key_found&target_door_open&!target_picked_up, u1) -> -10\n(u0, has_matching_key&!key_found&target_door_open&target_picked_up, u1) -> -10\n(u0, has_matching_key&key_found&!target_door_open&!target_picked_up, u3) -> 2\n(u0, has_matching_key&key_found&!target_door_open&target_picked_up, u1) -> -10\n(u0, has_matching_key&key_found&target_door_open&!target_picked_up, u4) -> 3\n(u0, has_matching_key&key_found&target_door_open&target_picked_up, u5) -> 14\n(u2, !has_matching_key&!target_door_open&target_picked_up, u1) -> -11\n(u2, !has_matching_key&target_door_open&!target_picked_up, u1) -> -11\n(u2, !has_matching_key&target_door_open&target_picked_up, u1) -> -11\n(u2, has_matching_key&!target_door_open&!target_picked_up, u3) -> 1\n(u2, has_matching_key&!target_door_open&target_picked_up, u1) -> -11\n(u2, has_matching_key&target_door_open&!target_picked_up, u4) -> 2\n(u2, has_matching_key&target_door_open&target_picked_up, u5) -> 13\n(u3, !target_door_open&target_picked_up, u1) -> -12\n(u3, target_door_open&!target_picked_up, u4) -> 1\n(u3, target_door_open&target_picked_up, u5) -> 12\n(u4, target_picked_up, u5) -> 11\n"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "evidence",
+   "title": "Evidence, rerun and code",
+   "blocks": [
+    {
+     "type": "list",
+     "items": [
+      "**Labeling checks:** `evidence/checks/check-before-s4.out` (old bundles on S4R3), `check-other-s4.out` (old base-key-corridor and ARM-FM bundles), `check-new-base.out` (new cx-sequence on S4R3, S5R3, S6R3), `check-new-p12.out` and `check-new-p3.out` (new paraphrase bundles), `check-reference.out` (fixed reference labeler), `gate-*.json` (bundle gates).",
+      "**Training:** `evidence/judge/judge-seq.out` and `judge-bkc.out` (tables above), their `.json`, the queues and `run-seq.out`; per seed `evidence/runs/<run>/<seed>/` holds `judge.json`, `summary.json`, `eval.csv`, `config.yaml`, `test.json` and `judge.log` (no weights, no traces); `evidence/configs/` the 12 run configs; `evidence/cards/` the two S4R3 card copies.",
+      "**Machines:** `graphs/*.rm`, copies of the two bundles' `reward_machine.txt` on main `78c666c` (the same files the runs trained), with their `.svg` and `.html` graphs.",
+      "**Scripts:** `check/probe_run.py` and `check/probe_judge.py` (the training queue and the judge tables, copied from worktree tp-kc-room); the labeling check is tracked at `experiments/benchmark/envs/minigrid-key-corridor/check/room_size_check.py`."
+     ]
+    },
+    {
+     "type": "text",
+     "text": "**Rerun (repository root, RM_RL_env)**"
+    },
+    {
+     "type": "code",
+     "text": "# labeling check, new bundles (about 2.5 min per bundle)\nPYTHONPATH=app python experiments/benchmark/envs/minigrid-key-corridor/check/room_size_check.py \\\n    experiments/benchmark/complex/bundles/farm/cx-sequence --sizes 4 5 6\n# the before row: an old S6R3 bundle on S4R3\nPYTHONPATH=app python experiments/benchmark/envs/minigrid-key-corridor/check/room_size_check.py \\\n    experiments/benchmark/complex/kc-page-s6r3/farm/cx-sequence --sizes 4\n# graphs\npython app/main.py render-rm --rm-file docs/paper/keycorridor-room-size/graphs/cx-sequence-s4r3.rm \\\n    --svg-dir docs/paper/keycorridor-room-size/graphs/cx-sequence-s4r3.svg --html\n# training (about 30 min per seed, 6 runs per card): the configs in evidence/configs/,\n# queued and judged by check/probe_run.py and check/probe_judge.py (see their headers)"
+    },
+    {
+     "type": "text",
+     "text": "Code: commit `673566d` (merge `d2d9249`): `app/src/benchmark/reference_labels.py` and the facts pages `experiments/benchmark/envs/minigrid-key-corridor/environment.md` and `environment-code.md` read the room size; `run-suite` refuses a bundle made for another level (\"bundle level mismatch\"). Old S6R3 bundles are archived under `experiments/benchmark/{complex,base}/kc-page-s6r3/farm/`."
+    }
+   ]
+  }
+ ]
+}

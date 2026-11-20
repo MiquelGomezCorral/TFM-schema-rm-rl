@@ -1,0 +1,787 @@
+{
+ "title": "Until prompt fix: \"until\" stays an order",
+ "eyebrow": "prompt fix · generator and critic prompts · 2026-11-20",
+ "subtitle": "At reasoning max the generator and the critic read \"until the door has been opened once\" as a ban for the whole episode, because one prompt example matched the event's description almost word for word. Rewording two existing passages, with no new rule, fixed it: the targeted runs went from 2 of 9 right to 12 of 12, and the full 46-case rerun got 46 of 46.",
+ "sections": [
+  {
+   "id": "claim",
+   "title": "What it shows",
+   "blocks": [
+    {
+     "type": "callout",
+     "tone": "info",
+     "title": "In plain words",
+     "text": "The generator turns a task into Declare clauses, and the critic checks them. Two cards say \"do not drop the key while the door is closed until the door has been opened once\" (G6 and W5b). The right reading is an order: no drop before the door's first opening, `Precedence(door_open, key_lost)`; once the door has been opened, a drop is allowed. Both models wrote `Absence(key_lost)` instead, a ban for the whole episode, in 6 of 6 runs.\n\nThe prompt said: when the banned event's own description already holds the condition, write a plain `Absence`, for example an event \"described as 'lost before `a` happened'\". The environment page describes `key_lost` as \"no longer carrying it before opening the door\". Those are almost the same words, so both models matched the example and dropped the order. The fix rewords that example and says that \"until `a`\" is always `Precedence(a, b)`.\n\nA second, rarer miss was in W5a: \"Then open the door with the key and pick up the box\" became two goals with no order (1 of 3 runs). The fix adds the case of steps listed after a leading \"then\" to the existing stated-order text. No rule was added."
+    },
+    {
+     "type": "stats",
+     "items": [
+      {
+       "value": "0 of 6 to 8 of 8",
+       "label": "runs right on the two \"until\" cards, G6 and W5b (after: 3 fix runs and 1 regression run each)",
+       "tone": "ok"
+      },
+      {
+       "value": "2 of 3 to 4 of 4",
+       "label": "runs right on W5a, the dropped \"then\"",
+       "tone": "ok"
+      },
+      {
+       "value": "15 of 15",
+       "label": "runs right on 5 random passing cases rerun after the fix (3 runs each)",
+       "tone": "ok"
+      },
+      {
+       "value": "44 to 46 of 46",
+       "label": "full 46-case run at max: main's last full run against the fix",
+       "tone": "ok"
+      }
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**Prompt side, not pipeline side.** Every wrong run was the critic accepting the generator's first answer (2 calls per run), and no call failed. The generator and critic prompts share the templates file `declare-templates.md`, so its example misled both.",
+      "**No new rule.** Five edits in two files reword existing text: the ban-with-a-condition point and the stated-order point in the generator prompt, plus the matching table rows and worked example in `declare-templates.md`. A \"while ... still closed\" condition the event already holds still folds into `Absence` (W5a, G5, W4b and U5 kept it). \"Until `a`\" is now always `Precedence(a, b)`.",
+      "**G2 stays unordered.** \"Open the door and pick up the box in the other room.\" has no order word. After the \"then\" edit it still gives two goals with no `Precedence`, as before.",
+      "**Published practice.** Anthropic's prompting guide warns that models copy details from examples (cited under \"The change\"). The two models here are not Claude; the guide served as the published practice the retry rule asks for."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "rounds",
+   "title": "Before and after, at reasoning max",
+   "intro": "Every run: generator deepseek-v4.1-flash and critic glm-5.3-flash through OpenCode, reasoning max, scored by `tools/chain_score.py` against the cards on main (the fix changed no card). Before: main with the prompts of `42003cf`. After: the fix, `40e6614`.",
+   "blocks": [
+    {
+     "type": "table",
+     "columns": [
+      "case",
+      "task",
+      "card answer",
+      "before",
+      "after"
+     ],
+     "rows": [
+      [
+       "G6",
+       "Do not drop the key while the door is closed until the door has been opened once. Reach the goal.",
+       "`Precedence(door_open, key_lost)`, `Existence(at_goal)`",
+       {
+        "text": "0 of 3",
+        "tone": "bad"
+       },
+       {
+        "text": "4 of 4, full rerun 1 of 1",
+        "tone": "ok"
+       }
+      ],
+      [
+       "W5b",
+       "Pick up the box in the other room, but do not drop the key while the door is closed until the door has been opened once.",
+       "`Precedence(door_open, key_lost)`, `Existence(target_picked_up)`",
+       {
+        "text": "0 of 3",
+        "tone": "bad"
+       },
+       {
+        "text": "4 of 4, full rerun 1 of 1",
+        "tone": "ok"
+       }
+      ],
+      [
+       "W5a",
+       "Move the ball away from the door before you take the key. ... Then open the door with the key and pick up the box in the other room.",
+       "six clauses, among them `Precedence(door_open, target_picked_up)` (graph below)",
+       {
+        "text": "2 of 3",
+        "tone": "warn"
+       },
+       {
+        "text": "4 of 4, full rerun 1 of 1",
+        "tone": "ok"
+       }
+      ],
+      [
+       "W4b, U5, O7, G5, S2",
+       "5 cases drawn at random (seed 20261120) from the 18 that use an edited passage",
+       "their cards",
+       "passing on main",
+       {
+        "text": "15 of 15",
+        "tone": "ok"
+       }
+      ],
+      [
+       "G2",
+       "Open the door and pick up the box in the other room.",
+       "`Existence(door_open)`, `Existence(target_picked_up)`",
+       {
+        "text": "1 of 1 (main's full run)",
+        "tone": "ok"
+       },
+       {
+        "text": "full rerun 1 of 1",
+        "tone": "ok"
+       }
+      ],
+      [
+       "all 46",
+       "the whole case set, one run each",
+       "the 46 cards",
+       {
+        "text": "44 of 46 (main's full run)",
+        "tone": "warn"
+       },
+       {
+        "text": "46 of 46",
+        "tone": "ok"
+       }
+      ]
+     ]
+    },
+    {
+     "type": "table",
+     "heading": "Round table (`evidence/round-table.out`)",
+     "columns": [
+      "round",
+      "runs",
+      "right",
+      "wrong",
+      "no machine",
+      "first right",
+      "calls",
+      "call errors (timeouts)",
+      "gen over 300 s ok",
+      "longest gen call s",
+      "wall s median (total)",
+      "reasoning max gen / critic"
+     ],
+     "rows": [
+      [
+       "before, max (G6, W5a, W5b x3)",
+       "9",
+       "2",
+       "7",
+       "0",
+       "2/9",
+       "18",
+       "0 (0)",
+       "2: W5a-r2 301 s, W5a-r3 596 s",
+       "596",
+       "156 (2434)",
+       "41987 / 22919"
+      ],
+      [
+       "fix, until (G6, W5b x3)",
+       "6",
+       "6",
+       "0",
+       "0",
+       "6/6",
+       "12",
+       "0 (0)",
+       "0",
+       "56",
+       "108 (668)",
+       "3707 / 12007"
+      ],
+      [
+       "fix, then (W5a x3)",
+       "3",
+       "3",
+       "0",
+       "0",
+       "3/3",
+       "6",
+       "0 (0)",
+       "2: W5a-r1 394 s, W5a-r3 427 s",
+       "427",
+       "504 (1264)",
+       "29701 / 10362"
+      ],
+      [
+       "regression, failing cases (x1)",
+       "3",
+       "3",
+       "0",
+       "0",
+       "3/3",
+       "6",
+       "0 (0)",
+       "1: W5a-r1 396 s",
+       "396",
+       "114 (748)",
+       "26992 / 12109"
+      ],
+      [
+       "regression, 5 passing cases (x3)",
+       "15",
+       "15",
+       "0",
+       "0",
+       "15/15",
+       "30",
+       "0 (0)",
+       "0",
+       "72",
+       "70 (1036)",
+       "5725 / 10890"
+      ],
+      [
+       "full rerun, after (46 x1)",
+       "46",
+       "46",
+       "0",
+       "0",
+       "46/46",
+       "92",
+       "0 (0)",
+       "2: G12-r1 318 s, W5a-r1 401 s",
+       "401",
+       "104 (5856)",
+       "28460 / 32767"
+      ],
+      [
+       "main's full run, max (46 x1)",
+       "46",
+       "44",
+       "2",
+       "0",
+       "29/46",
+       "126",
+       "2 (2)",
+       "0",
+       "265",
+       "166 (8664)",
+       "31339 / 4096"
+      ]
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**Main's full run is older.** Main's last full 46-case run at max is the loop-2 thinking sweep (`../model-comparison/`, its `evidence/llm-loop2/runs/f-max/A/`). It ran before the shape-fix sentence of `42003cf` and before streaming. Re-scored with today's cards it gets 44 of 46, with G6 and W5b wrong in the same `Absence` reading. It is the closest full baseline, not a same-prompt control; the targeted before round is.",
+      "**The fix was tried once per mistake.** Each edit fixed its cases on its first try (12 of 12), so no change was undone. The model-call count was 164 over 82 runs, with no usage-limit error.",
+      "**What is not tested.** After the fix the critic accepted the generator's first answer every time, so the critic never judged a wrong set under the new wording. W5a is weak evidence: about 1 miss in 8 before (counting an earlier max sweep), 4 of 4 after."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "g6",
+   "title": "G6: \"until\" with a goal",
+   "intro": "Task: *Do not drop the key while the door is closed until the door has been opened once. Reach the goal.* (templates suite, card `tpl-precedence-2-goal`, MiniGrid-DoorKey-8x8-v0). The environment page: \"`key_lost`: The agent previously acquired the yellow key but is no longer carrying it before opening the door.\"",
+   "blocks": [
+    {
+     "type": "table",
+     "rows": [
+      [
+       "before r1",
+       "`evidence/runs/before-max/G6-r1.json`",
+       "hard Absence(key_lost): `(~(Fkey_lost))`; hard Existence(at_goal): `(Fat_goal)`",
+       {
+        "text": "wrong",
+        "tone": "bad"
+       },
+       "156"
+      ],
+      [
+       "before r2",
+       "`evidence/runs/before-max/G6-r2.json`",
+       "same set as before r1",
+       {
+        "text": "wrong",
+        "tone": "bad"
+       },
+       "164"
+      ],
+      [
+       "before r3",
+       "`evidence/runs/before-max/G6-r3.json`",
+       "same set as before r1",
+       {
+        "text": "wrong",
+        "tone": "bad"
+       },
+       "111"
+      ],
+      [
+       "fix r1",
+       "`evidence/runs/fix-until/G6-r1.json`",
+       "hard Precedence(door_open, key_lost): `(((~key_lost)Udoor_open)|(G(~key_lost)))`; hard Existence(at_goal): `(Fat_goal)`",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "112"
+      ],
+      [
+       "fix r2",
+       "`evidence/runs/fix-until/G6-r2.json`",
+       "same set as fix r1",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "158"
+      ],
+      [
+       "fix r3",
+       "`evidence/runs/fix-until/G6-r3.json`",
+       "same set as fix r1",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "105"
+      ],
+      [
+       "regression r1",
+       "`evidence/runs/regression-fail/G6-r1.json`",
+       "same set as fix r1",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "114"
+      ],
+      [
+       "full rerun r1",
+       "`evidence/runs/full-after/G6-r1.json`",
+       "same set as fix r1",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "71"
+      ]
+     ],
+     "columns": [
+      "run",
+      "record",
+      "clauses and LTLf",
+      "verdict",
+      "wall s"
+     ]
+    },
+    {
+     "type": "callout",
+     "tone": "warn",
+     "title": "What the critic said before the fix",
+     "text": "G6 r3: \"key_lost is defined as the key being dropped while the door is not open, so its description already holds the 'while the door is closed / before the door has been opened' condition; the plain hard Absence(key_lost) is exactly the prescribed ban for 'do not drop the key while the door is closed until the door has been opened once', and no Precedence(door_open, key_lost) is needed\".\n\nW5b r1: \"The event key_lost is defined as acquiring the key and then dropping it while the door is not open ('no longer carrying it before opening the door'), so its description already holds the condition and a plain Absence is the right template\"."
+    },
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/g6-before.html",
+       "height": 520,
+       "alt": "Reward Machine g6-before: 3 states",
+       "caption": "**`g6-before`** · DoorKey-8x8 · 3 states, 3 transitions · final u2, rejecting u1\nTask: *Do not drop the key while the door is closed until the door has been opened once. Reach the goal.* Wrong, 3 of 3 runs: Absence(key_lost) bans dropping the key for the whole episode; the card expects Precedence(door_open, key_lost), which allows it once the door has been opened. The critic accepted it each time.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Run record `evidence/runs/before-max/G6-r1.json` (field `machine`): main before the fix (prompts of `42003cf`, streaming in), generator deepseek-v4.1-flash and critic glm-5.3-flash at reasoning max. Runs r2 and r3 gave the same machine text.",
+        "code": "# Task (NL)\nDo not drop the key while the door is closed until the door has been opened once. Reach the goal.\n\n# Clauses and LTLf (the clauses of run G6-r1, as the critic accepted them)\nhard Absence(key_lost): (~(Fkey_lost))\nhard Existence(at_goal): (Fat_goal)\n\n# RM text (graphs/g6-before.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: u2\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&key_lost) -> u1\n(u0, at_goal&!key_lost) -> u2\n(u0, at_goal&key_lost) -> u1\nREWARD_FUNCTION:\n(u0, !at_goal&key_lost, u1) -> -10\n(u0, at_goal&!key_lost, u2) -> 11\n(u0, at_goal&key_lost, u1) -> -10\n"
+       }
+      },
+      {
+       "src": "graphs/g6-after.html",
+       "height": 520,
+       "alt": "Reward Machine g6-after: 4 states",
+       "caption": "**`g6-after`** · DoorKey-8x8 · 4 states, 6 transitions · final u3, rejecting u1\nTask: *Do not drop the key while the door is closed until the door has been opened once. Reach the goal.* Right in all 5 runs after the fix (3 fix runs, 1 regression run, this full-rerun run): Precedence(door_open, key_lost) and Existence(at_goal), the card's answer.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Run record `evidence/runs/full-after/G6-r1.json` (field `machine`): the fix (prompts of `40e6614`), generator deepseek-v4.1-flash and critic glm-5.3-flash at reasoning max, full 46-case rerun. The three fix runs and the regression run (`fix-until/`, `regression-fail/`) gave the same machine text.",
+        "code": "# Task (NL)\nDo not drop the key while the door is closed until the door has been opened once. Reach the goal.\n\n# Clauses and LTLf (the clauses of run G6-r1, as the critic accepted them)\nhard Precedence(door_open, key_lost): (((~key_lost)Udoor_open)|(G(~key_lost)))\nhard Existence(at_goal): (Fat_goal)\n\n# RM text (graphs/g6-after.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&!door_open&key_lost) -> u1\n(u0, !at_goal&door_open) -> u2\n(u0, at_goal&!door_open&!key_lost) -> u3\n(u0, at_goal&!door_open&key_lost) -> u1\n(u0, at_goal&door_open) -> u3\n(u2, at_goal) -> u3\nREWARD_FUNCTION:\n(u0, !at_goal&!door_open&key_lost, u1) -> -10\n(u0, at_goal&!door_open&!key_lost, u3) -> 11\n(u0, at_goal&!door_open&key_lost, u1) -> -10\n(u0, at_goal&door_open, u3) -> 11\n(u2, at_goal, u3) -> 11\n"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "w5b",
+   "title": "W5b: \"until\" with the box",
+   "intro": "Task: *Pick up the box in the other room, but do not drop the key while the door is closed until the door has been opened once.* (templates suite, card `tpl-precedence-3-goal`, MiniGrid-UnlockPickup-v0). The environment page: \"`key_lost`: The agent previously acquired the matching key but is no longer carrying it before opening the door.\"",
+   "blocks": [
+    {
+     "type": "table",
+     "rows": [
+      [
+       "before r1",
+       "`evidence/runs/before-max/W5b-r1.json`",
+       "hard Existence(target_picked_up): `(Ftarget_picked_up)`; hard Absence(key_lost): `(~(Fkey_lost))`",
+       {
+        "text": "wrong",
+        "tone": "bad"
+       },
+       "65"
+      ],
+      [
+       "before r2",
+       "`evidence/runs/before-max/W5b-r2.json`",
+       "same set as before r1",
+       {
+        "text": "wrong",
+        "tone": "bad"
+       },
+       "146"
+      ],
+      [
+       "before r3",
+       "`evidence/runs/before-max/W5b-r3.json`",
+       "same set as before r1",
+       {
+        "text": "wrong",
+        "tone": "bad"
+       },
+       "92"
+      ],
+      [
+       "fix r1",
+       "`evidence/runs/fix-until/W5b-r1.json`",
+       "hard Existence(target_picked_up): `(Ftarget_picked_up)`; hard Precedence(door_open, key_lost): `(((~key_lost)Udoor_open)|(G(~key_lost)))`",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "93"
+      ],
+      [
+       "fix r2",
+       "`evidence/runs/fix-until/W5b-r2.json`",
+       "same set as fix r1",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "150"
+      ],
+      [
+       "fix r3",
+       "`evidence/runs/fix-until/W5b-r3.json`",
+       "same set as fix r1",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "50"
+      ],
+      [
+       "regression r1",
+       "`evidence/runs/regression-fail/W5b-r1.json`",
+       "same set as fix r1",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "108"
+      ],
+      [
+       "full rerun r1",
+       "`evidence/runs/full-after/W5b-r1.json`",
+       "same set as fix r1",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "120"
+      ]
+     ],
+     "columns": [
+      "run",
+      "record",
+      "clauses and LTLf",
+      "verdict",
+      "wall s"
+     ]
+    },
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/w5b-before.html",
+       "height": 520,
+       "alt": "Reward Machine w5b-before: 3 states",
+       "caption": "**`w5b-before`** · UnlockPickup · 3 states, 3 transitions · final u1, rejecting u2\nTask: *Pick up the box in the other room, but do not drop the key while the door is closed until the door has been opened once.* Wrong, 3 of 3 runs: the same Absence(key_lost) reading as G6.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Run record `evidence/runs/before-max/W5b-r1.json` (field `machine`): main before the fix (prompts of `42003cf`, streaming in), generator deepseek-v4.1-flash and critic glm-5.3-flash at reasoning max. Runs r2 and r3 gave the same machine text.",
+        "code": "# Task (NL)\nPick up the box in the other room, but do not drop the key while the door is closed until the door has been opened once.\n\n# Clauses and LTLf (the clauses of run W5b-r1, as the critic accepted them)\nhard Existence(target_picked_up): (Ftarget_picked_up)\nhard Absence(key_lost): (~(Fkey_lost))\n\n# RM text (graphs/w5b-before.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: u1\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !key_lost&target_picked_up) -> u1\n(u0, key_lost&!target_picked_up) -> u2\n(u0, key_lost&target_picked_up) -> u2\nREWARD_FUNCTION:\n(u0, !key_lost&target_picked_up, u1) -> 11\n(u0, key_lost&!target_picked_up, u2) -> -10\n(u0, key_lost&target_picked_up, u2) -> -10\n"
+       }
+      },
+      {
+       "src": "graphs/w5b-after.html",
+       "height": 520,
+       "alt": "Reward Machine w5b-after: 4 states",
+       "caption": "**`w5b-after`** · UnlockPickup · 4 states, 6 transitions · final u1, rejecting u2\nTask: *Pick up the box in the other room, but do not drop the key while the door is closed until the door has been opened once.* Right in all 5 runs after the fix: Precedence(door_open, key_lost) and Existence(target_picked_up), the card's answer.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Run record `evidence/runs/full-after/W5b-r1.json` (field `machine`): the fix (prompts of `40e6614`), generator deepseek-v4.1-flash and critic glm-5.3-flash at reasoning max, full 46-case rerun. The three fix runs and the regression run gave the same machine text.",
+        "code": "# Task (NL)\nPick up the box in the other room, but do not drop the key while the door is closed until the door has been opened once.\n\n# Clauses and LTLf (the clauses of run W5b-r1, as the critic accepted them)\nhard Existence(target_picked_up): (Ftarget_picked_up)\nhard Precedence(door_open, key_lost): (((~key_lost)Udoor_open)|(G(~key_lost)))\n\n# RM text (graphs/w5b-after.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u1\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&!key_lost&target_picked_up) -> u1\n(u0, !door_open&key_lost&!target_picked_up) -> u2\n(u0, !door_open&key_lost&target_picked_up) -> u2\n(u0, door_open&!target_picked_up) -> u3\n(u0, door_open&target_picked_up) -> u1\n(u3, target_picked_up) -> u1\nREWARD_FUNCTION:\n(u0, !door_open&!key_lost&target_picked_up, u1) -> 11\n(u0, !door_open&key_lost&!target_picked_up, u2) -> -10\n(u0, !door_open&key_lost&target_picked_up, u2) -> -10\n(u0, door_open&target_picked_up, u1) -> 11\n(u3, target_picked_up, u1) -> 11\n"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "w5a",
+   "title": "W5a: the dropped \"then\"",
+   "intro": "Task: *Move the ball away from the door before you take the key. Try not to drop the key while the door is still closed. Whenever you are holding the key, try to have the door open at that moment or open it afterwards. Then open the door with the key and pick up the box in the other room.* (complex suite, card `cx-goal-many-rules`, MiniGrid-BlockedUnlockPickup-v0). Here \"try not to drop the key while the door is still closed\" is a soft `Absence(key_lost)`: a \"while ... still closed\" ban the event already holds, which the fix keeps.",
+   "blocks": [
+    {
+     "type": "table",
+     "rows": [
+      [
+       "before r1",
+       "`evidence/runs/before-max/W5a-r1.json`",
+       "hard Precedence(blocker_moved, has_door_key): `(((~has_door_key)Ublocker_moved)|(G(~has_door_key)))`; soft Absence(key_lost): `(~(Fkey_lost))`; soft Response(has_door_key, door_open): `(G(has_door_key->(Fdoor_open)))`; hard Precedence(has_door_key, door_open): `(((~door_open)Uhas_door_key)|(G(~door_open)))`; hard Precedence(door_open, target_picked_up): `(((~target_picked_up)Udoor_open)|(G(~target_picked_up)))`; hard Existence(target_picked_up): `(Ftarget_picked_up)`",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "373"
+      ],
+      [
+       "before r2",
+       "`evidence/runs/before-max/W5a-r2.json`",
+       "same set as before r1",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "480"
+      ],
+      [
+       "before r3",
+       "`evidence/runs/before-max/W5a-r3.json`",
+       "hard Precedence(blocker_moved, has_door_key): `(((~has_door_key)Ublocker_moved)|(G(~has_door_key)))`; hard Precedence(has_door_key, door_open): `(((~door_open)Uhas_door_key)|(G(~door_open)))`; hard Existence(door_open): `(Fdoor_open)`; hard Existence(target_picked_up): `(Ftarget_picked_up)`; soft Absence(key_lost): `(~(Fkey_lost))`; soft Response(has_door_key, door_open): `(G(has_door_key->(Fdoor_open)))`",
+       {
+        "text": "wrong",
+        "tone": "bad"
+       },
+       "847"
+      ],
+      [
+       "fix r1",
+       "`evidence/runs/fix-then/W5a-r1.json`",
+       "same set as before r1",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "504"
+      ],
+      [
+       "fix r2",
+       "`evidence/runs/fix-then/W5a-r2.json`",
+       "same set as before r1",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "244"
+      ],
+      [
+       "fix r3",
+       "`evidence/runs/fix-then/W5a-r3.json`",
+       "same set as before r1",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "517"
+      ],
+      [
+       "regression r1",
+       "`evidence/runs/regression-fail/W5a-r1.json`",
+       "same set as before r1",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "526"
+      ],
+      [
+       "full rerun r1",
+       "`evidence/runs/full-after/W5a-r1.json`",
+       "same set as before r1",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "578"
+      ]
+     ],
+     "columns": [
+      "run",
+      "record",
+      "clauses and LTLf",
+      "verdict",
+      "wall s"
+     ]
+    },
+    {
+     "type": "text",
+     "text": "In the miss (before r3) the generator wrote the last sentence as \"Open the door at least once.\" and \"Pick up the mission's designated target box at least once.\", and the critic read it as \"hard Existence(door_open), hard Precedence(has_door_key, door_open), and hard Existence(target_picked_up)\". The prompt's stated-order text showed only lists where \"then\" comes before the last step (\"`a`, `b`, `c`, and then `d`\"), not a list after a leading \"then\"."
+    },
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/w5a-before.html",
+       "height": 520,
+       "alt": "Reward Machine w5a-before: 10 states",
+       "caption": "**`w5a-before`** · BlockedUnlockPickup · 10 states, 95 transitions · final u8, rejecting u2\nTask: *Move the ball away from the door before you take the key. Try not to drop the key while the door is still closed. Whenever you are holding the key, try to have the door open at that moment or open it afterwards. Then open the door with the key and pick up the box in the other room.* Wrong, 1 of 3 runs: \"Then open the door with the key and pick up the box\" became two goals, Existence(door_open) and Existence(target_picked_up), so the box may come before the door; the card expects Precedence(door_open, target_picked_up).",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Run record `evidence/runs/before-max/W5a-r3.json` (field `machine`): main before the fix (prompts of `42003cf`, streaming in), generator deepseek-v4.1-flash and critic glm-5.3-flash at reasoning max. This is the miss; r1 and r2 were right and gave the machine shown after the fix.",
+        "code": "# Task (NL)\nMove the ball away from the door before you take the key. Try not to drop the key while the door is still closed. Whenever you are holding the key, try to have the door open at that moment or open it afterwards. Then open the door with the key and pick up the box in the other room.\n\n# Clauses and LTLf (the clauses of run W5a-r3, as the critic accepted them)\nhard Precedence(blocker_moved, has_door_key): (((~has_door_key)Ublocker_moved)|(G(~has_door_key)))\nhard Precedence(has_door_key, door_open): (((~door_open)Uhas_door_key)|(G(~door_open)))\nhard Existence(door_open): (Fdoor_open)\nhard Existence(target_picked_up): (Ftarget_picked_up)\nsoft Absence(key_lost): (~(Fkey_lost))\nsoft Response(has_door_key, door_open): (G(has_door_key->(Fdoor_open)))\n\n# RM text (graphs/w5a-before.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6, u7, u8, u9\nINITIAL_STATE: u0\nFINAL_STATES: u8\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up) -> u0\n(u0, !blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up) -> u2\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up) -> u2\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up) -> u2\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&target_picked_up) -> u2\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up) -> u2\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up) -> u2\n(u0, !blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up) -> u2\n(u0, !blocker_moved&door_open&!has_door_key&key_lost&target_picked_up) -> u2\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up) -> u2\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&target_picked_up) -> u2\n(u0, !blocker_moved&door_open&has_door_key&key_lost&!target_picked_up) -> u2\n(u0, !blocker_moved&door_open&has_door_key&key_lost&target_picked_up) -> u2\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&!target_picked_up) -> u3\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up) -> u4\n(u0, blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up) -> u3\n(u0, blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up) -> u4\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up) -> u5\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up) -> u6\n(u0, blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up) -> u5\n(u0, blocker_moved&!door_open&has_door_key&key_lost&target_picked_up) -> u6\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up) -> u2\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up) -> u2\n(u0, blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up) -> u2\n(u0, blocker_moved&door_open&!has_door_key&key_lost&target_picked_up) -> u2\n(u0, blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up) -> u7\n(u0, blocker_moved&door_open&has_door_key&!key_lost&target_picked_up) -> u8\n(u0, blocker_moved&door_open&has_door_key&key_lost&!target_picked_up) -> u7\n(u0, blocker_moved&door_open&has_door_key&key_lost&target_picked_up) -> u8\n(u1, !blocker_moved&!door_open&!has_door_key&key_lost) -> u1\n(u1, !blocker_moved&!door_open&has_door_key&!key_lost) -> u2\n(u1, !blocker_moved&!door_open&has_door_key&key_lost) -> u2\n(u1, !blocker_moved&door_open&!has_door_key&!key_lost) -> u2\n(u1, !blocker_moved&door_open&!has_door_key&key_lost) -> u2\n(u1, !blocker_moved&door_open&has_door_key&!key_lost) -> u2\n(u1, !blocker_moved&door_open&has_door_key&key_lost) -> u2\n(u1, blocker_moved&!door_open&!has_door_key&!key_lost) -> u4\n(u1, blocker_moved&!door_open&!has_door_key&key_lost) -> u4\n(u1, blocker_moved&!door_open&has_door_key&!key_lost) -> u6\n(u1, blocker_moved&!door_open&has_door_key&key_lost) -> u6\n(u1, blocker_moved&door_open&!has_door_key&!key_lost) -> u2\n(u1, blocker_moved&door_open&!has_door_key&key_lost) -> u2\n(u1, blocker_moved&door_open&has_door_key&!key_lost) -> u8\n(u1, blocker_moved&door_open&has_door_key&key_lost) -> u8\n(u3, !door_open&!has_door_key&!key_lost&target_picked_up) -> u4\n(u3, !door_open&!has_door_key&key_lost&!target_picked_up) -> u3\n(u3, !door_open&!has_door_key&key_lost&target_picked_up) -> u4\n(u3, !door_open&has_door_key&!key_lost&!target_picked_up) -> u5\n(u3, !door_open&has_door_key&!key_lost&target_picked_up) -> u6\n(u3, !door_open&has_door_key&key_lost&!target_picked_up) -> u5\n(u3, !door_open&has_door_key&key_lost&target_picked_up) -> u6\n(u3, door_open&!has_door_key&!key_lost&!target_picked_up) -> u2\n(u3, door_open&!has_door_key&!key_lost&target_picked_up) -> u2\n(u3, door_open&!has_door_key&key_lost&!target_picked_up) -> u2\n(u3, door_open&!has_door_key&key_lost&target_picked_up) -> u2\n(u3, door_open&has_door_key&!key_lost&!target_picked_up) -> u7\n(u3, door_open&has_door_key&!key_lost&target_picked_up) -> u8\n(u3, door_open&has_door_key&key_lost&!target_picked_up) -> u7\n(u3, door_open&has_door_key&key_lost&target_picked_up) -> u8\n(u4, !door_open&!has_door_key&key_lost) -> u4\n(u4, !door_open&has_door_key&!key_lost) -> u6\n(u4, !door_open&has_door_key&key_lost) -> u6\n(u4, door_open&!has_door_key&!key_lost) -> u2\n(u4, door_open&!has_door_key&key_lost) -> u2\n(u4, door_open&has_door_key&!key_lost) -> u8\n(u4, door_open&has_door_key&key_lost) -> u8\n(u5, !door_open&!key_lost&target_picked_up) -> u6\n(u5, !door_open&key_lost&!target_picked_up) -> u5\n(u5, !door_open&key_lost&target_picked_up) -> u6\n(u5, door_open&!key_lost&!target_picked_up) -> u7\n(u5, door_open&!key_lost&target_picked_up) -> u8\n(u5, door_open&key_lost&!target_picked_up) -> u7\n(u5, door_open&key_lost&target_picked_up) -> u8\n(u6, !door_open&key_lost) -> u6\n(u6, door_open&!key_lost) -> u8\n(u6, door_open&key_lost) -> u8\n(u7, !door_open&!has_door_key&!key_lost&target_picked_up) -> u8\n(u7, !door_open&!has_door_key&key_lost&!target_picked_up) -> u7\n(u7, !door_open&!has_door_key&key_lost&target_picked_up) -> u8\n(u7, !door_open&has_door_key&!key_lost&!target_picked_up) -> u9\n(u7, !door_open&has_door_key&!key_lost&target_picked_up) -> u8\n(u7, !door_open&has_door_key&key_lost&!target_picked_up) -> u9\n(u7, !door_open&has_door_key&key_lost&target_picked_up) -> u8\n(u7, door_open&!key_lost&target_picked_up) -> u8\n(u7, door_open&key_lost&!target_picked_up) -> u7\n(u7, door_open&key_lost&target_picked_up) -> u8\n(u9, !door_open&!key_lost&target_picked_up) -> u8\n(u9, !door_open&key_lost&!target_picked_up) -> u9\n(u9, !door_open&key_lost&target_picked_up) -> u8\n(u9, door_open&!key_lost&!target_picked_up) -> u7\n(u9, door_open&!key_lost&target_picked_up) -> u8\n(u9, door_open&key_lost&!target_picked_up) -> u7\n(u9, door_open&key_lost&target_picked_up) -> u8\nREWARD_FUNCTION:\n(u0, !blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up, u1) -> 1\n(u0, !blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up, u0) -> -1\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up, u2) -> -100.694\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up, u2) -> -100.694\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up, u2) -> -100.694\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&target_picked_up, u2) -> -100.694\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up, u2) -> -100.694\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up, u2) -> -100.694\n(u0, !blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up, u2) -> -100.694\n(u0, !blocker_moved&door_open&!has_door_key&key_lost&target_picked_up, u2) -> -100.694\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up, u2) -> -100.694\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&target_picked_up, u2) -> -100.694\n(u0, !blocker_moved&door_open&has_door_key&key_lost&!target_picked_up, u2) -> -100.694\n(u0, !blocker_moved&door_open&has_door_key&key_lost&target_picked_up, u2) -> -100.694\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&!target_picked_up, u3) -> 1\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up, u4) -> 2\n(u0, blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up, u4) -> 1\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up, u5) -> 1\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up, u6) -> 2\n(u0, blocker_moved&!door_open&has_door_key&key_lost&target_picked_up, u6) -> 1\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up, u2) -> -100.694\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up, u2) -> -100.694\n(u0, blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up, u2) -> -100.694\n(u0, blocker_moved&door_open&!has_door_key&key_lost&target_picked_up, u2) -> -100.694\n(u0, blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up, u7) -> 3\n(u0, blocker_moved&door_open&has_door_key&!key_lost&target_picked_up, u8) -> 14\n(u0, blocker_moved&door_open&has_door_key&key_lost&!target_picked_up, u7) -> 2\n(u0, blocker_moved&door_open&has_door_key&key_lost&target_picked_up, u8) -> 13\n(u1, !blocker_moved&!door_open&!has_door_key&key_lost, u1) -> -1\n(u1, !blocker_moved&!door_open&has_door_key&!key_lost, u2) -> -101.694\n(u1, !blocker_moved&!door_open&has_door_key&key_lost, u2) -> -101.694\n(u1, !blocker_moved&door_open&!has_door_key&!key_lost, u2) -> -101.694\n(u1, !blocker_moved&door_open&!has_door_key&key_lost, u2) -> -101.694\n(u1, !blocker_moved&door_open&has_door_key&!key_lost, u2) -> -101.694\n(u1, !blocker_moved&door_open&has_door_key&key_lost, u2) -> -101.694\n(u1, blocker_moved&!door_open&!has_door_key&!key_lost, u4) -> 1\n(u1, blocker_moved&!door_open&has_door_key&!key_lost, u6) -> 1\n(u1, blocker_moved&door_open&!has_door_key&!key_lost, u2) -> -101.694\n(u1, blocker_moved&door_open&!has_door_key&key_lost, u2) -> -101.694\n(u1, blocker_moved&door_open&has_door_key&!key_lost, u8) -> 13\n(u1, blocker_moved&door_open&has_door_key&key_lost, u8) -> 12\n(u3, !door_open&!has_door_key&!key_lost&target_picked_up, u4) -> 1\n(u3, !door_open&!has_door_key&key_lost&!target_picked_up, u3) -> -1\n(u3, !door_open&has_door_key&!key_lost&target_picked_up, u6) -> 1\n(u3, !door_open&has_door_key&key_lost&!target_picked_up, u5) -> -1\n(u3, door_open&!has_door_key&!key_lost&!target_picked_up, u2) -> -101.694\n(u3, door_open&!has_door_key&!key_lost&target_picked_up, u2) -> -101.694\n(u3, door_open&!has_door_key&key_lost&!target_picked_up, u2) -> -101.694\n(u3, door_open&!has_door_key&key_lost&target_picked_up, u2) -> -101.694\n(u3, door_open&has_door_key&!key_lost&!target_picked_up, u7) -> 2\n(u3, door_open&has_door_key&!key_lost&target_picked_up, u8) -> 13\n(u3, door_open&has_door_key&key_lost&!target_picked_up, u7) -> 1\n(u3, door_open&has_door_key&key_lost&target_picked_up, u8) -> 12\n(u4, !door_open&!has_door_key&key_lost, u4) -> -1\n(u4, !door_open&has_door_key&key_lost, u6) -> -1\n(u4, door_open&!has_door_key&!key_lost, u2) -> -102.694\n(u4, door_open&!has_door_key&key_lost, u2) -> -102.694\n(u4, door_open&has_door_key&!key_lost, u8) -> 12\n(u4, door_open&has_door_key&key_lost, u8) -> 11\n(u5, !door_open&!key_lost&target_picked_up, u6) -> 1\n(u5, !door_open&key_lost&!target_picked_up, u5) -> -1\n(u5, door_open&!key_lost&!target_picked_up, u7) -> 2\n(u5, door_open&!key_lost&target_picked_up, u8) -> 13\n(u5, door_open&key_lost&!target_picked_up, u7) -> 1\n(u5, door_open&key_lost&target_picked_up, u8) -> 12\n(u6, !door_open&key_lost, u6) -> -1\n(u6, door_open&!key_lost, u8) -> 12\n(u6, door_open&key_lost, u8) -> 11\n(u7, !door_open&!has_door_key&!key_lost&target_picked_up, u8) -> 11\n(u7, !door_open&!has_door_key&key_lost&!target_picked_up, u7) -> -1\n(u7, !door_open&!has_door_key&key_lost&target_picked_up, u8) -> 10\n(u7, !door_open&has_door_key&!key_lost&!target_picked_up, u9) -> -1\n(u7, !door_open&has_door_key&!key_lost&target_picked_up, u8) -> 6\n(u7, !door_open&has_door_key&key_lost&!target_picked_up, u9) -> -2\n(u7, !door_open&has_door_key&key_lost&target_picked_up, u8) -> 5\n(u7, door_open&!key_lost&target_picked_up, u8) -> 11\n(u7, door_open&key_lost&!target_picked_up, u7) -> -1\n(u7, door_open&key_lost&target_picked_up, u8) -> 10\n(u9, !door_open&!key_lost&target_picked_up, u8) -> 7\n(u9, !door_open&key_lost&!target_picked_up, u9) -> -1\n(u9, !door_open&key_lost&target_picked_up, u8) -> 6\n(u9, door_open&!key_lost&!target_picked_up, u7) -> 1\n(u9, door_open&!key_lost&target_picked_up, u8) -> 12\n(u9, door_open&key_lost&target_picked_up, u8) -> 11\n"
+       }
+      },
+      {
+       "src": "graphs/w5a-after.html",
+       "height": 520,
+       "alt": "Reward Machine w5a-after: 7 states",
+       "caption": "**`w5a-after`** · BlockedUnlockPickup · 7 states, 70 transitions · final u5, rejecting u1\nTask: *Move the ball away from the door before you take the key. Try not to drop the key while the door is still closed. Whenever you are holding the key, try to have the door open at that moment or open it afterwards. Then open the door with the key and pick up the box in the other room.* Right in all 5 runs after the fix: the stated \"then\" keeps Precedence(door_open, target_picked_up).",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Run record `evidence/runs/full-after/W5a-r1.json` (field `machine`): the fix (prompts of `40e6614`), generator deepseek-v4.1-flash and critic glm-5.3-flash at reasoning max, full 46-case rerun. The same text as the right runs before the fix, the 3 fix runs and the regression run, and as `../opencode-streaming/graphs/cx-goal-many-rules-w5a.rm`.",
+        "code": "# Task (NL)\nMove the ball away from the door before you take the key. Try not to drop the key while the door is still closed. Whenever you are holding the key, try to have the door open at that moment or open it afterwards. Then open the door with the key and pick up the box in the other room.\n\n# Clauses and LTLf (the clauses of run W5a-r1, as the critic accepted them)\nhard Precedence(blocker_moved, has_door_key): (((~has_door_key)Ublocker_moved)|(G(~has_door_key)))\nsoft Absence(key_lost): (~(Fkey_lost))\nsoft Response(has_door_key, door_open): (G(has_door_key->(Fdoor_open)))\nhard Precedence(has_door_key, door_open): (((~door_open)Uhas_door_key)|(G(~door_open)))\nhard Precedence(door_open, target_picked_up): (((~target_picked_up)Udoor_open)|(G(~target_picked_up)))\nhard Existence(target_picked_up): (Ftarget_picked_up)\n\n# RM text (graphs/w5a-after.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6\nINITIAL_STATE: u0\nFINAL_STATES: u5\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up) -> u0\n(u0, !blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up) -> u1\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up) -> u1\n(u0, !blocker_moved&door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up) -> u1\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&door_open&has_door_key&key_lost&!target_picked_up) -> u1\n(u0, !blocker_moved&door_open&has_door_key&key_lost&target_picked_up) -> u1\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&!target_picked_up) -> u2\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u0, blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up) -> u2\n(u0, blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up) -> u3\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up) -> u1\n(u0, blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up) -> u3\n(u0, blocker_moved&!door_open&has_door_key&key_lost&target_picked_up) -> u1\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up) -> u1\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u0, blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up) -> u1\n(u0, blocker_moved&door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u0, blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up) -> u4\n(u0, blocker_moved&door_open&has_door_key&!key_lost&target_picked_up) -> u5\n(u0, blocker_moved&door_open&has_door_key&key_lost&!target_picked_up) -> u4\n(u0, blocker_moved&door_open&has_door_key&key_lost&target_picked_up) -> u5\n(u2, !door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u2, !door_open&!has_door_key&key_lost&!target_picked_up) -> u2\n(u2, !door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u2, !door_open&has_door_key&!key_lost&!target_picked_up) -> u3\n(u2, !door_open&has_door_key&!key_lost&target_picked_up) -> u1\n(u2, !door_open&has_door_key&key_lost&!target_picked_up) -> u3\n(u2, !door_open&has_door_key&key_lost&target_picked_up) -> u1\n(u2, door_open&!has_door_key&!key_lost&!target_picked_up) -> u1\n(u2, door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u2, door_open&!has_door_key&key_lost&!target_picked_up) -> u1\n(u2, door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u2, door_open&has_door_key&!key_lost&!target_picked_up) -> u4\n(u2, door_open&has_door_key&!key_lost&target_picked_up) -> u5\n(u2, door_open&has_door_key&key_lost&!target_picked_up) -> u4\n(u2, door_open&has_door_key&key_lost&target_picked_up) -> u5\n(u3, !door_open&!key_lost&target_picked_up) -> u1\n(u3, !door_open&key_lost&!target_picked_up) -> u3\n(u3, !door_open&key_lost&target_picked_up) -> u1\n(u3, door_open&!key_lost&!target_picked_up) -> u4\n(u3, door_open&!key_lost&target_picked_up) -> u5\n(u3, door_open&key_lost&!target_picked_up) -> u4\n(u3, door_open&key_lost&target_picked_up) -> u5\n(u4, !door_open&!has_door_key&!key_lost&target_picked_up) -> u5\n(u4, !door_open&!has_door_key&key_lost&!target_picked_up) -> u4\n(u4, !door_open&!has_door_key&key_lost&target_picked_up) -> u5\n(u4, !door_open&has_door_key&!key_lost&!target_picked_up) -> u6\n(u4, !door_open&has_door_key&!key_lost&target_picked_up) -> u5\n(u4, !door_open&has_door_key&key_lost&!target_picked_up) -> u6\n(u4, !door_open&has_door_key&key_lost&target_picked_up) -> u5\n(u4, door_open&!key_lost&target_picked_up) -> u5\n(u4, door_open&key_lost&!target_picked_up) -> u4\n(u4, door_open&key_lost&target_picked_up) -> u5\n(u6, !door_open&!key_lost&target_picked_up) -> u5\n(u6, !door_open&key_lost&!target_picked_up) -> u6\n(u6, !door_open&key_lost&target_picked_up) -> u5\n(u6, door_open&!key_lost&!target_picked_up) -> u4\n(u6, door_open&!key_lost&target_picked_up) -> u5\n(u6, door_open&key_lost&!target_picked_up) -> u4\n(u6, door_open&key_lost&target_picked_up) -> u5\nREWARD_FUNCTION:\n(u0, !blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up, u0) -> -1\n(u0, !blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&!has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&has_door_key&key_lost&!target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&!target_picked_up, u2) -> 1\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up, u3) -> 1\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&!door_open&has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up, u1) -> -100.694\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up, u1) -> -100.694\n(u0, blocker_moved&door_open&!has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up, u4) -> 3\n(u0, blocker_moved&door_open&has_door_key&!key_lost&target_picked_up, u5) -> 14\n(u0, blocker_moved&door_open&has_door_key&key_lost&!target_picked_up, u4) -> 2\n(u0, blocker_moved&door_open&has_door_key&key_lost&target_picked_up, u5) -> 13\n(u2, !door_open&!has_door_key&!key_lost&target_picked_up, u1) -> -101.694\n(u2, !door_open&!has_door_key&key_lost&!target_picked_up, u2) -> -1\n(u2, !door_open&!has_door_key&key_lost&target_picked_up, u1) -> -101.694\n(u2, !door_open&has_door_key&!key_lost&target_picked_up, u1) -> -101.694\n(u2, !door_open&has_door_key&key_lost&!target_picked_up, u3) -> -1\n(u2, !door_open&has_door_key&key_lost&target_picked_up, u1) -> -101.694\n(u2, door_open&!has_door_key&!key_lost&!target_picked_up, u1) -> -101.694\n(u2, door_open&!has_door_key&!key_lost&target_picked_up, u1) -> -101.694\n(u2, door_open&!has_door_key&key_lost&!target_picked_up, u1) -> -101.694\n(u2, door_open&!has_door_key&key_lost&target_picked_up, u1) -> -101.694\n(u2, door_open&has_door_key&!key_lost&!target_picked_up, u4) -> 2\n(u2, door_open&has_door_key&!key_lost&target_picked_up, u5) -> 13\n(u2, door_open&has_door_key&key_lost&!target_picked_up, u4) -> 1\n(u2, door_open&has_door_key&key_lost&target_picked_up, u5) -> 12\n(u3, !door_open&!key_lost&target_picked_up, u1) -> -101.694\n(u3, !door_open&key_lost&!target_picked_up, u3) -> -1\n(u3, !door_open&key_lost&target_picked_up, u1) -> -101.694\n(u3, door_open&!key_lost&!target_picked_up, u4) -> 2\n(u3, door_open&!key_lost&target_picked_up, u5) -> 13\n(u3, door_open&key_lost&!target_picked_up, u4) -> 1\n(u3, door_open&key_lost&target_picked_up, u5) -> 12\n(u4, !door_open&!has_door_key&!key_lost&target_picked_up, u5) -> 11\n(u4, !door_open&!has_door_key&key_lost&!target_picked_up, u4) -> -1\n(u4, !door_open&!has_door_key&key_lost&target_picked_up, u5) -> 10\n(u4, !door_open&has_door_key&!key_lost&!target_picked_up, u6) -> -1\n(u4, !door_open&has_door_key&!key_lost&target_picked_up, u5) -> 6\n(u4, !door_open&has_door_key&key_lost&!target_picked_up, u6) -> -2\n(u4, !door_open&has_door_key&key_lost&target_picked_up, u5) -> 5\n(u4, door_open&!key_lost&target_picked_up, u5) -> 11\n(u4, door_open&key_lost&!target_picked_up, u4) -> -1\n(u4, door_open&key_lost&target_picked_up, u5) -> 10\n(u6, !door_open&!key_lost&target_picked_up, u5) -> 7\n(u6, !door_open&key_lost&!target_picked_up, u6) -> -1\n(u6, !door_open&key_lost&target_picked_up, u5) -> 6\n(u6, door_open&!key_lost&!target_picked_up, u4) -> 1\n(u6, door_open&!key_lost&target_picked_up, u5) -> 12\n(u6, door_open&key_lost&target_picked_up, u5) -> 11\n"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "g2",
+   "title": "G2: no order word, no order",
+   "intro": "Task: *Open the door and pick up the box in the other room.* (templates suite, card `tpl-existence-2-goal`, MiniGrid-UnlockPickup-v0). This is the main risk of the \"then\" edit: a list with no order word must stay two goals. The targeted before round did not run G2, so the before machine comes from main's last full run at max.",
+   "blocks": [
+    {
+     "type": "table",
+     "rows": [
+      [
+       "main full run r1",
+       "`../model-comparison/evidence/llm-loop2/runs/f-max/A/G2-r1.json`",
+       "hard Existence(door_open): `(Fdoor_open)`; hard Existence(target_picked_up): `(Ftarget_picked_up)`",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "102"
+      ],
+      [
+       "full rerun r1",
+       "`evidence/runs/full-after/G2-r1.json`",
+       "same set as main full run r1",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "106"
+      ]
+     ],
+     "columns": [
+      "run",
+      "record",
+      "clauses and LTLf",
+      "verdict",
+      "wall s"
+     ]
+    },
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/g2-before.html",
+       "height": 520,
+       "alt": "Reward Machine g2-before: 4 states",
+       "caption": "**`g2-before`** · UnlockPickup · 4 states, 5 transitions · final u3, rejecting none\nTask: *Open the door and pick up the box in the other room.* Right: two goals with no order, as the task states none.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Run record `../model-comparison/evidence/llm-loop2/runs/f-max/A/``G2-r1.json` (field `machine`): main's last full 46-case run at reasoning max (loop 2, before the shape-fix sentence of `42003cf` and before streaming). The targeted before round did not run G2.",
+        "code": "# Task (NL)\nOpen the door and pick up the box in the other room.\n\n# Clauses and LTLf (the clauses of run G2-r1, as the critic accepted them)\nhard Existence(door_open): (Fdoor_open)\nhard Existence(target_picked_up): (Ftarget_picked_up)\n\n# RM text (graphs/g2-before.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&target_picked_up) -> u1\n(u0, door_open&!target_picked_up) -> u2\n(u0, door_open&target_picked_up) -> u3\n(u1, door_open) -> u3\n(u2, target_picked_up) -> u3\nREWARD_FUNCTION:\n(u0, !door_open&target_picked_up, u1) -> 1\n(u0, door_open&!target_picked_up, u2) -> 1\n(u0, door_open&target_picked_up, u3) -> 12\n(u1, door_open, u3) -> 11\n(u2, target_picked_up, u3) -> 11\n"
+       }
+      },
+      {
+       "src": "graphs/g2-after.html",
+       "height": 520,
+       "alt": "Reward Machine g2-after: 4 states",
+       "caption": "**`g2-after`** · UnlockPickup · 4 states, 5 transitions · final u3, rejecting none\nTask: *Open the door and pick up the box in the other room.* Right: the same machine text as before the fix, two goals with no order. The \"then\" edit added no order where the task has no order word.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Run record `evidence/runs/full-after/G2-r1.json` (field `machine`): the fix (prompts of `40e6614`), generator deepseek-v4.1-flash and critic glm-5.3-flash at reasoning max, full 46-case rerun.",
+        "code": "# Task (NL)\nOpen the door and pick up the box in the other room.\n\n# Clauses and LTLf (the clauses of run G2-r1, as the critic accepted them)\nhard Existence(door_open): (Fdoor_open)\nhard Existence(target_picked_up): (Ftarget_picked_up)\n\n# RM text (graphs/g2-after.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&target_picked_up) -> u1\n(u0, door_open&!target_picked_up) -> u2\n(u0, door_open&target_picked_up) -> u3\n(u1, door_open) -> u3\n(u2, target_picked_up) -> u3\nREWARD_FUNCTION:\n(u0, !door_open&target_picked_up, u1) -> 1\n(u0, door_open&!target_picked_up, u2) -> 1\n(u0, door_open&target_picked_up, u3) -> 12\n(u1, door_open, u3) -> 11\n(u2, target_picked_up, u3) -> 11\n"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "fix",
+   "title": "The change",
+   "intro": "Commit `40e6614` rewords existing text in `app/src/prompts/compiler-rm/reward-ltlf-creator.system.md` (the generator) and `app/src/prompts/compiler-rm/declare-templates.md` (shared by the generator and the critic: `app/src/prompts/loaders.py` splits it into both system prompts). The critic's own file is unchanged. Full diff: `evidence/prompt-fix.diff`.",
+   "blocks": [
+    {
+     "type": "list",
+     "items": [
+      "**The example that misled.** The ban-with-a-condition example was an event \"described as 'lost before `a` happened'\"; it is now an event \"described as 'dropped while the gate is shut'\", and only a \"while ... still shut\" condition folds into `Absence`.",
+      "**\"Until\" is always an order.** The point, the table row and the worked example now say that \"until `a`\" is always `Precedence(a, b)`, \"even when `b` is 'dropped while the gate is shut'\", because `b` can happen again after the gate opens and shuts, and the task allows it then.",
+      "**A list after a leading \"then\" keeps its order.** The stated-order point and the \"listed sequence\" row now also cover \"then / finally / after that, do `c` and `d`\": `c` before `d`."
+     ]
+    },
+    {
+     "type": "text",
+     "text": "**Generator prompt, the two edited points (from evidence/prompt-fix.diff)**"
+    },
+    {
+     "type": "code",
+     "text": "- A stated order of commanded steps (\"`a`, then `b`, then `c`\", \"first `a`, then `b`\", \"do `a` before\n-  `b`\") is the `Existence` of the last step plus one `Precedence` per consecutive pair:\n+  `b`\", and the steps listed after a leading \"then\", \"finally\" or \"after that\": \"then do `b` and\n+  `c`\" is `b` before `c`) is the `Existence` of the last step plus one `Precedence` per consecutive pair:\n\n- A ban with a condition (\"while ... is still shut\", \"until ...\"): first read the banned\n-  event's description in the environment. If it already holds that condition (an event\n-  described as \"lost before `a` happened\"), write plain `Absence` of that event and no\n-  `Precedence`. Otherwise\n-  the condition stays in the clause as `Precedence` of the event that ends it.\n+  event's description in the environment. If it already holds a \"while ... is still shut\"\n+  condition (an event described as \"dropped while the gate is shut\"), write plain `Absence`\n+  of that event and no `Precedence`. Otherwise, and always for \"until `a`\" (\"until the gate\n+  has been opened once\"), the condition stays in the clause as `Precedence` of the event\n+  that ends it: the ban ends once `a` has happened, even if the gate shuts again later."
+    },
+    {
+     "type": "text",
+     "text": "**Practice cited.** Anthropic, *Prompting best practices*, section \"Use examples effectively\": make examples \"Diverse: Cover edge cases and vary enough that Claude doesn't pick up unintended patterns\" ([platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices), read 2026-11-20). Its earlier Claude 4 version has the section the coder cited, \"Be vigilant with examples & details\": models \"pay close attention to details and examples\", so examples should match the wanted behavior ([docs.claude.com/en/docs/build-with-claude/prompt-engineering/claude-4-best-practices](https://docs.claude.com/en/docs/build-with-claude/prompt-engineering/claude-4-best-practices)). The coder also cited \"Use examples (multishot prompting)\" for the \"then\" edit: an example list should include the case you want."
+    }
+   ]
+  },
+  {
+   "id": "evidence",
+   "title": "Evidence, rerun and code",
+   "blocks": [
+    {
+     "type": "list",
+     "items": [
+      "**Run records:** `evidence/runs/before-max/` (9), `fix-until/` (6), `fix-then/` (3), `regression-fail/` (3), `regression-pass/` (15), `full-after/` (46). Each run has `<case>-r<k>.json` (task, clauses, critic trail, machine, wall) and a slim call log `<case>-r<k>.calls.jsonl` (timing, tokens, errors; prompts and schema dropped by `tools/slim_calls.py`). Main's full run is read from `../model-comparison/evidence/llm-loop2/runs/f-max/A/` and not copied.",
+      "**Diff:** `evidence/prompt-fix.diff`, the prompt part of commit `40e6614`.",
+      "**Tables:** `evidence/round-table.out`, the round table above; `tools/run_table.py` prints the per-run rows.",
+      "**Machines:** `graphs/<name>.rm` is the `machine` field of the record named under each graph, drawn as `.svg` and `.html`.",
+      "**Scripts:** `tools/round_table.py`, `tools/run_table.py` and the scorer they import (`arm_stats.py`, `chain_score.py`, `cases.py`, `loopcrit.py`, the same as in `../opencode-streaming/tools/`). The local cards they read are in `evidence/cards/`; the benchmark cards come from the checkout named by `CC_ROOT`. The tools that call the models stay in the plan folder.",
+      "**Limits:** 3 runs per targeted case before and 4 after, plus one full rerun; the critic side of the fix is untested (see above)."
+     ]
+    },
+    {
+     "type": "text",
+     "text": "**Rerun (no model call; RM_RL_env, from this entry's tools/ folder)**"
+    },
+    {
+     "type": "code",
+     "text": "env -C docs/paper/until-prompt-fix/tools CC_ROOT=$PWD PYTHONPATH=$PWD/app python -W ignore round_table.py \\\n    before-max=../evidence/runs/before-max fix-until=../evidence/runs/fix-until \\\n    fix-then=../evidence/runs/fix-then regression-fail=../evidence/runs/regression-fail \\\n    regression-pass=../evidence/runs/regression-pass full-after=../evidence/runs/full-after \\\n    main-full-max=../../model-comparison/evidence/llm-loop2/runs/f-max/A\n# per-run rows of the four shown cases\nenv -C docs/paper/until-prompt-fix/tools CC_ROOT=$PWD PYTHONPATH=$PWD/app python -W ignore run_table.py \\\n    ../evidence/runs/before-max ../evidence/runs/fix-until ../evidence/runs/fix-then \\\n    ../evidence/runs/regression-fail ../evidence/runs/full-after \\\n    ../../model-comparison/evidence/llm-loop2/runs/f-max/A --cases G2,G6,W5a,W5b\n# a graph\npython app/main.py render-rm --rm-file docs/paper/until-prompt-fix/graphs/g6-after.rm \\\n    --svg-dir docs/paper/until-prompt-fix/graphs/g6-after.svg --html"
+    },
+    {
+     "type": "text",
+     "text": "Code: commit `40e6614` (merge `f778643`): `app/src/prompts/compiler-rm/reward-ltlf-creator.system.md` and `app/src/prompts/compiler-rm/declare-templates.md`. The runs used the uncommitted edits in worktree `tp-until-fix`, which this commit then recorded. The `fix-until/` runs had the \"until\" edit only; every later round had both edits (checked in the full call logs, which keep the prompts)."
+    }
+   ]
+  }
+ ]
+}

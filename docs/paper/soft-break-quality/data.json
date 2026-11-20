@@ -1,0 +1,1204 @@
+{
+ "title": "Soft-rule breaks: how often, not only whether",
+ "eyebrow": "judge measure · soft rules · recomputed from saved test traces · 2026-11-20",
+ "subtitle": "The judge counted a broken soft rule once per episode, however often it broke. It now also counts each separate break. On saved test traces, ARM-FM broke \"try not to drop the key\" about 220 times per episode where the old count said 0.79, and on the zombie garden the new count tells warm-started runs (about 10 breaks) from plain PPO (about 16), which the old count ranked the other way.",
+ "sections": [
+  {
+   "id": "claim",
+   "title": "What it shows",
+   "blocks": [
+    {
+     "type": "callout",
+     "tone": "info",
+     "title": "In plain words",
+     "text": "A soft rule is a \"try not to\" rule: breaking it is allowed, but a good agent breaks it rarely. Pass or fail counts only the goal and the hard rules, so soft rules need their own quality number. The old number said whether each soft rule broke at least once in an episode. An agent that drops the key once and one that drops it 200 times scored the same. The judge now also counts separate breaks: one break lasts while the rule's labels stay as they were on the break step, and the rule starts again when they change. Pass or fail is unchanged. All numbers below are recomputed from test traces saved by earlier runs, with no new training."
+    },
+    {
+     "type": "stats",
+     "items": [
+      {
+       "value": "0.79 to 221",
+       "label": "ARM-FM on cx-goal-one-rule: soft rules broken per episode (old) to separate breaks per episode (new)",
+       "tone": "bad"
+      },
+      {
+       "value": "26 of 27",
+       "label": "FARM experiments on the two BlockedUnlockPickup cards with 0 separate soft breaks (the other: the ablation with no soft-break charge, 0.97)",
+       "tone": "ok"
+      },
+      {
+       "value": "16.66 vs 10.25",
+       "label": "zombie garden rerun, separate breaks: plain PPO vs warm-started (old count 1.14 vs 1.36: the other way round)",
+       "tone": "ok"
+      },
+      {
+       "value": "0 of 59",
+       "label": "experiments where the recomputed old count differs from the stored one",
+       "tone": "ok"
+      }
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**ARM-FM's machine pays for the drop.** On cx-goal-one-rule the ARM-FM agent picks up the key and drops it every other step, from about step 10 to the end of each 576-step episode, and never opens the door: 23,653 separate `key_lost` breaks in 100 test episodes of seed 1. Its machine paid it 25.2 per episode for that while the task was never done (live re-judge below).",
+      "**Zero breaks is not care by itself.** cx-goal-one-rule is judged 0 in every arm, FARM included: an agent that never finishes may simply never hold the key long enough to drop it. The FARM rows that do reach the goal on cx-goal-many-rules (judged 0.66 to 1.0) also show 0 breaks.",
+      "**Some rules never break.** Existence, ExistenceTwo, Response and RespondedExistence can only stay open at the end, so they add nothing to the count (they show as `soft_open`). On cx-goal-many-rules only Absence(key_lost) can break; Response(has_door_key, door_open) stays open.",
+      "**The forcing lanes number needs care.** On the forcing suite FARM has 1.05 separate breaks against 10.58 for no-RM, but FARM breaks the hard top-lane rule in every episode, which ends the game near step 80. Its machine (main, before `deff802`) charges a hard break less than a stream of soft breaks; the pay-order check still flags it, and it is generated again at the freeze."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "count",
+   "title": "How a break is counted",
+   "intro": "`_break_count` in `app/src/benchmark/declare_judge.py`: judge the trace; on a break, count one and start the rule again from the first later step whose labels differ from the break step's. A label true on several steps in a row is one break.",
+   "blocks": [
+    {
+     "type": "table",
+     "columns": [
+      "template",
+      "one separate break is",
+      "example (labels per step)",
+      "count"
+     ],
+     "rows": [
+      [
+       "Absence(a)",
+       "each time a turns true",
+       "a = 0101 0101 (the ARM-FM key drops)",
+       "4"
+      ],
+      [
+       "Precedence(a, b)",
+       "each new run of b before any a",
+       "a = 0000 0000, b = 0110 0011",
+       "2"
+      ],
+      [
+       "ChainResponse(a, b)",
+       "each run of a trigger with no response",
+       "a = 1100 1000, b = 0000 0000",
+       "2"
+      ],
+      [
+       "NotCoExistence(a, b)",
+       "each time the pair comes back together",
+       "a = 1000, b = 0101",
+       "1"
+      ],
+      [
+       "Existence, ExistenceTwo, Response, RespondedExistence",
+       "never: these can only stay open at the end",
+       "-",
+       "0 (soft_open)"
+      ]
+     ]
+    },
+    {
+     "type": "text",
+     "text": "The NotCoExistence row is the record's own example: the pair is together from step 2 on; after the break the rule restarts at step 3, where a never comes true again, so b on step 4 is not a new break. Every example count in this table was computed with `_break_count` itself."
+    }
+   ]
+  },
+  {
+   "id": "results",
+   "title": "Recomputed on saved test traces",
+   "intro": "Greedy test episodes of each experiment's seeds (100 per seed), judged again with the new code. Old: soft rules broken per episode, as stored in each judge.json. New: separate breaks per episode, and the share of episodes with at least one.",
+   "blocks": [
+    {
+     "type": "table",
+     "columns": [
+      "card",
+      "arm",
+      "experiment",
+      "episodes",
+      "judged success",
+      "old: soft rules broken",
+      "new: separate breaks",
+      "episodes with a break"
+     ],
+     "rows": [
+      [
+       "cx-goal-one-rule",
+       "FARM",
+       "fa1-complex-blocked",
+       "300",
+       "0",
+       "0",
+       "0",
+       "0%"
+      ],
+      [
+       "cx-goal-one-rule",
+       "ARM-FM",
+       "ta1-cx-goal-one-rule",
+       "300",
+       "0",
+       "0.787",
+       "221.3",
+       "78.7%"
+      ],
+      [
+       "cx-goal-one-rule",
+       "no-RM",
+       "ta1-cx-goal-one-rule",
+       "300",
+       "0",
+       "0",
+       "0",
+       "0%"
+      ],
+      [
+       "cx-goal-one-rule",
+       "FARM, no soft-break charge (ablation)",
+       "abl1 off-soft_break",
+       "200",
+       "0",
+       "0.015",
+       "0.97",
+       "1.5%"
+      ],
+      [
+       "cx-goal-many-rules",
+       "FARM",
+       "fa1-complex-blocked",
+       "300",
+       "0",
+       "0",
+       "0",
+       "0%"
+      ],
+      [
+       "cx-goal-many-rules",
+       "ARM-FM",
+       "ta1-cx-goal-many-rules",
+       "300",
+       "0",
+       "0.77",
+       "216.6",
+       "77%"
+      ],
+      [
+       "cx-goal-many-rules",
+       "no-RM",
+       "ta1-cx-goal-many-rules",
+       "300",
+       "0",
+       "0",
+       "0",
+       "0%"
+      ],
+      [
+       "cx-goal-many-rules",
+       "FARM",
+       "e3-fear-alt5",
+       "300",
+       "0.983",
+       "0",
+       "0",
+       "0%"
+      ],
+      [
+       "cx-goal-many-rules",
+       "FARM",
+       "chain regression ok2, ok4, ok5, reworded",
+       "300 each",
+       "0.96, 0.66, 0.973, 1.0",
+       "0",
+       "0",
+       "0%"
+      ],
+      [
+       "lanes-rules",
+       "FARM, plain PPO",
+       "lt-R1-base6m",
+       "300",
+       "0.927",
+       "1.12",
+       "16.14",
+       "100%"
+      ],
+      [
+       "lanes-rules",
+       "FARM, plain PPO",
+       "lt-R3-rs01ed",
+       "300",
+       "0.983",
+       "1.137",
+       "16.66",
+       "100%"
+      ],
+      [
+       "lanes-rules",
+       "FARM, plain PPO",
+       "lt-WS-plain",
+       "300",
+       "0.983",
+       "1.137",
+       "16.66",
+       "100%"
+      ],
+      [
+       "lanes-rules",
+       "FARM, warm-started",
+       "lt-R5-bcft",
+       "300",
+       "0.99",
+       "1.32",
+       "10.50",
+       "100%"
+      ],
+      [
+       "lanes-rules",
+       "FARM, warm-started",
+       "lt-R6-cont",
+       "300",
+       "1.0",
+       "1.293",
+       "10.2",
+       "100%"
+      ],
+      [
+       "lanes-rules",
+       "FARM, warm-started",
+       "lt-WS-warm",
+       "300",
+       "0.997",
+       "1.363",
+       "10.25",
+       "100%"
+      ]
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**Zombie garden.** Every `lt-*` run trained the same machine (`graphs/lanes-rules-tune.rm`). Judged success counts only the hard top lane, so it reads 0.91 to 1.0 everywhere. The old count saw every episode break at least one of the two soft rules (1.1 to 1.36 of them on average) and ranked the warm starts worse. The new count puts the four warm-started runs of the zombie-garden entry (R5-bcft, R5d-bcft12, R6-cont, WS-warm) at 10.2 to 10.5 and every other `lt-*` run at 14.5 to 16.8, in line with that entry's side-breach count (17.15 to 9.85).",
+      "**What this does not show.** The zombie-garden warm start is a hack (a behaviour clone of a hand-written policy) and still tramples too many plants; fewer breaks here is a measurement result, not a learning result."
+     ]
+    },
+    {
+     "type": "details",
+     "items": [
+      {
+       "title": "All 59 experiments",
+       "preview": "every row of evidence/soft-quality.jsonl",
+       "text": "Worktree and experiment as saved. Episodes is the total over the experiment's seeds (100 greedy test episodes per seed; dry runs have fewer).",
+       "blocks": [
+        {
+         "type": "table",
+         "rows": [
+          [
+           "cx-goal-many-rules",
+           "FARM",
+           "tp-chain-progress",
+           "cr-many-rules-ok2",
+           "300",
+           "0.96",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-many-rules",
+           "FARM",
+           "tp-chain-progress",
+           "cr-many-rules-ok4",
+           "300",
+           "0.66",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-many-rules",
+           "FARM",
+           "tp-chain-progress",
+           "cr-many-rules-ok5",
+           "300",
+           "0.973",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-many-rules",
+           "FARM",
+           "tp-chain-progress",
+           "cr-many-rules-reworded",
+           "300",
+           "1",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-many-rules",
+           "FARM",
+           "tp-chain-progress",
+           "crdry-many-rules-ok2",
+           "15",
+           "0",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-many-rules",
+           "FARM",
+           "tp-chain-progress",
+           "crdry-many-rules-ok4",
+           "15",
+           "0",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-many-rules",
+           "FARM",
+           "tp-chain-progress",
+           "crdry-many-rules-ok5",
+           "15",
+           "0",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-many-rules",
+           "FARM",
+           "tp-chain-progress",
+           "crdry-many-rules-ok6",
+           "15",
+           "0",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-many-rules",
+           "FARM",
+           "tp-chain-progress",
+           "crdry-many-rules-reworded",
+           "15",
+           "0",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-many-rules",
+           "FARM",
+           "tp-final-e2",
+           "e2-fear-plain-s1",
+           "300",
+           "0",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-many-rules",
+           "FARM",
+           "tp-final-e2b",
+           "e2-fear-ceiling-s1",
+           "300",
+           "0",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-many-rules",
+           "FARM",
+           "tp-final-e3",
+           "e3-dry-cx-goal-many-rules",
+           "100",
+           "0",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-many-rules",
+           "FARM",
+           "tp-final-e3",
+           "e3-dry2-fear",
+           "100",
+           "0",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-many-rules",
+           "FARM",
+           "tp-final-e3",
+           "e3-fear-alt5",
+           "300",
+           "0.983",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-many-rules",
+           "FARM",
+           "tp-train-closed",
+           "bench__abl1__cx-goal-many-rules__farm__ppo__off-end_judgment",
+           "200",
+           "0.89",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-many-rules",
+           "FARM",
+           "tp-train-closed",
+           "bench__abl1__cx-goal-many-rules__farm__ppo__off-progress",
+           "200",
+           "0",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-many-rules",
+           "FARM",
+           "tp-train-closed",
+           "bench__abl1__cx-goal-many-rules__farm__ppo__off-recurrent_soft_penalty",
+           "200",
+           "0",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-many-rules",
+           "FARM",
+           "tp-train-closed",
+           "bench__abl1__cx-goal-many-rules__farm__ppo__off-soft_break",
+           "200",
+           "0",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-many-rules",
+           "FARM",
+           "tp-train-closed",
+           "bench__abl1__cx-goal-many-rules__farm__ppo__off-soft_pending",
+           "200",
+           "0",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-many-rules",
+           "FARM",
+           "tp-train-closed",
+           "bench__abl1__cx-goal-many-rules__farm__ppo__off-well",
+           "200",
+           "0",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-many-rules",
+           "FARM",
+           "tp-train-closed",
+           "bench__fa1-complex-blocked__cx-goal-many-rules__farm__ppo",
+           "300",
+           "0",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-many-rules",
+           "ARM-FM",
+           "tp-train-closed",
+           "bench__ta1-cx-goal-many-rules__cx-goal-many-rules__arm-fm__ppo",
+           "300",
+           "0",
+           "0.77",
+           "216.6",
+           "77%",
+           "0"
+          ],
+          [
+           "cx-goal-many-rules",
+           "no-RM",
+           "tp-train-closed",
+           "bench__ta1-cx-goal-many-rules__cx-goal-many-rules__no-rm__ppo",
+           "300",
+           "0",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-one-rule",
+           "FARM",
+           "tp-train-closed",
+           "bench__abl1__cx-goal-one-rule__farm__ppo__off-end_judgment",
+           "200",
+           "0",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-one-rule",
+           "FARM",
+           "tp-train-closed",
+           "bench__abl1__cx-goal-one-rule__farm__ppo__off-progress",
+           "200",
+           "0",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-one-rule",
+           "FARM",
+           "tp-train-closed",
+           "bench__abl1__cx-goal-one-rule__farm__ppo__off-recurrent_soft_penalty",
+           "200",
+           "0",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-one-rule",
+           "FARM",
+           "tp-train-closed",
+           "bench__abl1__cx-goal-one-rule__farm__ppo__off-soft_break",
+           "200",
+           "0",
+           "0.015",
+           "0.97",
+           "1.5%",
+           "0"
+          ],
+          [
+           "cx-goal-one-rule",
+           "FARM",
+           "tp-train-closed",
+           "bench__abl1__cx-goal-one-rule__farm__ppo__off-well",
+           "200",
+           "0",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-one-rule",
+           "FARM",
+           "tp-train-closed",
+           "bench__fa1-complex-blocked__cx-goal-one-rule__farm__ppo",
+           "300",
+           "0",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "cx-goal-one-rule",
+           "ARM-FM",
+           "tp-train-closed",
+           "bench__ta1-cx-goal-one-rule__cx-goal-one-rule__arm-fm__ppo",
+           "300",
+           "0",
+           "0.787",
+           "221.3",
+           "78.7%",
+           "0"
+          ],
+          [
+           "cx-goal-one-rule",
+           "no-RM",
+           "tp-train-closed",
+           "bench__ta1-cx-goal-one-rule__cx-goal-one-rule__no-rm__ppo",
+           "300",
+           "0",
+           "0",
+           "0",
+           "0%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-final-e2",
+           "e2-lanes-a-today",
+           "300",
+           "0",
+           "0.457",
+           "0.803",
+           "44.7%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-final-e2",
+           "e2-lanes-c-once-s2.5",
+           "300",
+           "0.873",
+           "1.07",
+           "15.87",
+           "99.3%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-final-e2",
+           "e2-lanes-d-s1",
+           "300",
+           "0.423",
+           "1.13",
+           "10.57",
+           "97.7%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-final-e2",
+           "e2-lanes-e-s2.5",
+           "300",
+           "0",
+           "0.653",
+           "1.447",
+           "64%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-final-e2b",
+           "e2-lanes-b-ceiling-s1",
+           "300",
+           "0.557",
+           "1.13",
+           "13.62",
+           "98.7%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-final-e2b",
+           "e2-lanes-f-ceiling-s2.5",
+           "300",
+           "0.003",
+           "0.883",
+           "3.727",
+           "85%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-final-e3",
+           "e3-dry-lanes-rules",
+           "3",
+           "0",
+           "1",
+           "3",
+           "100%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-final-e3",
+           "e3-dry2-lanes",
+           "100",
+           "0",
+           "0.69",
+           "1.87",
+           "69%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-final-e3",
+           "e3-lanes-live-1x",
+           "300",
+           "0.56",
+           "1",
+           "11.31",
+           "89.7%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-final-e3",
+           "e3-lanes-live-2x",
+           "300",
+           "0.863",
+           "1.13",
+           "16.11",
+           "100%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-lanes-tune",
+           "lt-R1-base6m",
+           "300",
+           "0.927",
+           "1.12",
+           "16.14",
+           "100%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-lanes-tune",
+           "lt-R2-rs001",
+           "300",
+           "0.963",
+           "1.12",
+           "16.67",
+           "100%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-lanes-tune",
+           "lt-R2-rs001vl",
+           "300",
+           "0.957",
+           "1.13",
+           "16.73",
+           "100%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-lanes-tune",
+           "lt-R2-rs01",
+           "300",
+           "0.947",
+           "1.12",
+           "16.38",
+           "100%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-lanes-tune",
+           "lt-R3-rs001ed",
+           "300",
+           "0.97",
+           "1.13",
+           "16.82",
+           "100%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-lanes-tune",
+           "lt-R3-rs01ed",
+           "300",
+           "0.983",
+           "1.14",
+           "16.66",
+           "100%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-lanes-tune",
+           "lt-R3-rs01ed6m",
+           "300",
+           "0.983",
+           "1.07",
+           "16.63",
+           "100%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-lanes-tune",
+           "lt-R4-both",
+           "300",
+           "0.963",
+           "1.1",
+           "14.51",
+           "99.7%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-lanes-tune",
+           "lt-R4-eps",
+           "300",
+           "0.98",
+           "1.16",
+           "16.26",
+           "100%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-lanes-tune",
+           "lt-R4c-lam99",
+           "300",
+           "0.907",
+           "1.22",
+           "16.58",
+           "100%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-lanes-tune",
+           "lt-R5-bcft",
+           "300",
+           "0.99",
+           "1.32",
+           "10.5",
+           "100%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-lanes-tune",
+           "lt-R5b-n64",
+           "300",
+           "0.967",
+           "1.17",
+           "16.73",
+           "100%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-lanes-tune",
+           "lt-R5c-bcftd0",
+           "300",
+           "0.98",
+           "1.05",
+           "16.64",
+           "100%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-lanes-tune",
+           "lt-R5d-bcft12",
+           "300",
+           "0.997",
+           "1.36",
+           "10.25",
+           "100%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-lanes-tune",
+           "lt-R6-cont",
+           "300",
+           "1",
+           "1.29",
+           "10.2",
+           "100%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-lanes-tune",
+           "lt-R6b-bothrm",
+           "300",
+           "0.99",
+           "1.11",
+           "14.47",
+           "100%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-lanes-warmstart",
+           "lt-WS-plain",
+           "300",
+           "0.983",
+           "1.14",
+           "16.66",
+           "100%",
+           "0"
+          ],
+          [
+           "lanes-rules",
+           "FARM",
+           "tp-lanes-warmstart",
+           "lt-WS-warm",
+           "300",
+           "0.997",
+           "1.36",
+           "10.25",
+           "100%",
+           "0"
+          ]
+         ],
+         "columns": [
+          "card",
+          "arm",
+          "worktree",
+          "experiment",
+          "episodes",
+          "judged success",
+          "old: soft rules broken",
+          "new: separate breaks",
+          "episodes with a break",
+          "old count mismatches"
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "live",
+   "title": "Live re-judge with the new judge",
+   "intro": "The suite table run with the new code on finished seed-1 runs, no training (`aggregate-suite` on a suite file cut to one card): the ARM-FM cx-goal-one-rule run, and the forcing lanes-rules runs, which had never been judged. The new columns appear beside the old ones. One seed, so the table compares behaviour only and gives no verdict.",
+   "blocks": [
+    {
+     "type": "table",
+     "columns": [
+      "suite, card",
+      "arm",
+      "judged success",
+      "env success",
+      "hard breaks",
+      "old: soft rules broken",
+      "new: separate breaks",
+      "episodes with a break",
+      "RM return",
+      "episode length"
+     ],
+     "rows": [
+      [
+       "ta1, cx-goal-one-rule",
+       "ARM-FM",
+       "0",
+       "0",
+       "0",
+       "0.84",
+       "236.53",
+       "84%",
+       "25.196",
+       "576"
+      ],
+      [
+       "ta1, cx-goal-one-rule",
+       "no-RM",
+       "0",
+       "0",
+       "0",
+       "0",
+       "0",
+       "0%",
+       "-",
+       "576"
+      ],
+      [
+       "forcing, lanes-rules",
+       "FARM",
+       "0",
+       "0.03",
+       "1",
+       "0.55",
+       "1.05",
+       "54%",
+       "-1.6",
+       "79.5"
+      ],
+      [
+       "forcing, lanes-rules",
+       "no-RM",
+       "0.7",
+       "0",
+       "0.3",
+       "1.42",
+       "10.58",
+       "100%",
+       "-",
+       "300"
+      ]
+     ]
+    },
+    {
+     "type": "text",
+     "text": "On ta1 both hard clauses were never activated (Precedence(door_open, target_picked_up) and Existence(target_picked_up) at 0.00): the agent never opened the door. The forcing FARM line is the kept pay-order flag at work: hard break -1 against soft break -47.5 on that machine ([kept-flags.out in the pay-order entry](../pay-order-started/evidence/kept-flags.out))."
+    }
+   ]
+  },
+  {
+   "id": "machines",
+   "title": "The machines behind the rows",
+   "intro": "Interactive graphs drawn by the repository's generator (`render-rm --html`). The fold-out under each graph has the task, the clauses with their LTLf, and the machine text.",
+   "blocks": [
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/cx-goal-one-rule-farm.html",
+       "height": 520,
+       "alt": "Reward Machine cx-goal-one-rule-farm: 6 states",
+       "caption": "**`cx-goal-one-rule-farm`** · BlockedUnlockPickup · 6 states, 20 transitions · final u4, rejecting u1\nTask: *Open the door and then pick up the box in the other room, and try not to drop the key while the door is still closed.* Judged success 0; separate soft breaks 0 per episode, 0% of episodes with one.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "FARM bundle `experiments/benchmark/complex/bundles/farm/cx-goal-one-rule` (trained in `fa1-complex-blocked`, 3 seeds, worktree tp-train-closed; committed in `ecf6ca9` after the runs and unchanged since).",
+        "code": "# Task (NL)\nOpen the door and then pick up the box in the other room, and try not to drop the key while the door is still closed.\n\n# Clauses and LTLf (the bundle's clauses (generated))\nhard Existence(door_open): (Fdoor_open)\nhard Existence(target_picked_up): (Ftarget_picked_up)\nhard Precedence(door_open, target_picked_up): (((~target_picked_up)Udoor_open)|(G(~target_picked_up)))\nsoft Absence(key_lost): (~(Fkey_lost))\n\n# RM text (graphs/cx-goal-one-rule-farm.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5\nINITIAL_STATE: u0\nFINAL_STATES: u4\nREJECTING_STATES: u1\nACCEPTING_STATES:\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, !door_open&!key_lost&target_picked_up) -> u1\n(u0, !door_open&key_lost&!target_picked_up) -> u2\n(u0, !door_open&key_lost&target_picked_up) -> u1\n(u0, door_open&!key_lost&!target_picked_up) -> u3\n(u0, door_open&!key_lost&target_picked_up) -> u4\n(u0, door_open&key_lost&!target_picked_up) -> u5\n(u0, door_open&key_lost&target_picked_up) -> u4\n(u2, !door_open&!key_lost&!target_picked_up) -> u0\n(u2, !door_open&!key_lost&target_picked_up) -> u1\n(u2, !door_open&key_lost&target_picked_up) -> u1\n(u2, door_open&!key_lost&!target_picked_up) -> u3\n(u2, door_open&!key_lost&target_picked_up) -> u4\n(u2, door_open&key_lost&!target_picked_up) -> u5\n(u2, door_open&key_lost&target_picked_up) -> u4\n(u3, !key_lost&target_picked_up) -> u4\n(u3, key_lost&!target_picked_up) -> u5\n(u3, key_lost&target_picked_up) -> u4\n(u5, !key_lost&!target_picked_up) -> u3\n(u5, !key_lost&target_picked_up) -> u4\n(u5, key_lost&target_picked_up) -> u4\nREWARD_FUNCTION:\n(u0, !door_open&!key_lost&target_picked_up, u1) -> -3\n(u0, !door_open&key_lost&!target_picked_up, u2) -> -0.5\n(u0, !door_open&key_lost&target_picked_up, u1) -> -3\n(u0, door_open&!key_lost&!target_picked_up, u3) -> 0.1\n(u0, door_open&!key_lost&target_picked_up, u4) -> 1.2\n(u0, door_open&key_lost&!target_picked_up, u5) -> -0.4\n(u0, door_open&key_lost&target_picked_up, u4) -> 0.7\n(u2, !door_open&!key_lost&target_picked_up, u1) -> -3\n(u2, !door_open&key_lost&target_picked_up, u1) -> -3\n(u2, door_open&!key_lost&!target_picked_up, u3) -> 0.1\n(u2, door_open&!key_lost&target_picked_up, u4) -> 1.2\n(u2, door_open&key_lost&!target_picked_up, u5) -> 0.1\n(u2, door_open&key_lost&target_picked_up, u4) -> 1.2\n(u3, !key_lost&target_picked_up, u4) -> 1.1\n(u3, key_lost&!target_picked_up, u5) -> -0.5\n(u3, key_lost&target_picked_up, u4) -> 0.6\n(u5, !key_lost&target_picked_up, u4) -> 1.1\n(u5, key_lost&target_picked_up, u4) -> 1.1\nPENDING_PROMISES:\nu0: hard 2, soft 0\nu2: hard 2, soft 0\nu3: hard 1, soft 0\nu5: hard 1, soft 0\n"
+       }
+      },
+      {
+       "src": "graphs/cx-goal-one-rule-arm-fm.html",
+       "height": 520,
+       "alt": "Reward Machine cx-goal-one-rule-arm-fm: 7 states",
+       "caption": "**`cx-goal-one-rule-arm-fm`** · BlockedUnlockPickup · 7 states, 16 transitions · final u6, rejecting none\nTask: *Open the door and then pick up the box in the other room, and try not to drop the key while the door is still closed.* Judged success 0; 221.3 separate soft breaks per episode, 78.7% of episodes with one: the agent drops and picks up the key every other step and never opens the door.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "ARM-FM bundle `experiments/benchmark/complex/bundles/arm-fm/cx-goal-one-rule` (trained in `ta1-cx-goal-one-rule`, 3 seeds, worktree tp-train-closed; committed in `ecf6ca9` after the runs and unchanged since).",
+        "code": "# Task (NL)\nOpen the door and then pick up the box in the other room, and try not to drop the key while the door is still closed.\n\n# Clauses and LTLf (the card's expected clauses; ARM-FM writes its machine directly, with no clauses)\nhard Precedence(door_open, target_picked_up): (((~target_picked_up)Udoor_open)|(G(~target_picked_up)))\nhard Existence(target_picked_up): (Ftarget_picked_up)\nsoft Absence(key_lost): (~(Fkey_lost))\n\n# RM text (graphs/cx-goal-one-rule-arm-fm.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6\nINITIAL_STATE: u0\nFINAL_STATES: u6\nTRANSITION_FUNCTION:\n(u0, blocker_moved & !has_door_key) -> u1\n(u0, has_door_key & !blocker_moved) -> u4\n(u0, else) -> u0\n(u1, has_door_key) -> u2\n(u1, key_lost) -> u1\n(u1, else) -> u1\n(u2, door_open) -> u3\n(u2, key_lost) -> u1\n(u2, else) -> u2\n(u3, target_picked_up) -> u6\n(u3, else) -> u3\n(u4, key_lost) -> u0\n(u4, blocker_moved) -> u2\n(u4, else) -> u4\n(u5, else) -> u5\n(u6, else) -> u6\nREWARD_FUNCTION:\n(u0, blocker_moved & !has_door_key, u1) -> 0.1\n(u0, has_door_key & !blocker_moved, u4) -> 0.1\n(u1, has_door_key, u2) -> 0.1\n(u2, door_open, u3) -> 0.3\n(u3, target_picked_up, u6) -> 1\n(u4, key_lost, u0) -> -0.1\n(u4, blocker_moved, u2) -> 0.1\n"
+       }
+      },
+      {
+       "src": "graphs/cx-goal-many-rules-farm.html",
+       "height": 520,
+       "alt": "Reward Machine cx-goal-many-rules-farm: 11 states",
+       "caption": "**`cx-goal-many-rules-farm`** · BlockedUnlockPickup · 11 states, 134 transitions · final u9, rejecting u1\nTask: *Move the ball away from the door before you take the key. Try not to drop the key while the door is still closed. Whenever you are holding the key, try to have the door open at that moment or open it afterwards. Then pick up the box in the other room.* e3-fear-alt5, 3 seeds: judged success 0.983; separate soft breaks 0 per episode.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "FARM bundle of experiment `e3-fear-alt5` (worktree tp-final-e3, `outputs/e3/bundles/cx-goal-many-rules`, git-ignored: this page keeps the copy).",
+        "code": "# Task (NL)\nMove the ball away from the door before you take the key. Try not to drop the key while the door is still closed. Whenever you are holding the key, try to have the door open at that moment or open it afterwards. Then pick up the box in the other room.\n\n# Clauses and LTLf (the bundle's clauses (generated))\nhard Precedence(blocker_moved, has_door_key): (((~has_door_key)Ublocker_moved)|(G(~has_door_key)))\nsoft Absence(key_lost): (~(Fkey_lost))\nsoft Response(has_door_key, door_open): (G(has_door_key->(Fdoor_open)))\nhard Precedence(door_open, target_picked_up): (((~target_picked_up)Udoor_open)|(G(~target_picked_up)))\nhard Existence(blocker_moved): (Fblocker_moved)\nhard Existence(has_door_key): (Fhas_door_key)\nhard Existence(target_picked_up): (Ftarget_picked_up)\n\n# RM text (graphs/cx-goal-many-rules-farm.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10\nINITIAL_STATE: u0\nFINAL_STATES: u9\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up) -> u0\n(u0, !blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up) -> u2\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up) -> u3\n(u0, !blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up) -> u2\n(u0, !blocker_moved&door_open&!has_door_key&key_lost&target_picked_up) -> u3\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up) -> u1\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&door_open&has_door_key&key_lost&!target_picked_up) -> u1\n(u0, !blocker_moved&door_open&has_door_key&key_lost&target_picked_up) -> u1\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&!target_picked_up) -> u4\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u0, blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up) -> u4\n(u0, blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up) -> u5\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up) -> u1\n(u0, blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up) -> u5\n(u0, blocker_moved&!door_open&has_door_key&key_lost&target_picked_up) -> u1\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up) -> u6\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up) -> u7\n(u0, blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up) -> u6\n(u0, blocker_moved&door_open&!has_door_key&key_lost&target_picked_up) -> u7\n(u0, blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up) -> u8\n(u0, blocker_moved&door_open&has_door_key&!key_lost&target_picked_up) -> u9\n(u0, blocker_moved&door_open&has_door_key&key_lost&!target_picked_up) -> u8\n(u0, blocker_moved&door_open&has_door_key&key_lost&target_picked_up) -> u9\n(u2, !blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up) -> u3\n(u2, !blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up) -> u2\n(u2, !blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up) -> u3\n(u2, !blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up) -> u1\n(u2, !blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up) -> u1\n(u2, !blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up) -> u1\n(u2, !blocker_moved&!door_open&has_door_key&key_lost&target_picked_up) -> u1\n(u2, !blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up) -> u3\n(u2, !blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up) -> u2\n(u2, !blocker_moved&door_open&!has_door_key&key_lost&target_picked_up) -> u3\n(u2, !blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up) -> u1\n(u2, !blocker_moved&door_open&has_door_key&!key_lost&target_picked_up) -> u1\n(u2, !blocker_moved&door_open&has_door_key&key_lost&!target_picked_up) -> u1\n(u2, !blocker_moved&door_open&has_door_key&key_lost&target_picked_up) -> u1\n(u2, blocker_moved&!door_open&!has_door_key&!key_lost&!target_picked_up) -> u6\n(u2, blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up) -> u7\n(u2, blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up) -> u6\n(u2, blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up) -> u7\n(u2, blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up) -> u10\n(u2, blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up) -> u9\n(u2, blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up) -> u10\n(u2, blocker_moved&!door_open&has_door_key&key_lost&target_picked_up) -> u9\n(u2, blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up) -> u6\n(u2, blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up) -> u7\n(u2, blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up) -> u6\n(u2, blocker_moved&door_open&!has_door_key&key_lost&target_picked_up) -> u7\n(u2, blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up) -> u8\n(u2, blocker_moved&door_open&has_door_key&!key_lost&target_picked_up) -> u9\n(u2, blocker_moved&door_open&has_door_key&key_lost&!target_picked_up) -> u8\n(u2, blocker_moved&door_open&has_door_key&key_lost&target_picked_up) -> u9\n(u3, !blocker_moved&!door_open&!has_door_key&key_lost) -> u3\n(u3, !blocker_moved&!door_open&has_door_key&!key_lost) -> u1\n(u3, !blocker_moved&!door_open&has_door_key&key_lost) -> u1\n(u3, !blocker_moved&door_open&!has_door_key&key_lost) -> u3\n(u3, !blocker_moved&door_open&has_door_key&!key_lost) -> u1\n(u3, !blocker_moved&door_open&has_door_key&key_lost) -> u1\n(u3, blocker_moved&!door_open&!has_door_key&!key_lost) -> u7\n(u3, blocker_moved&!door_open&!has_door_key&key_lost) -> u7\n(u3, blocker_moved&!door_open&has_door_key&!key_lost) -> u9\n(u3, blocker_moved&!door_open&has_door_key&key_lost) -> u9\n(u3, blocker_moved&door_open&!has_door_key&!key_lost) -> u7\n(u3, blocker_moved&door_open&!has_door_key&key_lost) -> u7\n(u3, blocker_moved&door_open&has_door_key&!key_lost) -> u9\n(u3, blocker_moved&door_open&has_door_key&key_lost) -> u9\n(u4, !door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u4, !door_open&!has_door_key&key_lost&!target_picked_up) -> u4\n(u4, !door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u4, !door_open&has_door_key&!key_lost&!target_picked_up) -> u5\n(u4, !door_open&has_door_key&!key_lost&target_picked_up) -> u1\n(u4, !door_open&has_door_key&key_lost&!target_picked_up) -> u5\n(u4, !door_open&has_door_key&key_lost&target_picked_up) -> u1\n(u4, door_open&!has_door_key&!key_lost&!target_picked_up) -> u6\n(u4, door_open&!has_door_key&!key_lost&target_picked_up) -> u7\n(u4, door_open&!has_door_key&key_lost&!target_picked_up) -> u6\n(u4, door_open&!has_door_key&key_lost&target_picked_up) -> u7\n(u4, door_open&has_door_key&!key_lost&!target_picked_up) -> u8\n(u4, door_open&has_door_key&!key_lost&target_picked_up) -> u9\n(u4, door_open&has_door_key&key_lost&!target_picked_up) -> u8\n(u4, door_open&has_door_key&key_lost&target_picked_up) -> u9\n(u5, !door_open&!key_lost&target_picked_up) -> u1\n(u5, !door_open&key_lost&!target_picked_up) -> u5\n(u5, !door_open&key_lost&target_picked_up) -> u1\n(u5, door_open&!key_lost&!target_picked_up) -> u8\n(u5, door_open&!key_lost&target_picked_up) -> u9\n(u5, door_open&key_lost&!target_picked_up) -> u8\n(u5, door_open&key_lost&target_picked_up) -> u9\n(u6, !door_open&!has_door_key&!key_lost&target_picked_up) -> u7\n(u6, !door_open&!has_door_key&key_lost&!target_picked_up) -> u6\n(u6, !door_open&!has_door_key&key_lost&target_picked_up) -> u7\n(u6, !door_open&has_door_key&!key_lost&!target_picked_up) -> u10\n(u6, !door_open&has_door_key&!key_lost&target_picked_up) -> u9\n(u6, !door_open&has_door_key&key_lost&!target_picked_up) -> u10\n(u6, !door_open&has_door_key&key_lost&target_picked_up) -> u9\n(u6, door_open&!has_door_key&!key_lost&target_picked_up) -> u7\n(u6, door_open&!has_door_key&key_lost&!target_picked_up) -> u6\n(u6, door_open&!has_door_key&key_lost&target_picked_up) -> u7\n(u6, door_open&has_door_key&!key_lost&!target_picked_up) -> u8\n(u6, door_open&has_door_key&!key_lost&target_picked_up) -> u9\n(u6, door_open&has_door_key&key_lost&!target_picked_up) -> u8\n(u6, door_open&has_door_key&key_lost&target_picked_up) -> u9\n(u7, !door_open&!has_door_key&key_lost) -> u7\n(u7, !door_open&has_door_key&!key_lost) -> u9\n(u7, !door_open&has_door_key&key_lost) -> u9\n(u7, door_open&!has_door_key&key_lost) -> u7\n(u7, door_open&has_door_key&!key_lost) -> u9\n(u7, door_open&has_door_key&key_lost) -> u9\n(u8, !door_open&!has_door_key&!key_lost&target_picked_up) -> u9\n(u8, !door_open&!has_door_key&key_lost&!target_picked_up) -> u8\n(u8, !door_open&!has_door_key&key_lost&target_picked_up) -> u9\n(u8, !door_open&has_door_key&!key_lost&!target_picked_up) -> u10\n(u8, !door_open&has_door_key&!key_lost&target_picked_up) -> u9\n(u8, !door_open&has_door_key&key_lost&!target_picked_up) -> u10\n(u8, !door_open&has_door_key&key_lost&target_picked_up) -> u9\n(u8, door_open&!key_lost&target_picked_up) -> u9\n(u8, door_open&key_lost&!target_picked_up) -> u8\n(u8, door_open&key_lost&target_picked_up) -> u9\n(u10, !door_open&!key_lost&target_picked_up) -> u9\n(u10, !door_open&key_lost&!target_picked_up) -> u10\n(u10, !door_open&key_lost&target_picked_up) -> u9\n(u10, door_open&!key_lost&!target_picked_up) -> u8\n(u10, door_open&!key_lost&target_picked_up) -> u9\n(u10, door_open&key_lost&!target_picked_up) -> u8\n(u10, door_open&key_lost&target_picked_up) -> u9\nREWARD_FUNCTION:\n(u0, !blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up, u0) -> -1\n(u0, !blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up, u3) -> 1\n(u0, !blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up, u2) -> -1\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&has_door_key&key_lost&!target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&!target_picked_up, u4) -> 1\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up, u5) -> 1\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&!door_open&has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up, u6) -> 1\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up, u7) -> 2\n(u0, blocker_moved&door_open&!has_door_key&key_lost&target_picked_up, u7) -> 1\n(u0, blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up, u8) -> 2\n(u0, blocker_moved&door_open&has_door_key&!key_lost&target_picked_up, u9) -> 13\n(u0, blocker_moved&door_open&has_door_key&key_lost&!target_picked_up, u8) -> 1\n(u0, blocker_moved&door_open&has_door_key&key_lost&target_picked_up, u9) -> 12\n(u2, !blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up, u3) -> 1\n(u2, !blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up, u2) -> -1\n(u2, !blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up, u1) -> -100.694\n(u2, !blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u2, !blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up, u1) -> -100.694\n(u2, !blocker_moved&!door_open&has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u2, !blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up, u3) -> 1\n(u2, !blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up, u2) -> -1\n(u2, !blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up, u1) -> -100.694\n(u2, !blocker_moved&door_open&has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u2, !blocker_moved&door_open&has_door_key&key_lost&!target_picked_up, u1) -> -100.694\n(u2, !blocker_moved&door_open&has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u2, blocker_moved&!door_open&!has_door_key&!key_lost&!target_picked_up, u6) -> 1\n(u2, blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up, u7) -> 2\n(u2, blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up, u7) -> 1\n(u2, blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up, u10) -> 1\n(u2, blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up, u9) -> 8\n(u2, blocker_moved&!door_open&has_door_key&key_lost&target_picked_up, u9) -> 7\n(u2, blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up, u6) -> 1\n(u2, blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up, u7) -> 2\n(u2, blocker_moved&door_open&!has_door_key&key_lost&target_picked_up, u7) -> 1\n(u2, blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up, u8) -> 2\n(u2, blocker_moved&door_open&has_door_key&!key_lost&target_picked_up, u9) -> 13\n(u2, blocker_moved&door_open&has_door_key&key_lost&!target_picked_up, u8) -> 1\n(u2, blocker_moved&door_open&has_door_key&key_lost&target_picked_up, u9) -> 12\n(u3, !blocker_moved&!door_open&!has_door_key&key_lost, u3) -> -1\n(u3, !blocker_moved&!door_open&has_door_key&!key_lost, u1) -> -100.694\n(u3, !blocker_moved&!door_open&has_door_key&key_lost, u1) -> -100.694\n(u3, !blocker_moved&door_open&!has_door_key&key_lost, u3) -> -1\n(u3, !blocker_moved&door_open&has_door_key&!key_lost, u1) -> -100.694\n(u3, !blocker_moved&door_open&has_door_key&key_lost, u1) -> -100.694\n(u3, blocker_moved&!door_open&!has_door_key&!key_lost, u7) -> 1\n(u3, blocker_moved&!door_open&has_door_key&!key_lost, u9) -> 7\n(u3, blocker_moved&!door_open&has_door_key&key_lost, u9) -> 6\n(u3, blocker_moved&door_open&!has_door_key&!key_lost, u7) -> 1\n(u3, blocker_moved&door_open&has_door_key&!key_lost, u9) -> 12\n(u3, blocker_moved&door_open&has_door_key&key_lost, u9) -> 11\n(u4, !door_open&!has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u4, !door_open&!has_door_key&key_lost&!target_picked_up, u4) -> -1\n(u4, !door_open&!has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u4, !door_open&has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u4, !door_open&has_door_key&key_lost&!target_picked_up, u5) -> -1\n(u4, !door_open&has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u4, door_open&!has_door_key&!key_lost&target_picked_up, u7) -> 1\n(u4, door_open&!has_door_key&key_lost&!target_picked_up, u6) -> -1\n(u4, door_open&has_door_key&!key_lost&!target_picked_up, u8) -> 1\n(u4, door_open&has_door_key&!key_lost&target_picked_up, u9) -> 12\n(u4, door_open&has_door_key&key_lost&target_picked_up, u9) -> 11\n(u5, !door_open&!key_lost&target_picked_up, u1) -> -100.694\n(u5, !door_open&key_lost&!target_picked_up, u5) -> -1\n(u5, !door_open&key_lost&target_picked_up, u1) -> -100.694\n(u5, door_open&!key_lost&!target_picked_up, u8) -> 1\n(u5, door_open&!key_lost&target_picked_up, u9) -> 12\n(u5, door_open&key_lost&target_picked_up, u9) -> 11\n(u6, !door_open&!has_door_key&!key_lost&target_picked_up, u7) -> 1\n(u6, !door_open&!has_door_key&key_lost&!target_picked_up, u6) -> -1\n(u6, !door_open&has_door_key&!key_lost&target_picked_up, u9) -> 7\n(u6, !door_open&has_door_key&key_lost&!target_picked_up, u10) -> -1\n(u6, !door_open&has_door_key&key_lost&target_picked_up, u9) -> 6\n(u6, door_open&!has_door_key&!key_lost&target_picked_up, u7) -> 1\n(u6, door_open&!has_door_key&key_lost&!target_picked_up, u6) -> -1\n(u6, door_open&has_door_key&!key_lost&!target_picked_up, u8) -> 1\n(u6, door_open&has_door_key&!key_lost&target_picked_up, u9) -> 12\n(u6, door_open&has_door_key&key_lost&target_picked_up, u9) -> 11\n(u7, !door_open&!has_door_key&key_lost, u7) -> -1\n(u7, !door_open&has_door_key&!key_lost, u9) -> 6\n(u7, !door_open&has_door_key&key_lost, u9) -> 5\n(u7, door_open&!has_door_key&key_lost, u7) -> -1\n(u7, door_open&has_door_key&!key_lost, u9) -> 11\n(u7, door_open&has_door_key&key_lost, u9) -> 10\n(u8, !door_open&!has_door_key&!key_lost&target_picked_up, u9) -> 11\n(u8, !door_open&!has_door_key&key_lost&!target_picked_up, u8) -> -1\n(u8, !door_open&!has_door_key&key_lost&target_picked_up, u9) -> 10\n(u8, !door_open&has_door_key&!key_lost&!target_picked_up, u10) -> -1\n(u8, !door_open&has_door_key&!key_lost&target_picked_up, u9) -> 6\n(u8, !door_open&has_door_key&key_lost&!target_picked_up, u10) -> -2\n(u8, !door_open&has_door_key&key_lost&target_picked_up, u9) -> 5\n(u8, door_open&!key_lost&target_picked_up, u9) -> 11\n(u8, door_open&key_lost&!target_picked_up, u8) -> -1\n(u8, door_open&key_lost&target_picked_up, u9) -> 10\n(u10, !door_open&!key_lost&target_picked_up, u9) -> 7\n(u10, !door_open&key_lost&!target_picked_up, u10) -> -1\n(u10, !door_open&key_lost&target_picked_up, u9) -> 6\n(u10, door_open&!key_lost&!target_picked_up, u8) -> 1\n(u10, door_open&!key_lost&target_picked_up, u9) -> 12\n(u10, door_open&key_lost&target_picked_up, u9) -> 11\n"
+       }
+      },
+      {
+       "src": "graphs/cx-goal-many-rules-arm-fm.html",
+       "height": 520,
+       "alt": "Reward Machine cx-goal-many-rules-arm-fm: 5 states",
+       "caption": "**`cx-goal-many-rules-arm-fm`** · BlockedUnlockPickup · 5 states, 17 transitions · final u4, rejecting none\nTask: *Move the ball away from the door before you take the key. Try not to drop the key while the door is still closed. Whenever you are holding the key, try to have the door open at that moment or open it afterwards. Then pick up the box in the other room.* Judged success 0; 216.6 separate soft breaks per episode, 77% of episodes with one.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "ARM-FM bundle `experiments/benchmark/complex/bundles/arm-fm/cx-goal-many-rules` (trained in `ta1-cx-goal-many-rules`, 3 seeds, worktree tp-train-closed; committed in `ecf6ca9` after the runs and unchanged since). It was made from the card's 2026-11-14 wording, without \"open the door with the key and\"; the card on main has gained that phrase and Precedence(has_door_key, door_open) since.",
+        "code": "# Task (NL)\nMove the ball away from the door before you take the key. Try not to drop the key while the door is still closed. Whenever you are holding the key, try to have the door open at that moment or open it afterwards. Then pick up the box in the other room.\n\n# Clauses and LTLf (the clauses the run was judged on (its judge.json); ARM-FM writes its machine directly, with no clauses)\nhard Precedence(blocker_moved, has_door_key): (((~has_door_key)Ublocker_moved)|(G(~has_door_key)))\nsoft Absence(key_lost): (~(Fkey_lost))\nsoft Response(has_door_key, door_open): (G(has_door_key->(Fdoor_open)))\nhard Precedence(door_open, target_picked_up): (((~target_picked_up)Udoor_open)|(G(~target_picked_up)))\nhard Existence(target_picked_up): (Ftarget_picked_up)\n\n# RM text (graphs/cx-goal-many-rules-arm-fm.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u4\nTRANSITION_FUNCTION:\n(u0, blocker_moved & !has_door_key & !door_open) -> u1\n(u0, blocker_moved & has_door_key & !door_open) -> u2\n(u0, blocker_moved & door_open) -> u3\n(u0, else) -> u0\n(u1, has_door_key & door_open) -> u3\n(u1, has_door_key & !door_open) -> u2\n(u1, !blocker_moved) -> u0\n(u1, else) -> u1\n(u2, door_open) -> u3\n(u2, key_lost & blocker_moved) -> u1\n(u2, key_lost & !blocker_moved) -> u0\n(u2, !blocker_moved) -> u0\n(u2, else) -> u2\n(u3, target_picked_up) -> u4\n(u3, !blocker_moved) -> u0\n(u3, else) -> u3\n(u4, else) -> u4\nREWARD_FUNCTION:\n(u0, blocker_moved & !has_door_key & !door_open, u1) -> 0.2\n(u0, blocker_moved & has_door_key & !door_open, u2) -> 0.3\n(u0, blocker_moved & door_open, u3) -> 0.4\n(u1, has_door_key & door_open, u3) -> 0.4\n(u1, has_door_key & !door_open, u2) -> 0.2\n(u1, !blocker_moved, u0) -> -0.2\n(u2, door_open, u3) -> 0.3\n(u2, key_lost & blocker_moved, u1) -> -0.1\n(u2, key_lost & !blocker_moved, u0) -> -0.2\n(u2, !blocker_moved, u0) -> -0.2\n(u3, target_picked_up, u4) -> 1\n(u3, !blocker_moved, u0) -> -0.2\n"
+       }
+      },
+      {
+       "src": "graphs/lanes-rules-tune.html",
+       "height": 520,
+       "alt": "Reward Machine lanes-rules-tune: 2 states",
+       "caption": "**`lanes-rules-tune`** · Lanes (forcing) · 2 states, 7 transitions · final none, rejecting u1\nTask: *Never let a zombie through the top lane. Try not to let zombies through the other lanes, and try not to step on plants.* Warm-started runs: 10.2 to 10.5 separate soft breaks per episode; every other `lt-*` run 14.5 to 16.8; judged success 0.91 to 1.0.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "FARM bundle of the lanes tuning rounds (worktree tp-lanes-tune, `outputs/lt/bundles/lanes-rules`, git-ignored: this page keeps the copy). Every `lt-*` and `e3-lanes-*` run trained a machine with this same text. Pay order: not started 0 > soft break -95.1 > hard break -96.1; ok.",
+        "code": "# Task (NL)\nNever let a zombie through the top lane. Try not to let zombies through the other lanes, and try not to step on plants.\n\n# Clauses and LTLf (the bundle's clauses (generated))\nhard Absence(top_breach): (~(Ftop_breach))\nsoft Absence(side_breach): (~(Fside_breach))\nsoft Absence(plant_trampled): (~(Fplant_trampled))\n\n# RM text (graphs/lanes-rules-tune.rm)\nREWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !plant_trampled&!side_breach&top_breach) -> u1\n(u0, !plant_trampled&side_breach&!top_breach) -> u0\n(u0, !plant_trampled&side_breach&top_breach) -> u1\n(u0, plant_trampled&!side_breach&!top_breach) -> u0\n(u0, plant_trampled&!side_breach&top_breach) -> u1\n(u0, plant_trampled&side_breach&!top_breach) -> u0\n(u0, plant_trampled&side_breach&top_breach) -> u1\nREWARD_FUNCTION:\n(u0, !plant_trampled&!side_breach&top_breach, u1) -> -96.0959\n(u0, !plant_trampled&side_breach&!top_breach, u0) -> -1\n(u0, !plant_trampled&side_breach&top_breach, u1) -> -96.0959\n(u0, plant_trampled&!side_breach&!top_breach, u0) -> -1\n(u0, plant_trampled&!side_breach&top_breach, u1) -> -96.0959\n(u0, plant_trampled&side_breach&!top_breach, u0) -> -2\n(u0, plant_trampled&side_breach&top_breach, u1) -> -96.0959\n"
+       }
+      },
+      {
+       "src": "graphs/lanes-rules-forcing.html",
+       "height": 520,
+       "alt": "Reward Machine lanes-rules-forcing: 5 states",
+       "caption": "**`lanes-rules-forcing`** · Lanes (forcing) · 5 states, 28 transitions · final none, rejecting u1\nTask: *Never let a zombie through the top lane. Try not to let zombies through the other lanes, and try not to step on plants.* Forcing suite, seed 1: FARM 1.05 separate soft breaks per episode but a hard break in every episode (judged 0, length 79.5); no-RM 10.58, judged 0.7.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "FARM bundle `experiments/benchmark/forcing/bundles/farm/lanes-rules` on main (commit `1307808`). It predates `deff802` and carries the old end charge; it is generated again at the freeze. Pay order at 300 steps: not started 0 > hard break -1 > soft break -47.5; flagged, soft break must pay more than hard break.",
+        "code": "# Task (NL)\nNever let a zombie through the top lane. Try not to let zombies through the other lanes, and try not to step on plants.\n\n# Clauses and LTLf (the bundle's clauses (generated))\nhard Absence(top_breach): (~(Ftop_breach))\nsoft Absence(side_breach): (~(Fside_breach))\nsoft Absence(plant_trampled): (~(Fplant_trampled))\n\n# RM text (graphs/lanes-rules-forcing.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u1\nACCEPTING_STATES: u0, u2, u3, u4\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, !plant_trampled&!side_breach&top_breach) -> u1\n(u0, !plant_trampled&side_breach&!top_breach) -> u2\n(u0, !plant_trampled&side_breach&top_breach) -> u1\n(u0, plant_trampled&!side_breach&!top_breach) -> u3\n(u0, plant_trampled&!side_breach&top_breach) -> u1\n(u0, plant_trampled&side_breach&!top_breach) -> u4\n(u0, plant_trampled&side_breach&top_breach) -> u1\n(u2, !plant_trampled&!side_breach&!top_breach) -> u0\n(u2, !plant_trampled&!side_breach&top_breach) -> u1\n(u2, !plant_trampled&side_breach&top_breach) -> u1\n(u2, plant_trampled&!side_breach&!top_breach) -> u3\n(u2, plant_trampled&!side_breach&top_breach) -> u1\n(u2, plant_trampled&side_breach&!top_breach) -> u4\n(u2, plant_trampled&side_breach&top_breach) -> u1\n(u3, !plant_trampled&!side_breach&!top_breach) -> u0\n(u3, !plant_trampled&!side_breach&top_breach) -> u1\n(u3, !plant_trampled&side_breach&!top_breach) -> u2\n(u3, !plant_trampled&side_breach&top_breach) -> u1\n(u3, plant_trampled&!side_breach&top_breach) -> u1\n(u3, plant_trampled&side_breach&!top_breach) -> u4\n(u3, plant_trampled&side_breach&top_breach) -> u1\n(u4, !plant_trampled&!side_breach&!top_breach) -> u0\n(u4, !plant_trampled&!side_breach&top_breach) -> u1\n(u4, !plant_trampled&side_breach&!top_breach) -> u2\n(u4, !plant_trampled&side_breach&top_breach) -> u1\n(u4, plant_trampled&!side_breach&!top_breach) -> u3\n(u4, plant_trampled&!side_breach&top_breach) -> u1\n(u4, plant_trampled&side_breach&top_breach) -> u1\nREWARD_FUNCTION:\n(u0, !plant_trampled&!side_breach&top_breach, u1) -> -1\n(u0, !plant_trampled&side_breach&!top_breach, u2) -> -0.5\n(u0, !plant_trampled&side_breach&top_breach, u1) -> -1\n(u0, plant_trampled&!side_breach&!top_breach, u3) -> -0.5\n(u0, plant_trampled&!side_breach&top_breach, u1) -> -1\n(u0, plant_trampled&side_breach&!top_breach, u4) -> -1\n(u0, plant_trampled&side_breach&top_breach, u1) -> -1\n(u2, !plant_trampled&!side_breach&top_breach, u1) -> -1\n(u2, !plant_trampled&side_breach&top_breach, u1) -> -1\n(u2, plant_trampled&!side_breach&!top_breach, u3) -> -0.5\n(u2, plant_trampled&!side_breach&top_breach, u1) -> -1\n(u2, plant_trampled&side_breach&!top_breach, u4) -> -0.5\n(u2, plant_trampled&side_breach&top_breach, u1) -> -1\n(u3, !plant_trampled&!side_breach&top_breach, u1) -> -1\n(u3, !plant_trampled&side_breach&!top_breach, u2) -> -0.5\n(u3, !plant_trampled&side_breach&top_breach, u1) -> -1\n(u3, plant_trampled&!side_breach&top_breach, u1) -> -1\n(u3, plant_trampled&side_breach&!top_breach, u4) -> -0.5\n(u3, plant_trampled&side_breach&top_breach, u1) -> -1\n(u4, !plant_trampled&!side_breach&top_breach, u1) -> -1\n(u4, !plant_trampled&side_breach&top_breach, u1) -> -1\n(u4, plant_trampled&!side_breach&top_breach, u1) -> -1\n(u4, plant_trampled&side_breach&top_breach, u1) -> -1\nPENDING_PROMISES:\n"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "evidence",
+   "title": "Evidence, rerun and code",
+   "blocks": [
+    {
+     "type": "list",
+     "items": [
+      "**Recomputed table:** `evidence/soft-quality.jsonl`, one row per experiment (card, task, worktree, arm, episodes, judged success, stored and recomputed counts, `old_measure_mismatches`).",
+      "**Label series:** `evidence/arm-fm-key-lost.out`, the ARM-FM key drops of seed 1.",
+      "**Live re-judge:** `evidence/live/results-ta1/` and `evidence/live/results-forcing/` (`results.md`, `.csv`, `.json`) and their suite files `evidence/ta1-cx-goal-one-rule.yaml` and `evidence/forcing-lanes-rules.yaml`.",
+      "**Machines:** `graphs/*.rm`, copies of each bundle's `reward_machine.txt` (two of them from git-ignored worktree folders), with `.svg` and `.html` graphs.",
+      "**Scripts:** `check/recompute_soft.py` (needs the runs' `agent-traces/`, which stay in the worktrees: about 100 files per seed), `check/label_runs.py`, `check/judge_diff.py`."
+     ]
+    },
+    {
+     "type": "text",
+     "text": "**Rerun (no model call, no training; RM_RL_env, repository root)**"
+    },
+    {
+     "type": "code",
+     "text": "# the table (reads <worktrees>/<worktree>/outputs/runs/<experiment>*/seed*/agent-traces/)\nPYTHONPATH=app python docs/paper/soft-break-quality/check/recompute_soft.py OUT.jsonl /home/<you>/orca/workspaces/TFM-schema-rm-rl\n# the key drops of one run\npython docs/paper/soft-break-quality/check/label_runs.py <run folder> key_lost door_open target_picked_up\n# old against new judge.json of one run\npython docs/paper/soft-break-quality/check/judge_diff.py NEW_JUDGE.json OLD_JUDGE.json\n# graphs\npython app/main.py render-rm --rm-file docs/paper/soft-break-quality/graphs/<name>.rm --svg-dir docs/paper/soft-break-quality/graphs/<name>.svg --html"
+    },
+    {
+     "type": "text",
+     "text": "Code: commit `865b623` (merge `78c666c`): `_break_count` and the `soft_break_count` and `any_soft_break` fields in `app/src/benchmark/declare_judge.py`, their means in `app/scripts/test_rl.py`, the two table columns in `app/scripts/aggregate_suite.py`, tests in `tests/test_declare_judge.py`. Record: `docs/decisions/benchmark/thesis-benchmark.md`, dated entry of 2026-11-20."
+    }
+   ]
+  }
+ ]
+}
