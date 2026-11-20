@@ -69,10 +69,18 @@ The Absence, NotCoExistence and `tpl-precedence-2/3` goal cards have one step an
 Chain reword (2026-11-19): the compiler's progress pay now reads the distance from the machine to its
 final state, so a chain written as form B pays at every step. A needed step with no rule of its own
 would pay nothing, so `tpl-precedence-1-goal`, `tpl-response-1-goal` and `cx-goal-many-rules` name
-every step ("open the door with the key", "pick up the key, open the locked door with it") and
+every step ("open the door with the key", "pick up the key, open the door with it") and
 `expect` is the chain (`Existence(last)` plus the `Precedence` pairs) plus the card's own rule.
 The orders the level forces (key before door before box or ball) are in `forced`. The older, shorter
 answers stay in `also_ok`, except the full chain of `tpl-precedence-1-goal`, which is now `expect`.
+
+Response goal card moved (2026-11-20): `tpl-response-1-goal` runs on UnlockPickup, not on
+KeyCorridorS6R3. No method (no-RM, ARM-FM, FARM) learned KeyCorridorS6R3 in 71 runs, so a trained card
+there tested nothing; UnlockPickup is the closest learned level (same key, locked door, box in another
+room; ARM-FM 3 of 3 and FARM 1 of 3 on `base-unlock-pickup`). The trigger is `has_door_key` (the door
+open when the key was last held or later, as in `tpl-response-2-goal` and `-3-goal`), and the box
+replaces the ball. `tpl-response-3-nogoal` stays on KeyCorridorS6R3 as a generation and plan-check card.
+The bundles and traces of the old card are those of the old task until `generate-suite` is rerun.
 
 ## Soft cards (2026-11-19)
 

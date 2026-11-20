@@ -37,6 +37,13 @@ Chain reword (2026-11-19): `cx-goal-many-rules` now says "open the door with the
 `Existence(box)`) plus its ball-first rule and two soft rules; both chain orders are in `forced`
 (see `templates/README.md`).
 
+2026-11-20: `cx-goal-many-rules` lost one `also_ok` answer, the one with `Precedence(door_open, box)`,
+`Existence(blocker_moved)` and `Existence(box)` but no `Existence(has_door_key)`. It has no key step, so
+the soft `Response(has_door_key, door_open)` charges the key pickup -1 with nothing to offset it, and
+about one seed in three never learns it. The same day it also lost the answer with `Existence(blocker_moved)` and
+`Existence(box)` but no `Existence(has_door_key)` and no door step: the same trap (solve pay 1, -1, 1, 11), never
+trained. Four answers remain; the later ones are renumbered.
+
 ## Contents
 
 - `tasks.json`: the cards.
