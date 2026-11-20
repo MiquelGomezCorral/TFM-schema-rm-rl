@@ -129,15 +129,21 @@ each is a gap to close when a card needs it.
   base-key-corridor (`target_room_entered`), tpl-precedence-1-goal (`blocker_moved`),
   tpl-precedence-1-nogoal (`switch_toggled`), tpl-precedence-2-goal and tpl-precedence-2-nogoal
   (`door_open`), tpl-precedence-3-nogoal (`blocker_moved`).
-- **Progress is paid into a soft-violated state.** A broken soft clause owes 0, so its break edge
-  refunds the clause's weighted potential. For a soft rule one step from closing, with chain weight
-  W (1 plus the weights of the rules it hands off to), the break step pays `0.1 W - 0.5`: -0.4 at
-  W = 1, free at W = 5, positive from W = 6. The trigger and the break together still cost -0.5, so
-  no loop gains (undiscounted). No current soft clause has W above 1: the 61 soft clauses of the
-  195 bundles that store their clauses (171 FARM and 24 ablation; ARM-FM bundles have none) all
-  weigh 1, and the largest weight anywhere is 4, on a hard rule (scan of 2026-11-16 with
-  `_chain_weights`). The user decides what to do after seeing a live example (slice
-  soft-break-demo).
+- **A soft break forgets a trigger on the break step.** Since 2026-11-18 (commit `deff802`) a broken
+  soft clause's debt is not refunded, so the break step pays minus the break cost at any chain
+  weight, and not reacting always costs (weight + 1) more than reacting. Left: a re-armed soft
+  `ChainResponse` starts watching one step late, so a trigger on the break step itself is not counted
+  (`_rearm_violated`, `reward_layer.py:262-288`). At an episode end not reacting then pays 3 to 4
+  more. Only a soft `ChainResponse` has this shape. The 4 soft template cards
+  (`ChainResponse(box_fell, holding_box)`: `tpl-chain-response-soft-1-goal`, `-2-goal`, `-3-goal` and
+  `-1-nogoal`) cannot reach it: `box_fell` is an event and the break step is the step after a fall,
+  where the box cannot fall again. The dev card "ChainResponse, soft"
+  (`experiments/dev/benchmark/tasks.json`, `ChainResponse(has_key, door_open)`) can: `has_key` is a
+  condition that stays true. The other ChainResponse cards (6 hard template cards, the box-carry and
+  shop cards) and every stored bundle declare it hard, which never re-arms. Fix when a card needs it: the break step goes where the start would go on that
+  step, the same mark the Absence fold uses. A soft clause of weight 2 or more with a trigger every
+  step would also cost more than the hard ceiling assumes; the last scan (2026-11-16) found none
+  above 1.
 
 ## Enforcement
 
@@ -238,6 +244,9 @@ each is a gap to close when a card needs it.
   progress (either-or hand-offs, steps only a `Precedence` names, progress paid into a soft break),
   all accepted for now. The undiscounted progress stays; switching to discounted shaping is decided
   after the shop runs ([reward layer](../../COMPILER_REWARD_DESIGN.md)).
+- 2026-11-17, user decision: pay in whole units, ten times the earlier numbers (`PROGRESS_REWARD` 1,
+  finish 10, well -10; in the code since 2026-11-18, commit `deff802`); older entries keep the numbers
+  of their date ([reward layer](../../COMPILER_REWARD_DESIGN.md)).
 - 2026-11-19: Soft `Absence` folds into an edge charge by default (`fold_soft_absence`), so it adds no
   state; kept as a switch for the later settings study (user).
 - 2026-11-19, user-approved: the default pay prices a hard break above any stream of soft breaks. A
@@ -252,3 +261,26 @@ each is a gap to close when a card needs it.
   worst stream of soft breaks cost more than one hard break, so breaking the hard rule paid better:
   the forcing card `lanes-rules` paid -475 for that stream against -10
   ([reward layer](../../COMPILER_REWARD_DESIGN.md)).
+- 2026-11-19, user-approved (refund: "simple, stylish... reuses part of what we had"; clamp, 2026-11-19
+  23:57: "go for clamp, take back only gains, never return a charge"): an edge into the rejecting well
+  also takes back the progress since the start, as measured by `potential` below; a charge already
+  paid is never paid back as a reward. It adds `PROGRESS_REWARD * min(0, potential(source) - potential(start))` to the
+  well price, `potential(u)` being the events still needed to reach a final (`_events_to_final`) plus
+  the stages still owed (the soft clauses' with a final, every clause's without one); the finite
+  charge, the end charge of the state it leaves and the promise cost stay. So a hard break costs the
+  same however far along the agent was: on doorkey with lava, breaking at once, after the key, or
+  after the door all total -10. A charge paid after some progress (a Response trigger, for example)
+  cancels that progress, so the take-back is net: in a chain of 2, `e0` pays +1, `alarm` pays -1, then
+  `lava` takes back 0, and the break totals the same as one at once. Accepted: a step whose state
+  machine only sees the state cannot track a path-dependent sum of progress. The `min(0, ...)` keeps a
+  charge already paid from coming back: without it, a break after a client arrives paid +3 on
+  `shop-serve~p3`, and a soft and a hard break tied on `cx-rules-only`. Limit, harsher and never
+  milder: a soft break on the way withholds that clause's stages from the progress paid but not from
+  the take-back, so such a break can cost more than the hard price, never less.
+  This reverses the 2026-11-11 choice of no progress score into the well
+  ([reward layer](../../COMPILER_REWARD_DESIGN.md)). Why: on a long chain the progress collected (11
+  steps) outgrew the hard price (-10), so starting and then breaking paid more than never starting.
+  Pay-order sweep: 141 of 167 cards and 91 of 108 stored sets pass, none lost; break paths that paid
+  more than the hard price went from 51 to 0. Also, the pay-order check skips "started pays more than
+  not started" for a machine with no final state, where idling keeps every rule; its summary names the
+  skip (user). Such tasks only make sense in a level that forces the agent to act.
