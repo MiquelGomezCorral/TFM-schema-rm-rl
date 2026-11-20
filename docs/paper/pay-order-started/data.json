@@ -1,0 +1,491 @@
+{
+ "title": "Pay order: \"started\" now means closer to the goal",
+ "eyebrow": "pipeline fix · check-pay-order · no model call · 2026-11-20",
+ "subtitle": "The pay-order check flagged 41 correct clause sets because it read any middle state as progress, even one that only remembers that a siren rang. A state now counts as started only when fewer propositions are still owed to reach the goal than from the start. The 41 false flags go, no other verdict changes, and the real flags stay.",
+ "sections": [
+  {
+   "id": "claim",
+   "title": "What it shows",
+   "blocks": [
+    {
+     "type": "callout",
+     "tone": "info",
+     "title": "In plain words",
+     "text": "Before training, `check-pay-order` reads each machine and checks that its pay follows the task: finishing pays most, having started pays more than doing nothing, and a soft break costs less than a hard break. It used to call every middle state \"started\". But some middle states are not progress: after the siren rings in cx-siren, the agent owes more (turn the switch off, then reach the exit), not less. Such a state pays 0, the same as doing nothing, and the check flagged the machine as broken although it was right. Now each state gets an owed count: the fewest propositions that must still come true to reach a final state without passing a rejecting one. A state is started only when it owes less than the start."
+    },
+    {
+     "type": "stats",
+     "items": [
+      {
+       "value": "41 to 0",
+       "label": "false \"started must pay more than not started\" flags (24 card answers, 17 stored clause sets)",
+       "tone": "ok"
+      },
+      {
+       "value": "197 to 238 of 238",
+       "label": "chain sweep that pass: 106 of 130 card answers and 91 of 108 stored sets before, all after",
+       "tone": "ok"
+      },
+      {
+       "value": "106 to 130 of 130",
+       "label": "card sweep: card answers that pass",
+       "tone": "ok"
+      },
+      {
+       "value": "0",
+       "label": "other verdict changes; the real flags stay (fear-ceiling door edge, lanes soft-break stream, 5 promise-cost-on soft cards)",
+       "tone": "ok"
+      }
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**Pipeline side, not model side.** The check was wrong, not the machines: each of the 41 flips removes a started tier that paid 0 for a state no closer to the goal than the start.",
+      "**Six cards lose a tier, not a verdict.** The soft Existence and ExistenceTwo cards (`tpl-existence-soft-1..3-goal`, `tpl-existence-two-soft-1..3-goal`) no longer show a started tier: meeting a soft item does not bring the final state closer. They stay ok.",
+      "**What owed counts.** A shortest path to a final state that never enters a rejecting state. A step costs the fewest propositions its guard needs true (one step may make several true); an `else` step costs what it takes to make every other guard of its state false. With no goal (no final state), any middle state still counts as started. So a remembered `a` is started under a hard Precedence(a, goal), where the goal needs `a` first, but not under a soft one, where the goal can be reached without it."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "examples",
+   "title": "Four machines, state by state",
+   "intro": "`check/owed_examples.py` compiles each clause set with the default pay at a 300-step limit (MONA, no model call) and prints each state's owed count and the pay order (`evidence/owed-examples.out`). Rejecting states are left out.",
+   "blocks": [
+    {
+     "type": "table",
+     "columns": [
+      "machine",
+      "start owes",
+      "middle states",
+      "reads as",
+      "pay order"
+     ],
+     "rows": [
+      [
+       "door before box",
+       "u0: 2",
+       "u2 (door open): 1",
+       "started",
+       "finished 12 > started 1 > not started 0 > hard break -10; ok"
+      ],
+      [
+       "never both, + box",
+       "u0: 1",
+       "u2: 1, u3: 1",
+       "not started (they only remember one of the pair)",
+       "finished 11 > not started 0 > hard break -10; ok"
+      ],
+      [
+       "cx-siren",
+       "u0: 1",
+       "u1 (siren rang): 2, u3: 1",
+       "not started (the siren adds a debt)",
+       "finished 11 > not started 0 > soft break -1; ok"
+      ],
+      [
+       "key, door, box chain",
+       "u0: 3",
+       "u2: 2, u3: 1",
+       "started (each step lowers the count)",
+       "finished 13 > started 2 > not started 0 > hard break -10; ok"
+      ]
+     ]
+    },
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/door-before-box.html",
+       "height": 520,
+       "alt": "Reward Machine door-before-box: 4 states",
+       "caption": "**`door-before-box`** · step limit 300 · 4 states, 4 transitions · final u3, rejecting u1\nTask: *Open the door, then pick up the box.* (illustrative wording) Owed: u0 2 (start), u2 1 (started: the door is open), u3 0 (final). Pay order: finished 12 > started 1 > not started 0 > hard break -10; ok.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Compiled by `check/owed_examples.py` with the default pay at a 300-step limit (MONA, no model call); the same script prints the owed counts.",
+        "code": "# Task (NL) (illustrative wording)\nOpen the door, then pick up the box.\n\n# Clauses and LTLf (the example's clauses)\nhard Precedence(door_open, target_picked_up): (((~target_picked_up)Udoor_open)|(G(~target_picked_up)))\nhard Existence(target_picked_up): (Ftarget_picked_up)\n\n# RM text (graphs/door-before-box.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&target_picked_up) -> u1\n(u0, door_open&!target_picked_up) -> u2\n(u0, door_open&target_picked_up) -> u3\n(u2, target_picked_up) -> u3\nREWARD_FUNCTION:\n(u0, !door_open&target_picked_up, u1) -> -10\n(u0, door_open&!target_picked_up, u2) -> 1\n(u0, door_open&target_picked_up, u3) -> 12\n(u2, target_picked_up, u3) -> 11\n"
+       }
+      },
+      {
+       "src": "graphs/never-both-box.html",
+       "height": 520,
+       "alt": "Reward Machine never-both-box: 5 states",
+       "caption": "**`never-both-box`** · step limit 300 · 5 states, 13 transitions · final u1, rejecting u4\nTask: *Do not both drop the key and open the door in one episode, and pick up the box.* (illustrative wording) Owed: u0 1 (start), u2 1 and u3 1 (not started: they only remember one of the pair, and the box is still owed), u1 0 (final). Pay order: finished 11 > not started 0 > hard break -10; ok. The old rule read u2 and u3 as started; the tpl-not-co-existence goal cards of this shape were flagged.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Compiled by `check/owed_examples.py` with the default pay at a 300-step limit (MONA, no model call); the same script prints the owed counts.",
+        "code": "# Task (NL) (illustrative wording)\nDo not both drop the key and open the door in one episode, and pick up the box.\n\n# Clauses and LTLf (the example's clauses)\nhard NotCoExistence(key_lost, door_open): ((Fkey_lost)->(~(Fdoor_open)))\nhard Existence(target_picked_up): (Ftarget_picked_up)\n\n# RM text (graphs/never-both-box.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u1\nREJECTING_STATES: u4\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&!key_lost&target_picked_up) -> u1\n(u0, !door_open&key_lost&!target_picked_up) -> u2\n(u0, !door_open&key_lost&target_picked_up) -> u1\n(u0, door_open&!key_lost&!target_picked_up) -> u3\n(u0, door_open&!key_lost&target_picked_up) -> u1\n(u0, door_open&key_lost&!target_picked_up) -> u4\n(u0, door_open&key_lost&target_picked_up) -> u4\n(u2, !door_open&target_picked_up) -> u1\n(u2, door_open&!target_picked_up) -> u4\n(u2, door_open&target_picked_up) -> u4\n(u3, !key_lost&target_picked_up) -> u1\n(u3, key_lost&!target_picked_up) -> u4\n(u3, key_lost&target_picked_up) -> u4\nREWARD_FUNCTION:\n(u0, !door_open&!key_lost&target_picked_up, u1) -> 11\n(u0, !door_open&key_lost&target_picked_up, u1) -> 11\n(u0, door_open&!key_lost&target_picked_up, u1) -> 11\n(u0, door_open&key_lost&!target_picked_up, u4) -> -10\n(u0, door_open&key_lost&target_picked_up, u4) -> -10\n(u2, !door_open&target_picked_up, u1) -> 11\n(u2, door_open&!target_picked_up, u4) -> -10\n(u2, door_open&target_picked_up, u4) -> -10\n(u3, !key_lost&target_picked_up, u1) -> 11\n(u3, key_lost&!target_picked_up, u4) -> -10\n(u3, key_lost&target_picked_up, u4) -> -10\n"
+       }
+      },
+      {
+       "src": "graphs/cx-siren.html",
+       "height": 520,
+       "alt": "Reward Machine cx-siren: 4 states",
+       "caption": "**`cx-siren`** · step limit 300 · 4 states, 8 transitions · final u2, rejecting none\nTask: *Go to the exit, and whenever the siren rings, turn it off.* (card `cx-siren`, complex suite) Owed: u0 1 (start), u1 2 (not started: a ringing siren adds the switch to what is owed), u3 1 (not started), u2 0 (final). Pay order: finished 11 > not started 0 > soft break -1; ok. Before the fix the card read finished 11 > started 0 > not started 0 and was flagged. The soft break -1 is the charge on the step the siren starts ringing (u0 to u1), paid back when the switch is toggled: the worst charge on a step that does not end the episode.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Compiled by `check/owed_examples.py` with the default pay at a 300-step limit (MONA, no model call); the same script prints the owed counts.",
+        "code": "# Task (NL) (card `cx-siren`, complex suite)\nGo to the exit, and whenever the siren rings, turn it off.\n\n# Clauses and LTLf (the example's clauses)\nhard Response(siren_ringing, switch_toggled): (G(siren_ringing->(Fswitch_toggled)))\nhard Existence(at_exit): (Fat_exit)\n\n# RM text (graphs/cx-siren.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_exit&siren_ringing&!switch_toggled) -> u1\n(u0, at_exit&!siren_ringing) -> u2\n(u0, at_exit&siren_ringing&!switch_toggled) -> u3\n(u0, at_exit&siren_ringing&switch_toggled) -> u2\n(u1, !at_exit&switch_toggled) -> u0\n(u1, at_exit&!switch_toggled) -> u3\n(u1, at_exit&switch_toggled) -> u2\n(u3, switch_toggled) -> u2\nREWARD_FUNCTION:\n(u0, !at_exit&siren_ringing&!switch_toggled, u1) -> -1\n(u0, at_exit&!siren_ringing, u2) -> 11\n(u0, at_exit&siren_ringing&switch_toggled, u2) -> 11\n(u1, !at_exit&switch_toggled, u0) -> 1\n(u1, at_exit&!switch_toggled, u3) -> 1\n(u1, at_exit&switch_toggled, u2) -> 12\n(u3, switch_toggled, u2) -> 11\n"
+       }
+      },
+      {
+       "src": "graphs/key-door-box-chain.html",
+       "height": 520,
+       "alt": "Reward Machine key-door-box-chain: 5 states",
+       "caption": "**`key-door-box-chain`** · step limit 300 · 5 states, 11 transitions · final u4, rejecting u1\nTask: *Get the key, then open the door, then pick up the box.* (illustrative wording) Owed: u0 3 (start), u2 2, u3 1, u4 0 (final): each stated step lowers the count, so both middle states are started. Pay order: finished 13 > started 2 > not started 0 > hard break -10; ok.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Compiled by `check/owed_examples.py` with the default pay at a 300-step limit (MONA, no model call); the same script prints the owed counts.",
+        "code": "# Task (NL) (illustrative wording)\nGet the key, then open the door, then pick up the box.\n\n# Clauses and LTLf (the example's clauses)\nhard Existence(has_key): (Fhas_key)\nhard Existence(door_open): (Fdoor_open)\nhard Existence(target_picked_up): (Ftarget_picked_up)\nhard Precedence(has_key, door_open): (((~door_open)Uhas_key)|(G(~door_open)))\nhard Precedence(door_open, target_picked_up): (((~target_picked_up)Udoor_open)|(G(~target_picked_up)))\n\n# RM text (graphs/key-door-box-chain.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u4\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&!has_key&target_picked_up) -> u1\n(u0, !door_open&has_key&!target_picked_up) -> u2\n(u0, !door_open&has_key&target_picked_up) -> u1\n(u0, door_open&!has_key&!target_picked_up) -> u1\n(u0, door_open&!has_key&target_picked_up) -> u1\n(u0, door_open&has_key&!target_picked_up) -> u3\n(u0, door_open&has_key&target_picked_up) -> u4\n(u2, !door_open&target_picked_up) -> u1\n(u2, door_open&!target_picked_up) -> u3\n(u2, door_open&target_picked_up) -> u4\n(u3, target_picked_up) -> u4\nREWARD_FUNCTION:\n(u0, !door_open&!has_key&target_picked_up, u1) -> -10\n(u0, !door_open&has_key&!target_picked_up, u2) -> 1\n(u0, !door_open&has_key&target_picked_up, u1) -> -10\n(u0, door_open&!has_key&!target_picked_up, u1) -> -10\n(u0, door_open&!has_key&target_picked_up, u1) -> -10\n(u0, door_open&has_key&!target_picked_up, u3) -> 2\n(u0, door_open&has_key&target_picked_up, u4) -> 13\n(u2, !door_open&target_picked_up, u1) -> -11\n(u2, door_open&!target_picked_up, u3) -> 1\n(u2, door_open&target_picked_up, u4) -> 12\n(u3, target_picked_up, u4) -> 11\n"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "sweeps",
+   "title": "Three sweeps, before and after",
+   "intro": "Each sweep builds every clause set with MONA, prices it, and runs the check once with the code before the change and once with main `78c666c`. `check/compare.py` lists every verdict change and every summary that changed without one.",
+   "blocks": [
+    {
+     "type": "table",
+     "columns": [
+      "sweep",
+      "what it covers",
+      "rows",
+      "ok before",
+      "ok after",
+      "verdict changes",
+      "summary-only changes"
+     ],
+     "rows": [
+      [
+       "chain sweep",
+       "every card answer (expect and also_ok) and every stored clause set of the FARM bundles",
+       "238",
+       "197",
+       "238",
+       "41",
+       "6"
+      ],
+      [
+       "card sweep",
+       "every card answer, with the per-step pay of its solving plans and of idling",
+       "130",
+       "106",
+       "130",
+       "24",
+       "6"
+      ],
+      [
+       "promise sweep",
+       "every card answer with the promise cost on, at the level's step limit",
+       "130",
+       "125",
+       "125",
+       "0",
+       "6"
+      ]
+     ]
+    },
+    {
+     "type": "details",
+     "items": [
+      {
+       "title": "The 41 verdict changes",
+       "preview": "chain sweep, before and after",
+       "text": "Every change is the same flip: a started tier at 0, as much as doing nothing, disappears, and the verdict turns ok. Clause sets named `card answer` are a card's expect or also_ok set; `stored set` is the clause set a FARM bundle stored.",
+       "blocks": [
+        {
+         "type": "table",
+         "rows": [
+          [
+           "card answer complex/cx-siren",
+           "finished 11 > started 0 > not started 0; broken: started must pay more than not started",
+           "finished 11 > not started 0; ok"
+          ],
+          [
+           "card answer smoke/smoke-doorkey-response",
+           "finished 11 > started 0 > not started 0; broken: started must pay more than not started",
+           "finished 11 > not started 0; ok"
+          ],
+          [
+           "card answer templates/tpl-absence-1-goal also_ok#1",
+           "finished 11 > started 0 > not started 0 > hard break -10; broken: started must pay more than not started",
+           "finished 11 > not started 0 > hard break -10; ok"
+          ],
+          [
+           "card answer templates/tpl-absence-2-goal also_ok#1",
+           "finished 11 > started 0 > not started 0 > hard break -10; broken: started must pay more than not started",
+           "finished 11 > not started 0 > hard break -10; ok"
+          ],
+          [
+           "card answer templates/tpl-absence-3-goal also_ok#1",
+           "finished 11 > started 0 > not started 0 > hard break -10; broken: started must pay more than not started",
+           "finished 11 > not started 0 > hard break -10; ok"
+          ],
+          [
+           "card answer templates/tpl-response-2-goal",
+           "finished 11 > started 0 > not started 0; broken: started must pay more than not started",
+           "finished 11 > not started 0; ok"
+          ],
+          [
+           "card answer templates/tpl-response-3-goal",
+           "finished 11 > started 0 > not started 0; broken: started must pay more than not started",
+           "finished 11 > not started 0; ok"
+          ],
+          [
+           "card answer templates/tpl-precedence-2-goal",
+           "finished 11 > started 0 > not started 0 > hard break -10; broken: started must pay more than not started",
+           "finished 11 > not started 0 > hard break -10; ok"
+          ],
+          [
+           "card answer templates/tpl-precedence-3-goal",
+           "finished 11 > started 0 > not started 0 > hard break -10; broken: started must pay more than not started",
+           "finished 11 > not started 0 > hard break -10; ok"
+          ],
+          [
+           "card answer templates/tpl-responded-existence-1-goal",
+           "finished 11 > started 0 > not started 0; broken: started must pay more than not started",
+           "finished 11 > not started 0; ok"
+          ],
+          [
+           "card answer templates/tpl-responded-existence-3-goal",
+           "finished 11 > started 0 > not started 0; broken: started must pay more than not started",
+           "finished 11 > not started 0; ok"
+          ],
+          [
+           "card answer templates/tpl-responded-existence-4-goal",
+           "finished 11 > started 0 > not started 0; broken: started must pay more than not started",
+           "finished 11 > not started 0; ok"
+          ],
+          [
+           "card answer templates/tpl-not-co-existence-1-goal",
+           "finished 11 > started 0 > not started 0 > hard break -10; broken: started must pay more than not started",
+           "finished 11 > not started 0 > hard break -10; ok"
+          ],
+          [
+           "card answer templates/tpl-not-co-existence-2-goal",
+           "finished 11 > started 0 > not started 0 > hard break -10; broken: started must pay more than not started",
+           "finished 11 > not started 0 > hard break -10; ok"
+          ],
+          [
+           "card answer templates/tpl-not-co-existence-3-goal",
+           "finished 11 > started 0 > not started 0 > hard break -10; broken: started must pay more than not started",
+           "finished 11 > not started 0 > hard break -10; ok"
+          ],
+          [
+           "card answer templates/tpl-precedence-soft-1-goal",
+           "finished 11 > started 0 > not started 0 > soft break -99.6939; broken: started must pay more than not started",
+           "finished 11 > not started 0 > soft break -99.6939; ok"
+          ],
+          [
+           "card answer templates/tpl-precedence-soft-2-goal",
+           "finished 11 > started 0 > not started 0; broken: started must pay more than not started",
+           "finished 11 > not started 0; ok"
+          ],
+          [
+           "card answer templates/tpl-precedence-soft-3-goal",
+           "finished 11 > started 0 > not started 0; broken: started must pay more than not started",
+           "finished 11 > not started 0; ok"
+          ],
+          [
+           "card answer templates/tpl-responded-existence-soft-1-goal",
+           "finished 11 > started 0 > not started 0 > soft break -1; broken: started must pay more than not started",
+           "finished 11 > not started 0 > soft break -1; ok"
+          ],
+          [
+           "card answer templates/tpl-responded-existence-soft-2-goal",
+           "finished 11 > started 0 > not started 0 > soft break -1; broken: started must pay more than not started",
+           "finished 11 > not started 0 > soft break -1; ok"
+          ],
+          [
+           "card answer templates/tpl-responded-existence-soft-3-goal",
+           "finished 11 > started 0 > not started 0 > soft break -1; broken: started must pay more than not started",
+           "finished 11 > not started 0 > soft break -1; ok"
+          ],
+          [
+           "card answer templates/tpl-not-co-existence-soft-1-goal",
+           "finished 11 > started 0 > not started 0 > soft break -99.6939; broken: started must pay more than not started",
+           "finished 11 > not started 0 > soft break -99.6939; ok"
+          ],
+          [
+           "card answer templates/tpl-not-co-existence-soft-2-goal",
+           "finished 11 > started 0 > not started 0 > soft break -94.4673; broken: started must pay more than not started",
+           "finished 11 > not started 0 > soft break -94.4673; ok"
+          ],
+          [
+           "card answer templates/tpl-not-co-existence-soft-3-goal",
+           "finished 11 > started 0 > not started 0 > soft break -99.8391; broken: started must pay more than not started",
+           "finished 11 > not started 0 > soft break -99.8391; ok"
+          ],
+          [
+           "stored set box-carry/cx-box-carry~p1",
+           "finished 11 > started 0 > not started 0; broken: started must pay more than not started",
+           "finished 11 > not started 0; ok"
+          ],
+          [
+           "stored set box-carry/cx-box-carry~p2",
+           "finished 11 > started 0 > not started 0; broken: started must pay more than not started",
+           "finished 11 > not started 0; ok"
+          ],
+          [
+           "stored set box-carry/tpl-chain-response-1-goal-carry~p2",
+           "finished 11 > started 0 > not started 0 > hard break -10; broken: started must pay more than not started",
+           "finished 11 > not started 0 > hard break -10; ok"
+          ],
+          [
+           "stored set complex/cx-box",
+           "finished 11 > started 0 > not started 0; broken: started must pay more than not started",
+           "finished 11 > not started 0; ok"
+          ],
+          [
+           "stored set complex/cx-box~p2",
+           "finished 11 > started 0 > not started 0; broken: started must pay more than not started",
+           "finished 11 > not started 0; ok"
+          ],
+          [
+           "stored set complex/cx-siren",
+           "finished 11 > started 0 > not started 0; broken: started must pay more than not started",
+           "finished 11 > not started 0; ok"
+          ],
+          [
+           "stored set complex/cx-siren~p2",
+           "finished 11 > started 0 > not started 0; broken: started must pay more than not started",
+           "finished 11 > not started 0; ok"
+          ],
+          [
+           "stored set templates/tpl-not-co-existence-1-goal",
+           "finished 11 > started 0 > not started 0 > hard break -10; broken: started must pay more than not started",
+           "finished 11 > not started 0 > hard break -10; ok"
+          ],
+          [
+           "stored set templates/tpl-not-co-existence-3-goal",
+           "finished 11 > started 0 > not started 0 > hard break -10; broken: started must pay more than not started",
+           "finished 11 > not started 0 > hard break -10; ok"
+          ],
+          [
+           "stored set templates/tpl-precedence-2-goal",
+           "finished 11 > started 0 > not started 0 > hard break -10; broken: started must pay more than not started",
+           "finished 11 > not started 0 > hard break -10; ok"
+          ],
+          [
+           "stored set templates/tpl-responded-existence-1-goal~p3",
+           "finished 11 > started 0 > not started 0; broken: started must pay more than not started",
+           "finished 11 > not started 0; ok"
+          ],
+          [
+           "stored set templates/tpl-responded-existence-1-nogoal~p2",
+           "finished 11 > started 0 > not started 0; broken: started must pay more than not started",
+           "finished 11 > not started 0; ok"
+          ],
+          [
+           "stored set templates/tpl-responded-existence-2-goal",
+           "finished 11 > started 0 > not started 0; broken: started must pay more than not started",
+           "finished 11 > not started 0; ok"
+          ],
+          [
+           "stored set templates/tpl-responded-existence-3-goal",
+           "finished 11 > started 0 > not started 0; broken: started must pay more than not started",
+           "finished 11 > not started 0; ok"
+          ],
+          [
+           "stored set templates/tpl-response-1-goal~p3",
+           "finished 11 > started 0 > not started 0; broken: started must pay more than not started",
+           "finished 11 > not started 0; ok"
+          ],
+          [
+           "stored set templates/tpl-response-2-goal",
+           "finished 11 > started 0 > not started 0; broken: started must pay more than not started",
+           "finished 11 > not started 0; ok"
+          ],
+          [
+           "stored set templates/tpl-response-3-goal",
+           "finished 11 > started 0 > not started 0; broken: started must pay more than not started",
+           "finished 11 > not started 0; ok"
+          ]
+         ],
+         "columns": [
+          "clause set",
+          "before",
+          "after"
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "kept",
+   "title": "The flags that stay",
+   "intro": "Real problems the new rule still reports (`evidence/kept-flags.out`, and the promise sweep's after file).",
+   "blocks": [
+    {
+     "type": "table",
+     "columns": [
+      "flag",
+      "machine",
+      "pay order after the change",
+      "what it means"
+     ],
+     "rows": [
+      [
+       "fear-ceiling door edge",
+       "cx-goal-many-rules, experiment bundle `fear-ceiling-s1` (worktree tp-final-e2b)",
+       "finished 11 > started 0 > not started 0 > soft break -99.7 > hard break -100.7; broken: started must pay more than not started",
+       "a state that is closer to the goal (the commit calls it the door edge) still pays 0, so that progress earns nothing"
+      ],
+      [
+       "lanes soft-break stream",
+       "lanes-rules, forcing bundle on main (and three e2 variants)",
+       "not started 0 > hard break -1 > soft break -47.5; broken: soft break must pay more than hard break",
+       "a soft break on every step costs more than one hard break, so breaking the hard rule is the cheap way out"
+      ],
+      [
+       "promise cost on",
+       "tpl-response-soft-1, -2-goal; tpl-responded-existence-soft-1, -2, -3-goal",
+       "finished 10.9 > soft break -1 > not started -8.66; broken: not started must pay at least as much as soft break",
+       "with the promise cost on (not the default), an open hard promise charges idling more than a soft break"
+      ]
+     ]
+    },
+    {
+     "type": "text",
+     "text": "The forcing lanes machine is the one in the soft-break-quality entry: trained, FARM broke the hard rule in every episode and ended near step 80 ([soft-break-quality entry](../soft-break-quality/index.html)). It predates `deff802` and is generated again at the freeze."
+    }
+   ]
+  },
+  {
+   "id": "evidence",
+   "title": "Evidence, rerun and code",
+   "blocks": [
+    {
+     "type": "list",
+     "items": [
+      "**Sweeps:** `evidence/before/` and `evidence/after/`, each with `chain-sweep.jsonl` (238 rows), `card-sweep.jsonl` (130) and `promise-sweep.jsonl` (130). The first two are slim copies (`check/slim_sweep.py` drops the per-step traces, idle pay, plan pay and machine text; `compare.py` gives the same counts on them).",
+      "**Examples:** `evidence/owed-examples.out`, and `graphs/*.rm` written by `check/owed_examples.py`, drawn as `.svg` and `.html`.",
+      "**Kept flags:** `evidence/kept-flags.out`, the check run on the bundles behind the two kept flags.",
+      "**Scripts:** `check/chain_sweep.py`, `check/card_sweep.py`, `check/promise_sweep.py`, `check/compare.py`, `check/owed_examples.py`, `check/slim_sweep.py`."
+     ]
+    },
+    {
+     "type": "text",
+     "text": "**Rerun (no model call; RM_RL_env, repository root)**"
+    },
+    {
+     "type": "code",
+     "text": "# the four examples (seconds)\nPYTHONPATH=app python -W ignore docs/paper/pay-order-started/check/owed_examples.py\n# a sweep with the code under test on PYTHONPATH (minutes); run once on the code before 865b623 and once on main\n# CARD_ROOT is a repository root (its experiments/benchmark/*/tasks.json); chain_sweep.py reads the stored\n# bundles from the main checkout named on its line 31\nPYTHONPATH=app OMP_NUM_THREADS=2 python docs/paper/pay-order-started/check/chain_sweep.py . OUT.jsonl\nPYTHONPATH=app OMP_NUM_THREADS=2 python docs/paper/pay-order-started/check/promise_sweep.py . OUT.jsonl\n# card_sweep.py: cards from $CARD_ROOT, plan traces from TB_ROOT/<suite>/<card>/<plan>-s<seed>.json (not copied)\nCARD_ROOT=$PWD PYTHONPATH=app OMP_NUM_THREADS=2 python docs/paper/pay-order-started/check/card_sweep.py TB_ROOT OUT.jsonl\n# compare\npython docs/paper/pay-order-started/check/compare.py docs/paper/pay-order-started/evidence/before/chain-sweep.jsonl docs/paper/pay-order-started/evidence/after/chain-sweep.jsonl\n# one bundle\nPYTHONPATH=app python app/main.py check-pay-order --step-limit 300 experiments/benchmark/forcing/bundles/farm/lanes-rules"
+    },
+    {
+     "type": "text",
+     "text": "Code: commit `865b623` (merge `78c666c`): `_owed` and the started test in `app/src/arm_fm/pay_order.py`, `fewest_true` in `app/src/compiler/reward_machine.py`. Records: `docs/decisions/arm-fm/rm-execution.md` and `docs/COMPILER_REWARD_DESIGN.md`, dated entries of 2026-11-20."
+    }
+   ]
+  }
+ ]
+}

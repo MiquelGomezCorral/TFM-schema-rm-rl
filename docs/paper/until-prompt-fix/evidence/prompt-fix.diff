@@ -1,0 +1,66 @@
+diff --git a/app/src/prompts/compiler-rm/declare-templates.md b/app/src/prompts/compiler-rm/declare-templates.md
+index 0d29ee3..17e1f7e 100644
+--- a/app/src/prompts/compiler-rm/declare-templates.md
++++ b/app/src/prompts/compiler-rm/declare-templates.md
+@@ -27,11 +27,11 @@ Pick the template from the task's own wording:
+ | "if `a` (ever) happens, `b` must also happen", "`a` means `b` too / as well", "... before or after `a`" (`b` may come first) | `RespondedExistence(a, b)` |
+ | "whenever / every time / each time / if / when / should `a`, `b` must happen", "`b` afterwards / later / at that moment" | `Response(a, b)` |
+ | "after", "only after", "not before", "never `b` before `a`", "first `a`, then `b` is allowed" | `Precedence(a, b)`, plus `Existence(b)` when `b` is required |
+-| "do not `b` until / unless `a`", "do not `b` while `a` has not happened yet" (still closed, still off) | First read `b`'s description. When it already holds the condition (an event defined as "lost before `a` happened"), the ban is plain `Absence(b)`. Otherwise `Precedence(a, b)`: the ban ends once `a` has happened. A bare "never `b`" stays `Absence(b)` |
++| "do not `b` until / unless `a`", "do not `b` while `a` has not happened yet" (still closed, still off) | First read `b`'s description. When it already holds a "while ... still closed" condition (an event defined as "dropped while the gate is shut"), that ban is plain `Absence(b)`. Otherwise, and always for "until `a`", `Precedence(a, b)`: the ban ends once `a` has happened. A bare "never `b`" stays `Absence(b)` |
+ | "carry / bring `c` to `a`", "reach `a` with / holding `c`" | `Existence(a)` + `Response(a, c)`; `Existence(c)` alone lets `c` be held anywhere. When reaching `a` is only the condition of an "if" ("if you reach `a`, you must hold `c`"), it is `Response(a, c)` alone: no `Existence(a)` |
+ | "whenever `a`: do `b`, then `c`, then `d`" | `Response(a, b)`, `Response(b, c)`, `Response(c, d)`: each step follows the one before it, never all from `a`; a step that is only a lasting condition ("fetch the item", `holding_x`) gets no clause |
+ | a command "do `a`, then `b`", "first `a`, then `b`", "do `a` before `b`" | `Existence(b)` + `Precedence(a, b)`. A hard `Existence(b)` forces `a`: no `Existence(a)`. When `b` is only preferred ("then preferably `b`": a soft `Existence(b)`) or never commanded ("move `a` before you ever take `b`": no `Existence(b)`), `a` is lone and gets a hard `Existence(a)` |
+-| a listed sequence "`a`, `b`, `c`, and then `d`" | `Existence` of the last event and `Precedence` between each consecutive pair; no order between events the list does not relate. A hard last `Existence` forces the earlier events: no `Existence` for them. When the last event is only preferred, the last hard event is lone (below) |
++| a listed sequence "`a`, `b`, `c`, and then `d`", also after a leading order word ("then / finally / after that, do `c` and `d`": `c` before `d`) | `Existence` of the last event and `Precedence` between each consecutive pair; no order between events the list does not relate. A hard last `Existence` forces the earlier events: no `Existence` for them. When the last event is only preferred, the last hard event is lone (below) |
+ | "right after", "immediately after", "in the very next step" | `ChainResponse(a, b)` |
+ | "never both", "not both during the episode" | `NotCoExistence(a, b)` |
+
+@@ -67,10 +67,13 @@ Worked examples, with neutral identifiers:
+   `Response(a, c)` or `Precedence(b, a)` hard, and nothing else. `a` is a condition, not a
+   goal: an `Existence(a)` would force the agent to reach it.
+ - "Do not `b` while `a` has not happened yet" ("while the gate is still shut", "until `a`"):
+-  first read the description of `b`. If it already contains that condition (`b` is "dropped
+-  while the gate is shut"), the ban is `Absence(b)`: no `Precedence`. Otherwise it is
+-  `Precedence(a, b)`, so the clause keeps the condition the task states. "Try not to" makes
+-  it soft.
++  first read the description of `b`. If it already contains a "while the gate is still
++  shut" condition (`b` is "dropped while the gate is shut"), that ban is `Absence(b)`: no
++  `Precedence`. Otherwise it is `Precedence(a, b)`, so the clause keeps the condition the
++  task states. "Until `a`" ("until the gate has been opened once") is always
++  `Precedence(a, b)`, even next to "while the gate is shut" and even when `b` is "dropped
++  while the gate is shut": `b` can happen again after the gate opens and shuts, and the task
++  allows it then. "Try not to" makes it soft.
+ - "Do `c`, and preferably `b` right after `a`": `Existence(c)` hard and
+   `ChainResponse(a, b)` soft. Do not add a `Precedence` or any other order rule the task
+   never states.
+diff --git a/app/src/prompts/compiler-rm/reward-ltlf-creator.system.md b/app/src/prompts/compiler-rm/reward-ltlf-creator.system.md
+index 9bd88bf..337b747 100644
+--- a/app/src/prompts/compiler-rm/reward-ltlf-creator.system.md
++++ b/app/src/prompts/compiler-rm/reward-ltlf-creator.system.md
+@@ -28,7 +28,8 @@ Build the clause set from the task's own words:
+   only the rule. Goals come from the task text alone: the environment's own objective
+   (the level's own goal) is not a requirement the task did not state.
+ - A stated order of commanded steps ("`a`, then `b`, then `c`", "first `a`, then `b`", "do `a` before
+-  `b`") is the `Existence` of the last step plus one `Precedence` per consecutive pair:
++  `b`", and the steps listed after a leading "then", "finally" or "after that": "then do `b` and
++  `c`" is `b` before `c`) is the `Existence` of the last step plus one `Precedence` per consecutive pair:
+   `Existence(c)`, `Precedence(b, c)` and `Precedence(a, b)`. With `Existence(c)` hard, the
+   chain forces `a` and `b`, so they get no `Existence`: one `Existence` per step drops the
+   order the task states, and an `Existence` next to the chain only repeats it. When the last
+@@ -48,10 +49,11 @@ Build the clause set from the task's own words:
+   never for a plain sequence. Neither the condition nor the consequent of such wording gets
+   an `Existence` clause.
+ - A ban with a condition ("while ... is still shut", "until ..."): first read the banned
+-  event's description in the environment. If it already holds that condition (an event
+-  described as "lost before `a` happened"), write plain `Absence` of that event and no
+-  `Precedence`. Otherwise
+-  the condition stays in the clause as `Precedence` of the event that ends it.
++  event's description in the environment. If it already holds a "while ... is still shut"
++  condition (an event described as "dropped while the gate is shut"), write plain `Absence`
++  of that event and no `Precedence`. Otherwise, and always for "until `a`" ("until the gate
++  has been opened once"), the condition stays in the clause as `Precedence` of the event
++  that ends it: the ban ends once `a` has happened, even if the gate shuts again later.
+ - Add a rule clause only when the task states that rule. Do not add safeguards the task
+   does not mention, and do not invent an order among unrelated events.
+ - Do not add clauses for prerequisites that the environment's event definitions already
