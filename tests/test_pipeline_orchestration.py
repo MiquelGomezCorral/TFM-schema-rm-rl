@@ -117,7 +117,7 @@ class Engine:
             return tuple(f"description {node}" for node in nodes)
         return value
 
-    def review_candidate(self, task, clauses_json, candidate, warnings=()):
+    def review_candidate(self, task, clauses_json, candidate, warnings=(), clues=""):
         self.candidates.append(candidate)
         self.warnings.append(tuple(warnings))
         value = self.verdicts.pop(0)
@@ -528,7 +528,7 @@ class OrchestrationTests(unittest.TestCase):
             environment=ENV,
             propose_task=lambda task, history="": order.append("generator") or (SELECTION,),
             describe_states=lambda *args: order.append("tagger") or ("first", "second"),
-            review_candidate=lambda task, clauses, candidate, warnings=(): (
+            review_candidate=lambda task, clauses, candidate, warnings=(), clues="": (
                 order.append("critic") or CriticResult(True, "ok")
             ),
         )

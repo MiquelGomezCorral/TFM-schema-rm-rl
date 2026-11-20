@@ -137,8 +137,13 @@ class GenericEngine:
         clauses_json: str,
         candidate_rm: str,
         warnings: Sequence[str],
+        clues: str = "",
     ) -> CriticResult:
-        """Review one compiled candidate: its clauses against the task, and the machine."""
+        """Review one compiled candidate: its clauses against the task, and the machine.
+
+        ``clues`` is the compiler's clue block for the candidate; the prompt shows ``None.``
+        under its heading when it is empty.
+        """
         response = self._request_structured(
             read_prompt("compiler", "critic"),
             render_prompt(
@@ -148,6 +153,7 @@ class GenericEngine:
                 task=task,
                 clauses_json=clauses_json,
                 reward_machine=machine_view(candidate_rm),
+                clues=clues,
                 warnings="\n".join(f"- {warning}" for warning in warnings),
             ),
             critic_schema(),

@@ -207,6 +207,11 @@ def _clause_labels(dfa: dict) -> dict[str, ClauseState]:
     }
 
 
+def clause_labels(dfa: dict) -> dict[str, ClauseState]:
+    """Read-only public view of the clause-state labels, for the critic clues."""
+    return _clause_labels(dfa)
+
+
 def _check_complete(index: int, dfa: dict) -> None:
     """Reject a clause DFA with no, or several, transitions from a state on some valuation."""
     alphabet = sorted(dfa["alphabet"])

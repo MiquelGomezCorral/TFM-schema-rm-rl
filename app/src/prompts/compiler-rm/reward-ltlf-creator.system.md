@@ -21,10 +21,13 @@ Build the clause set from the task's own words:
   `Existence` or `ExistenceTwo` clause, even when the same sentence restricts when it may
   happen, as "only after" does. When the task orders its steps, only its lone steps (defined
   above) are such goals: each other step gets a `Precedence` to the step after it instead of
-  an `Existence` (next point). A pure restriction, such as "never do b before a", needs
+  an `Existence` (next point). A step that a preference cue scopes keeps its soft
+  `Existence` inside an order: only hard steps leave their `Existence` to the chain. A step
+  the task asks for twice keeps its `ExistenceTwo` inside an order: a `Precedence` forces it
+  only once. A pure restriction, such as "never do b before a", needs
   only the rule. Goals come from the task text alone: the environment's own objective
   (the level's own goal) is not a requirement the task did not state.
-- A stated order of commanded steps ("`a`, then `b`, then `c`", "first `a`", "do `a` before
+- A stated order of commanded steps ("`a`, then `b`, then `c`", "first `a`, then `b`", "do `a` before
   `b`") is the `Existence` of the last step plus one `Precedence` per consecutive pair:
   `Existence(c)`, `Precedence(b, c)` and `Precedence(a, b)`. With `Existence(c)` hard, the
   chain forces `a` and `b`, so they get no `Existence`: one `Existence` per step drops the

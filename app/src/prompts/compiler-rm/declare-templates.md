@@ -22,7 +22,7 @@ Pick the template from the task's own wording:
 | Wording in the task | Template |
 | --- | --- |
 | a command: "eventually", "make sure `a` happens", "reach `a`", "do `a`" (never the condition of an "if") | `Existence(a)` when `a` is a lone step (defined below the table); otherwise a `Precedence` from `a` to the step ordered after it (rows below) |
-| "twice", "at two different moments" | `ExistenceTwo(a)` |
+| "twice", "at two different moments" | `ExistenceTwo(a)`, also inside an order (a `Precedence` forces only one occurrence) |
 | "never", "do not ever" | `Absence(a)` |
 | "if `a` (ever) happens, `b` must also happen", "`a` means `b` too / as well", "... before or after `a`" (`b` may come first) | `RespondedExistence(a, b)` |
 | "whenever / every time / each time / if / when / should `a`, `b` must happen", "`b` afterwards / later / at that moment" | `Response(a, b)` |
@@ -103,4 +103,7 @@ Mark a clause hard or soft on its own wording, not on the rest of the task. Task
 both, and each clause of one task gets its own priority. A preference cue scopes the phrase
 or requirement it modifies, not the whole sentence and not the task: in "Reach `g`, and
 ideally `b` right after `a`" the cue covers only "`b` right after `a`", so `Existence(g)` is
-hard and `ChainResponse(a, b)` is soft, with no hard order clause.
+hard and `ChainResponse(a, b)` is soft, with no hard order clause. A cue covers the step it
+qualifies, not the order word that leads into that step: in "`a`, then preferably `b`" the
+order stays hard, so `Precedence(a, b)` is hard and `Existence(b)` soft; an order stated
+inside the preferred phrase, as in "ideally `b` right after `a`", is soft.

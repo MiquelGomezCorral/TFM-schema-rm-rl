@@ -1,5 +1,6 @@
 """Formal Reward Machine compilation pipeline."""
 
+from .critic_clues import critic_clues
 from .pipeline import (
     ClauseProposal,
     CompilationResult,
