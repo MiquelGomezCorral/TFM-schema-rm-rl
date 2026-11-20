@@ -673,3 +673,29 @@ no rerun.
 
 **Code.** `deff802` (whole-unit pay, in main); the soft size and ceiling default is in
 `app/src/config/config.py` (`soft_break_cost`, `hard_ceiling`); `ppo_reward_scale` as above.
+
+### Response goal card on UnlockPickup: 9 of 9 learned (`response-card-unlockpickup/`), 2026-11-20
+
+**What it shows.** The Response goal card (`tpl-response-1-goal`) moved from KeyCorridorS6R3, where no
+method solved it (the card's old machine trained 0 of 3; 0 of 71 runs on that level learned), to
+UnlockPickup, the learnable level with the same key, door and box chain. Its expected answer and its two
+accepted answers each trained on 3 seeds (one-hot state, PPO s07, 1.5M steps, procedural layouts):
+9 of 9 learned, judged success 1.00 on 100 greedy episodes each, 221k to 324k steps to 0.9 eval success.
+The page shows, per machine, the NL task, the LTLf clauses and the live RM graph with its RM text, the
+per-seed table, and the earlier ARM-FM (3 of 3) and FARM (1 of 3) numbers on this level, labelled as
+different machines and the old pay.
+
+**Evidence.** `evidence/judge.out` (the chain-regression judge: 9 runs, scripted idle and solving-plan
+baselines, the launch gate), the three machines, and the card as on main. The earlier numbers come from
+the move report's run folders and are not copied.
+
+**Files.** `index.html` (built from `data.json`), `graphs/` (each machine as live HTML, SVG and RM text),
+`evidence/`.
+
+**Rerun.** The judge needs the nine run folders of the `tp-response-card` worktree, which are not copied:
+`PYTHONPATH=app python outputs/chain-reg/chain_judge.py --queue outputs/chain-reg/queue.json --episodes 100
+--out outputs/chain-reg/judge.out`, from that worktree in `RM_RL_env`. The graphs:
+`PYTHONPATH=app python app/main.py render-rm --rm-file <machine>.reward_machine.txt --svg-dir <out>.svg --html`.
+
+**Code.** Card move `0e821b8` (branch `MiquelGomezCorral/tp-response-card`), merged into main as
+`54f2c71`.

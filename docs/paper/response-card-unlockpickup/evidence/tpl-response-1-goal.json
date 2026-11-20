@@ -1,0 +1,171 @@
+{
+ "id": "tpl-response-1-goal",
+ "env": {
+  "description": "experiments/benchmark/envs/minigrid-unlock-pickup/environment.md",
+  "family": "minigrid",
+  "gym_id": "MiniGrid-UnlockPickup-v0",
+  "env_kwargs": {},
+  "layout": "procedural",
+  "layout_seed": 1,
+  "observation": "symbolic"
+ },
+ "task": "Whenever you are holding the key, the door must be open at that moment or opened afterwards. Pick up the key, open the door with it, then pick up the box in the other room.",
+ "goal": true,
+ "template": "Response",
+ "status": "draft",
+ "expect": [
+  [
+   "Response",
+   [
+    "has_door_key",
+    "door_open"
+   ],
+   "hard"
+  ],
+  [
+   "Precedence",
+   [
+    "has_door_key",
+    "door_open"
+   ],
+   "hard"
+  ],
+  [
+   "Precedence",
+   [
+    "door_open",
+    "target_picked_up"
+   ],
+   "hard"
+  ],
+  [
+   "Existence",
+   [
+    "target_picked_up"
+   ],
+   "hard"
+  ]
+ ],
+ "forced": [
+  1,
+  2
+ ],
+ "also_ok": [
+  [
+   [
+    "Response",
+    [
+     "has_door_key",
+     "door_open"
+    ],
+    "hard"
+   ],
+   [
+    "Existence",
+    [
+     "door_open"
+    ],
+    "hard"
+   ],
+   [
+    "Existence",
+    [
+     "target_picked_up"
+    ],
+    "hard"
+   ]
+  ],
+  [
+   [
+    "Response",
+    [
+     "has_door_key",
+     "door_open"
+    ],
+    "hard"
+   ],
+   [
+    "Precedence",
+    [
+     "door_open",
+     "target_picked_up"
+    ],
+    "hard"
+   ],
+   [
+    "Existence",
+    [
+     "target_picked_up"
+    ],
+    "hard"
+   ]
+  ]
+ ],
+ "env_reward_matches": false,
+ "train": true,
+ "plans": {
+  "solve": [
+   {
+    "do": "pickup",
+    "obj": "key"
+   },
+   {
+    "do": "toggle",
+    "obj": "door"
+   },
+   {
+    "do": "drop"
+   },
+   {
+    "do": "pickup",
+    "obj": "box"
+   }
+  ],
+  "wrong": [
+   {
+    "breaks": [
+     0,
+     3
+    ],
+    "why": "Takes the key, then waits: the door is never opened.",
+    "steps": [
+     {
+      "do": "pickup",
+      "obj": "key"
+     },
+     {
+      "do": "wait",
+      "n": 1000
+     }
+    ]
+   },
+   {
+    "breaks": [
+     3
+    ],
+    "why": "Takes the key and opens the door, then waits and never picks up the box.",
+    "steps": [
+     {
+      "do": "pickup",
+      "obj": "key"
+     },
+     {
+      "do": "toggle",
+      "obj": "door"
+     },
+     {
+      "do": "wait",
+      "n": 1000
+     }
+    ]
+   }
+  ]
+ },
+ "event_seeds": [],
+ "paraphrases": [
+  "At any moment you are holding the key, the door has to be open then or opened later. Take the key, open the door with it and then take the box in the other room.",
+  "If you are holding the key, the door must be open at that point or at a later point. Pick up the key, use it to open the door, and then pick up the box in the other room.",
+  "Any time the key is in your hands, the door must be open right then or opened afterwards. Take the key and open the door with it. Finally, pick up the box in the other room."
+ ],
+ "notes": "Moved from KeyCorridorS6R3 to UnlockPickup on 2026-11-20: no method (no-RM, ARM-FM, FARM) learned KeyCorridor in 71 runs, so the card could not train, and UnlockPickup was learned (ARM-FM 3 of 3, FARM 1 of 3 on base-unlock-pickup at 1.5M steps). The trigger is has_door_key, a condition that stays true while the key is held, so the door must be open when the key was last held or later (the wording of tpl-response-2-goal and -3-goal); the old key_found trigger and its last-step reading went with the level. The goal forces the door open, so the Response only separates a run that takes the key and stops; a wait plan fails the goal. Chain reword 2026-11-19, kept: the task names every step, so the answer is the chain Existence(box), Precedence(door_open, box), Precedence(has_door_key, door_open) plus the card's Response. Both orders are forced by the level (`forced`: the door opens only with the matching key, the box room has no other entrance), and the progress pay reads the machine, so a step with no rule of its own would pay nothing."
+}
