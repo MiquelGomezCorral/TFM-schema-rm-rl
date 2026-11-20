@@ -206,6 +206,8 @@ the rest.
   of the check, postponed). The 40 card sets that still fail it all have that one reason: 26 with a
   final whose started state ties idling, and 14 rule-only, which the check now skips (see "What it
   does not fix"). With the refund and the skip below: 141 of 167 card sets and 91 of 108 stored.
+  Superseded 2026-11-20: the false alarm is fixed and every set passes ("Started means closer to
+  the goal", below).
 - **[decision] A hard break takes back the progress made since the start (2026-11-19).** A chain
   pays on the way, and the edge into the well paid no progress, so a break after `k` events totalled
   `-H + k`: doorkey (form B) with lava after one key step paid -9 and after two steps -8, against -10
@@ -515,9 +517,22 @@ well -10); the 0.1 and 0.5 figures in the sections above are from before that ch
   started state pays the same, so the "started must pay more than not started" line is skipped
   there and the summary says so (`skipped started > not started (no goal: idle keeps every rule)`).
   Every other line still counts. This clears the 14 rule-only card sets and the 11 stored ones that
-  failed it; the 26 card sets and 17 stored sets that still fail it all have a final. Two
+  failed it; the 26 card sets and 17 stored sets that still fail it all have a final (superseded
+  2026-11-20, next entry). Two
   soft-goal rule-only cards passed that line strictly and lose it: a soft goal with no final still
   pays its own progress, which no check reads now, so a test pins it.
+- **[decision] Started means closer to the goal (2026-11-20).** The check's "started" state must
+  owe fewer propositions than the start: the fewest that must still come true to reach a final
+  state, on the shortest path that avoids rejecting states, each edge costing the positive literals
+  its guard needs, so one step can make several true (`_owed`, `app/src/arm_fm/pay_order.py`; the
+  guard count is `fewest_true` in `reward_machine.py`). The sets that still failed did so because
+  their only started states remembered a trigger, such as the `a` of a soft `Precedence(a, goal)`,
+  or of a `Precedence(a, b)` whose `b` the goal does not need, or an opened `Response`, and paid no
+  more than idling; such a state owes as much as the start or more,
+  so it no longer counts as started. A key the goal needs still counts, and paying 0 for it still
+  fails.
+  Measured on today's cards (MONA, no model calls): 106 of 130 card sets and 91 of 108 stored sets
+  pass before, all after; with promise cost on, 125 of 130 before and after.
 
 ### Cleanup passes, in order
 

@@ -103,6 +103,33 @@ class TraceJudging(unittest.TestCase):
         self.assertEqual((judged.count(BROKEN, "soft"), judged.count(OPEN_AT_END, "soft")), (1, 1))
         self.assertEqual(judged.failed(), [1, 2])
 
+    def test_every_soft_break_counts_not_only_the_first(self) -> None:
+        # (template, a, b, breaks): a break lasts while the labels stay as on its step and the
+        # rule starts again once they change, so labels held true are one break, pulses two.
+        rows = (
+            ("Absence", "0110", "", 1),
+            ("Absence", "0101", "", 2),
+            ("Precedence", "0000", "0110", 1),
+            ("Precedence", "0000", "0101", 2),
+            ("Precedence", "0010", "0101", 1),
+            ("ChainResponse", "0110", "0000", 1),
+            ("ChainResponse", "1010", "0000", 2),
+            ("NotCoExistence", "0110", "0110", 1),
+            ("NotCoExistence", "0101", "0101", 2),
+            ("Response", "0100", "0000", 0),
+        )
+        for template, a, b, breaks in rows:
+            clause = (template, ("a", "b") if b else ("a",), "soft")
+            with self.subTest(template=template):
+                judged = judge_clause(clause, trace(a=a, b=b) if b else trace(a=a))
+                self.assertEqual(judged.breaks, breaks)
+        # soft_breaks counts the broken clause once, soft_break_count every break.
+        summary = judge_trace([("Absence", ("a",), "soft")], trace(a="0101")).to_dict()
+        self.assertEqual(
+            (summary["soft_breaks"], summary["soft_break_count"], summary["any_soft_break"]),
+            (1, 2, True),
+        )
+
     def test_an_open_hard_clause_fails_the_trace(self) -> None:
         judged = judge_trace(self.CLAUSES, trace(goal="000", bad="000", a="000", b="000"))
         self.assertFalse(judged.success)

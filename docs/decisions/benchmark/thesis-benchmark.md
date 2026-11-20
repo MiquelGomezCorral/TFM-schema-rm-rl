@@ -30,6 +30,22 @@ thing whichever arm produced it.
   success (judged success and every hard clause with a trigger activated) beside judged success,
   which keeps its definition. Judged episodes also report the positive and the negative part of
   the machine reward and of the environment reward, beside the total.
+- **Soft-rule quality.** Judged success says whether the task was solved, not how well the agent
+  kept the soft rules (user, 2026-11-20: "it solves the task, but how well? Is it really following
+  the human preferences?"). A card with a soft clause also reports, per episode and as run means,
+  `soft_break_count`, how many separate times the episode broke a soft rule, and `any_soft_break`,
+  whether it broke one at least once (`mean_any_soft_break` is the share of such episodes). The
+  user asked for every break ("how many of the rules have been broken along the way"); what counts
+  as one break is the implementation's reading: a break lasts while the clause's labels stay as
+  they were on the break step, and the rule starts again once they change. So an Absence counts
+  each time its event turns true, a Precedence each new run of `b` before any `a`, a ChainResponse
+  each run of a trigger with no response, a NotCoExistence each time the pair comes back together.
+  The restarted NotCoExistence forgets the earlier side, so one side recurring alone is not a new
+  break: `a=1000, b=0101` counts 1. Existence, ExistenceTwo, Response and
+  RespondedExistence never break; they stay open (`soft_open`). `soft_breaks` still counts each
+  broken clause once, and judged success is unchanged. The judge owns the count
+  (`_break_count`, `app/src/benchmark/declare_judge.py`); `judge.json` and the results table
+  show it for every arm side by side.
 - **Episodes that cannot start.** A machine whose start state is final, or reaches a final state
   from the start, ends every episode after the first action, so its rules pass untested
   (`machine_too_simple`, with the reason, in `judge.json`; a rejecting state stops the walk). The
@@ -352,3 +368,8 @@ and a restart is easier to trust.
   replay random walks against the reference labels before a labeling counts as ok or fixed"; testing program
   slice `labeling-replay`). The plan check saw only the states the card's plans visit, and a repair was graded
   on the traces that showed its failure.
+- 2026-11-20: Soft-rule quality added (user: "it solves the task, but how well? Is it really following
+  the human preferences?"; "how many of the rules have been broken along the way"): separate soft
+  breaks per episode and the share of episodes with one, for every arm. What counts as one break (it
+  lasts while its labels stay as on the break step) is the implementation's reading. Recomputed from
+  the saved test traces of the judged runs, with no training.
