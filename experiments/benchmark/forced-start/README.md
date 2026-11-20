@@ -12,8 +12,10 @@ rule. Here the environment provides the trigger, so doing nothing fails it:
 
 The environment enforces the start, not the machine (`app/src/arm_fm/forced_starts.py`; the plain
 ids `MiniGrid-BlockedUnlockPickup-v0` and `MiniGrid-UnlockPickup-v0` are untouched). The task
-wording, the clause, the paraphrases and the `train` flags are those of the originals
-(`tpl-response-1-nogoal`, `tpl-responded-existence-1-nogoal`), which stay as they are. Ids are
+wording, the clause and the paraphrases are those of the originals
+(`tpl-response-1-nogoal`, `tpl-responded-existence-1-nogoal`), which stay as they are. The `train`
+flags differ since 2026-11-20: both originals stopped training (an idle agent passes them), the first
+forced card trains and the second does not (see Training). Ids are
 `<original id>-forced`: "forced" there means the forced start, not the card field `forced` (the
 clauses the world guarantees).
 
@@ -29,7 +31,10 @@ Learner: PPO s07, chosen by the user for every thesis run on 2026-11-12.
 
 Training: because the trigger is given at reset, these cards test keeping an obligation, not reacting
 to an event. The user dropped the runs that had not started (2026-11-14). Only
-`tpl-response-1-nogoal-forced` seed 1 trains (3 arms), labeled "trigger given". Reactive cards, where
+`tpl-response-1-nogoal-forced` trains (3 arms, seeds 1 to 3 since 2026-11-20), labeled "trigger
+given". `tpl-responded-existence-1-nogoal-forced` stopped training on 2026-11-20 (`train: false`):
+`tpl-responded-existence-2-nogoal` (siren room, where the trigger comes during the episode) trains
+in the templates suite instead. Reactive cards, where
 the trigger happens during the episode, are proposed as the real test of conditional rules.
 
 ## Contents

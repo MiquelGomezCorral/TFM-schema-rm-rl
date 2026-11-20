@@ -175,7 +175,7 @@ An ablation variant whose manifest marks it a no-op (`effective_settings.ablatio
 changes nothing in that machine) is listed `no-data` with that reason and is not trained. The
 `none` control, which `ablate-rm` also marks no-op, stays eligible.
 
-<!-- seeds: the target is three seeds [1, 2, 3]; the committed runs.yaml files carry seed 1. -->
+<!-- seeds: every training test runs three seeds; the final suites' runs.yaml files carry [1, 2, 3] (2026-11-20; the learner pilot keeps [1, 2]). -->
 
 Learner calibrations (one learner for every arm; PPO was tuned on FARM pilot machines, see the
 table below): the thesis runs use PPO setting s07 (`learner: ppo` in every thesis suite: `base`,

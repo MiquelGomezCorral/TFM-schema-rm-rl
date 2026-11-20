@@ -22,6 +22,7 @@ from pathlib import Path
 import numpy as np
 from minigrid.core.actions import Actions
 
+from scripts.run_suite import RM_TIME_LIMIT_PENALTY
 from src.arm_fm import forcing_envs as forcing
 from src.arm_fm.artifacts import ArtifactBundle
 from src.arm_fm.environments import make_environment
@@ -430,6 +431,7 @@ def machine_env(card: str) -> tuple[RewardMachineEnvironment, ArtifactBundle]:
     env = RewardMachineEnvironment(
         make_environment(CARD_LEVEL[card]), runtime, bundle.labeling_source
     )
+    env.time_limit_penalty = RM_TIME_LIMIT_PENALTY  # as the suite's runs train
     return env, bundle
 
 

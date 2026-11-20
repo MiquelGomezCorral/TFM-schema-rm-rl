@@ -18,6 +18,23 @@ Scoring treats them as optional extras: the stored clauses may keep or drop them
 clause alone is a correct output. `base-blocked-unlock-pickup` now says the ball and the key may
 come in either order.
 
+Order audit (2026-11-20): an order the task states is required even when the world forces it, so
+`forced` now keeps only orders the task does not state. `base-doorkey` ("use the key to open the
+door, then reach the goal") and `base-blocked-unlock-pickup` ("..., unlock the door, and then pick
+up the box") state every order and lost `forced`; the goal clause alone is no longer correct there.
+`base-unlock-pickup` and `base-key-corridor` list their steps with no order word, so their orders
+stay in `forced`. The audit kept the Response chain of `base-doorkey` in `also_ok`, reading it as
+stating both orders.
+
+Card fixes (2026-11-20): the Response chain of `base-doorkey` left `also_ok` later the same day
+(and on its pilot and smoke copies): `Response` is not a step form, so it does not carry the stated
+orders (user rule).
+The pilot and smoke copies of `base-unlock-pickup` mark both orders `forced`, as here, so they score
+like this card. `base-key-corridor` is unchanged: its task lists the steps with no order word, so it
+states no order. "Find and acquire the key" is the key step, which `expect` names
+(`has_matching_key`); `key_found` adds nothing, since the key is never held before it is seen, and
+"explore the side rooms" and "return to the corridor" have no label. Training runs seeds 1 to 3.
+
 Layouts: training resets draw new procedural layouts (`layout: procedural`). Evaluation keeps the fixed
 seeds `eval_seed_base + i`, the same for every run and arm. `layout_seed: 1` stays on the card only for
 the scripted plans, the trace records and the card checks; the trainer ignores it.

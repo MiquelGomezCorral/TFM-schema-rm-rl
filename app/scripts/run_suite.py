@@ -55,6 +55,8 @@ from src.config import Configuration
 
 ROOT = Configuration.WORKSPACE_PATH
 RUNS_PATH = Configuration.OUTPUT_PATH / "runs"
+# Benchmark RM arms pay 0 at the time limit; Configuration's -5 is the reproduction value.
+RM_TIME_LIMIT_PENALTY = 0.0
 LIBC = ctypes.CDLL(None)
 PR_SET_PDEATHSIG = 1  # <linux/prctl.h>
 
@@ -418,11 +420,13 @@ def run_config(run: Run, spec: dict) -> dict:
             env_kwargs={},
             task_bundles=entries,
             task_draw="alternate",
-            time_limit_penalty=0.0,
+            time_limit_penalty=RM_TIME_LIMIT_PENALTY,
         )
     else:
         source = spec.get("reward_source", "rm")  # "both" adds the env reward to the RM reward
-        config.update(reward_source=source, bundle=str(run.bundle), time_limit_penalty=0.0)
+        config.update(
+            reward_source=source, bundle=str(run.bundle), time_limit_penalty=RM_TIME_LIMIT_PENALTY
+        )
     return config
 
 
