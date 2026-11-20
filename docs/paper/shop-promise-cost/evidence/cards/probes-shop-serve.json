@@ -1,0 +1,124 @@
+{
+ "id": "shop-serve",
+ "env": {
+  "description": "experiments/benchmark/envs/shop/environment.md",
+  "family": "minigrid",
+  "gym_id": "MiniGrid-Shop-v0",
+  "env_kwargs": {
+   "max_steps": 600
+  },
+  "layout": "procedural",
+  "layout_seed": null,
+  "observation": "symbolic"
+ },
+ "task": "Whenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move.",
+ "goal": false,
+ "template": null,
+ "status": "draft",
+ "expect": [
+  [
+   "Response",
+   [
+    "client_arrived",
+    "order_taken"
+   ],
+   "hard"
+  ],
+  [
+   "Response",
+   [
+    "order_taken",
+    "food_prepared"
+   ],
+   "hard"
+  ],
+  [
+   "Response",
+   [
+    "food_prepared",
+    "order_served"
+   ],
+   "hard"
+  ],
+  [
+   "ChainResponse",
+   [
+    "food_fell",
+    "holding_food"
+   ],
+   "hard"
+  ]
+ ],
+ "also_ok": [],
+ "env_reward_matches": false,
+ "train": true,
+ "plans": {
+  "solve": [
+   {
+    "do": "policy",
+    "name": "shop",
+    "ignore": []
+   }
+  ],
+  "wrong": [
+   {
+    "breaks": [
+     0
+    ],
+    "why": "Does nothing for the whole episode: every rule that opens is left open.",
+    "steps": [
+     {
+      "do": "wait",
+      "n": 600
+     }
+    ]
+   },
+   {
+    "breaks": [
+     3
+    ],
+    "why": "Serves the clients, but leaves a fallen food portion on the floor for one step.",
+    "steps": [
+     {
+      "do": "policy",
+      "name": "shop",
+      "ignore": [
+       "food_fall"
+      ]
+     }
+    ]
+   },
+   {
+    "breaks": [
+     1
+    ],
+    "why": "Takes the first client's order and then does nothing.",
+    "steps": [
+     {
+      "do": "wait",
+      "n": 30
+     },
+     {
+      "do": "toggle",
+      "obj": "ball"
+     },
+     {
+      "do": "wait",
+      "n": 600
+     }
+    ]
+   }
+  ]
+ },
+ "event_seeds": [
+  1,
+  2,
+  3
+ ],
+ "paraphrases": [
+  "Each time a client arrives, take their order, get food from the pantry, prepare it at the stove and hand it over; should the food fall, your very next move must pick it up.",
+  "For every client who comes in: take the order, bring food from the pantry, prepare it at the stove and give it to the client. If the food falls, pick it up again on your very next move.",
+  "When a client walks in, take their order, fetch food from the pantry, prepare it at the stove and serve it to them. Every time the food falls, pick it up on the very next move."
+ ],
+ "notes": "Level 2. The serving rules; the siren still rings and the card ignores it on purpose."
+}

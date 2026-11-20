@@ -1,0 +1,996 @@
+{
+ "title": "Shop promise cost: a hard break pays the promise cost of the step limit",
+ "eyebrow": "reward layer · shop levels · plan check · 2026-11-20",
+ "subtitle": "Every shop run that learned had an open promise that cost something as the step limit ran out: the promise cost or the end judgment (12 of 12 seeds served; with both off, 0 of 12). With the promise cost on and a well the agent can reach, the step into the well ended the episode without the promise cost still to come, so letting the food fall paid more than serving. Commit `a727b2b` charges the step into the well the promise cost of the whole step limit (-10.1 becomes -70 on the shop). The round 7 level still learns as before (12.21 / 12.07 / 12.21 served). Today's shop-serve still learns 0 of 3: an open question for the user, not a result. The same commit replaces the no-goal plan check: 35 of the 38 no-goal bundles the old rule failed by construction now pass, and the new rule finds a real defect in forcing/lanes-rules.",
+ "sections": [
+  {
+   "id": "claim",
+   "title": "What it shows",
+   "blocks": [
+    {
+     "type": "callout",
+     "tone": "info",
+     "title": "In plain words",
+     "text": "A shop task is a set of promises: when a client comes in, the agent owes an order, food and the serve. The Reward Machine pays the agent as it keeps each promise. Two optional switches price a promise left open. The **promise cost** charges -0.1 for every step a hard promise is open. The **end judgment** charges each hard promise still open when the episode stops. The **well** is the machine's dead state: a hard rule broken for good pays -10 there and the episode ends. On today's shop levels the hard rule an agent can break for good is the fall rule: \"if the food falls, pick it up on your very next move\". The step limit is 600."
+    },
+    {
+     "type": "stats",
+     "items": [
+      {
+       "value": "12 of 12",
+       "label": "seeds that served clients with the promise cost or the end judgment on (rounds 6 and 7)",
+       "tone": "ok"
+      },
+      {
+       "value": "0 of 12",
+       "label": "seeds that served with both off (round 6 A, B, C and today's probe)",
+       "tone": "warn"
+      },
+      {
+       "value": "-10.1 → -70",
+       "label": "the step into the well on the shop, promise cost on, before and after the fix"
+      },
+      {
+       "value": "12.21 / 12.07 / 12.21",
+       "label": "clients served on the round 7 level with the fix, the same as before",
+       "tone": "ok"
+      },
+      {
+       "value": "0 of 3",
+       "label": "seeds that serve on today's shop-serve with the fix: open",
+       "tone": "warn"
+      },
+      {
+       "value": "35 of 38",
+       "label": "no-goal bundles the old plan check failed by construction that the new one passes",
+       "tone": "ok"
+      }
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**Why the earlier runs learned.** Learning needs an open promise to cost something as the step limit runs out. With both switches off, a whole shift of serving pays 0 and taking one order then stopping pays -2 (round 6, seed 1): the 2-point gap does not grow with the clients served, and no seed learned to serve.",
+      "**The defect.** With the promise cost on, the step into the well paid -10 and one step of promise cost, -10.1, then the episode ended. The promise cost of every step that never came went unpaid, so dropping the food paid more than serving on all four shop levels: -16.4 against -35.5 plain on shop-serve, seed 1.",
+      "**The fix.** The step into the well now pays the promise cost of the whole step limit: -10 - 0.1 × 600 = -70 on the shop. After it the solve is the best plan on all eight level variants. With the promise cost off every machine is byte-identical: the two committed sweeps and the four levels.",
+      "**No regression.** The round 7 level trains to 12.21 / 12.07 / 12.21 served with the fix, identical to round 7 B8b. Its level has no slip, so its machine has no well and its text did not change.",
+      "**Open.** Today's shop-serve, promise cost on and the fix in, serves 0 on 3 of 3 seeds. Random play never prepares food in 1,000 episodes, and the trained agents never pick the food up. The options wait for the user (Part 4).",
+      "**The no-goal plan check.** With the end judgment off, the old rule failed 38 of 62 no-goal bundles by construction. The new rule passes 35 of them, leaves the 275 goal bundles unchanged, catches a shop-serve built without its fall rule on 3 of 3 seeds and finds a real defect in the committed forcing/lanes-rules."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "part1",
+   "title": "1. Why the earlier shop runs learned",
+   "intro": "Every run trains PPO on the shop with the machine's reward only, gamma 0.995, learning rate 0.001, one-hot machine state, 3 seeds, judged on 100 test episodes. Served is the mean number of clients served per test episode (`check/runs_table.py`, `evidence/runs.out`). Plan pay is the machine's reward for a scripted plan of the card on its first event seed, plain / discounted at 0.995 (`check/plan_pay.py rounds`, `evidence/part1-rounds.json`, seeds 2 and 3 there too). Rounds 6 and 7 trained 2M steps with a -5 time-limit charge; the probe 5M steps without one. Plan pay leaves that charge out: it is the same on every plan that runs to the step limit.",
+   "blocks": [
+    {
+     "type": "table",
+     "columns": [
+      "run",
+      "machine",
+      "promise cost",
+      "end judgment",
+      "served, seeds 1 / 2 / 3",
+      "solve",
+      "take the order, stop",
+      "other wrong plan",
+      "idle"
+     ],
+     "rows": [
+      [
+       "r6-A",
+       "`r6-both-off`",
+       "off",
+       "off",
+       {
+        "text": "0 / 0 / 0",
+        "tone": "warn"
+       },
+       "0 / -0.673 (12 served)",
+       "-2 / -1.967",
+       "order and food, no serve: -1 / -1.157",
+       "-3 / -2.811"
+      ],
+      [
+       "r6-B, PPO clip 0.1",
+       "`r6-both-off`",
+       "off",
+       "off",
+       {
+        "text": "0 / 0 / 0",
+        "tone": "warn"
+       },
+       "as r6-A",
+       "as r6-A",
+       "as r6-A",
+       "as r6-A"
+      ],
+      [
+       "r6-C, no value clip",
+       "`r6-both-off`",
+       "off",
+       "off",
+       {
+        "text": "0 / 0 / 0",
+        "tone": "warn"
+       },
+       "as r6-A",
+       "as r6-A",
+       "as r6-A",
+       "as r6-A"
+      ],
+      [
+       "r6-D",
+       "`r6-promise`",
+       "on",
+       "off",
+       {
+        "text": "12.23 / 11.15 / 12.23",
+        "tone": "ok"
+       },
+       "-20.8 / -8.718 (12 served)",
+       "-60.6 / -19.624",
+       "order and food, no serve: -59.6 / -18.814",
+       "-61.6 / -20.467"
+      ],
+      [
+       "r6-E",
+       "`r6-end`",
+       "off",
+       "on",
+       {
+        "text": "18.15 / 12.42 / 12.42",
+        "tone": "ok"
+       },
+       "0 / -0.673 (12 served)",
+       "-22 / -2.961",
+       "order and food, no serve: -11 / -1.654",
+       "-33 / -4.301"
+      ],
+      [
+       "r7-B4, cooking step",
+       "`r7-b4-promise`",
+       "on",
+       "off",
+       {
+        "text": "9.55 / 8.84 / 9.55",
+        "tone": "ok"
+       },
+       "-28.4 / -11.617 (10 served)",
+       "-61.6 / -20.561",
+       "none on this card",
+       "-62.6 / -21.404"
+      ],
+      [
+       "r7-B8b",
+       "`r7-b8b-promise`",
+       "on",
+       "off",
+       {
+        "text": "12.21 / 12.07 / 12.21",
+        "tone": "ok"
+       },
+       "-20.8 / -8.718 (12 served)",
+       "-60.6 / -19.624",
+       "order and food, no serve: -59.6 / -18.814",
+       "-61.6 / -20.467"
+      ],
+      [
+       "probe, today's shop-serve",
+       "`shop-serve-both-off`",
+       "off",
+       "off",
+       {
+        "text": "0 / 0 / 0",
+        "tone": "warn"
+       },
+       "0 / -1.308 (8 served)",
+       "-2 / -1.967",
+       "leaves a fallen portion one step: -13 / -10.667, well at step 48",
+       "-3 / -2.811"
+      ],
+      [
+       "probe, today's shop-serve",
+       "`shop-serve-promise-before`",
+       "on",
+       "off",
+       "not trained: the gate stopped it",
+       "-35.5 / -13.975 (8 served)",
+       "-60.6 / -19.624",
+       {
+        "text": "leaves a fallen portion one step: -16.4 / -13.588, well at step 48, more than the solve",
+        "tone": "warn"
+       },
+       "-61.6 / -20.467"
+      ]
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**The PPO settings are not the cause.** r6-A, B and C train one machine with PPO clip 0.2 or 0.1 and value clipping on or off: all serve 0. r6-D and r6-E keep the clauses and change one reward switch: they serve 11 to 18 clients.",
+      "**Both off, serving pays almost nothing more.** A client's arrival pays -3, one point for each promise it opens, and each kept promise pays its point back. So a whole shift of serving nets 0, taking the first order and stopping -2, idling -3. The gap is 2 points plain, about 1.3 discounted, whatever the number of clients served. The probe's trained agents took the first order and stopped (plan log, 2026-11-20 19:24).",
+      "**Promise cost on, every open step costs.** Idling leaves a promise open for about 600 steps, -61.6; serving closes each one quickly, -20.8. The gap, about 40 points plain and 11.7 discounted, grows with each client served.",
+      "**End judgment on, the end charges what is open.** Each hard promise open when the episode stops pays -10: idle -33, serving 0. Discounted at step 600 (0.995^600 is about 0.05) the gap shrinks to 3.6, and it still trained.",
+      "**None of these machines has a well.** The round 6 and 7 levels have no slip (`slip_chance` 0), so their cards carry no fall rule and their machines no rejecting state (`evidence/machines.out`: 0 edges into the well). The defect of Part 2 could not show there."
+     ]
+    },
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/r6-both-off.html",
+       "height": 520,
+       "alt": "Reward Machine r6-both-off: 8 states",
+       "caption": "**`r6-both-off`** · Shop, round 6 level (no slip, no siren, no cooking) · 8 states, 65 transitions · no final, no well\nTask: *Whenever a client comes in, take their order, fetch food from the pantry and give it to them.* Promise cost off, end judgment off. An arrival from u0 pays -3, one point per promise it opens; each kept promise pays a point back. Trained by r6-A, B and C: 0 served on 9 of 9 seeds.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Bundle copy `evidence/bundles/r6-both-off` (round 6 `step2-a3-x10`), trained by r6-A, r6-B and r6-C.",
+        "code": "# Task (NL)\nWhenever a client comes in, take their order, fetch food from the pantry and give it to them.\n\n# Clauses and LTLf (evidence/bundles/r6-both-off)\nhard Response(client_arrived, order_taken): (G (client_arrived -> (F order_taken)))\nhard Response(order_taken, holding_food): (G (order_taken -> (F holding_food)))\nhard Response(order_taken, order_served): (G (order_taken -> (F order_served)))\n\n# RM text (graphs/r6-both-off.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6, u7\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !client_arrived&!holding_food&!order_served&order_taken) -> u1\n(u0, !client_arrived&!holding_food&order_served&order_taken) -> u2\n(u0, !client_arrived&holding_food&!order_served&order_taken) -> u3\n(u0, client_arrived&!holding_food&!order_served&!order_taken) -> u4\n(u0, client_arrived&!holding_food&!order_served&order_taken) -> u1\n(u0, client_arrived&!holding_food&order_served&!order_taken) -> u4\n(u0, client_arrived&!holding_food&order_served&order_taken) -> u2\n(u0, client_arrived&holding_food&!order_served&!order_taken) -> u4\n(u0, client_arrived&holding_food&!order_served&order_taken) -> u3\n(u0, client_arrived&holding_food&order_served&!order_taken) -> u4\n(u1, !client_arrived&!holding_food&order_served) -> u2\n(u1, !client_arrived&holding_food&!order_served) -> u3\n(u1, !client_arrived&holding_food&order_served) -> u0\n(u1, client_arrived&!holding_food&!order_served&!order_taken) -> u5\n(u1, client_arrived&!holding_food&order_served&!order_taken) -> u6\n(u1, client_arrived&!holding_food&order_served&order_taken) -> u2\n(u1, client_arrived&holding_food&!order_served&!order_taken) -> u7\n(u1, client_arrived&holding_food&!order_served&order_taken) -> u3\n(u1, client_arrived&holding_food&order_served&!order_taken) -> u4\n(u1, client_arrived&holding_food&order_served&order_taken) -> u0\n(u2, !client_arrived&!holding_food&!order_served&order_taken) -> u1\n(u2, !client_arrived&holding_food&!order_served&!order_taken) -> u0\n(u2, !client_arrived&holding_food&!order_served&order_taken) -> u3\n(u2, !client_arrived&holding_food&order_served) -> u0\n(u2, client_arrived&!holding_food&!order_served&!order_taken) -> u6\n(u2, client_arrived&!holding_food&!order_served&order_taken) -> u1\n(u2, client_arrived&!holding_food&order_served&!order_taken) -> u6\n(u2, client_arrived&holding_food&!order_served&!order_taken) -> u4\n(u2, client_arrived&holding_food&!order_served&order_taken) -> u3\n(u2, client_arrived&holding_food&order_served&!order_taken) -> u4\n(u2, client_arrived&holding_food&order_served&order_taken) -> u0\n(u3, !client_arrived&!holding_food&!order_served&order_taken) -> u1\n(u3, !client_arrived&!holding_food&order_served&!order_taken) -> u0\n(u3, !client_arrived&!holding_food&order_served&order_taken) -> u2\n(u3, !client_arrived&holding_food&order_served) -> u0\n(u3, client_arrived&!holding_food&!order_served&!order_taken) -> u7\n(u3, client_arrived&!holding_food&!order_served&order_taken) -> u1\n(u3, client_arrived&!holding_food&order_served&!order_taken) -> u4\n(u3, client_arrived&!holding_food&order_served&order_taken) -> u2\n(u3, client_arrived&holding_food&!order_served&!order_taken) -> u7\n(u3, client_arrived&holding_food&order_served&!order_taken) -> u4\n(u3, client_arrived&holding_food&order_served&order_taken) -> u0\n(u4, !holding_food&!order_served&order_taken) -> u1\n(u4, !holding_food&order_served&order_taken) -> u2\n(u4, holding_food&!order_served&order_taken) -> u3\n(u4, holding_food&order_served&order_taken) -> u0\n(u5, !holding_food&!order_served&order_taken) -> u1\n(u5, !holding_food&order_served&!order_taken) -> u6\n(u5, !holding_food&order_served&order_taken) -> u2\n(u5, holding_food&!order_served&!order_taken) -> u7\n(u5, holding_food&!order_served&order_taken) -> u3\n(u5, holding_food&order_served&!order_taken) -> u4\n(u5, holding_food&order_served&order_taken) -> u0\n(u6, !holding_food&!order_served&order_taken) -> u1\n(u6, !holding_food&order_served&order_taken) -> u2\n(u6, holding_food&!order_served&!order_taken) -> u4\n(u6, holding_food&!order_served&order_taken) -> u3\n(u6, holding_food&order_served&!order_taken) -> u4\n(u6, holding_food&order_served&order_taken) -> u0\n(u7, !holding_food&!order_served&order_taken) -> u1\n(u7, !holding_food&order_served&!order_taken) -> u4\n(u7, !holding_food&order_served&order_taken) -> u2\n(u7, holding_food&!order_served&order_taken) -> u3\n(u7, holding_food&order_served&!order_taken) -> u4\n(u7, holding_food&order_served&order_taken) -> u0\nREWARD_FUNCTION:\n(u0, !client_arrived&!holding_food&!order_served&order_taken, u1) -> -2\n(u0, !client_arrived&!holding_food&order_served&order_taken, u2) -> -1\n(u0, !client_arrived&holding_food&!order_served&order_taken, u3) -> -1\n(u0, client_arrived&!holding_food&!order_served&!order_taken, u4) -> -3\n(u0, client_arrived&!holding_food&!order_served&order_taken, u1) -> -2\n(u0, client_arrived&!holding_food&order_served&!order_taken, u4) -> -3\n(u0, client_arrived&!holding_food&order_served&order_taken, u2) -> -1\n(u0, client_arrived&holding_food&!order_served&!order_taken, u4) -> -3\n(u0, client_arrived&holding_food&!order_served&order_taken, u3) -> -1\n(u0, client_arrived&holding_food&order_served&!order_taken, u4) -> -3\n(u1, !client_arrived&!holding_food&order_served, u2) -> 1\n(u1, !client_arrived&holding_food&!order_served, u3) -> 1\n(u1, !client_arrived&holding_food&order_served, u0) -> 2\n(u1, client_arrived&!holding_food&!order_served&!order_taken, u5) -> -3\n(u1, client_arrived&!holding_food&order_served&!order_taken, u6) -> -2\n(u1, client_arrived&!holding_food&order_served&order_taken, u2) -> 1\n(u1, client_arrived&holding_food&!order_served&!order_taken, u7) -> -2\n(u1, client_arrived&holding_food&!order_served&order_taken, u3) -> 1\n(u1, client_arrived&holding_food&order_served&!order_taken, u4) -> -1\n(u1, client_arrived&holding_food&order_served&order_taken, u0) -> 2\n(u2, !client_arrived&!holding_food&!order_served&order_taken, u1) -> -1\n(u2, !client_arrived&holding_food&!order_served&!order_taken, u0) -> 1\n(u2, !client_arrived&holding_food&order_served, u0) -> 1\n(u2, client_arrived&!holding_food&!order_served&!order_taken, u6) -> -3\n(u2, client_arrived&!holding_food&!order_served&order_taken, u1) -> -1\n(u2, client_arrived&!holding_food&order_served&!order_taken, u6) -> -3\n(u2, client_arrived&holding_food&!order_served&!order_taken, u4) -> -2\n(u2, client_arrived&holding_food&order_served&!order_taken, u4) -> -2\n(u2, client_arrived&holding_food&order_served&order_taken, u0) -> 1\n(u3, !client_arrived&!holding_food&!order_served&order_taken, u1) -> -1\n(u3, !client_arrived&!holding_food&order_served&!order_taken, u0) -> 1\n(u3, !client_arrived&holding_food&order_served, u0) -> 1\n(u3, client_arrived&!holding_food&!order_served&!order_taken, u7) -> -3\n(u3, client_arrived&!holding_food&!order_served&order_taken, u1) -> -1\n(u3, client_arrived&!holding_food&order_served&!order_taken, u4) -> -2\n(u3, client_arrived&holding_food&!order_served&!order_taken, u7) -> -3\n(u3, client_arrived&holding_food&order_served&!order_taken, u4) -> -2\n(u3, client_arrived&holding_food&order_served&order_taken, u0) -> 1\n(u4, !holding_food&!order_served&order_taken, u1) -> 1\n(u4, !holding_food&order_served&order_taken, u2) -> 2\n(u4, holding_food&!order_served&order_taken, u3) -> 2\n(u4, holding_food&order_served&order_taken, u0) -> 3\n(u5, !holding_food&!order_served&order_taken, u1) -> 3\n(u5, !holding_food&order_served&!order_taken, u6) -> 1\n(u5, !holding_food&order_served&order_taken, u2) -> 4\n(u5, holding_food&!order_served&!order_taken, u7) -> 1\n(u5, holding_food&!order_served&order_taken, u3) -> 4\n(u5, holding_food&order_served&!order_taken, u4) -> 2\n(u5, holding_food&order_served&order_taken, u0) -> 5\n(u6, !holding_food&!order_served&order_taken, u1) -> 2\n(u6, !holding_food&order_served&order_taken, u2) -> 3\n(u6, holding_food&!order_served&!order_taken, u4) -> 1\n(u6, holding_food&!order_served&order_taken, u3) -> 3\n(u6, holding_food&order_served&!order_taken, u4) -> 1\n(u6, holding_food&order_served&order_taken, u0) -> 4\n(u7, !holding_food&!order_served&order_taken, u1) -> 2\n(u7, !holding_food&order_served&!order_taken, u4) -> 1\n(u7, !holding_food&order_served&order_taken, u2) -> 3\n(u7, holding_food&!order_served&order_taken, u3) -> 3\n(u7, holding_food&order_served&!order_taken, u4) -> 1\n(u7, holding_food&order_served&order_taken, u0) -> 4"
+       }
+      },
+      {
+       "src": "graphs/r6-promise.html",
+       "height": 520,
+       "alt": "Reward Machine r6-promise: 8 states",
+       "caption": "**`r6-promise`** · Shop, round 6 level · 8 states, 82 transitions · no final, no well\nTask: *Whenever a client comes in, take their order, fetch food from the pantry and give it to them.* The same clauses with the promise cost on: every step with a hard promise open also pays -0.1. r6-D: 12.23 / 11.15 / 12.23 served.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Bundle copy `evidence/bundles/r6-promise` (round 6 `step2-a3-x10-promise`), trained by r6-D.",
+        "code": "# Task (NL)\nWhenever a client comes in, take their order, fetch food from the pantry and give it to them.\n\n# Clauses and LTLf (evidence/bundles/r6-promise)\nhard Response(client_arrived, order_taken): (G (client_arrived -> (F order_taken)))\nhard Response(order_taken, holding_food): (G (order_taken -> (F holding_food)))\nhard Response(order_taken, order_served): (G (order_taken -> (F order_served)))\n\n# RM text (graphs/r6-promise.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6, u7\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !client_arrived&!holding_food&!order_served&order_taken) -> u1\n(u0, !client_arrived&!holding_food&order_served&order_taken) -> u2\n(u0, !client_arrived&holding_food&!order_served&order_taken) -> u3\n(u0, client_arrived&!holding_food&!order_served&!order_taken) -> u4\n(u0, client_arrived&!holding_food&!order_served&order_taken) -> u1\n(u0, client_arrived&!holding_food&order_served&!order_taken) -> u4\n(u0, client_arrived&!holding_food&order_served&order_taken) -> u2\n(u0, client_arrived&holding_food&!order_served&!order_taken) -> u4\n(u0, client_arrived&holding_food&!order_served&order_taken) -> u3\n(u0, client_arrived&holding_food&order_served&!order_taken) -> u4\n(u1, !client_arrived&!holding_food&!order_served) -> u1\n(u1, !client_arrived&!holding_food&order_served) -> u2\n(u1, !client_arrived&holding_food&!order_served) -> u3\n(u1, !client_arrived&holding_food&order_served) -> u0\n(u1, client_arrived&!holding_food&!order_served&!order_taken) -> u5\n(u1, client_arrived&!holding_food&!order_served&order_taken) -> u1\n(u1, client_arrived&!holding_food&order_served&!order_taken) -> u6\n(u1, client_arrived&!holding_food&order_served&order_taken) -> u2\n(u1, client_arrived&holding_food&!order_served&!order_taken) -> u7\n(u1, client_arrived&holding_food&!order_served&order_taken) -> u3\n(u1, client_arrived&holding_food&order_served&!order_taken) -> u4\n(u1, client_arrived&holding_food&order_served&order_taken) -> u0\n(u2, !client_arrived&!holding_food&!order_served&!order_taken) -> u2\n(u2, !client_arrived&!holding_food&!order_served&order_taken) -> u1\n(u2, !client_arrived&!holding_food&order_served) -> u2\n(u2, !client_arrived&holding_food&!order_served&!order_taken) -> u0\n(u2, !client_arrived&holding_food&!order_served&order_taken) -> u3\n(u2, !client_arrived&holding_food&order_served) -> u0\n(u2, client_arrived&!holding_food&!order_served&!order_taken) -> u6\n(u2, client_arrived&!holding_food&!order_served&order_taken) -> u1\n(u2, client_arrived&!holding_food&order_served&!order_taken) -> u6\n(u2, client_arrived&!holding_food&order_served&order_taken) -> u2\n(u2, client_arrived&holding_food&!order_served&!order_taken) -> u4\n(u2, client_arrived&holding_food&!order_served&order_taken) -> u3\n(u2, client_arrived&holding_food&order_served&!order_taken) -> u4\n(u2, client_arrived&holding_food&order_served&order_taken) -> u0\n(u3, !client_arrived&!holding_food&!order_served&!order_taken) -> u3\n(u3, !client_arrived&!holding_food&!order_served&order_taken) -> u1\n(u3, !client_arrived&!holding_food&order_served&!order_taken) -> u0\n(u3, !client_arrived&!holding_food&order_served&order_taken) -> u2\n(u3, !client_arrived&holding_food&!order_served) -> u3\n(u3, !client_arrived&holding_food&order_served) -> u0\n(u3, client_arrived&!holding_food&!order_served&!order_taken) -> u7\n(u3, client_arrived&!holding_food&!order_served&order_taken) -> u1\n(u3, client_arrived&!holding_food&order_served&!order_taken) -> u4\n(u3, client_arrived&!holding_food&order_served&order_taken) -> u2\n(u3, client_arrived&holding_food&!order_served&!order_taken) -> u7\n(u3, client_arrived&holding_food&!order_served&order_taken) -> u3\n(u3, client_arrived&holding_food&order_served&!order_taken) -> u4\n(u3, client_arrived&holding_food&order_served&order_taken) -> u0\n(u4, !holding_food&!order_served&!order_taken) -> u4\n(u4, !holding_food&!order_served&order_taken) -> u1\n(u4, !holding_food&order_served&!order_taken) -> u4\n(u4, !holding_food&order_served&order_taken) -> u2\n(u4, holding_food&!order_served&!order_taken) -> u4\n(u4, holding_food&!order_served&order_taken) -> u3\n(u4, holding_food&order_served&!order_taken) -> u4\n(u4, holding_food&order_served&order_taken) -> u0\n(u5, !holding_food&!order_served&!order_taken) -> u5\n(u5, !holding_food&!order_served&order_taken) -> u1\n(u5, !holding_food&order_served&!order_taken) -> u6\n(u5, !holding_food&order_served&order_taken) -> u2\n(u5, holding_food&!order_served&!order_taken) -> u7\n(u5, holding_food&!order_served&order_taken) -> u3\n(u5, holding_food&order_served&!order_taken) -> u4\n(u5, holding_food&order_served&order_taken) -> u0\n(u6, !holding_food&!order_served&!order_taken) -> u6\n(u6, !holding_food&!order_served&order_taken) -> u1\n(u6, !holding_food&order_served&!order_taken) -> u6\n(u6, !holding_food&order_served&order_taken) -> u2\n(u6, holding_food&!order_served&!order_taken) -> u4\n(u6, holding_food&!order_served&order_taken) -> u3\n(u6, holding_food&order_served&!order_taken) -> u4\n(u6, holding_food&order_served&order_taken) -> u0\n(u7, !holding_food&!order_served&!order_taken) -> u7\n(u7, !holding_food&!order_served&order_taken) -> u1\n(u7, !holding_food&order_served&!order_taken) -> u4\n(u7, !holding_food&order_served&order_taken) -> u2\n(u7, holding_food&!order_served&!order_taken) -> u7\n(u7, holding_food&!order_served&order_taken) -> u3\n(u7, holding_food&order_served&!order_taken) -> u4\n(u7, holding_food&order_served&order_taken) -> u0\nREWARD_FUNCTION:\n(u0, !client_arrived&!holding_food&!order_served&order_taken, u1) -> -2\n(u0, !client_arrived&!holding_food&order_served&order_taken, u2) -> -1\n(u0, !client_arrived&holding_food&!order_served&order_taken, u3) -> -1\n(u0, client_arrived&!holding_food&!order_served&!order_taken, u4) -> -3\n(u0, client_arrived&!holding_food&!order_served&order_taken, u1) -> -2\n(u0, client_arrived&!holding_food&order_served&!order_taken, u4) -> -3\n(u0, client_arrived&!holding_food&order_served&order_taken, u2) -> -1\n(u0, client_arrived&holding_food&!order_served&!order_taken, u4) -> -3\n(u0, client_arrived&holding_food&!order_served&order_taken, u3) -> -1\n(u0, client_arrived&holding_food&order_served&!order_taken, u4) -> -3\n(u1, !client_arrived&!holding_food&!order_served, u1) -> -0.1\n(u1, !client_arrived&!holding_food&order_served, u2) -> 0.9\n(u1, !client_arrived&holding_food&!order_served, u3) -> 0.9\n(u1, !client_arrived&holding_food&order_served, u0) -> 1.9\n(u1, client_arrived&!holding_food&!order_served&!order_taken, u5) -> -3.1\n(u1, client_arrived&!holding_food&!order_served&order_taken, u1) -> -0.1\n(u1, client_arrived&!holding_food&order_served&!order_taken, u6) -> -2.1\n(u1, client_arrived&!holding_food&order_served&order_taken, u2) -> 0.9\n(u1, client_arrived&holding_food&!order_served&!order_taken, u7) -> -2.1\n(u1, client_arrived&holding_food&!order_served&order_taken, u3) -> 0.9\n(u1, client_arrived&holding_food&order_served&!order_taken, u4) -> -1.1\n(u1, client_arrived&holding_food&order_served&order_taken, u0) -> 1.9\n(u2, !client_arrived&!holding_food&!order_served&!order_taken, u2) -> -0.1\n(u2, !client_arrived&!holding_food&!order_served&order_taken, u1) -> -1.1\n(u2, !client_arrived&!holding_food&order_served, u2) -> -0.1\n(u2, !client_arrived&holding_food&!order_served&!order_taken, u0) -> 0.9\n(u2, !client_arrived&holding_food&!order_served&order_taken, u3) -> -0.1\n(u2, !client_arrived&holding_food&order_served, u0) -> 0.9\n(u2, client_arrived&!holding_food&!order_served&!order_taken, u6) -> -3.1\n(u2, client_arrived&!holding_food&!order_served&order_taken, u1) -> -1.1\n(u2, client_arrived&!holding_food&order_served&!order_taken, u6) -> -3.1\n(u2, client_arrived&!holding_food&order_served&order_taken, u2) -> -0.1\n(u2, client_arrived&holding_food&!order_served&!order_taken, u4) -> -2.1\n(u2, client_arrived&holding_food&!order_served&order_taken, u3) -> -0.1\n(u2, client_arrived&holding_food&order_served&!order_taken, u4) -> -2.1\n(u2, client_arrived&holding_food&order_served&order_taken, u0) -> 0.9\n(u3, !client_arrived&!holding_food&!order_served&!order_taken, u3) -> -0.1\n(u3, !client_arrived&!holding_food&!order_served&order_taken, u1) -> -1.1\n(u3, !client_arrived&!holding_food&order_served&!order_taken, u0) -> 0.9\n(u3, !client_arrived&!holding_food&order_served&order_taken, u2) -> -0.1\n(u3, !client_arrived&holding_food&!order_served, u3) -> -0.1\n(u3, !client_arrived&holding_food&order_served, u0) -> 0.9\n(u3, client_arrived&!holding_food&!order_served&!order_taken, u7) -> -3.1\n(u3, client_arrived&!holding_food&!order_served&order_taken, u1) -> -1.1\n(u3, client_arrived&!holding_food&order_served&!order_taken, u4) -> -2.1\n(u3, client_arrived&!holding_food&order_served&order_taken, u2) -> -0.1\n(u3, client_arrived&holding_food&!order_served&!order_taken, u7) -> -3.1\n(u3, client_arrived&holding_food&!order_served&order_taken, u3) -> -0.1\n(u3, client_arrived&holding_food&order_served&!order_taken, u4) -> -2.1\n(u3, client_arrived&holding_food&order_served&order_taken, u0) -> 0.9\n(u4, !holding_food&!order_served&!order_taken, u4) -> -0.1\n(u4, !holding_food&!order_served&order_taken, u1) -> 0.9\n(u4, !holding_food&order_served&!order_taken, u4) -> -0.1\n(u4, !holding_food&order_served&order_taken, u2) -> 1.9\n(u4, holding_food&!order_served&!order_taken, u4) -> -0.1\n(u4, holding_food&!order_served&order_taken, u3) -> 1.9\n(u4, holding_food&order_served&!order_taken, u4) -> -0.1\n(u4, holding_food&order_served&order_taken, u0) -> 2.9\n(u5, !holding_food&!order_served&!order_taken, u5) -> -0.1\n(u5, !holding_food&!order_served&order_taken, u1) -> 2.9\n(u5, !holding_food&order_served&!order_taken, u6) -> 0.9\n(u5, !holding_food&order_served&order_taken, u2) -> 3.9\n(u5, holding_food&!order_served&!order_taken, u7) -> 0.9\n(u5, holding_food&!order_served&order_taken, u3) -> 3.9\n(u5, holding_food&order_served&!order_taken, u4) -> 1.9\n(u5, holding_food&order_served&order_taken, u0) -> 4.9\n(u6, !holding_food&!order_served&!order_taken, u6) -> -0.1\n(u6, !holding_food&!order_served&order_taken, u1) -> 1.9\n(u6, !holding_food&order_served&!order_taken, u6) -> -0.1\n(u6, !holding_food&order_served&order_taken, u2) -> 2.9\n(u6, holding_food&!order_served&!order_taken, u4) -> 0.9\n(u6, holding_food&!order_served&order_taken, u3) -> 2.9\n(u6, holding_food&order_served&!order_taken, u4) -> 0.9\n(u6, holding_food&order_served&order_taken, u0) -> 3.9\n(u7, !holding_food&!order_served&!order_taken, u7) -> -0.1\n(u7, !holding_food&!order_served&order_taken, u1) -> 1.9\n(u7, !holding_food&order_served&!order_taken, u4) -> 0.9\n(u7, !holding_food&order_served&order_taken, u2) -> 2.9\n(u7, holding_food&!order_served&!order_taken, u7) -> -0.1\n(u7, holding_food&!order_served&order_taken, u3) -> 2.9\n(u7, holding_food&order_served&!order_taken, u4) -> 0.9\n(u7, holding_food&order_served&order_taken, u0) -> 3.9"
+       }
+      },
+      {
+       "src": "graphs/r6-end.html",
+       "height": 520,
+       "alt": "Reward Machine r6-end: 8 states",
+       "caption": "**`r6-end`** · Shop, round 6 level · 8 states, 65 transitions · no final, no well\nTask: *Whenever a client comes in, take their order, fetch food from the pantry and give it to them.* The same clauses with the end judgment on: each hard promise still open when the episode stops pays -10. r6-E: 18.15 / 12.42 / 12.42 served.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Bundle copy `evidence/bundles/r6-end` (round 6 `step2-a3-x10-end`), trained by r6-E. The end charge is in the machine's judgment header, not on its edges.",
+        "code": "# Task (NL)\nWhenever a client comes in, take their order, fetch food from the pantry and give it to them.\n\n# Clauses and LTLf (evidence/bundles/r6-end)\nhard Response(client_arrived, order_taken): (G (client_arrived -> (F order_taken)))\nhard Response(order_taken, holding_food): (G (order_taken -> (F holding_food)))\nhard Response(order_taken, order_served): (G (order_taken -> (F order_served)))\n\n# RM text (graphs/r6-end.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6, u7\nINITIAL_STATE: u0\nFINAL_STATES:\nACCEPTING_STATES: u0\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -10\nSOFT_FAILED_REWARD: -5\nTRANSITION_FUNCTION:\n(u0, !client_arrived&!holding_food&!order_served&order_taken) -> u1\n(u0, !client_arrived&!holding_food&order_served&order_taken) -> u2\n(u0, !client_arrived&holding_food&!order_served&order_taken) -> u3\n(u0, client_arrived&!holding_food&!order_served&!order_taken) -> u4\n(u0, client_arrived&!holding_food&!order_served&order_taken) -> u1\n(u0, client_arrived&!holding_food&order_served&!order_taken) -> u4\n(u0, client_arrived&!holding_food&order_served&order_taken) -> u2\n(u0, client_arrived&holding_food&!order_served&!order_taken) -> u4\n(u0, client_arrived&holding_food&!order_served&order_taken) -> u3\n(u0, client_arrived&holding_food&order_served&!order_taken) -> u4\n(u1, !client_arrived&!holding_food&order_served) -> u2\n(u1, !client_arrived&holding_food&!order_served) -> u3\n(u1, !client_arrived&holding_food&order_served) -> u0\n(u1, client_arrived&!holding_food&!order_served&!order_taken) -> u5\n(u1, client_arrived&!holding_food&order_served&!order_taken) -> u6\n(u1, client_arrived&!holding_food&order_served&order_taken) -> u2\n(u1, client_arrived&holding_food&!order_served&!order_taken) -> u7\n(u1, client_arrived&holding_food&!order_served&order_taken) -> u3\n(u1, client_arrived&holding_food&order_served&!order_taken) -> u4\n(u1, client_arrived&holding_food&order_served&order_taken) -> u0\n(u2, !client_arrived&!holding_food&!order_served&order_taken) -> u1\n(u2, !client_arrived&holding_food&!order_served&!order_taken) -> u0\n(u2, !client_arrived&holding_food&!order_served&order_taken) -> u3\n(u2, !client_arrived&holding_food&order_served) -> u0\n(u2, client_arrived&!holding_food&!order_served&!order_taken) -> u6\n(u2, client_arrived&!holding_food&!order_served&order_taken) -> u1\n(u2, client_arrived&!holding_food&order_served&!order_taken) -> u6\n(u2, client_arrived&holding_food&!order_served&!order_taken) -> u4\n(u2, client_arrived&holding_food&!order_served&order_taken) -> u3\n(u2, client_arrived&holding_food&order_served&!order_taken) -> u4\n(u2, client_arrived&holding_food&order_served&order_taken) -> u0\n(u3, !client_arrived&!holding_food&!order_served&order_taken) -> u1\n(u3, !client_arrived&!holding_food&order_served&!order_taken) -> u0\n(u3, !client_arrived&!holding_food&order_served&order_taken) -> u2\n(u3, !client_arrived&holding_food&order_served) -> u0\n(u3, client_arrived&!holding_food&!order_served&!order_taken) -> u7\n(u3, client_arrived&!holding_food&!order_served&order_taken) -> u1\n(u3, client_arrived&!holding_food&order_served&!order_taken) -> u4\n(u3, client_arrived&!holding_food&order_served&order_taken) -> u2\n(u3, client_arrived&holding_food&!order_served&!order_taken) -> u7\n(u3, client_arrived&holding_food&order_served&!order_taken) -> u4\n(u3, client_arrived&holding_food&order_served&order_taken) -> u0\n(u4, !holding_food&!order_served&order_taken) -> u1\n(u4, !holding_food&order_served&order_taken) -> u2\n(u4, holding_food&!order_served&order_taken) -> u3\n(u4, holding_food&order_served&order_taken) -> u0\n(u5, !holding_food&!order_served&order_taken) -> u1\n(u5, !holding_food&order_served&!order_taken) -> u6\n(u5, !holding_food&order_served&order_taken) -> u2\n(u5, holding_food&!order_served&!order_taken) -> u7\n(u5, holding_food&!order_served&order_taken) -> u3\n(u5, holding_food&order_served&!order_taken) -> u4\n(u5, holding_food&order_served&order_taken) -> u0\n(u6, !holding_food&!order_served&order_taken) -> u1\n(u6, !holding_food&order_served&order_taken) -> u2\n(u6, holding_food&!order_served&!order_taken) -> u4\n(u6, holding_food&!order_served&order_taken) -> u3\n(u6, holding_food&order_served&!order_taken) -> u4\n(u6, holding_food&order_served&order_taken) -> u0\n(u7, !holding_food&!order_served&order_taken) -> u1\n(u7, !holding_food&order_served&!order_taken) -> u4\n(u7, !holding_food&order_served&order_taken) -> u2\n(u7, holding_food&!order_served&order_taken) -> u3\n(u7, holding_food&order_served&!order_taken) -> u4\n(u7, holding_food&order_served&order_taken) -> u0\nREWARD_FUNCTION:\n(u0, !client_arrived&!holding_food&!order_served&order_taken, u1) -> -2\n(u0, !client_arrived&!holding_food&order_served&order_taken, u2) -> -1\n(u0, !client_arrived&holding_food&!order_served&order_taken, u3) -> -1\n(u0, client_arrived&!holding_food&!order_served&!order_taken, u4) -> -3\n(u0, client_arrived&!holding_food&!order_served&order_taken, u1) -> -2\n(u0, client_arrived&!holding_food&order_served&!order_taken, u4) -> -3\n(u0, client_arrived&!holding_food&order_served&order_taken, u2) -> -1\n(u0, client_arrived&holding_food&!order_served&!order_taken, u4) -> -3\n(u0, client_arrived&holding_food&!order_served&order_taken, u3) -> -1\n(u0, client_arrived&holding_food&order_served&!order_taken, u4) -> -3\n(u1, !client_arrived&!holding_food&order_served, u2) -> 1\n(u1, !client_arrived&holding_food&!order_served, u3) -> 1\n(u1, !client_arrived&holding_food&order_served, u0) -> 2\n(u1, client_arrived&!holding_food&!order_served&!order_taken, u5) -> -3\n(u1, client_arrived&!holding_food&order_served&!order_taken, u6) -> -2\n(u1, client_arrived&!holding_food&order_served&order_taken, u2) -> 1\n(u1, client_arrived&holding_food&!order_served&!order_taken, u7) -> -2\n(u1, client_arrived&holding_food&!order_served&order_taken, u3) -> 1\n(u1, client_arrived&holding_food&order_served&!order_taken, u4) -> -1\n(u1, client_arrived&holding_food&order_served&order_taken, u0) -> 2\n(u2, !client_arrived&!holding_food&!order_served&order_taken, u1) -> -1\n(u2, !client_arrived&holding_food&!order_served&!order_taken, u0) -> 1\n(u2, !client_arrived&holding_food&order_served, u0) -> 1\n(u2, client_arrived&!holding_food&!order_served&!order_taken, u6) -> -3\n(u2, client_arrived&!holding_food&!order_served&order_taken, u1) -> -1\n(u2, client_arrived&!holding_food&order_served&!order_taken, u6) -> -3\n(u2, client_arrived&holding_food&!order_served&!order_taken, u4) -> -2\n(u2, client_arrived&holding_food&order_served&!order_taken, u4) -> -2\n(u2, client_arrived&holding_food&order_served&order_taken, u0) -> 1\n(u3, !client_arrived&!holding_food&!order_served&order_taken, u1) -> -1\n(u3, !client_arrived&!holding_food&order_served&!order_taken, u0) -> 1\n(u3, !client_arrived&holding_food&order_served, u0) -> 1\n(u3, client_arrived&!holding_food&!order_served&!order_taken, u7) -> -3\n(u3, client_arrived&!holding_food&!order_served&order_taken, u1) -> -1\n(u3, client_arrived&!holding_food&order_served&!order_taken, u4) -> -2\n(u3, client_arrived&holding_food&!order_served&!order_taken, u7) -> -3\n(u3, client_arrived&holding_food&order_served&!order_taken, u4) -> -2\n(u3, client_arrived&holding_food&order_served&order_taken, u0) -> 1\n(u4, !holding_food&!order_served&order_taken, u1) -> 1\n(u4, !holding_food&order_served&order_taken, u2) -> 2\n(u4, holding_food&!order_served&order_taken, u3) -> 2\n(u4, holding_food&order_served&order_taken, u0) -> 3\n(u5, !holding_food&!order_served&order_taken, u1) -> 3\n(u5, !holding_food&order_served&!order_taken, u6) -> 1\n(u5, !holding_food&order_served&order_taken, u2) -> 4\n(u5, holding_food&!order_served&!order_taken, u7) -> 1\n(u5, holding_food&!order_served&order_taken, u3) -> 4\n(u5, holding_food&order_served&!order_taken, u4) -> 2\n(u5, holding_food&order_served&order_taken, u0) -> 5\n(u6, !holding_food&!order_served&order_taken, u1) -> 2\n(u6, !holding_food&order_served&order_taken, u2) -> 3\n(u6, holding_food&!order_served&!order_taken, u4) -> 1\n(u6, holding_food&!order_served&order_taken, u3) -> 3\n(u6, holding_food&order_served&!order_taken, u4) -> 1\n(u6, holding_food&order_served&order_taken, u0) -> 4\n(u7, !holding_food&!order_served&order_taken, u1) -> 2\n(u7, !holding_food&order_served&!order_taken, u4) -> 1\n(u7, !holding_food&order_served&order_taken, u2) -> 3\n(u7, holding_food&!order_served&order_taken, u3) -> 3\n(u7, holding_food&order_served&!order_taken, u4) -> 1\n(u7, holding_food&order_served&order_taken, u0) -> 4\nPENDING_PROMISES:\nu1: hard 2, soft 0\nu2: hard 1, soft 0\nu3: hard 1, soft 0\nu4: hard 3, soft 0\nu5: hard 5, soft 0\nu6: hard 4, soft 0\nu7: hard 4, soft 0"
+       }
+      },
+      {
+       "src": "graphs/r7-b4-promise.html",
+       "height": 520,
+       "alt": "Reward Machine r7-b4-promise: 16 states",
+       "caption": "**`r7-b4-promise`** · Shop, round 7 B4 level (no slip, no siren, cooking) · 16 states, 298 transitions · no final, no well\nTask: *Whenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them.* Promise cost on. The clauses pay the fetch step, `Response(order_taken, holding_food)`, before the cooking step. r7-B4: 9.55 / 8.84 / 9.55 served.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Bundle copy `evidence/bundles/r7-b4-promise` (round 7 `b4-step3-a3-promise`), trained by r7-B4 on the `shop-serve-only` card (`evidence/cards/r7-shop-serve-only.json`).",
+        "code": "# Task (NL)\nWhenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them.\n\n# Clauses and LTLf (evidence/bundles/r7-b4-promise)\nhard Response(client_arrived, order_taken): (G (client_arrived -> (F order_taken)))\nhard Response(order_taken, holding_food): (G (order_taken -> (F holding_food)))\nhard Response(order_taken, food_prepared): (G (order_taken -> (F food_prepared)))\nhard Response(food_prepared, order_served): (G (food_prepared -> (F order_served)))\n\n# RM text (graphs/r7-b4-promise.rm, 603 lines: the header, the first 12 transitions and rewards)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !client_arrived&!food_prepared&!holding_food&order_taken) -> u1\n(u0, !client_arrived&!food_prepared&holding_food&order_taken) -> u2\n(u0, !client_arrived&food_prepared&!holding_food&!order_served&!order_taken) -> u3\n(u0, !client_arrived&food_prepared&!holding_food&!order_served&order_taken) -> u4\n(u0, !client_arrived&food_prepared&!holding_food&order_served&order_taken) -> u5\n(u0, !client_arrived&food_prepared&holding_food&!order_served) -> u3\n(u0, client_arrived&!food_prepared&!holding_food&!order_taken) -> u6\n(u0, client_arrived&!food_prepared&!holding_food&order_taken) -> u1\n(u0, client_arrived&!food_prepared&holding_food&!order_taken) -> u6\n(u0, client_arrived&!food_prepared&holding_food&order_taken) -> u2\n(u0, client_arrived&food_prepared&!holding_food&!order_served&!order_taken) -> u7\n(u0, client_arrived&food_prepared&!holding_food&!order_served&order_taken) -> u4\n... 286 more transitions\nREWARD_FUNCTION:\n(u0, !client_arrived&!food_prepared&!holding_food&order_taken, u1) -> -3\n(u0, !client_arrived&!food_prepared&holding_food&order_taken, u2) -> -2\n(u0, !client_arrived&food_prepared&!holding_food&!order_served&!order_taken, u3) -> -1\n(u0, !client_arrived&food_prepared&!holding_food&!order_served&order_taken, u4) -> -2\n(u0, !client_arrived&food_prepared&!holding_food&order_served&order_taken, u5) -> -1\n(u0, !client_arrived&food_prepared&holding_food&!order_served, u3) -> -1\n(u0, client_arrived&!food_prepared&!holding_food&!order_taken, u6) -> -4\n(u0, client_arrived&!food_prepared&!holding_food&order_taken, u1) -> -3\n(u0, client_arrived&!food_prepared&holding_food&!order_taken, u6) -> -4\n(u0, client_arrived&!food_prepared&holding_food&order_taken, u2) -> -2\n(u0, client_arrived&food_prepared&!holding_food&!order_served&!order_taken, u7) -> -5\n(u0, client_arrived&food_prepared&!holding_food&!order_served&order_taken, u4) -> -2\n... 286 more rewards"
+       }
+      },
+      {
+       "src": "graphs/r7-b8b-promise.html",
+       "height": 520,
+       "alt": "Reward Machine r7-b8b-promise: 8 states",
+       "caption": "**`r7-b8b-promise`** · Shop, round 7 level (no slip, no siren, no cooking) · 8 states, 70 transitions · no final, no well\nTask: *Whenever a client comes in, take their order, fetch food from the pantry and give it to them.* Promise cost on. r7-B8b: 12.21 / 12.07 / 12.21 served. Part 3 trains the same text again with the fix: the same numbers.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Bundle copy `evidence/bundles/r7-b8b-promise` (round 7 `b8b-step2-chain-promise`), trained by r7-B8b. `evidence/bundles/r7-b8b-rebuilt`, the regression's bundle, has the same machine text with the step limit 600 recorded.",
+        "code": "# Task (NL)\nWhenever a client comes in, take their order, fetch food from the pantry and give it to them.\n\n# Clauses and LTLf (evidence/bundles/r7-b8b-promise)\nhard Response(client_arrived, order_taken): (G (client_arrived -> (F order_taken)))\nhard Response(order_taken, holding_food): (G (order_taken -> (F holding_food)))\nhard Response(holding_food, order_served): (G (holding_food -> (F order_served)))\n\n# RM text (graphs/r7-b8b-promise.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6, u7\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !client_arrived&!holding_food&order_taken) -> u1\n(u0, !client_arrived&holding_food&!order_served) -> u2\n(u0, client_arrived&!holding_food&!order_taken) -> u3\n(u0, client_arrived&!holding_food&order_taken) -> u1\n(u0, client_arrived&holding_food&!order_served&!order_taken) -> u4\n(u0, client_arrived&holding_food&!order_served&order_taken) -> u2\n(u0, client_arrived&holding_food&order_served&!order_taken) -> u3\n(u1, !client_arrived&!holding_food) -> u1\n(u1, !client_arrived&holding_food&!order_served) -> u2\n(u1, !client_arrived&holding_food&order_served) -> u0\n(u1, client_arrived&!holding_food&!order_taken) -> u5\n(u1, client_arrived&!holding_food&order_taken) -> u1\n(u1, client_arrived&holding_food&!order_served&!order_taken) -> u4\n(u1, client_arrived&holding_food&!order_served&order_taken) -> u2\n(u1, client_arrived&holding_food&order_served&!order_taken) -> u3\n(u1, client_arrived&holding_food&order_served&order_taken) -> u0\n(u2, !client_arrived&!holding_food&!order_served&!order_taken) -> u2\n(u2, !client_arrived&!holding_food&!order_served&order_taken) -> u6\n(u2, !client_arrived&!holding_food&order_served&!order_taken) -> u0\n(u2, !client_arrived&!holding_food&order_served&order_taken) -> u1\n(u2, !client_arrived&holding_food&!order_served) -> u2\n(u2, !client_arrived&holding_food&order_served) -> u0\n(u2, client_arrived&!holding_food&!order_served&!order_taken) -> u4\n(u2, client_arrived&!holding_food&!order_served&order_taken) -> u6\n(u2, client_arrived&!holding_food&order_served&!order_taken) -> u3\n(u2, client_arrived&!holding_food&order_served&order_taken) -> u1\n(u2, client_arrived&holding_food&!order_served&!order_taken) -> u4\n(u2, client_arrived&holding_food&!order_served&order_taken) -> u2\n(u2, client_arrived&holding_food&order_served&!order_taken) -> u3\n(u2, client_arrived&holding_food&order_served&order_taken) -> u0\n(u3, !holding_food&!order_taken) -> u3\n(u3, !holding_food&order_taken) -> u1\n(u3, holding_food&!order_served&!order_taken) -> u4\n(u3, holding_food&!order_served&order_taken) -> u2\n(u3, holding_food&order_served&!order_taken) -> u3\n(u3, holding_food&order_served&order_taken) -> u0\n(u4, !holding_food&!order_served&!order_taken) -> u4\n(u4, !holding_food&!order_served&order_taken) -> u6\n(u4, !holding_food&order_served&!order_taken) -> u3\n(u4, !holding_food&order_served&order_taken) -> u1\n(u4, holding_food&!order_served&!order_taken) -> u4\n(u4, holding_food&!order_served&order_taken) -> u2\n(u4, holding_food&order_served&!order_taken) -> u3\n(u4, holding_food&order_served&order_taken) -> u0\n(u5, !holding_food&!order_taken) -> u5\n(u5, !holding_food&order_taken) -> u1\n(u5, holding_food&!order_served&!order_taken) -> u4\n(u5, holding_food&!order_served&order_taken) -> u2\n(u5, holding_food&order_served&!order_taken) -> u3\n(u5, holding_food&order_served&order_taken) -> u0\n(u6, !client_arrived&!holding_food&!order_served) -> u6\n(u6, !client_arrived&!holding_food&order_served) -> u1\n(u6, !client_arrived&holding_food&!order_served) -> u2\n(u6, !client_arrived&holding_food&order_served) -> u0\n(u6, client_arrived&!holding_food&!order_served&!order_taken) -> u7\n(u6, client_arrived&!holding_food&!order_served&order_taken) -> u6\n(u6, client_arrived&!holding_food&order_served&!order_taken) -> u5\n(u6, client_arrived&!holding_food&order_served&order_taken) -> u1\n(u6, client_arrived&holding_food&!order_served&!order_taken) -> u4\n(u6, client_arrived&holding_food&!order_served&order_taken) -> u2\n(u6, client_arrived&holding_food&order_served&!order_taken) -> u3\n(u6, client_arrived&holding_food&order_served&order_taken) -> u0\n(u7, !holding_food&!order_served&!order_taken) -> u7\n(u7, !holding_food&!order_served&order_taken) -> u6\n(u7, !holding_food&order_served&!order_taken) -> u5\n(u7, !holding_food&order_served&order_taken) -> u1\n(u7, holding_food&!order_served&!order_taken) -> u4\n(u7, holding_food&!order_served&order_taken) -> u2\n(u7, holding_food&order_served&!order_taken) -> u3\n(u7, holding_food&order_served&order_taken) -> u0\nREWARD_FUNCTION:\n(u0, !client_arrived&!holding_food&order_taken, u1) -> -2\n(u0, !client_arrived&holding_food&!order_served, u2) -> -1\n(u0, client_arrived&!holding_food&!order_taken, u3) -> -3\n(u0, client_arrived&!holding_food&order_taken, u1) -> -2\n(u0, client_arrived&holding_food&!order_served&!order_taken, u4) -> -4\n(u0, client_arrived&holding_food&!order_served&order_taken, u2) -> -1\n(u0, client_arrived&holding_food&order_served&!order_taken, u3) -> -3\n(u1, !client_arrived&!holding_food, u1) -> -0.1\n(u1, !client_arrived&holding_food&!order_served, u2) -> 0.9\n(u1, !client_arrived&holding_food&order_served, u0) -> 1.9\n(u1, client_arrived&!holding_food&!order_taken, u5) -> -3.1\n(u1, client_arrived&!holding_food&order_taken, u1) -> -0.1\n(u1, client_arrived&holding_food&!order_served&!order_taken, u4) -> -2.1\n(u1, client_arrived&holding_food&!order_served&order_taken, u2) -> 0.9\n(u1, client_arrived&holding_food&order_served&!order_taken, u3) -> -1.1\n(u1, client_arrived&holding_food&order_served&order_taken, u0) -> 1.9\n(u2, !client_arrived&!holding_food&!order_served&!order_taken, u2) -> -0.1\n(u2, !client_arrived&!holding_food&!order_served&order_taken, u6) -> -2.1\n(u2, !client_arrived&!holding_food&order_served&!order_taken, u0) -> 0.9\n(u2, !client_arrived&!holding_food&order_served&order_taken, u1) -> -1.1\n(u2, !client_arrived&holding_food&!order_served, u2) -> -0.1\n(u2, !client_arrived&holding_food&order_served, u0) -> 0.9\n(u2, client_arrived&!holding_food&!order_served&!order_taken, u4) -> -3.1\n(u2, client_arrived&!holding_food&!order_served&order_taken, u6) -> -2.1\n(u2, client_arrived&!holding_food&order_served&!order_taken, u3) -> -2.1\n(u2, client_arrived&!holding_food&order_served&order_taken, u1) -> -1.1\n(u2, client_arrived&holding_food&!order_served&!order_taken, u4) -> -3.1\n(u2, client_arrived&holding_food&!order_served&order_taken, u2) -> -0.1\n(u2, client_arrived&holding_food&order_served&!order_taken, u3) -> -2.1\n(u2, client_arrived&holding_food&order_served&order_taken, u0) -> 0.9\n(u3, !holding_food&!order_taken, u3) -> -0.1\n(u3, !holding_food&order_taken, u1) -> 0.9\n(u3, holding_food&!order_served&!order_taken, u4) -> -1.1\n(u3, holding_food&!order_served&order_taken, u2) -> 1.9\n(u3, holding_food&order_served&!order_taken, u3) -> -0.1\n(u3, holding_food&order_served&order_taken, u0) -> 2.9\n(u4, !holding_food&!order_served&!order_taken, u4) -> -0.1\n(u4, !holding_food&!order_served&order_taken, u6) -> 0.9\n(u4, !holding_food&order_served&!order_taken, u3) -> 0.9\n(u4, !holding_food&order_served&order_taken, u1) -> 1.9\n(u4, holding_food&!order_served&!order_taken, u4) -> -0.1\n(u4, holding_food&!order_served&order_taken, u2) -> 2.9\n(u4, holding_food&order_served&!order_taken, u3) -> 0.9\n(u4, holding_food&order_served&order_taken, u0) -> 3.9\n(u5, !holding_food&!order_taken, u5) -> -0.1\n(u5, !holding_food&order_taken, u1) -> 2.9\n(u5, holding_food&!order_served&!order_taken, u4) -> 0.9\n(u5, holding_food&!order_served&order_taken, u2) -> 3.9\n(u5, holding_food&order_served&!order_taken, u3) -> 1.9\n(u5, holding_food&order_served&order_taken, u0) -> 4.9\n(u6, !client_arrived&!holding_food&!order_served, u6) -> -0.1\n(u6, !client_arrived&!holding_food&order_served, u1) -> 0.9\n(u6, !client_arrived&holding_food&!order_served, u2) -> 1.9\n(u6, !client_arrived&holding_food&order_served, u0) -> 2.9\n(u6, client_arrived&!holding_food&!order_served&!order_taken, u7) -> -3.1\n(u6, client_arrived&!holding_food&!order_served&order_taken, u6) -> -0.1\n(u6, client_arrived&!holding_food&order_served&!order_taken, u5) -> -2.1\n(u6, client_arrived&!holding_food&order_served&order_taken, u1) -> 0.9\n(u6, client_arrived&holding_food&!order_served&!order_taken, u4) -> -1.1\n(u6, client_arrived&holding_food&!order_served&order_taken, u2) -> 1.9\n(u6, client_arrived&holding_food&order_served&!order_taken, u3) -> -0.1\n(u6, client_arrived&holding_food&order_served&order_taken, u0) -> 2.9\n(u7, !holding_food&!order_served&!order_taken, u7) -> -0.1\n(u7, !holding_food&!order_served&order_taken, u6) -> 2.9\n(u7, !holding_food&order_served&!order_taken, u5) -> 0.9\n(u7, !holding_food&order_served&order_taken, u1) -> 3.9\n(u7, holding_food&!order_served&!order_taken, u4) -> 1.9\n(u7, holding_food&!order_served&order_taken, u2) -> 4.9\n(u7, holding_food&order_served&!order_taken, u3) -> 2.9\n(u7, holding_food&order_served&order_taken, u0) -> 5.9"
+       }
+      },
+      {
+       "src": "graphs/shop-serve-both-off.html",
+       "height": 520,
+       "alt": "Reward Machine shop-serve-both-off: 17 states",
+       "caption": "**`shop-serve-both-off`** · Shop, today's shop-serve level (slip on, 600 steps) · 17 states, 406 transitions · no final, well u14\nTask: *Whenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move.* Promise cost off, end judgment off. The fall rule adds the well: 146 edges into u14 at -10. The probe: 0 served on 3 of 3 seeds, 5M steps.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Bundle copy `evidence/bundles/shop-serve-both-off` (the probe's `shop-serve-pc-off`). The four levels' promise-off machines are the same before and after the fix (`evidence/sweeps.out`).",
+        "code": "# Task (NL)\nWhenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move.\n\n# Clauses and LTLf (evidence/bundles/shop-serve-both-off)\nhard Response(client_arrived, order_taken): (G (client_arrived -> (F order_taken)))\nhard Response(order_taken, food_prepared): (G (order_taken -> (F food_prepared)))\nhard Response(food_prepared, order_served): (G (food_prepared -> (F order_served)))\nhard ChainResponse(food_fell, holding_food): (G (food_fell -> (X holding_food)))\n\n# RM text (graphs/shop-serve-both-off.rm, 798 lines: the header, the first 12 transitions and rewards, and the first 12 rewards into the well u14)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15, u16\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u14\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !client_arrived&!food_fell&!food_prepared&order_taken) -> u1\n(u0, !client_arrived&!food_fell&food_prepared&!order_served) -> u2\n(u0, !client_arrived&food_fell&!food_prepared&!order_taken) -> u3\n(u0, !client_arrived&food_fell&!food_prepared&order_taken) -> u4\n(u0, !client_arrived&food_fell&food_prepared&!order_served) -> u5\n(u0, !client_arrived&food_fell&food_prepared&order_served) -> u3\n(u0, client_arrived&!food_fell&!food_prepared&!order_taken) -> u6\n(u0, client_arrived&!food_fell&!food_prepared&order_taken) -> u1\n(u0, client_arrived&!food_fell&food_prepared&!order_served&!order_taken) -> u7\n(u0, client_arrived&!food_fell&food_prepared&!order_served&order_taken) -> u2\n(u0, client_arrived&!food_fell&food_prepared&order_served&!order_taken) -> u6\n(u0, client_arrived&food_fell&!food_prepared&!order_taken) -> u8\n... 394 more transitions\nREWARD_FUNCTION:\n(u0, !client_arrived&!food_fell&!food_prepared&order_taken, u1) -> -2\n(u0, !client_arrived&!food_fell&food_prepared&!order_served, u2) -> -1\n(u0, !client_arrived&food_fell&!food_prepared&!order_taken, u3) -> -1\n(u0, !client_arrived&food_fell&!food_prepared&order_taken, u4) -> -3\n(u0, !client_arrived&food_fell&food_prepared&!order_served, u5) -> -2\n(u0, !client_arrived&food_fell&food_prepared&order_served, u3) -> -1\n(u0, client_arrived&!food_fell&!food_prepared&!order_taken, u6) -> -3\n(u0, client_arrived&!food_fell&!food_prepared&order_taken, u1) -> -2\n(u0, client_arrived&!food_fell&food_prepared&!order_served&!order_taken, u7) -> -4\n(u0, client_arrived&!food_fell&food_prepared&!order_served&order_taken, u2) -> -1\n(u0, client_arrived&!food_fell&food_prepared&order_served&!order_taken, u6) -> -3\n(u0, client_arrived&food_fell&!food_prepared&!order_taken, u8) -> -4\n... 372 more rewards\n# rewards into the well (146 edges)\n(u3, !client_arrived&!food_fell&!food_prepared&!holding_food&!order_taken, u14) -> -10\n(u3, !client_arrived&!food_fell&!food_prepared&!holding_food&order_taken, u14) -> -10\n(u3, !client_arrived&!food_fell&food_prepared&!holding_food&!order_served, u14) -> -10\n(u3, !client_arrived&!food_fell&food_prepared&!holding_food&order_served, u14) -> -10\n(u3, !client_arrived&food_fell&!food_prepared&!holding_food&!order_taken, u14) -> -10\n(u3, !client_arrived&food_fell&!food_prepared&!holding_food&order_taken, u14) -> -10\n(u3, !client_arrived&food_fell&food_prepared&!holding_food&!order_served, u14) -> -10\n(u3, !client_arrived&food_fell&food_prepared&!holding_food&order_served, u14) -> -10\n(u3, client_arrived&!food_fell&!food_prepared&!holding_food&!order_taken, u14) -> -10\n(u3, client_arrived&!food_fell&!food_prepared&!holding_food&order_taken, u14) -> -10\n(u3, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&!order_taken, u14) -> -10\n(u3, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&order_taken, u14) -> -10\n..."
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "part2",
+   "title": "2. The defect and the fix",
+   "intro": "Today's shop levels add the slip and the fall rule, hard `ChainResponse(food_fell, holding_food)`: a fall the agent does not save on its very next move breaks the rule for good, and the machine enters the well, which ends the episode. Plan pay as in Part 1, on the four shop levels built from their card answers with the promise cost on and off, before (the code of `78c666c`, a727b2b's parent) and after (`a727b2b`): `check/plan_pay.py levels`, `evidence/part2-before.json`, `evidence/part2-after.json`, `evidence/pay-table.out`.",
+   "blocks": [
+    {
+     "type": "callout",
+     "tone": "warn",
+     "title": "The defect, before a727b2b",
+     "text": "With the promise cost on, the step into the well paid the well charge and one step of promise cost, -10 - 0.1 = -10.1, and the episode ended. The promise cost of the steps that never came was not charged. So the cheapest shift was to carry the food, let it fall and leave it: -16.4 plain on shop-serve, seed 1, where serving all shift paid -35.5. The probe's gate stopped this machine before training on all four levels (plan log, 2026-11-20 16:16)."
+    },
+    {
+     "type": "callout",
+     "tone": "ok",
+     "title": "The fix, commit a727b2b",
+     "text": "The step into the well, from a state with a hard promise open, now pays the promise cost of the level's whole step limit: -10 - 0.1 × 600 = -70 on the shop (`_price_edges` in `app/src/compiler/reward_layer.py`). The fix touches only edges into the well, and only with the promise cost on. A promise-cost build now refuses to run without the level's step limit, and train-rl refuses a promise-cost bundle whose recorded step limit is not the level's."
+    },
+    {
+     "type": "text",
+     "text": "**The bound.** A break at step t pays γ^t (W + cL), with W = -10 the well charge, c = -0.1 the promise cost and L = 600 the step limit. Since W and c are at most 0, that is at most the sum of γ^k c over k = t to L - 1, the cost of keeping the promise open to the end: a hard break never pays more than a promise kept open. It is a bound, not the exact cost: a late break is charged all L steps, not the L - t left. Whether that reading of \"the promise cost still to come\" is right is the user's question Q6."
+    },
+    {
+     "type": "table",
+     "heading": "Plan pay, promise cost on, seed 1, plain / discounted (`evidence/pay-table.out` has seeds 2 and 3)",
+     "columns": [
+      "level",
+      "states",
+      "solve",
+      "plan that ends in the well",
+      "before the fix",
+      "after the fix",
+      "solve the best plan, before → after"
+     ],
+     "rows": [
+      [
+       "shop-serve",
+       "17",
+       "-35.5 / -13.975",
+       "wrong-1: leaves a fallen portion on the floor for one step",
+       {
+        "text": "-16.4 / -13.588",
+        "tone": "warn"
+       },
+       {
+        "text": "-76.3 / -60.916",
+        "tone": "ok"
+       },
+       "no → yes"
+      ],
+      [
+       "shop-full",
+       "33",
+       "-38.8 / -15.254",
+       "wrong-2: leaves a fallen portion on the floor for one step",
+       {
+        "text": "-16.4 / -13.629",
+        "tone": "warn"
+       },
+       {
+        "text": "-76.3 / -60.956",
+        "tone": "ok"
+       },
+       "no → yes"
+      ],
+      [
+       "shop-quiet-first",
+       "33",
+       "-38.8 / -15.254",
+       "wrong-1: never switches the siren off; wrong-2: switches it off only after serving (both serve while it rings, a hard rule of this level); wrong-3: leaves a fallen portion",
+       {
+        "text": "-15.6 / -12.915; -16.4 / -13.629",
+        "tone": "warn"
+       },
+       {
+        "text": "-75.5 / -59.77; -76.3 / -60.956",
+        "tone": "ok"
+       },
+       "no → yes"
+      ],
+      [
+       "shop-boil",
+       "65",
+       "-43 / -16.983",
+       "wrong-3: leaves a fallen portion on the floor for one step",
+       {
+        "text": "-16.4 / -13.629",
+        "tone": "warn"
+       },
+       {
+        "text": "-76.3 / -60.956",
+        "tone": "ok"
+       },
+       "no → yes"
+      ]
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**The solve does not move.** Its pay is the same before and after on every level and seed: it never enters the well.",
+      "**Promise cost off, nothing moves.** The four promise-off machines are byte-identical before and after, and on them the solve was already the best plan (shop-serve: solve 0 / -1.308, the well plan -13 / -10.667).",
+      "**Seeds 2 and 3 agree.** On shop-serve the well plan goes from -14.8 / -13.388 to -74.7 / -66.499 (seed 2) and from -14.8 / -13.123 to -74.7 / -65.179 (seed 3); after the fix every wrong plan pays less than the solve on all 3 seeds of all 8 variants."
+     ]
+    },
+    {
+     "type": "text",
+     "text": "**The four levels' tasks, clauses and LTLf** (card answers in `experiments/benchmark/shop/tasks.json`, from `evidence/machines.out`)"
+    },
+    {
+     "type": "code",
+     "text": "shop-serve (MiniGrid-Shop-v0): Whenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move.\n  hard Response(client_arrived, order_taken): (G (client_arrived -> (F order_taken)))\n  hard Response(order_taken, food_prepared): (G (order_taken -> (F food_prepared)))\n  hard Response(food_prepared, order_served): (G (food_prepared -> (F order_served)))\n  hard ChainResponse(food_fell, holding_food): (G (food_fell -> (X holding_food)))\nshop-full (MiniGrid-Shop-v0): Run the shop: whenever the siren rings, turn it off, and whenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move.\n  hard Response(siren_ringing, switch_toggled): (G (siren_ringing -> (F switch_toggled)))\n  hard Response(client_arrived, order_taken): (G (client_arrived -> (F order_taken)))\n  hard Response(order_taken, food_prepared): (G (order_taken -> (F food_prepared)))\n  hard Response(food_prepared, order_served): (G (food_prepared -> (F order_served)))\n  hard ChainResponse(food_fell, holding_food): (G (food_fell -> (X holding_food)))\nshop-quiet-first (MiniGrid-Shop-v0): Run the shop: whenever the siren rings, turn it off, and whenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move. Never give a client their food while the siren is ringing.\n  hard Response(siren_ringing, switch_toggled): (G (siren_ringing -> (F switch_toggled)))\n  hard Response(client_arrived, order_taken): (G (client_arrived -> (F order_taken)))\n  hard Response(order_taken, food_prepared): (G (order_taken -> (F food_prepared)))\n  hard Response(food_prepared, order_served): (G (food_prepared -> (F order_served)))\n  hard ChainResponse(food_fell, holding_food): (G (food_fell -> (X holding_food)))\n  hard Absence(served_while_ringing): (~(F served_while_ringing))\nshop-boil (MiniGrid-Shop-Pot-v0): Run the shop: whenever the siren rings, turn it off, and whenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move. Whenever the pot boils over, put down what you hold next to the stove, turn the stove down, and pick your item up again.\n  hard Response(siren_ringing, switch_toggled): (G (siren_ringing -> (F switch_toggled)))\n  hard Response(client_arrived, order_taken): (G (client_arrived -> (F order_taken)))\n  hard Response(order_taken, food_prepared): (G (order_taken -> (F food_prepared)))\n  hard Response(food_prepared, order_served): (G (food_prepared -> (F order_served)))\n  hard ChainResponse(food_fell, holding_food): (G (food_fell -> (X holding_food)))\n  hard Response(pot_boiling, stove_fixed): (G (pot_boiling -> (F stove_fixed)))"
+    },
+    {
+     "type": "list",
+     "items": [
+      "**Promise cost off, the committed sweeps are byte-identical.** The chain-progress sweep and the card sweep give the same output before and after the fix (`check/chain_sweep.py`, `check/card_sweep.py`; md5 in `evidence/sweeps.out`).",
+      "**Promise cost on, only well edges change.** Every card clause set compiled with the promise cost on (`check/promise_sweep.py`, `evidence/promise-sweep-compare.out`): 130 clause sets, 78 identical, 52 changed, none off an edge into the well. A changed edge goes from W + c to W + cL: on the shop -10.1 → -70 (146 edges on shop-serve, 730 on shop-full, 2,860 on shop-quiet-first, 3,650 on shop-boil), on base-doorkey -10.1 → -74 (step limit 640), on cx-goal-one-rule -100.794 → -158.294."
+     ]
+    },
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/shop-serve-promise-before.html",
+       "height": 520,
+       "alt": "Reward Machine shop-serve-promise-before: 17 states",
+       "caption": "**`shop-serve-promise-before`** · Shop, today's shop-serve level · 17 states, 435 transitions · no final, well u14\nTask: *Whenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move.* Promise cost on, before the fix: the 146 edges into u14 pay -10.1, one step of promise cost. Letting the food fall pays more than serving.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Bundle copy `evidence/bundles/shop-serve-promise-before` (the probe's `shop-serve-pc-on`, the same machine as `bundles-before/shop-serve-pc-on` in `evidence/sweeps.out`). Not trained: the gate stopped it.",
+        "code": "# Task (NL)\nWhenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move.\n\n# Clauses and LTLf (evidence/bundles/shop-serve-promise-before)\nhard Response(client_arrived, order_taken): (G (client_arrived -> (F order_taken)))\nhard Response(order_taken, food_prepared): (G (order_taken -> (F food_prepared)))\nhard Response(food_prepared, order_served): (G (food_prepared -> (F order_served)))\nhard ChainResponse(food_fell, holding_food): (G (food_fell -> (X holding_food)))\n\n# RM text (graphs/shop-serve-promise-before.rm, 878 lines: the header, the first 12 transitions and rewards, and the first 12 rewards into the well u14)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15, u16\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u14\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !client_arrived&!food_fell&!food_prepared&order_taken) -> u1\n(u0, !client_arrived&!food_fell&food_prepared&!order_served) -> u2\n(u0, !client_arrived&food_fell&!food_prepared&!order_taken) -> u3\n(u0, !client_arrived&food_fell&!food_prepared&order_taken) -> u4\n(u0, !client_arrived&food_fell&food_prepared&!order_served) -> u5\n(u0, !client_arrived&food_fell&food_prepared&order_served) -> u3\n(u0, client_arrived&!food_fell&!food_prepared&!order_taken) -> u6\n(u0, client_arrived&!food_fell&!food_prepared&order_taken) -> u1\n(u0, client_arrived&!food_fell&food_prepared&!order_served&!order_taken) -> u7\n(u0, client_arrived&!food_fell&food_prepared&!order_served&order_taken) -> u2\n(u0, client_arrived&!food_fell&food_prepared&order_served&!order_taken) -> u6\n(u0, client_arrived&food_fell&!food_prepared&!order_taken) -> u8\n... 423 more transitions\nREWARD_FUNCTION:\n(u0, !client_arrived&!food_fell&!food_prepared&order_taken, u1) -> -2\n(u0, !client_arrived&!food_fell&food_prepared&!order_served, u2) -> -1\n(u0, !client_arrived&food_fell&!food_prepared&!order_taken, u3) -> -1\n(u0, !client_arrived&food_fell&!food_prepared&order_taken, u4) -> -3\n(u0, !client_arrived&food_fell&food_prepared&!order_served, u5) -> -2\n(u0, !client_arrived&food_fell&food_prepared&order_served, u3) -> -1\n(u0, client_arrived&!food_fell&!food_prepared&!order_taken, u6) -> -3\n(u0, client_arrived&!food_fell&!food_prepared&order_taken, u1) -> -2\n(u0, client_arrived&!food_fell&food_prepared&!order_served&!order_taken, u7) -> -4\n(u0, client_arrived&!food_fell&food_prepared&!order_served&order_taken, u2) -> -1\n(u0, client_arrived&!food_fell&food_prepared&order_served&!order_taken, u6) -> -3\n(u0, client_arrived&food_fell&!food_prepared&!order_taken, u8) -> -4\n... 423 more rewards\n# rewards into the well (146 edges)\n(u3, !client_arrived&!food_fell&!food_prepared&!holding_food&!order_taken, u14) -> -10.1\n(u3, !client_arrived&!food_fell&!food_prepared&!holding_food&order_taken, u14) -> -10.1\n(u3, !client_arrived&!food_fell&food_prepared&!holding_food&!order_served, u14) -> -10.1\n(u3, !client_arrived&!food_fell&food_prepared&!holding_food&order_served, u14) -> -10.1\n(u3, !client_arrived&food_fell&!food_prepared&!holding_food&!order_taken, u14) -> -10.1\n(u3, !client_arrived&food_fell&!food_prepared&!holding_food&order_taken, u14) -> -10.1\n(u3, !client_arrived&food_fell&food_prepared&!holding_food&!order_served, u14) -> -10.1\n(u3, !client_arrived&food_fell&food_prepared&!holding_food&order_served, u14) -> -10.1\n(u3, client_arrived&!food_fell&!food_prepared&!holding_food&!order_taken, u14) -> -10.1\n(u3, client_arrived&!food_fell&!food_prepared&!holding_food&order_taken, u14) -> -10.1\n(u3, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&!order_taken, u14) -> -10.1\n(u3, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&order_taken, u14) -> -10.1\n..."
+       }
+      },
+      {
+       "src": "graphs/shop-serve-promise-after.html",
+       "height": 520,
+       "alt": "Reward Machine shop-serve-promise-after: 17 states",
+       "caption": "**`shop-serve-promise-after`** · Shop, today's shop-serve level · 17 states, 435 transitions · no final, well u14\nTask: *Whenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move.* Promise cost on, after the fix: the same 146 edges pay -70, the promise cost of all 600 steps. The rest of the text is unchanged. Trained in Part 4: 0 served.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Bundle copy `evidence/bundles/shop-serve-promise-after` (`bundles-after/shop-serve-pc-on`), trained by sw-shop-serve-pc-on. The file is 292 bytes shorter than the one before: 146 edges, each -10.1 written as -70.",
+        "code": "# Task (NL)\nWhenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move.\n\n# Clauses and LTLf (evidence/bundles/shop-serve-promise-after)\nhard Response(client_arrived, order_taken): (G (client_arrived -> (F order_taken)))\nhard Response(order_taken, food_prepared): (G (order_taken -> (F food_prepared)))\nhard Response(food_prepared, order_served): (G (food_prepared -> (F order_served)))\nhard ChainResponse(food_fell, holding_food): (G (food_fell -> (X holding_food)))\n\n# RM text (graphs/shop-serve-promise-after.rm, 878 lines: the header, the first 12 transitions and rewards, and the first 12 rewards into the well u14)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15, u16\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u14\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !client_arrived&!food_fell&!food_prepared&order_taken) -> u1\n(u0, !client_arrived&!food_fell&food_prepared&!order_served) -> u2\n(u0, !client_arrived&food_fell&!food_prepared&!order_taken) -> u3\n(u0, !client_arrived&food_fell&!food_prepared&order_taken) -> u4\n(u0, !client_arrived&food_fell&food_prepared&!order_served) -> u5\n(u0, !client_arrived&food_fell&food_prepared&order_served) -> u3\n(u0, client_arrived&!food_fell&!food_prepared&!order_taken) -> u6\n(u0, client_arrived&!food_fell&!food_prepared&order_taken) -> u1\n(u0, client_arrived&!food_fell&food_prepared&!order_served&!order_taken) -> u7\n(u0, client_arrived&!food_fell&food_prepared&!order_served&order_taken) -> u2\n(u0, client_arrived&!food_fell&food_prepared&order_served&!order_taken) -> u6\n(u0, client_arrived&food_fell&!food_prepared&!order_taken) -> u8\n... 423 more transitions\nREWARD_FUNCTION:\n(u0, !client_arrived&!food_fell&!food_prepared&order_taken, u1) -> -2\n(u0, !client_arrived&!food_fell&food_prepared&!order_served, u2) -> -1\n(u0, !client_arrived&food_fell&!food_prepared&!order_taken, u3) -> -1\n(u0, !client_arrived&food_fell&!food_prepared&order_taken, u4) -> -3\n(u0, !client_arrived&food_fell&food_prepared&!order_served, u5) -> -2\n(u0, !client_arrived&food_fell&food_prepared&order_served, u3) -> -1\n(u0, client_arrived&!food_fell&!food_prepared&!order_taken, u6) -> -3\n(u0, client_arrived&!food_fell&!food_prepared&order_taken, u1) -> -2\n(u0, client_arrived&!food_fell&food_prepared&!order_served&!order_taken, u7) -> -4\n(u0, client_arrived&!food_fell&food_prepared&!order_served&order_taken, u2) -> -1\n(u0, client_arrived&!food_fell&food_prepared&order_served&!order_taken, u6) -> -3\n(u0, client_arrived&food_fell&!food_prepared&!order_taken, u8) -> -4\n... 423 more rewards\n# rewards into the well (146 edges)\n(u3, !client_arrived&!food_fell&!food_prepared&!holding_food&!order_taken, u14) -> -70\n(u3, !client_arrived&!food_fell&!food_prepared&!holding_food&order_taken, u14) -> -70\n(u3, !client_arrived&!food_fell&food_prepared&!holding_food&!order_served, u14) -> -70\n(u3, !client_arrived&!food_fell&food_prepared&!holding_food&order_served, u14) -> -70\n(u3, !client_arrived&food_fell&!food_prepared&!holding_food&!order_taken, u14) -> -70\n(u3, !client_arrived&food_fell&!food_prepared&!holding_food&order_taken, u14) -> -70\n(u3, !client_arrived&food_fell&food_prepared&!holding_food&!order_served, u14) -> -70\n(u3, !client_arrived&food_fell&food_prepared&!holding_food&order_served, u14) -> -70\n(u3, client_arrived&!food_fell&!food_prepared&!holding_food&!order_taken, u14) -> -70\n(u3, client_arrived&!food_fell&!food_prepared&!holding_food&order_taken, u14) -> -70\n(u3, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&!order_taken, u14) -> -70\n(u3, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&order_taken, u14) -> -70\n..."
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "part3",
+   "title": "3. No regression on the round 7 level",
+   "intro": "The round 7 level has no slip and its machine no well, so the fix must leave its training as it was. train-rl now refuses a promise-cost bundle whose recorded step limit is not the level's, and round 7 B8b's records none, so the regression trains `evidence/bundles/r7-b8b-rebuilt`: the machine text of round 7 B8b (`evidence/machines.out`: identical) with the step limit 600 recorded. The same PPO values as B8b: 2M steps, time-limit charge -5, 3 seeds (`evidence/configs/rg-b8b-s*.yaml`, `evidence/logs/rg-b8b-s*.log`).",
+   "blocks": [
+    {
+     "type": "table",
+     "columns": [
+      "run",
+      "code",
+      "served, seeds 1 / 2 / 3",
+      "judged success",
+      "RM return",
+      "env steps"
+     ],
+     "rows": [
+      [
+       "r7-B8b, 2026-11-19",
+       "before the fix",
+       "12.21 / 12.07 / 12.21",
+       "1 / 1 / 1",
+       "-25.357 / -25.77 / -25.357",
+       "2,002,944"
+      ],
+      [
+       "rg-b8b, 2026-11-20",
+       "with the fix (the run records `git_head 78c666c-dirty`: the fix uncommitted on a727b2b's parent)",
+       {
+        "text": "12.21 / 12.07 / 12.21",
+        "tone": "ok"
+       },
+       "1 / 1 / 1",
+       "-25.357 / -25.77 / -25.357",
+       "2,002,944"
+      ]
+     ]
+    },
+    {
+     "type": "text",
+     "text": "Same served count, success and RM return to the last digit on every seed. The machine is drawn in Part 1 (`r7-b8b-promise`); the plan pay of the rebuilt bundle is in `evidence/plan-pay-b8b.json`, its gate record in `evidence/gate/gate-b8b.json` (ok)."
+    }
+   ]
+  },
+  {
+   "id": "part4",
+   "title": "4. Open: today's shop-serve still learns 0 of 3",
+   "intro": "With the fix, shop-serve with the promise cost on (`shop-serve-promise-after`, drawn in Part 2) passes the gate (`evidence/gate/gate-shop-serve-pc-on.json`) and trains PPO 5M steps on 3 seeds with the probe's settings, time-limit charge 0 (`evidence/configs/sw-shop-serve-pc-on-s*.yaml`). The diagnosis is `check/diagnose.py`, `check/fall_rate.py` and `check/fetch_variant.py`; no training.",
+   "blocks": [
+    {
+     "type": "callout",
+     "tone": "warn",
+     "title": "Not a result: the user decides (question Q7)",
+     "text": "Today's shop-serve does not learn under FARM. The options in the plan log (2026-11-20 21:51): (a) the card pays the commanded \"fetch food\" step with hard `Response(order_taken, holding_food)`, as round 7's card did; this goes against the prompt rule that a step which is only a lasting condition (fetch the item) gets no clause, and the coder expects the fear of the well to stay. (b) A slip-free warm-up at the start of training: new code, no curriculum option exists today. (c) Accept it as a known limit, like the big machines."
+    },
+    {
+     "type": "table",
+     "heading": "The runs (`evidence/runs/sw-shop-serve-pc-on-s*/`, 100 test episodes per seed)",
+     "columns": [
+      "seed",
+      "served",
+      "judged success",
+      "hard promises open at the end, mean",
+      "RM return",
+      "rule pass rates (the four clauses)",
+      "env steps"
+     ],
+     "rows": [
+      [
+       "1",
+       {
+        "text": "0",
+        "tone": "warn"
+       },
+       "0",
+       "1.0",
+       "-61.095",
+       "0.54, 0.46, 1.0, 1.0",
+       "5,001,216"
+      ],
+      [
+       "2",
+       {
+        "text": "0",
+        "tone": "warn"
+       },
+       "0",
+       "1.0",
+       "-60.635",
+       "1.0, 0.0, 1.0, 1.0",
+       "5,001,216"
+      ],
+      [
+       "3",
+       {
+        "text": "0",
+        "tone": "warn"
+       },
+       "0",
+       "1.0",
+       "-60.635",
+       "1.0, 0.0, 1.0, 1.0",
+       "5,001,216"
+      ]
+     ]
+    },
+    {
+     "type": "table",
+     "heading": "Random play, 1,000 episodes per level (`check/diagnose.py random`, `evidence/diagnosis/random-*.json`)",
+     "columns": [
+      "level",
+      "episodes with a pickup",
+      "pickups",
+      "falls",
+      "falls per carry",
+      "falls saved on the next move",
+      "episodes in the well",
+      "episodes with an order",
+      "episodes with food prepared",
+      "episodes with a serve",
+      "mean length"
+     ],
+     "rows": [
+      [
+       "today: shop-serve after the fix, cut at the well",
+       "251",
+       "398",
+       "259",
+       "0.651",
+       "40",
+       "219",
+       "227",
+       {
+        "text": "0",
+        "tone": "warn"
+       },
+       "0",
+       "522.8"
+      ],
+      [
+       "today, no slip (`slip_chance` 0)",
+       "251",
+       "928",
+       "0",
+       "0",
+       "0",
+       "0",
+       "252",
+       {
+        "text": "0",
+        "tone": "warn"
+       },
+       "0",
+       "600"
+      ],
+      [
+       "today, not cut at the well",
+       "251",
+       "1,026",
+       "434",
+       "0.423",
+       "68",
+       "219",
+       "245",
+       {
+        "text": "0",
+        "tone": "warn"
+       },
+       "0",
+       "600"
+      ],
+      [
+       "round 7 level, `r7-b8b-rebuilt`",
+       "251",
+       "928",
+       "0",
+       "0",
+       "0",
+       "0",
+       "252",
+       "no cooking step",
+       "0",
+       "600"
+      ]
+     ]
+    },
+    {
+     "type": "table",
+     "heading": "The trained agents, replayed from their test traces (`check/diagnose.py agent`, `evidence/diagnosis/agent-today-s*.json`)",
+     "columns": [
+      "seed",
+      "episodes with an order",
+      "pickups",
+      "episodes in the well",
+      "food prepared",
+      "served",
+      "plain / discounted pay, mean"
+     ],
+     "rows": [
+      [
+       "1",
+       "54 of 100",
+       {
+        "text": "0",
+        "tone": "warn"
+       },
+       "0",
+       "0",
+       "0",
+       "-61.095 / -20.015"
+      ],
+      [
+       "2",
+       "100 of 100",
+       {
+        "text": "0",
+        "tone": "warn"
+       },
+       "0",
+       "0",
+       "0",
+       "-60.635 / -19.6"
+      ],
+      [
+       "3",
+       "100 of 100",
+       {
+        "text": "0",
+        "tone": "warn"
+       },
+       "0",
+       "0",
+       "0",
+       "-60.635 / -19.596"
+      ]
+     ]
+    },
+    {
+     "type": "table",
+     "heading": "Scripted plans, seed 1, plain / discounted (`check/diagnose.py plans`, `evidence/diagnosis/plans-*.json`)",
+     "columns": [
+      "plan",
+      "today: shop-serve after the fix",
+      "round 7 level",
+      "today plus a paid fetch step (option a)"
+     ],
+     "rows": [
+      [
+       "idle",
+       "-61.6 / -20.467",
+       "-61.6 / -20.467",
+       "-62.6 / -21.404"
+      ],
+      [
+       "take the order, stop",
+       "-60.6 / -19.628",
+       "-60.6 / -19.553",
+       "-61.6 / -20.565"
+      ],
+      [
+       "pick up the food, stop",
+       {
+        "text": "-76.3 / -60.916: it falls, well at step 48",
+        "tone": "warn"
+       },
+       "-59.6 / -18.676",
+       {
+        "text": "-76.3 / -61.046: well at step 48",
+        "tone": "warn"
+       }
+      ],
+      [
+       "pick up, save the first fall, stop",
+       {
+        "text": "-76.9 / -59.726: the second fall, well at step 54",
+        "tone": "warn"
+       },
+       "no slip on this level",
+       {
+        "text": "-76.9 / -59.856: well at step 54",
+        "tone": "warn"
+       }
+      ],
+      [
+       "pick up, save the falls, serve one, stop",
+       "-59.8 / -18.902 (4 falls, all saved)",
+       "-59.8 / -18.696",
+       "-60.8 / -19.689"
+      ],
+      [
+       "solve: the scripted worker all shift",
+       {
+        "text": "-35.5 / -13.975 (8 served, 16 pickups, 8 falls, all saved)",
+        "tone": "ok"
+       },
+       {
+        "text": "-20.8 / -8.718 (12 served)",
+        "tone": "ok"
+       },
+       {
+        "text": "-35.5 / -14.278 (8 served)",
+        "tone": "ok"
+       }
+      ]
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**First, the first paid step is out of reach.** After the order, the next step today's machine pays is food_prepared, the cooking. Random play never gets there: 0 of 1,000 episodes on every level, with or without the slip. Round 7's card paid the pickup, and random play picks the food up in 251 of 1,000 episodes.",
+      "**Then, the fear of the well.** Under random play a carried portion falls 0.65 times per pickup, and only 40 of 259 falls are saved on the next move; a fall not saved costs -70. Picking the food up and stopping pays -76.3, below taking the order and stopping, -60.6. The trained agents take the order and never touch the food.",
+      "**Over training** (`check/fall_rate.py`, blocks of 1M steps, `evidence/fall-rate.out`): episodes with a fall, and episodes in the well, drop from 1-2% in the first 2M steps to 0% after; no fall is ever saved, and the food-prepared state stays at 0% in every block of every seed.",
+      "**Option (a) alone keeps the fear.** With the fetch step paid, picking up and stopping still enters the well at -76.3, below every plan that leaves the food alone (`shop-serve-fetch-promise` below, priced only, not trained)."
+     ]
+    },
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/shop-serve-fetch-promise.html",
+       "height": 520,
+       "alt": "Reward Machine shop-serve-fetch-promise: 33 states",
+       "caption": "**`shop-serve-fetch-promise`** · Shop, today's shop-serve level · 33 states, 1207 transitions · no final, well u28\nTask: *Whenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move.* Option (a), priced only: the card's clauses plus hard `Response(order_taken, holding_food)`, promise cost on, the fix in. 314 edges into the well at -70.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Built by `check/fetch_variant.py` (`evidence/bundles/shop-serve-fetch-promise`). Not trained.",
+        "code": "# Task (NL)\nWhenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move.\n\n# Clauses and LTLf (evidence/bundles/shop-serve-fetch-promise)\nhard Response(client_arrived, order_taken): (G (client_arrived -> (F order_taken)))\nhard Response(order_taken, holding_food): (G (order_taken -> (F holding_food)))\nhard Response(order_taken, food_prepared): (G (order_taken -> (F food_prepared)))\nhard Response(food_prepared, order_served): (G (food_prepared -> (F order_served)))\nhard ChainResponse(food_fell, holding_food): (G (food_fell -> (X holding_food)))\n\n# RM text (graphs/shop-serve-fetch-promise.rm, 2422 lines: the header, the first 12 transitions and rewards, and the first 12 rewards into the well u28)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15, u16, u17, u18, u19, u20, u21, u22, u23, u24, u25, u26, u27, u28, u29, u30, u31, u32\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u28\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !client_arrived&!food_fell&!food_prepared&!holding_food&order_taken) -> u1\n(u0, !client_arrived&!food_fell&!food_prepared&holding_food&order_taken) -> u2\n(u0, !client_arrived&!food_fell&food_prepared&!holding_food&!order_served&!order_taken) -> u3\n(u0, !client_arrived&!food_fell&food_prepared&!holding_food&!order_served&order_taken) -> u4\n(u0, !client_arrived&!food_fell&food_prepared&!holding_food&order_served&order_taken) -> u5\n(u0, !client_arrived&!food_fell&food_prepared&holding_food&!order_served) -> u3\n(u0, !client_arrived&food_fell&!food_prepared&!holding_food&!order_taken) -> u6\n(u0, !client_arrived&food_fell&!food_prepared&!holding_food&order_taken) -> u7\n(u0, !client_arrived&food_fell&!food_prepared&holding_food&!order_taken) -> u6\n(u0, !client_arrived&food_fell&!food_prepared&holding_food&order_taken) -> u8\n(u0, !client_arrived&food_fell&food_prepared&!holding_food&!order_served&!order_taken) -> u9\n(u0, !client_arrived&food_fell&food_prepared&!holding_food&!order_served&order_taken) -> u10\n... 1195 more transitions\nREWARD_FUNCTION:\n(u0, !client_arrived&!food_fell&!food_prepared&!holding_food&order_taken, u1) -> -3\n(u0, !client_arrived&!food_fell&!food_prepared&holding_food&order_taken, u2) -> -2\n(u0, !client_arrived&!food_fell&food_prepared&!holding_food&!order_served&!order_taken, u3) -> -1\n(u0, !client_arrived&!food_fell&food_prepared&!holding_food&!order_served&order_taken, u4) -> -2\n(u0, !client_arrived&!food_fell&food_prepared&!holding_food&order_served&order_taken, u5) -> -1\n(u0, !client_arrived&!food_fell&food_prepared&holding_food&!order_served, u3) -> -1\n(u0, !client_arrived&food_fell&!food_prepared&!holding_food&!order_taken, u6) -> -1\n(u0, !client_arrived&food_fell&!food_prepared&!holding_food&order_taken, u7) -> -4\n(u0, !client_arrived&food_fell&!food_prepared&holding_food&!order_taken, u6) -> -1\n(u0, !client_arrived&food_fell&!food_prepared&holding_food&order_taken, u8) -> -3\n(u0, !client_arrived&food_fell&food_prepared&!holding_food&!order_served&!order_taken, u9) -> -2\n(u0, !client_arrived&food_fell&food_prepared&!holding_food&!order_served&order_taken, u10) -> -3\n... 1195 more rewards\n# rewards into the well (314 edges)\n(u6, !client_arrived&!food_fell&!food_prepared&!holding_food&!order_taken, u28) -> -70\n(u6, !client_arrived&!food_fell&!food_prepared&!holding_food&order_taken, u28) -> -70\n(u6, !client_arrived&!food_fell&food_prepared&!holding_food&!order_served&!order_taken, u28) -> -70\n(u6, !client_arrived&!food_fell&food_prepared&!holding_food&!order_served&order_taken, u28) -> -70\n(u6, !client_arrived&!food_fell&food_prepared&!holding_food&order_served&!order_taken, u28) -> -70\n(u6, !client_arrived&!food_fell&food_prepared&!holding_food&order_served&order_taken, u28) -> -70\n(u6, !client_arrived&food_fell&!food_prepared&!holding_food&!order_taken, u28) -> -70\n(u6, !client_arrived&food_fell&!food_prepared&!holding_food&order_taken, u28) -> -70\n(u6, !client_arrived&food_fell&food_prepared&!holding_food&!order_served&!order_taken, u28) -> -70\n(u6, !client_arrived&food_fell&food_prepared&!holding_food&!order_served&order_taken, u28) -> -70\n(u6, !client_arrived&food_fell&food_prepared&!holding_food&order_served&!order_taken, u28) -> -70\n(u6, !client_arrived&food_fell&food_prepared&!holding_food&order_served&order_taken, u28) -> -70\n..."
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "part5",
+   "title": "5. The no-goal plan check",
+   "intro": "Before training, the gate runs each card's solving, wrong and idle plans through the bundle's machine (`check_card_plans` in `app/src/benchmark/plan_check.py`). A no-goal task has no final state, so no run ever finishes. The old rule failed a wrong run that \"ends with nothing owed and out of the well\". With the end judgment off nothing is owed at the end, so a no-goal bundle failed whenever a wrong plan stayed out of the well. The new rule adds an idle plan. Every wrong run, and an idle run that breaks a rule of the card, must pay less than the solve on the same layout, plain and discounted, and a run that breaks a hard rule for good must end in the well. An idle run that keeps every rule is held to the solve's rules. Every committed bundle checked before and after (`check/plan_check_all.py`, `check/compare_checks.py`, `evidence/plan-check/`).",
+   "blocks": [
+    {
+     "type": "stats",
+     "items": [
+      {
+       "value": "38 of 62",
+       "label": "checked no-goal bundles the old rule failed with the end judgment off",
+       "tone": "warn"
+      },
+      {
+       "value": "35",
+       "label": "of them pass the new rule",
+       "tone": "ok"
+      },
+      {
+       "value": "0 of 275",
+       "label": "goal bundles whose verdict or problems changed",
+       "tone": "ok"
+      },
+      {
+       "value": "3 of 3",
+       "label": "seeds on which the new rule catches shop-serve without its fall rule",
+       "tone": "ok"
+      }
+     ]
+    },
+    {
+     "type": "table",
+     "heading": "No-goal bundles, before → after (`evidence/plan-check-off.out`, `evidence/plan-check-stored.out`)",
+     "columns": [
+      "machines checked",
+      "pass → pass",
+      "FAIL → pass",
+      "FAIL → FAIL",
+      "pass → FAIL",
+      "unchecked"
+     ],
+     "rows": [
+      [
+       "rebuilt with the end judgment off (the default)",
+       "24",
+       {
+        "text": "35",
+        "tone": "ok"
+       },
+       "3",
+       "0",
+       "2: shop-boil and shop-quiet-first have no machine"
+      ],
+      [
+       "stored, as committed",
+       "57",
+       "0",
+       "4",
+       {
+        "text": "1: forcing/lanes-rules",
+        "tone": "warn"
+       },
+       "2: the same"
+      ]
+     ]
+    },
+    {
+     "type": "table",
+     "heading": "The three that still fail with the end judgment off: real problems",
+     "columns": [
+      "bundle",
+      "first problem after"
+     ],
+     "rows": [
+      [
+       "complex/cx-rules-only~p3",
+       "wrong-0-s1: breaks hard Absence(target_picked_up) at step 28 and does not end in the well"
+      ],
+      [
+       "forced-start/tpl-responded-existence-1-nogoal-forced~p2",
+       "wrong-0-s1: pays [0.0, 0.0], not less than the solving plan's [0.0, 0.0]"
+      ],
+      [
+       "shop/shop-serve~p3",
+       "wrong-2-s1: pays [-3.0, -2.7995], not less than the solving plan's [-2.0, -2.8787]"
+      ]
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**On the stored machines** the four that fail both times are box-carry tpl-chain-response-3-nogoal-carry and shop-serve~p3 (\"solve-s1: ends owing -1.0\", the end judgment of their stored text), cx-rules-only~p3 and the forced~p2 bundle above.",
+      "**forcing/lanes-rules newly fails, and it is real.** Its stored machine (end judgment on, no recorded settings) pays -1 on each of its 16 edges into the well, an old pricing. Letting a zombie through the top lane then pays more than the solve on plain pay: -1.0 against -2.0 (seed 1). It must be built again at the freeze.",
+      "**Shop-serve without its fall rule.** Built from the committed shop-serve without hard `ChainResponse(food_fell, holding_food)`, end judgment off (`check/no_fall_rule.py`, `evidence/no-fall-rule.out`): the new rule fails it on 3 of 3 seeds. The plan that leaves a fallen portion breaks the fall rule (steps 48, 25, 29) and does not end in the well, and it pays as much as the solve plain (0.0 against 0.0). The old rule fails it too, but on all 12 wrong and idle runs, for the same reason it fails a correct no-goal machine, so its verdict cannot tell the two apart."
+     ]
+    },
+    {
+     "type": "table",
+     "heading": "forcing/lanes-rules, stored machine, plain / discounted (`evidence/plan-check/plan-check-review.jsonl`)",
+     "columns": [
+      "seed",
+      "solve (300 steps)",
+      "wrong-0: does nothing",
+      "wrong-1: lets the top lane through",
+      "idle"
+     ],
+     "rows": [
+      [
+       "1",
+       "-2.0 / -0.1431",
+       {
+        "text": "-1.5 / -0.8791, well at step 64",
+        "tone": "warn"
+       },
+       {
+        "text": "-1.0 / -0.5309, well at step 64",
+        "tone": "warn"
+       },
+       {
+        "text": "-1.5 / -0.8791",
+        "tone": "warn"
+       }
+      ],
+      [
+       "3",
+       "-1.0 / -0.094",
+       {
+        "text": "-1.0 / -0.6235, well at step 48",
+        "tone": "warn"
+       },
+       {
+        "text": "-1.0 / -0.6235, well at step 48",
+        "tone": "warn"
+       },
+       {
+        "text": "-1.0 / -0.6235",
+        "tone": "warn"
+       }
+      ],
+      [
+       "4",
+       "-1.5 / -0.2198",
+       {
+        "text": "-1.5 / -0.5835, well at step 104",
+        "tone": "warn"
+       },
+       {
+        "text": "-1.0 / -0.3552, well at step 104",
+        "tone": "warn"
+       },
+       {
+        "text": "-1.5 / -0.5835",
+        "tone": "warn"
+       }
+      ]
+     ]
+    },
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/lanes-rules.html",
+       "height": 520,
+       "alt": "Reward Machine lanes-rules: 5 states",
+       "caption": "**`lanes-rules`** · Forcing, lanes level · 5 states, 28 transitions · no final, well u1\nTask: *Never let a zombie through the top lane. Try not to let zombies through the other lanes, and try not to step on plants.* The committed FARM bundle, end judgment on as stored. Its 16 edges into the well pay -1, so a top-lane breach pays at least the solve's plain pay on every seed.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "`experiments/benchmark/forcing/bundles/farm/lanes-rules`, as committed; `HARD_FAILED_REWARD` -1 and `SOFT_FAILED_REWARD` -0.5 in its judgment header.",
+        "code": "# Task (NL)\nNever let a zombie through the top lane. Try not to let zombies through the other lanes, and try not to step on plants.\n\n# Clauses and LTLf (experiments/benchmark/forcing/bundles/farm/lanes-rules)\nhard Absence(top_breach): (~(F top_breach))\nsoft Absence(side_breach): (~(F side_breach))\nsoft Absence(plant_trampled): (~(F plant_trampled))\n\n# RM text (graphs/lanes-rules.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u1\nACCEPTING_STATES: u0, u2, u3, u4\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, !plant_trampled&!side_breach&top_breach) -> u1\n(u0, !plant_trampled&side_breach&!top_breach) -> u2\n(u0, !plant_trampled&side_breach&top_breach) -> u1\n(u0, plant_trampled&!side_breach&!top_breach) -> u3\n(u0, plant_trampled&!side_breach&top_breach) -> u1\n(u0, plant_trampled&side_breach&!top_breach) -> u4\n(u0, plant_trampled&side_breach&top_breach) -> u1\n(u2, !plant_trampled&!side_breach&!top_breach) -> u0\n(u2, !plant_trampled&!side_breach&top_breach) -> u1\n(u2, !plant_trampled&side_breach&top_breach) -> u1\n(u2, plant_trampled&!side_breach&!top_breach) -> u3\n(u2, plant_trampled&!side_breach&top_breach) -> u1\n(u2, plant_trampled&side_breach&!top_breach) -> u4\n(u2, plant_trampled&side_breach&top_breach) -> u1\n(u3, !plant_trampled&!side_breach&!top_breach) -> u0\n(u3, !plant_trampled&!side_breach&top_breach) -> u1\n(u3, !plant_trampled&side_breach&!top_breach) -> u2\n(u3, !plant_trampled&side_breach&top_breach) -> u1\n(u3, plant_trampled&!side_breach&top_breach) -> u1\n(u3, plant_trampled&side_breach&!top_breach) -> u4\n(u3, plant_trampled&side_breach&top_breach) -> u1\n(u4, !plant_trampled&!side_breach&!top_breach) -> u0\n(u4, !plant_trampled&!side_breach&top_breach) -> u1\n(u4, !plant_trampled&side_breach&!top_breach) -> u2\n(u4, !plant_trampled&side_breach&top_breach) -> u1\n(u4, plant_trampled&!side_breach&!top_breach) -> u3\n(u4, plant_trampled&!side_breach&top_breach) -> u1\n(u4, plant_trampled&side_breach&top_breach) -> u1\nREWARD_FUNCTION:\n(u0, !plant_trampled&!side_breach&top_breach, u1) -> -1\n(u0, !plant_trampled&side_breach&!top_breach, u2) -> -0.5\n(u0, !plant_trampled&side_breach&top_breach, u1) -> -1\n(u0, plant_trampled&!side_breach&!top_breach, u3) -> -0.5\n(u0, plant_trampled&!side_breach&top_breach, u1) -> -1\n(u0, plant_trampled&side_breach&!top_breach, u4) -> -1\n(u0, plant_trampled&side_breach&top_breach, u1) -> -1\n(u2, !plant_trampled&!side_breach&top_breach, u1) -> -1\n(u2, !plant_trampled&side_breach&top_breach, u1) -> -1\n(u2, plant_trampled&!side_breach&!top_breach, u3) -> -0.5\n(u2, plant_trampled&!side_breach&top_breach, u1) -> -1\n(u2, plant_trampled&side_breach&!top_breach, u4) -> -0.5\n(u2, plant_trampled&side_breach&top_breach, u1) -> -1\n(u3, !plant_trampled&!side_breach&top_breach, u1) -> -1\n(u3, !plant_trampled&side_breach&!top_breach, u2) -> -0.5\n(u3, !plant_trampled&side_breach&top_breach, u1) -> -1\n(u3, plant_trampled&!side_breach&top_breach, u1) -> -1\n(u3, plant_trampled&side_breach&!top_breach, u4) -> -0.5\n(u3, plant_trampled&side_breach&top_breach, u1) -> -1\n(u4, !plant_trampled&!side_breach&top_breach, u1) -> -1\n(u4, !plant_trampled&side_breach&top_breach, u1) -> -1\n(u4, plant_trampled&!side_breach&top_breach, u1) -> -1\n(u4, plant_trampled&side_breach&top_breach, u1) -> -1\nPENDING_PROMISES:"
+       }
+      },
+      {
+       "src": "graphs/shop-serve-no-fall-rule.html",
+       "height": 520,
+       "alt": "Reward Machine shop-serve-no-fall-rule: 8 states",
+       "caption": "**`shop-serve-no-fall-rule`** · Shop, today's shop-serve level · 8 states, 57 transitions · no final, no well\nTask: *Whenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move.* The task asks for the fall rule; this machine lacks it, so it has no well. The new plan check fails it on 3 of 3 seeds.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Written by `check/no_fall_rule.py` from `experiments/benchmark/shop/bundles/farm/shop-serve`: its stored clauses minus the fall rule, its recorded switches, the end judgment off.",
+        "code": "# Task (NL)\nWhenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move.\n\n# Clauses and LTLf (experiments/benchmark/shop/bundles/farm/shop-serve minus hard ChainResponse(food_fell, holding_food) (no_fall_rule.py))\nhard Response(client_arrived, order_taken): (G (client_arrived -> (F order_taken)))\nhard Response(order_taken, food_prepared): (G (order_taken -> (F food_prepared)))\nhard Response(food_prepared, order_served): (G (food_prepared -> (F order_served)))\n\n# RM text (graphs/shop-serve-no-fall-rule.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6, u7\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !client_arrived&!food_prepared&order_taken) -> u1\n(u0, !client_arrived&food_prepared&!order_served) -> u2\n(u0, client_arrived&!food_prepared&!order_taken) -> u3\n(u0, client_arrived&!food_prepared&order_taken) -> u1\n(u0, client_arrived&food_prepared&!order_served&!order_taken) -> u4\n(u0, client_arrived&food_prepared&!order_served&order_taken) -> u2\n(u0, client_arrived&food_prepared&order_served&!order_taken) -> u3\n(u1, !client_arrived&food_prepared&!order_served) -> u2\n(u1, !client_arrived&food_prepared&order_served) -> u0\n(u1, client_arrived&!food_prepared&!order_taken) -> u5\n(u1, client_arrived&food_prepared&!order_served&!order_taken) -> u4\n(u1, client_arrived&food_prepared&!order_served&order_taken) -> u2\n(u1, client_arrived&food_prepared&order_served&!order_taken) -> u3\n(u1, client_arrived&food_prepared&order_served&order_taken) -> u0\n(u2, !client_arrived&!food_prepared&!order_served&order_taken) -> u6\n(u2, !client_arrived&!food_prepared&order_served&!order_taken) -> u0\n(u2, !client_arrived&!food_prepared&order_served&order_taken) -> u1\n(u2, !client_arrived&food_prepared&order_served) -> u0\n(u2, client_arrived&!food_prepared&!order_served&!order_taken) -> u4\n(u2, client_arrived&!food_prepared&!order_served&order_taken) -> u6\n(u2, client_arrived&!food_prepared&order_served&!order_taken) -> u3\n(u2, client_arrived&!food_prepared&order_served&order_taken) -> u1\n(u2, client_arrived&food_prepared&!order_served&!order_taken) -> u4\n(u2, client_arrived&food_prepared&order_served&!order_taken) -> u3\n(u2, client_arrived&food_prepared&order_served&order_taken) -> u0\n(u3, !food_prepared&order_taken) -> u1\n(u3, food_prepared&!order_served&!order_taken) -> u4\n(u3, food_prepared&!order_served&order_taken) -> u2\n(u3, food_prepared&order_served&order_taken) -> u0\n(u4, !food_prepared&!order_served&order_taken) -> u6\n(u4, !food_prepared&order_served&!order_taken) -> u3\n(u4, !food_prepared&order_served&order_taken) -> u1\n(u4, food_prepared&!order_served&order_taken) -> u2\n(u4, food_prepared&order_served&!order_taken) -> u3\n(u4, food_prepared&order_served&order_taken) -> u0\n(u5, !food_prepared&order_taken) -> u1\n(u5, food_prepared&!order_served&!order_taken) -> u4\n(u5, food_prepared&!order_served&order_taken) -> u2\n(u5, food_prepared&order_served&!order_taken) -> u3\n(u5, food_prepared&order_served&order_taken) -> u0\n(u6, !client_arrived&!food_prepared&order_served) -> u1\n(u6, !client_arrived&food_prepared&!order_served) -> u2\n(u6, !client_arrived&food_prepared&order_served) -> u0\n(u6, client_arrived&!food_prepared&!order_served&!order_taken) -> u7\n(u6, client_arrived&!food_prepared&order_served&!order_taken) -> u5\n(u6, client_arrived&!food_prepared&order_served&order_taken) -> u1\n(u6, client_arrived&food_prepared&!order_served&!order_taken) -> u4\n(u6, client_arrived&food_prepared&!order_served&order_taken) -> u2\n(u6, client_arrived&food_prepared&order_served&!order_taken) -> u3\n(u6, client_arrived&food_prepared&order_served&order_taken) -> u0\n(u7, !food_prepared&!order_served&order_taken) -> u6\n(u7, !food_prepared&order_served&!order_taken) -> u5\n(u7, !food_prepared&order_served&order_taken) -> u1\n(u7, food_prepared&!order_served&!order_taken) -> u4\n(u7, food_prepared&!order_served&order_taken) -> u2\n(u7, food_prepared&order_served&!order_taken) -> u3\n(u7, food_prepared&order_served&order_taken) -> u0\nREWARD_FUNCTION:\n(u0, !client_arrived&!food_prepared&order_taken, u1) -> -2\n(u0, !client_arrived&food_prepared&!order_served, u2) -> -1\n(u0, client_arrived&!food_prepared&!order_taken, u3) -> -3\n(u0, client_arrived&!food_prepared&order_taken, u1) -> -2\n(u0, client_arrived&food_prepared&!order_served&!order_taken, u4) -> -4\n(u0, client_arrived&food_prepared&!order_served&order_taken, u2) -> -1\n(u0, client_arrived&food_prepared&order_served&!order_taken, u3) -> -3\n(u1, !client_arrived&food_prepared&!order_served, u2) -> 1\n(u1, !client_arrived&food_prepared&order_served, u0) -> 2\n(u1, client_arrived&!food_prepared&!order_taken, u5) -> -3\n(u1, client_arrived&food_prepared&!order_served&!order_taken, u4) -> -2\n(u1, client_arrived&food_prepared&!order_served&order_taken, u2) -> 1\n(u1, client_arrived&food_prepared&order_served&!order_taken, u3) -> -1\n(u1, client_arrived&food_prepared&order_served&order_taken, u0) -> 2\n(u2, !client_arrived&!food_prepared&!order_served&order_taken, u6) -> -2\n(u2, !client_arrived&!food_prepared&order_served&!order_taken, u0) -> 1\n(u2, !client_arrived&!food_prepared&order_served&order_taken, u1) -> -1\n(u2, !client_arrived&food_prepared&order_served, u0) -> 1\n(u2, client_arrived&!food_prepared&!order_served&!order_taken, u4) -> -3\n(u2, client_arrived&!food_prepared&!order_served&order_taken, u6) -> -2\n(u2, client_arrived&!food_prepared&order_served&!order_taken, u3) -> -2\n(u2, client_arrived&!food_prepared&order_served&order_taken, u1) -> -1\n(u2, client_arrived&food_prepared&!order_served&!order_taken, u4) -> -3\n(u2, client_arrived&food_prepared&order_served&!order_taken, u3) -> -2\n(u2, client_arrived&food_prepared&order_served&order_taken, u0) -> 1\n(u3, !food_prepared&order_taken, u1) -> 1\n(u3, food_prepared&!order_served&!order_taken, u4) -> -1\n(u3, food_prepared&!order_served&order_taken, u2) -> 2\n(u3, food_prepared&order_served&order_taken, u0) -> 3\n(u4, !food_prepared&!order_served&order_taken, u6) -> 1\n(u4, !food_prepared&order_served&!order_taken, u3) -> 1\n(u4, !food_prepared&order_served&order_taken, u1) -> 2\n(u4, food_prepared&!order_served&order_taken, u2) -> 3\n(u4, food_prepared&order_served&!order_taken, u3) -> 1\n(u4, food_prepared&order_served&order_taken, u0) -> 4\n(u5, !food_prepared&order_taken, u1) -> 3\n(u5, food_prepared&!order_served&!order_taken, u4) -> 1\n(u5, food_prepared&!order_served&order_taken, u2) -> 4\n(u5, food_prepared&order_served&!order_taken, u3) -> 2\n(u5, food_prepared&order_served&order_taken, u0) -> 5\n(u6, !client_arrived&!food_prepared&order_served, u1) -> 1\n(u6, !client_arrived&food_prepared&!order_served, u2) -> 2\n(u6, !client_arrived&food_prepared&order_served, u0) -> 3\n(u6, client_arrived&!food_prepared&!order_served&!order_taken, u7) -> -3\n(u6, client_arrived&!food_prepared&order_served&!order_taken, u5) -> -2\n(u6, client_arrived&!food_prepared&order_served&order_taken, u1) -> 1\n(u6, client_arrived&food_prepared&!order_served&!order_taken, u4) -> -1\n(u6, client_arrived&food_prepared&!order_served&order_taken, u2) -> 2\n(u6, client_arrived&food_prepared&order_served&order_taken, u0) -> 3\n(u7, !food_prepared&!order_served&order_taken, u6) -> 3\n(u7, !food_prepared&order_served&!order_taken, u5) -> 1\n(u7, !food_prepared&order_served&order_taken, u1) -> 4\n(u7, food_prepared&!order_served&!order_taken, u4) -> 2\n(u7, food_prepared&!order_served&order_taken, u2) -> 5\n(u7, food_prepared&order_served&!order_taken, u3) -> 3\n(u7, food_prepared&order_served&order_taken, u0) -> 6"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "evidence",
+   "title": "Evidence, rerun and code",
+   "blocks": [
+    {
+     "type": "list",
+     "items": [
+      "**Machines:** `evidence/bundles/<name>/` (manifest, machine, labeling, state descriptions) for the ten bundles the page uses; `evidence/machines.out`, what `check/machines.py` prints; `graphs/`, eleven machines as live HTML, SVG and RM text.",
+      "**Cards:** `evidence/cards/`, the round 6, round 7 and probe cards. The four shop levels' cards are `experiments/benchmark/shop/tasks.json`.",
+      "**Plan pay:** `evidence/part1-rounds.json`, `evidence/part2-before.json`, `evidence/part2-after.json`, `evidence/plan-pay-b8b.json`, `evidence/pay-table.out`.",
+      "**Sweeps:** `evidence/sweeps.out` (md5 of every sweep output and level machine, before and after) and `evidence/promise-sweep-compare.out`.",
+      "**Runs:** `evidence/runs/<run>-s<seed>/seed*/` with `judge.json`, `test.json`, `summary.json`, `config.yaml` and `eval.csv` for the 30 runs of the page; `evidence/runs.out`; `evidence/configs/` and `evidence/logs/` for the six runs of 2026-11-20; `evidence/gate/`.",
+      "**Diagnosis:** `evidence/diagnosis/` (random play, trained agents, scripted plans) and `evidence/fall-rate.out`.",
+      "**Plan check:** `evidence/plan-check/` (before and after, stored and with the end judgment off), `evidence/plan-check-off.out`, `evidence/plan-check-stored.out`, `evidence/no-fall-rule.out`.",
+      "**Not copied:** the agent traces (14 MB) and `episodes.csv` (0.8 MB a seed) stay in the run folders of the `tp-shop-well` worktree (`outputs/runs/`); the sweep outputs (6 MB and 4.4 MB) and the eight level bundles (8 MB a side) stay in the plan folder's `shop-well/`; no model weights.",
+      "**Limits:** the page quotes seed 1 of the card's event seeds; seeds 2 and 3 are in the records. The end-judgment-off plan check rebuilds each bundle with today's compiler, and the rebuild with the recorded switches does not give back the stored text of any no-goal bundle (\"rebuild control differs\" on every row). Rounds 6 and 7 trained with a -5 time-limit charge, today's runs with 0. The chain sweep also reads the main checkout's local `outputs/` bundles, which Git does not keep, and the trace bank the card sweep ran on was not recorded, so their md5 lines can be matched only on that checkout's state of 2026-11-20."
+     ]
+    },
+    {
+     "type": "text",
+     "text": "**Rerun (from the repository root in RM_RL_env; no model call, no training)**"
+    },
+    {
+     "type": "code",
+     "text": "E=docs/paper/shop-promise-cost\n# the machines: the no-fall-rule build first, then every machine's facts and graphs/<name>.rm\nPYTHONPATH=app python -W ignore $E/check/no_fall_rule.py\nPYTHONPATH=app python -W ignore $E/check/machines.py\nfor m in $E/graphs/*.rm; do PYTHONPATH=app python app/main.py render-rm --rm-file $m --svg-dir ${m%.rm}.svg --html; done\n# served per seed of every run\npython $E/check/runs_table.py\n# Part 1 and Part 2 plan pay (levels builds the eight level bundles into OUT_DIR, about 8 MB)\nPYTHONPATH=app python -W ignore $E/check/plan_pay.py rounds OUT.json\nPYTHONPATH=app python -W ignore $E/check/plan_pay.py levels OUT_DIR OUT.json\npython $E/check/pay_table.py $E/evidence/part2-before.json $E/evidence/part2-after.json\n# before the fix: the two plan_pay.py commands from a checkout of 78c666c\n# sweeps; compare md5sum of the outputs with evidence/sweeps.out\nPYTHONPATH=app OMP_NUM_THREADS=2 python $E/check/chain_sweep.py . OUT.jsonl\nPYTHONPATH=app OMP_NUM_THREADS=2 python $E/check/card_sweep.py TRACE_BANK OUT.jsonl\nPYTHONPATH=app python -W ignore $E/check/promise_sweep.py sweep . OUT.jsonl\nPYTHONPATH=app python -W ignore $E/check/promise_sweep.py compare BEFORE.jsonl AFTER.jsonl\n# Part 4 diagnosis (levels: today, today-noslip, today-nocut, today-fetch, r7)\nPYTHONPATH=app python -W ignore $E/check/diagnose.py random today 1000 OUT.json\nPYTHONPATH=app python -W ignore $E/check/diagnose.py plans today OUT.json\nPYTHONPATH=app python -W ignore $E/check/diagnose.py agent today RUN/agent-traces OUT.json\npython $E/check/fall_rate.py 1000000 RUN_S1/episodes.csv RUN_S2/episodes.csv RUN_S3/episodes.csv\nPYTHONPATH=app python -W ignore $E/check/fetch_variant.py OUT_DIR\n# Part 5 plan check of every committed bundle, stored and with the end judgment off\nPYTHONPATH=app python -W ignore $E/check/plan_check_all.py experiments/benchmark OUT.jsonl\nPYTHONPATH=app python -W ignore $E/check/plan_check_all.py experiments/benchmark OUT-off.jsonl off\npython $E/check/compare_checks.py $E/evidence/plan-check/plan-check-before-off.jsonl $E/evidence/plan-check/plan-check-review-off.jsonl\n# machines.out, runs.out and no-fall-rule.out are written by their scripts; the other .out files\n# were saved with: python $E/check/tee.py OUT.out SCRIPT.py ARGS"
+    },
+    {
+     "type": "text",
+     "text": "Code: commit `a727b2b` (merge `ee9a803`): the well edge price in `_price_edges` (`app/src/compiler/reward_layer.py`), the step-limit checks of train-rl (`app/main.py`, `app/src/arm_fm/environments.py`), the no-goal rule in `app/src/benchmark/plan_check.py`, `app/scripts/ablate_rm.py`, `app/scripts/rebuild_rewards.py`, the shop PPO file `experiments/benchmark/configs/ppo-shop.yaml` and `experiments/benchmark/shop/runs-levels2-5.yaml`, with tests in `tests/test_reward_layer.py` and `tests/test_plan_check.py`. Records: `docs/decisions/arm-fm/rm-execution.md`, `docs/COMPILER_REWARD_DESIGN.md`, `docs/decisions/generation/run-observability.md`."
+    }
+   ]
+  }
+ ]
+}
