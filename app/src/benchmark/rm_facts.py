@@ -128,8 +128,9 @@ def clause_status(stored: list[list[Any]] | None, card: Card) -> str:
     """``exact``, ``also_ok``, ``mismatch`` or ``missing`` for the ``_normalized`` stored clauses.
 
     ``exact`` holds every clause of ``expect`` except the card's ``forced`` ones, which are optional
-    extras: the compiler policy drops orders the world guarantees, so neither keeping nor dropping
-    them counts against the output.
+    extras: neither keeping nor dropping them counts against the output. The current rule keeps a
+    stated order even when the world forces it and never adds an unstated one from environment
+    facts.
     """
     if stored is None:
         return "missing"

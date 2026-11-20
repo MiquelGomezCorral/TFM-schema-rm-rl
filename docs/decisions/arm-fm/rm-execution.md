@@ -32,8 +32,9 @@ without changing how labels, transitions, and rewards are interpreted.
 - Only declared final states accept the task. A machine with no final may declare
   `ACCEPTING_STATES` instead: an episode the environment ends in one of them is accepted
   (`rm_accept`; a success when the run uses `success: rm`), and being there never ends the
-  episode. A compiled machine with a final carries the judgment lines but lists no accepting
-  state (every other state has a hard clause open), so its success still needs the final. A declared rejecting state (`REJECTING_STATES`) marks an irreversible violation;
+  episode. A compiled machine with a final carries the judgment lines (only with the end judgment
+  on, see below) but lists no accepting state (every other state has a hard clause open), so its
+  success still needs the final. A declared rejecting state (`REJECTING_STATES`) marks an irreversible violation;
   RMs without that line (such as ARM-FM paper RMs) have none.
   States remember earlier events; a false proposition now does not erase recorded progress.
   The one exception is a broken soft rule when recurrent soft rules are on: its state takes the
@@ -45,7 +46,10 @@ without changing how labels, transitions, and rewards are interpreted.
   text has a `PENDING_PROMISES` section, that step adds the end judgment: `HARD_FAILED_REWARD`
   times the hard promises still open in the RM state after the step, plus `SOFT_FAILED_REWARD`
   times the soft ones (0 in an accepting state). An RM without that section keeps the flat -5 on
-  a truncated step that did not terminate. An episode the RM ended itself gets neither.
+  a truncated step that did not terminate. An episode the RM ended itself gets neither. A compiled
+  machine carries `ACCEPTING_STATES` and `PENDING_PROMISES` only when it is built with
+  `reward_end_judgment` on, off by default since 2026-11-18 (`deff802`): a machine built with the
+  defaults has neither, so one with no final never reports `rm_accept`.
 - The learner reward follows the run's `reward_source`: `rm` (default) the RM reward only,
   `both` environment + RM reward, `env` no RM at all. `info["env_reward"]` always holds the raw
   environment reward and `info["rm_reward"]` the RM reward, including the time-limit penalty or
@@ -87,16 +91,21 @@ without changing how labels, transitions, and rewards are interpreted.
 - Graph fallback edges must not mutate the input machine, serialized output, or
   execution semantics. An explicit `else` destination and reward must remain intact.
 - The end judgment applies once, only on an episode end the RM did not cause, and only to RMs
-  whose text has `PENDING_PROMISES`: every compiled machine, with or without a final state (a
-  goal is a hard promise). RMs without it, such as imported author bundles and fresh ARM-FM machines, pay the run's
+  whose text has `PENDING_PROMISES`: a compiled machine built with `reward_end_judgment` on, with
+  or without a final state (a goal is a hard promise). RMs without it, such as compiled machines
+  built with the defaults, imported author bundles and fresh ARM-FM machines, pay the run's
   `time_limit_penalty` at the time limit (default -5, the reproduction value; the [thesis
-  benchmark](../benchmark/thesis-benchmark.md) sets 0) and get no end judgment. Test exception: an
-  ablation variant with `reward_end_judgment` off carries none; every non-ablation machine still does.
+  benchmark](../benchmark/thesis-benchmark.md) sets 0) and get no end judgment. Superseded on
+  2026-11-18 by `deff802` (the end judgment off by default): "every compiled machine" carries it,
+  with the "Test exception: an ablation variant with `reward_end_judgment` off carries none; every
+  non-ablation machine still does."
 - The compiler never removes states or transitions on environment facts. The critic judges every
   clause against the environment file (`## Constraints`, the truth table, what the agent can and
   cannot do) and rejects a clause that rests on an event that cannot occur there; the whole flow
-  then runs again with a new clause set. An order the task states stays even when the environment
-  guarantees it. When the critic doubts, the clause stays. Spare states are accepted: they cost
+  then runs again with a new clause set. An order the task states stays and is required even when
+  the environment guarantees it: the critic rejects a set that leaves out its `Precedence` (prompts
+  since `42003cf`). An order the task does not state is never added from environment facts. When
+  the critic doubts, the clause stays. Spare states are accepted: they cost
   nothing in learning, while a wrong cut fails silently (the machine keeps its state and pays 0).
 
 ## Rationale and tradeoffs
@@ -226,7 +235,8 @@ each is a gap to close when a card needs it.
   leaves, the same counts `PENDING_PROMISES` holds, so breaking a rule always costs more than
   timing out in that state. This solves the disclosed corner where idling with two hard promises
   open (-2) cost more than a hard break (-1). The number is in the edge's reward, so the runtime
-  does not change and the well adds no charge at the end (user decision).
+  does not change and the well adds no charge at the end (user decision). Since 2026-11-18 that end
+  charge on the well edge is off by default with the end judgment (see below).
 - 2026-11-16, user-approved (D4 picked 2026-11-15 20:27; go on 2026-11-16 00:13, "okey add the D4
   thing, like is having a constant -0.01 on each step, right? either do something or get
   penalized", and 00:16, "ok go with it"): a setting, off by default (`--promise-cost`,
@@ -246,7 +256,8 @@ each is a gap to close when a card needs it.
   (default -0.5, so reproduction runs keep it); the thesis benchmark sets 0 for ARM-FM machines,
   as the ARM-FM paper pays nothing there. FARM's end judgment is unchanged (user decision).
 - 2026-11-12: An ablation variant with `reward_end_judgment` off carries no end judgment, as a test
-  exception; every non-ablation machine keeps it (user).
+  exception; every non-ablation machine keeps it (user). Superseded on 2026-11-18: the end judgment
+  is off by default, so a machine built with the defaults carries none either.
 - 2026-11-12: Kept rejecting an ARM-FM reward row on an undeclared transition; the parser error is the
   next ARM-FM round's feedback (user).
 - 2026-11-15, user picks of the process audit: recorded three known limits of the chain-weighted
@@ -315,3 +326,11 @@ each is a gap to close when a card needs it.
 - 2026-11-20 (user): the critic no longer rejects a clause for restating an order the environment
   guarantees; a task-stated order stays and is required (see [task and RM
   identity](task-and-rm-identity.md)).
+- 2026-11-20: Record brought up to date with `deff802` (2026-11-18): the end judgment, its
+  accepting states and the owed charge on the well edges are off by default (`reward_end_judgment`),
+  so a compiled machine built with the defaults pays the run's `time_limit_penalty` like an author
+  bundle. A hard and a soft copy of one rule can then compile to the same machine (`keygift-hard`
+  and `keygift-soft`); only `reward_promise_cost`, off by default, separates them. Probe of
+  2026-11-20: KeyGift's hard rule held on 3 of 3 seeds with the promise cost on and off. Also: the
+  critic rejects a set that drops a stated order, and an unstated order is never added from
+  environment facts (prompts since `42003cf`).

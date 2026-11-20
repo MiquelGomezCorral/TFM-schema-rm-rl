@@ -761,7 +761,7 @@ class EngineTests(unittest.TestCase):
             subprocess.CompletedProcess(["pi"], 0, stdout=event(critic), stderr=""),
         ]
 
-        engine = OpenCodeEngine(ENVIRONMENT, "opencode-go/mimo-v2.5")
+        engine = OpenCodeEngine(ENVIRONMENT, "opencode-go/mimo-v2.5", reasoning="none")
         self.assertEqual(engine.propose_task("Finish")[0].normalized_clause, "finish")
         self.assertTrue(engine.review_candidate("Finish", proposal, "REWARD_MACHINE:", ()).accepted)
         command = run.call_args_list[0].args[0]

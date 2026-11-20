@@ -67,13 +67,49 @@ thing whichever arm produced it.
 - **Ablation.** Six switches each turn off one FARM reward part: progress, well, soft break, soft
   pending, end judgment, and the recurrent soft penalty. Completion is never turned off. Turning off
   the recurrent penalty changes the machine's structure. A part the task does not contain makes that
-  switch a documented no-op, which is not trained.
-- **Time-limit asymmetry.** FARM machines charge the items still open at any episode end; ARM-FM
-  machines get 0 at the time limit, as in the ARM-FM paper. Every results table and page says so.
+  switch a documented no-op, which is not trained. The end judgment is off by default since
+  2026-11-18 (`deff802`), so its switch is a no-op on a machine built with the defaults (`ablate-rm`
+  names it).
+- **Time-limit asymmetry.** Since 2026-11-18 (`deff802`) the end judgment and the owed charge on the
+  well edges are off by default (`reward_end_judgment`), so a FARM machine built with the defaults
+  charges nothing for the items still open at an episode end. Benchmark runs set
+  `time_limit_penalty` to 0 for every RM run (`RM_TIME_LIMIT_PENALTY` in `run_suite.py`), so with
+  the defaults FARM and ARM-FM machines both get 0 at the time limit. FARM bundles stored before
+  that date still carry the judgment; they are provisional (see Provenance). With the end charge off,
+  a hard and a soft copy of one rule can compile to the same machine: `keygift-hard` and
+  `keygift-soft` do, and only `reward_promise_cost` (off by default) separates them. Probe of
+  2026-11-20: KeyGift's hard rule held on 3 of 3 seeds with the promise cost on and with it off.
+  Since 2026-11-20 (user) every results table states how its runs pay a time-out (`time_out_line`
+  in `aggregate_suite.py`): with the defaults, "neither method is charged when time runs out"; a
+  run whose machine carries an end judgment, or whose penalty is not 0, is named with what it paid.
+  Open: the replay page note (`ASYMMETRY_NOTE` in `traces.py`) still states the old asymmetry.
+  Until 2026-11-18 (superseded): FARM machines charge the items still open at any
+  episode end; ARM-FM machines get 0 at the time limit, as in the ARM-FM paper. Every results table
+  and page says so.
 - **Cross-critic.** Each pipeline's critic also judges the other pipeline's machines. The two
   directions are reported apart, never pooled, each with a note on what its critic could see.
 - **Attempts.** Both pipelines get up to 10 reward-machine generation attempts, the first included.
   Labeling, descriptions and FARM tagging keep their own limits.
+- **Reasoning level.** The generator and the critic always run at the same reasoning level, and
+  every bundle's stamp records it. The default is `max` since 2026-11-20 (user: "max is still cheap
+  enough to use it. dont care about the speed. users wont run this as much as we do"); it was
+  `none` before.
+- **Seeds.** Every training test runs seeds 1 to 3, forced-start cards included: the final
+  `runs.yaml` of every suite says `seeds: [1, 2, 3]` since 2026-11-20 (`ab27c07`, user rule). The
+  pilot and tuning runs keep their own seeds.
+- **Which cards train.** A card that an idle agent passes, or whose goal already forces its rule,
+  does not train (`train: false`); its rule is tested on a card where the trigger comes by itself
+  (the forcing suite, a forced-start copy, the siren room). The card fixes of 2026-11-20
+  (`ab27c07`) stopped `cx-rules-only`, `tpl-absence-1-nogoal`, `tpl-response-1-nogoal`,
+  `tpl-responded-existence-1-nogoal`, `tpl-responded-existence-1-goal`, `tpl-existence-two-1-goal`
+  and `tpl-responded-existence-1-nogoal-forced`, and started `tpl-responded-existence-2-nogoal` and
+  the new `tpl-existence-two-4-goal` and `tpl-responded-existence-4-goal`. Each card's `notes` and
+  its suite README give the reason.
+- **Stated orders.** Since 2026-11-20 (user) every order the task states is required, even when the
+  level already forces it: FARM's generator writes its `Precedence`, and FARM's critic rejects a set
+  that leaves it out (prompts since `42003cf`). A card answer that drops a stated clause or order is
+  no longer an `also_ok` answer (`ab27c07`). An order the task does not state is never added from
+  environment facts.
 - **Labeling repair.** Before any repair, `repair-labeling` gives each bundle one class from replays of
   its card's traces: `missing`, `load`, `crash`, `wrong` or `ok`. The traces are the card's plans
   and, for the four MiniGrid envs, seeded random walks on layouts the plans never use (user, 2026-11-16: "replay
@@ -114,7 +150,8 @@ thing whichever arm produced it.
   machines: plain world facts, no rule names, machine examples or hints toward an expected machine.
   FARM's generator prompt may gain general, environment-agnostic rules and examples before the
   method freeze; each change and its date are recorded here (2026-11-16: one trigger followed by
-  ordered steps becomes a chain of Responses) (user, 2026-11-16).
+  ordered steps becomes a chain of Responses; 2026-11-20: a stated order keeps its `Precedence`,
+  see Stated orders) (user, 2026-11-16).
 - **One-hot machine state.** `rm_state_encoding: one_hot` gives the learner the machine state as one
   slot per state instead of the text embedding. It is a diagnostic learner input, not an arm: its
   runs are labeled one-hot and never pooled with embedding runs (user, 2026-11-16).
@@ -141,7 +178,11 @@ thing whichever arm produced it.
   agent starts holding the box and it falls at a seeded step from 2 to 8, whatever the agent does: the
   drop action does nothing before that fall, and the fall turns the agent to face the box.
   The machine is not asked to reward the first pickup; the environment enforces it. The carry cards
-  keep the wording, clauses and `train` flags of their originals, and the originals stay as they are.
+  keep the wording and clauses of their originals, and the originals stay as they are. Trained:
+  `tpl-chain-response-1-goal-carry`, `tpl-chain-response-1-nogoal-carry` and `cx-box-carry`. Their
+  originals `tpl-chain-response-1-goal` and `-1-nogoal` stopped training on 2026-11-19 (a fall in the
+  plain service room does not turn the agent, so the next-move rule is unfair there); `cx-box` still
+  trains. Until 2026-11-19 (superseded): the carry cards keep the `train` flags of their originals.
 - **Forced cards.** Seed-1 judging with the empty-pass check showed two trained cards whose rule never
   triggered, so doing nothing passed: `tpl-response-1-nogoal` (`Response(blocker_moved, has_door_key)`,
   no-RM judged 1.00, non-empty 0.00) and `tpl-responded-existence-1-nogoal`
@@ -150,12 +191,17 @@ thing whichever arm produced it.
   whose environment starts the episode with the trigger already true: `MiniGrid-BlockedUnlockPickup-Cleared-v0` (the ball starts away from the door, so
   `blocker_moved` is true at the first step) and `MiniGrid-UnlockPickup-KeyHeld-v0` (the agent starts
   holding the matching key, and `drop` does nothing on the first step). The environment enforces the
-  trigger, not the machine; the forced cards keep the wording, clause, paraphrases and `train` flags of
-  their originals, and the originals stay as they are. Only cards whose rule seed 1 showed untested get a
+  trigger, not the machine; the forced cards keep the wording, clause and paraphrases of their
+  originals, and the originals stay as they are. Only cards whose rule seed 1 showed untested get a
   forced version. The forced cards give the trigger at reset, so they test keeping an obligation, not
-  reacting to an event. Of the forced runs, only `tpl-response-1-nogoal-forced` seed 1 trains (3 arms),
-  labeled "trigger given"; the runs that had not started were dropped (user, 2026-11-14). Reactive cards,
-  where the trigger happens during the episode, are proposed as the real test of conditional rules.
+  reacting to an event. Of the forced cards, only `tpl-response-1-nogoal-forced` trains (3 arms, seeds 1
+  to 3), labeled "trigger given"; the runs that had not started were dropped (user, 2026-11-14). Since
+  2026-11-20 (`ab27c07`) neither original trains (an idle agent passes both), and
+  `tpl-responded-existence-1-nogoal-forced` has `train: false`: `tpl-responded-existence-2-nogoal` (siren
+  room, where the trigger comes during the episode) trains in its place. Until 2026-11-20 (superseded):
+  the forced cards keep the `train` flags of their originals, and only `tpl-response-1-nogoal-forced`
+  seed 1 trains. Reactive cards, where the trigger happens during the episode, are proposed as the real
+  test of conditional rules.
 - **Shop.** The reactive test the forced cards could not give: `MiniGrid-Shop-v0` and
   `MiniGrid-Shop-Pot-v0` (suite `shop`, six cards by level of difficulty, `envs/shop/`, `envs/shop-pot/`).
   A rule "whenever X happens, do Y" passes when X never happens; in the shop X belongs to the world (a
@@ -233,7 +279,9 @@ thing whichever arm produced it.
 - A pipeline failure stays "no data": no arm gets a human fix or retries the others do not get; both
   get the same attempt limit (up to 10).
 - Both pipelines receive the same card wording, environment file, generator and critic.
-- A results table without the time-limit asymmetry line, or with pooled cross-critic numbers, is wrong.
+- A results table that does not state how a time-out is paid for both methods, or with pooled
+  cross-critic numbers, is wrong. Until 2026-11-20 (superseded): "A results table without the
+  time-limit asymmetry line ... is wrong."
 - With every reward switch at its default, the compiler builds one reference machine; a switch set
   away from its default changes it and is recorded in the bundle. Since 2026-11-19 (user) the
   default pay is a soft break cost of 1 with the hard ceiling on: a hard break costs `-(max(10, N*S*(1-g^T)/(1-g)) + 1)`, with `S`
@@ -289,7 +337,8 @@ and a restart is easier to trust.
   `app/src/benchmark/walks.py` makes the random walks and their fresh blocks, and the check's
   `coverage` counts the steps the reference sets each proposition true.
 - `regenerate-labeling` and `generation-table`: the labeling-only rerun and the per-arm acceptance table.
-- `aggregate-suite`: the asymmetry line on every table and per-direction cross-critic summaries.
+- `aggregate-suite`: the time-out line on every table (`time_out_line`, the asymmetry line until
+  2026-11-20) and per-direction cross-critic summaries.
 - Card approval, no human fixes, equal model pairs and the prompt-budget decision are Review-only:
   they are rules about how the experiment is run, which no check can observe.
 
@@ -331,6 +380,7 @@ and a restart is easier to trust.
 - 2026-11-14: Forced runs cut to one (user): the forced cards give the trigger at reset, so they test
   keeping an obligation, not reacting; only `tpl-response-1-nogoal-forced` seed 1 trains (3 arms),
   labeled "trigger given", and reactive cards are proposed as the real test of conditional rules.
+  The seed was superseded on 2026-11-20: it trains on seeds 1 to 3 (see below).
 - 2026-11-14: Cannot-start exception confirmed (user): the judge's rule that reads the run's own machine,
   its episode end and its labeling at reset is needed.
 - 2026-11-14: Shop added (user, after the box and forced cards still let idle agents pass: a level where
@@ -352,3 +402,18 @@ and a restart is easier to trust.
   replay random walks against the reference labels before a labeling counts as ok or fixed"; testing program
   slice `labeling-replay`). The plan check saw only the states the card's plans visit, and a repair was graded
   on the traces that showed its failure.
+- 2026-11-20: Card fixes and seeds (`ab27c07`). Every training test runs seeds 1 to 3, forced-start
+  cards included. A card an idle agent passes, or whose goal forces its rule, stops training; the carry
+  and forced cards no longer share their originals' `train` flags. Stated orders are required, and card
+  answers that drop one left `also_ok` (user, 12:28: "like the task says to get order, do keep it. try to
+  get the LLM to say the right order and all"); FARM's prompts ask for every stated order (`42003cf`).
+- 2026-11-20: Record brought up to date with the end judgment off by default since 2026-11-18
+  (`deff802`): the time-limit asymmetry and the ablation no-op changed, and the KeyGift probe (hard rule
+  held on 3 of 3 seeds with the promise cost on and off) is recorded.
+- 2026-11-20: Default reasoning level `max` for the generator and the critic, which always share one
+  level (user).
+- 2026-11-20: The results-table invariant now asks for the sentence on how a time-out is paid for
+  both methods, not the time-limit asymmetry line, which the end judgment off by default made false
+  (user: "Yes, okay, change the wording"). `aggregate-suite` prints that sentence from each run's
+  machine and the suite's time-limit penalty; the results column `time_limit_asymmetry` and the
+  JSON key `asymmetry` became `time_out`.
