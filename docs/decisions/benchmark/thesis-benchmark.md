@@ -438,3 +438,9 @@ and a restart is easier to trust.
   breaks per episode and the share of episodes with one, for every arm. What counts as one break (it
   lasts while its labels stay as on the break step) is the implementation's reading. Recomputed from
   the saved test traces of the judged runs, with no training.
+- 2026-11-20: What states an order (user): only order words ("then", "after", "before") give an
+  order, and "and" and commas do not, except a compound whose second verb needs the first ("find
+  and acquire the key"). A plain list of facts is one `Existence` per fact, and the ordered chain is
+  also accepted (`also_ok`). `base-unlock-pickup` (with its pilot and smoke copies) and
+  `base-key-corridor` follow it, `tpl-responded-existence-2-goal` requires its "Then" orders, and no
+  card uses `forced` any more; the scorer keeps the field.

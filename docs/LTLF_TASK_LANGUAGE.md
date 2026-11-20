@@ -70,6 +70,15 @@ For each task, the model must:
 5. Refuse when the language is ambiguous, requires an unsupported pattern, or refers
    to an unavailable environment fact.
 
+To get an order between steps, use order words such as "then", "after" and "before": "Acquire the
+matching key, then unlock the door, and then pick up the box in the other room." asks for the key
+before the door and the door before the box. A plain list of facts gives no order: "Acquire the
+matching key, unlock the door, and pick up the designated box in the other room." asks for three
+facts, one `Existence` each (a machine with the ordered chain is also correct there). "And" and
+commas order nothing, except in a compound whose second verb needs the first: "find and acquire the
+key" states that the key is found first. A stated order stays in the machine even when the
+environment already forces it.
+
 Critic prompts receive the original task, each normalized clause, and its grounded
 propositions, canonical LTLf, and reward/violation behavior. This makes interpretation
 errors visible before formal compilation.

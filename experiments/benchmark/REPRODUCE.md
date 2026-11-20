@@ -187,8 +187,9 @@ pilot and its checks, see `experiments/benchmark/configs/dqn.yaml` (`double_q: t
 `learning_starts` 20000, `end_e` 0.05, `batch_size` 128, `buffer_size` 1000000). RM arms set
 `time_limit_penalty: 0.0`.
 
-Time-limit asymmetry: FARM machines charge open items at any end of the episode, ARM-FM machines
-get 0 at the time limit. Read cross-arm return differences with that in mind.
+Time-out: with default settings neither method is charged when time runs out (end judgment off,
+time-limit penalty 0). A FARM machine built with the end judgment on charges open items at any end
+of the episode; `aggregate-suite` prints how each results table's runs pay a time-out.
 
 ### Setup differences between the arms
 
@@ -200,7 +201,7 @@ the paper's setup table:
 | PPO tuning | no tuning check | PPO s07 was tuned on FARM pilot machines (base-doorkey, base-unlock-pickup; fixed layout, layout seed 1): 18 settings on run seeds 1 and 2, then s07 confirmed on seed 3 (3 of 3 seeds solve both cards) | [`docs/paper/x1-ppo-tune`](../../docs/paper/x1-ppo-tune/README.md); on procedural layouts (seeds 1, 21, 41) s07 solves UnlockPickup on 2 of 3. One ARM-FM tuning check on one card is planned. |
 | Labeling | the original labeling | regenerated with the RM-only vocabulary (`33b85dd`) | FARM only. |
 | Code at training | `f2ed884` | `b332ecf` and `9dd59d4` | The audit read the training-side diff as small: `app/src/arm_fm/environments.py` and `runtime.py`, 20 lines added and 8 removed. `git diff f2ed884 b332ecf -- app` lists 32 files, among them the forced-start cards and `service_room.py`. |
-| Time limit | pays 0 | pays the end judgment (-1 per open hard item, -0.5 per soft) | Disclosed above. |
+| Time limit | pays 0 | pays 0 with the default end judgment off (since 2026-11-18); a machine built with it on pays the end judgment (-1 per open hard item, -0.5 per soft) | Disclosed above. |
 | Reward range | no per-step floor: tpl-chain-response-3-nogoal-carry pays -0.3 for every step it spends in `u1` (box down), so after the box falls, 199 idle steps return -59.8 (discounted at 0.99: -25.8); the smallest edge reward is 0 on 53 of the 73 main machines (lowest of all, -10) | bottoms out at -6; the smallest edge reward is -2 to -6 on 37 of the 73 main machines | PPO has no reward normalization. Probe: `reward_range.py`, output `reward_range.out`, in `<git common dir>/agent-memory/plans/testing-program-20261111/slices/audit-docs/`. |
 | Generation checks | the critic sees no compiler warnings, no positive-cycle check; 32 of the 170 bundles have dead or unreachable states | the critic sees compiler warnings, compile fails on a positive reward cycle; 0 of the 163 bundles with a machine have dead states | `app/scripts/generate_rm.py:372`, `app/src/compiler/reward_layer.py:545`. Dead-state counts: `process-audit/probes/scan_machines.out`, in the same `slices/` folder as the probe above (quoted, not rerun). |
 | Generation effort | 515 attempts over 170 bundles, 334 critic rejections, 7 runs not complete (machine not accepted in 10 attempts) | 199 attempts over the 163 bundles with a stamp, 60 critic rejections, 3 runs not complete (2 with no machine, 1 failed at labeling) | See below the table. |
