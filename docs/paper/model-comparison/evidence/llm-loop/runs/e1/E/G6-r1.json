@@ -1,0 +1,65 @@
+{
+ "suite": "templates",
+ "name": "tpl-precedence-2-goal",
+ "task": "Do not drop the key while the door is closed until the door has been opened once. Reach the goal.",
+ "gen": "gpt-6-luna",
+ "critic": "claude-haiku-5-5",
+ "reasoning": "none",
+ "status": "accepted",
+ "error": null,
+ "wall_s": 257.0,
+ "attempts_used": 2,
+ "critic_rejections": 1,
+ "provider_reruns": 0,
+ "calls": 4,
+ "trace": [
+  {
+   "attempt": 1,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Do not lose the key while the door is closed before opening it.\",\n    \"pattern\": \"Absence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"key_lost\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Reach the goal.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"at_goal\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 1,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: the hard Absence(key_lost) bans dropping the key while the door is closed for the whole episode, but the task releases that ban once the door has been opened once ('until the door has been opened once'), and the candidate's own text says 'before opening it'. key_lost is true whenever the key is dropped while door_open is false now, not only before the first opening, and the environment allows re-closing: 'door_open can turn false again: toggling an unlocked door shuts it.' So a run that opens the door, shuts it, and then drops the key fails under this clause, although the task permits it. Replace the hard Absence(key_lost) with a hard Precedence(door_open, key_lost), so key_lost may not happen before door_open has happened. Keep the hard Existence(at_goal) for 'Reach the goal'; the environment already forces the key and the door before the goal, so no other clause is needed."
+   }
+  },
+  {
+   "attempt": 2,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Do not lose the key before the door has been opened once.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"key_lost\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Reach the goal.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"at_goal\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 2,
+   "step": "critic",
+   "value": {
+    "accepted": true,
+    "feedback": "NO CHANGES NEEDED: Precedence(door_open, key_lost) hard bans dropping the key only until the door has first been opened, matching the task's 'until the door has been opened once' wording. Absence(key_lost) would wrongly forbid a drop after the door was opened and shut again. Existence(at_goal) hard covers 'Reach the goal', and no clause goes beyond the task."
+   }
+  }
+ ],
+ "clauses": [
+  [
+   "Precedence",
+   [
+    "door_open",
+    "key_lost"
+   ],
+   "hard"
+  ],
+  [
+   "Existence",
+   [
+    "at_goal"
+   ],
+   "hard"
+  ]
+ ],
+ "texts": [
+  "Do not lose the key before the door has been opened once.",
+  "Reach the goal."
+ ],
+ "machine": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&!door_open&key_lost) -> u1\n(u0, !at_goal&door_open) -> u2\n(u0, at_goal&!door_open&!key_lost) -> u3\n(u0, at_goal&!door_open&key_lost) -> u1\n(u0, at_goal&door_open) -> u3\n(u2, at_goal) -> u3\nREWARD_FUNCTION:\n(u0, !at_goal&!door_open&key_lost, u1) -> -10\n(u0, at_goal&!door_open&!key_lost, u3) -> 11\n(u0, at_goal&!door_open&key_lost, u1) -> -10\n(u0, at_goal&door_open, u3) -> 11\n(u2, at_goal, u3) -> 11\n"
+}

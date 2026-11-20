@@ -1,0 +1,64 @@
+{
+ "suite": "templates",
+ "name": "tpl-precedence-3-goal",
+ "task": "Pick up the box in the other room, but do not drop the key while the door is closed until the door has been opened once.",
+ "gen": "deepseek-v4.1-flash",
+ "critic": "glm-5.3-flash",
+ "reasoning": "medium",
+ "status": "accepted",
+ "error": null,
+ "wall_s": 149.0,
+ "attempts_used": 2,
+ "critic_rejections": 1,
+ "provider_reruns": 0,
+ "calls": 4,
+ "trace": [
+  {
+   "attempt": 1,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Existence(target_picked_up)\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Precedence(door_open,key_lost)\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"key_lost\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 1,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The clause Precedence(door_open, key_lost) is the wrong template for the task phrase 'do not drop the key while the door is closed until the door has been opened once.' The proposition's own description already holds the timing condition \u2014 'key_lost: The agent previously acquired the matching key but is no longer carrying it before opening the door' \u2014 i.e., the event is defined as a drop while the door is still shut. Per the clause language, when the banned event's description already contains the 'while a has not happened' condition, the ban is a plain Absence(b), not a Precedence: 'key_lost' already means 'lost before the door was opened,' so the 'until the door has been opened once' part of the task is encoded in the event itself and needs no separate ordering clause. Replace Precedence(door_open, key_lost) with a hard Absence(key_lost); keep the hard Existence(target_picked_up)."
+   }
+  },
+  {
+   "attempt": 2,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Existence(target_picked_up)\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Absence(key_lost)\",\n    \"pattern\": \"Absence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"key_lost\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 2,
+   "step": "critic",
+   "value": {
+    "accepted": true,
+    "feedback": "NO CHANGES NEEDED: Existence(target_picked_up) is the goal, and Absence(key_lost) captures the ban correctly \u2014 key_lost's own definition (key dropped while door_open is false) already contains the 'while the door is closed before it has been opened' condition, so a plain Absence is right, not a Precedence."
+   }
+  }
+ ],
+ "clauses": [
+  [
+   "Existence",
+   [
+    "target_picked_up"
+   ],
+   "hard"
+  ],
+  [
+   "Absence",
+   [
+    "key_lost"
+   ],
+   "hard"
+  ]
+ ],
+ "texts": [
+  "Existence(target_picked_up)",
+  "Absence(key_lost)"
+ ],
+ "machine": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: u1\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !key_lost&target_picked_up) -> u1\n(u0, key_lost&!target_picked_up) -> u2\n(u0, key_lost&target_picked_up) -> u2\nREWARD_FUNCTION:\n(u0, !key_lost&target_picked_up, u1) -> 11\n(u0, key_lost&!target_picked_up, u2) -> -10\n(u0, key_lost&target_picked_up, u2) -> -10\n"
+}

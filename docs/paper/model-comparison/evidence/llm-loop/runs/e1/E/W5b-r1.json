@@ -1,0 +1,65 @@
+{
+ "suite": "templates",
+ "name": "tpl-precedence-3-goal",
+ "task": "Pick up the box in the other room, but do not drop the key while the door is closed until the door has been opened once.",
+ "gen": "gpt-6-luna",
+ "critic": "claude-haiku-5-5",
+ "reasoning": "none",
+ "status": "accepted",
+ "error": null,
+ "wall_s": 297.4,
+ "attempts_used": 2,
+ "critic_rejections": 1,
+ "provider_reruns": 0,
+ "calls": 4,
+ "trace": [
+  {
+   "attempt": 1,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Pick up the mission's target box.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Never lose the key while the door is closed before it has been opened.\",\n    \"pattern\": \"Absence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"key_lost\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 1,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: Absence(key_lost) is hard and never lifts, but the task lifts the ban: 'do not drop the key while the door is closed until the door has been opened once' allows a drop after the first opening. The environment says door_open can turn false again by toggle, and key_lost is a drop while door_open is currently false, so after the door is opened and shut again, a drop breaks this hard rule and fails a run the task allows. Replace Absence(key_lost) with a hard Precedence with door_open first and key_lost second, so the drop is banned only until the door has been opened. Keep the hard Existence(target_picked_up); it is correct."
+   }
+  },
+  {
+   "attempt": 2,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Pick up the mission's box.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Do not lose the key before the door has first been opened.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"key_lost\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 2,
+   "step": "critic",
+   "value": {
+    "accepted": true,
+    "feedback": "NO CHANGES NEEDED: Existence(target_picked_up) hard is the command to pick up the box, and Precedence(door_open, key_lost) hard is the ban on dropping the key while the door is closed until it has first opened. key_lost is a drop while the door is closed, so the ban lifts after the first opening, which Precedence allows. door_open needs no clause of its own because the constraint that the box cannot be picked up before the door opens already forces it."
+   }
+  }
+ ],
+ "clauses": [
+  [
+   "Existence",
+   [
+    "target_picked_up"
+   ],
+   "hard"
+  ],
+  [
+   "Precedence",
+   [
+    "door_open",
+    "key_lost"
+   ],
+   "hard"
+  ]
+ ],
+ "texts": [
+  "Pick up the mission's box.",
+  "Do not lose the key before the door has first been opened."
+ ],
+ "machine": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u1\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&!key_lost&target_picked_up) -> u1\n(u0, !door_open&key_lost&!target_picked_up) -> u2\n(u0, !door_open&key_lost&target_picked_up) -> u2\n(u0, door_open&!target_picked_up) -> u3\n(u0, door_open&target_picked_up) -> u1\n(u3, target_picked_up) -> u1\nREWARD_FUNCTION:\n(u0, !door_open&!key_lost&target_picked_up, u1) -> 11\n(u0, !door_open&key_lost&!target_picked_up, u2) -> -10\n(u0, !door_open&key_lost&target_picked_up, u2) -> -10\n(u0, door_open&target_picked_up, u1) -> 11\n(u3, target_picked_up, u1) -> 11\n"
+}
