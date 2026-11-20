@@ -1,0 +1,454 @@
+{
+ "title": "Generator prompt loop: the chain form for ordered tasks",
+ "eyebrow": "reward machine generator · branch tp-chain-prompt · 2026-11-19",
+ "subtitle": "A small model turns a task into clause rules. For tasks with ordered steps it wrote one \"must happen\" rule per step. This page shows how the prompts were tuned, version by version, to get the shorter chain form, and how the later pay fix made the two forms price the same.",
+ "sections": [
+  {
+   "id": "result",
+   "title": "What it shows",
+   "blocks": [
+    {
+     "type": "callout",
+     "tone": "info",
+     "title": "In plain words",
+     "text": "Take the task \"Use the key to open the door, then reach the goal.\" The generator model (`deepseek-v4.1-flash`) used to write a \"must happen\" rule (Existence) for every step, next to the order rules (Precedence): form A. The shorter, intended answer is the \"must happen\" rule for the last step plus one order rule per pair: form B, the chain form. Both accept the same runs; form A repeats what the order rules already force, and under the old pay it priced the task differently from form B. We changed the prompts one idea at a time and counted, over many runs, how often the chain form came out and how often a wrong machine came out."
+    },
+    {
+     "type": "stats",
+     "items": [
+      {
+       "value": "52% to 81%",
+       "label": "ordered runs that write the chain form (v0 to v11)",
+       "tone": "ok"
+      },
+      {
+       "value": "40% to 8%",
+       "label": "ordered runs that write one rule per step (form A)",
+       "tone": "ok"
+      },
+      {
+       "value": "14% to 12%",
+       "label": "wrong machines over all runs (18 of 126, then 31 of 252)",
+       "tone": "info"
+      },
+      {
+       "value": "0 lost",
+       "label": "earlier cases that got worse in the final version",
+       "tone": "ok"
+      },
+      {
+       "value": "87 to 141 of 167",
+       "label": "card answers that pass the pay-order check after the later pay fix",
+       "tone": "ok"
+      }
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**Cases.** 42 task cases per version: 29 earlier regression cases, 1 extra, 8 new ordered cases (O1-O8) and 4 guard cards (G1, G2, G4, G7). 14 of them are \"ordered\" (a stated order of steps), which is where the form matters. The fix round adds 4 tasks whose last step is soft (S1-S4, \"... if you can\"). 3 runs per case up to v6, 6 runs from v7.",
+      "**Scoring.** Each run ends in one final clause set. *Chain form (right)*: the card accepts it and no earlier step has its own hard Existence. *Form A*: the card accepts it only because it writes an Existence on an earlier step. *Wrong*: the card rejects it or the run failed. No LLM judges this; the card holds the answer (`check/chain_score.py`).",
+      "**Models.** Generator `deepseek-v4.1-flash`, critic `glm-5.3-flash`, both pinned per run. The compiler (MONA) is the same in every version; only the prompts change.",
+      "**Limit.** The 90% chain target was not reached with the version limit (v7: 75%). After a review of the v7 prompt diff a fix round (v8-v11) followed; v11 is the live prompt. The model drifted between hours: the v7 prompts scored 75.0% in one run and 70.2% in a control an hour later. Treat single moves under about 10 points as noise.",
+      "**Code.** Prompt change: commit `6b28dd0` on `MiquelGomezCorral/tp-chain-prompt`, merged into main as `45c6747` (\"merge: chain-form prompts\"). Pay fix: commit `0ed7052`, merged as `229d176` (\"merge: chain progress and hard-break take-back\"). The prompt diff is `evidence/final.diff`."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "versions",
+   "title": "Version by version",
+   "intro": "Each row changes the prompts and reruns the same cases. \"Form B\" is the chain form, scored over the ordered runs only. \"Cases lost\" are regression cases that fell below 2 of 3 passing runs and 20 points under their earlier rate, as the loop notes record them. Case ids: W and U are earlier task families, O the new ordered tasks, G the guard cards, S the soft last step.",
+   "blocks": [
+    {
+     "type": "text",
+     "heading": "First loop, v0 to v7",
+     "text": "Runs per case: 3 (v7: 6). Ordered runs: 42 (v7: 84)."
+    },
+    {
+     "type": "table",
+     "columns": [
+      "Version",
+      "What changed",
+      "Form B (ordered runs)",
+      "Form A",
+      "Wrong machines",
+      "Cases lost"
+     ],
+     "rows": [
+      [
+       "v0",
+       "Nothing: main prompts on `0389b0b`.",
+       "22 of 42 (52%)",
+       "17 of 42",
+       "18 of 126",
+       "baseline"
+      ],
+      [
+       "v1",
+       "Generator: write the last step's Existence plus one Precedence per pair. Template row and critic example changed to match.",
+       "26 of 42 (62%)",
+       "12 of 42",
+       "13 of 126",
+       "G10 1 of 3"
+      ],
+      [
+       "v2",
+       "Generator last check (drop a redundant Existence). Critic: reject a redundant Existence.",
+       "27 of 42 (64%)",
+       "12 of 42",
+       "12 of 126",
+       "W1b, W2b 1 of 3 (read as noise)"
+      ],
+      [
+       "v3",
+       "Generator goal bullet: only the last step is a goal. \"Do a\" row. Any-order example.",
+       "28 of 42 (67%)",
+       "7 of 42",
+       {
+        "text": "24 of 126",
+        "tone": "warn"
+       },
+       "U2 1 of 3, U4 0 of 3"
+      ],
+      [
+       "v4",
+       "Critic only: a rejection example for a redundant Existence.",
+       {
+        "text": "37 of 42 (88%)",
+        "tone": "ok"
+       },
+       "2 of 42",
+       "15 of 126",
+       "U2, U4 1 of 3"
+      ],
+      [
+       "v5",
+       "Undo the v3 \"do a\" row. Carry row: \"if you reach a\" is Response(a, c) alone.",
+       "28 of 42 (67%)",
+       "8 of 42",
+       "19 of 126",
+       "W1a, W4a, U4, G10 1 of 3"
+      ],
+      [
+       "v6",
+       "Critic goal check: the chain already forces earlier steps. \"b too\" is RespondedExistence.",
+       "32 of 42 (76%)",
+       "5 of 42",
+       {
+        "text": "11 of 126",
+        "tone": "ok"
+       },
+       "none"
+      ],
+      [
+       "v7",
+       "Generator: no Precedence for a step the task never names. Precedence row: forcing runs down a whole chain. Rerun with 6 runs per case.",
+       "63 of 84 (75%)",
+       "11 of 84",
+       "27 of 252 (10.7%)",
+       "W2b 1 of 3 at 3 runs; none pooled with v6"
+      ]
+     ]
+    },
+    {
+     "type": "text",
+     "text": "v4 reached 88% but v5, which only undid one row, fell back to 67%: the critic's acceptance of redundant sets is noisy. Pooled over the last two versions (v6 + v7, 378 runs) the chain form is 95 of 126 ordered runs (75.4%) and wrong is 38 of 378 (10.1%). The earlier n6 prompts, on 357 samples, were wrong 43 times (12.0%) and wrote the chain form in 49% of ordered runs (37 of 75, pooled with v0)."
+    },
+    {
+     "type": "text",
+     "heading": "Fix round, v8 to v11",
+     "text": "After the review of the v7 prompt diff. 6 runs per case, 84 ordered runs."
+    },
+    {
+     "type": "table",
+     "columns": [
+      "Version",
+      "What changed",
+      "Form B (ordered runs)",
+      "Form A",
+      "Wrong machines",
+      "Cases lost"
+     ],
+     "rows": [
+      [
+       "v8",
+       "Soft last step stays soft. One definition of \"lone\". Critic's \"optional change\" wording. Card note.",
+       {
+        "text": "65 of 84 (77%)",
+        "tone": "ok"
+       },
+       "9 of 84",
+       "26 of 252",
+       "U5 7 of 12, G10 6 of 12, W6 5 of 12 after 6 more runs"
+      ],
+      [
+       "v9",
+       "Critic: reject and ask to remove. \"Lone\" defined by contrasts.",
+       {
+        "text": "55 of 84 (65%)",
+        "tone": "bad"
+       },
+       "14 of 84",
+       {
+        "text": "34 of 252",
+        "tone": "bad"
+       },
+       "W4a 3 of 6, U5 3 of 6, W6 1 of 6; reverted to v8"
+      ],
+      [
+       "v10",
+       "v8 minus the \"lone\" item that made the soft ban an order.",
+       "55 of 84 (65%)",
+       "13 of 84",
+       "29 of 252",
+       "none"
+      ],
+      [
+       "v11 (final)",
+       "v10, with a hard Precedence in the two new worked examples.",
+       {
+        "text": "68 of 84 (81%)",
+        "tone": "ok"
+       },
+       {
+        "text": "7 of 84",
+        "tone": "ok"
+       },
+       "31 of 252 (12.3%)",
+       "none (W1b 3 of 6, then 8 of 12)"
+      ]
+     ]
+    },
+    {
+     "type": "text",
+     "text": "Two controls separate the prompts from model drift. v7c reran the v7 prompts on W6, U5 and G10 (6 runs: 4, 5 and 3 passing). v7n reran the v7 prompts on the 14 ordered cases and S1-S4 in the same hour as v10: chain form 59 of 84 (70.2%), against 75.0% earlier. v8 and v10 differ by one sentence, yet moved 12 points; the controls are why the 77% of v8 is not read as the best version, and why v11 is judged on \"none lost\" and the soft-ban fix, not on 81% against 75%."
+    },
+    {
+     "type": "text",
+     "heading": "Soft last step, S1-S4",
+     "text": "6 runs each, 24 runs per row: a hard order into a last step the task makes soft."
+    },
+    {
+     "type": "table",
+     "columns": [
+      "Prompts",
+      "Chain form",
+      "Form A",
+      "Wrong",
+      "What went wrong"
+     ],
+     "rows": [
+      [
+       "v7",
+       "17",
+       "0",
+       "7",
+       "the soft goal written hard (5 of 7)"
+      ],
+      [
+       "v7n (v7 again, later)",
+       "16",
+       "0",
+       "8",
+       "the soft goal written hard (6 of 8)"
+      ],
+      [
+       "v8",
+       "17",
+       "4",
+       "3",
+       ""
+      ],
+      [
+       "v9",
+       "15",
+       "2",
+       "7",
+       ""
+      ],
+      [
+       "v10",
+       "14",
+       "2",
+       "8",
+       ""
+      ],
+      [
+       "v11 (final)",
+       "18",
+       "0",
+       "6",
+       "soft goal made hard 3, hard step left unforced 2, Response 1"
+      ]
+     ]
+    },
+    {
+     "type": "text",
+     "text": "Over the 96 fix-round runs the errors are: soft goal made hard 8, hard step left unforced 9 (7 of them on three-step tasks, with an Existence on the first step), other 7. On the 48 v7 runs: 11, 1, 3. The soft goal made hard fell, a hard step left unforced rose, and S wrong stayed between 3 and 8 of 24: not solved."
+    }
+   ]
+  },
+  {
+   "id": "doorkey",
+   "title": "One task, two forms, one machine",
+   "intro": "The doorkey task, as the generator wrote it before and after the pay fix. The machine's states are the same in all three graphs; the pay on the edges is what differs. Each graph is the live RM component (drag a state, click an edge, Ctrl + scroll to zoom). Open the fold-out for the task, the clauses, the LTLf and the RM text.",
+   "blocks": [
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/old-form-a.html",
+       "height": 520,
+       "alt": "Doorkey machine, form A, before the pay fix",
+       "caption": "**Form A, before the pay fix** · 5 states · final u4 · well u2\nTask: *Use the key to open the door, then reach the goal.* Four hard clauses, one Existence per step. Pays +1 when the key is taken and +11 at the goal: 12.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Main code `45c6747`, the form the n6 prompts usually wrote (v0, run O6-r1).",
+        "code": "# Task (NL)\nUse the key to open the door, then reach the goal.\n\n# Clauses, all hard (form A: one Existence per commanded step next to the Precedence chain)\nExistence(at_goal)\nExistence(has_key)\nPrecedence(door_open, at_goal)\nPrecedence(has_key, door_open)\n\n# LTLf, one per clause\nExistence(at_goal):             (Fat_goal)\nExistence(has_key):             (Fhas_key)\nPrecedence(door_open, at_goal): (((~at_goal)Udoor_open)|(G(~at_goal)))\nPrecedence(has_key, door_open): (((~door_open)Uhas_key)|(G(~door_open)))\n\n# Source: generator loop run v0 / O6-r1 (main prompts), machine as the old compiler wrote it (graphs/old-form-a.rm)\n# Pay on the card's solving plan (19 steps): +1 at step 7 (key), +11 at step 19; total 12 (check/doorkey_forms.py)\n\n# RM text\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u4\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&!door_open&has_key) -> u1\n(u0, !at_goal&door_open&!has_key) -> u2\n(u0, !at_goal&door_open&has_key) -> u3\n(u0, at_goal&!door_open&!has_key) -> u2\n(u0, at_goal&!door_open&has_key) -> u2\n(u0, at_goal&door_open&!has_key) -> u2\n(u0, at_goal&door_open&has_key) -> u4\n(u1, !at_goal&door_open) -> u3\n(u1, at_goal&!door_open) -> u2\n(u1, at_goal&door_open) -> u4\n(u3, at_goal) -> u4\nREWARD_FUNCTION:\n(u0, !at_goal&!door_open&has_key, u1) -> 1\n(u0, !at_goal&door_open&!has_key, u2) -> -10\n(u0, !at_goal&door_open&has_key, u3) -> 1\n(u0, at_goal&!door_open&!has_key, u2) -> -10\n(u0, at_goal&!door_open&has_key, u2) -> -10\n(u0, at_goal&door_open&!has_key, u2) -> -10\n(u0, at_goal&door_open&has_key, u4) -> 12\n(u1, at_goal&!door_open, u2) -> -10\n(u1, at_goal&door_open, u4) -> 11\n(u3, at_goal, u4) -> 11"
+       }
+      },
+      {
+       "src": "graphs/old-form-b.html",
+       "height": 520,
+       "alt": "Doorkey machine, form B, before the pay fix",
+       "caption": "**Form B, before the pay fix** · 5 states · final u4 · well u2\nSame task. Three hard clauses, the chain form. Same states and transitions as form A, but nothing is paid until the goal: 11. A learner got no signal on the way.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Main code `45c6747`, the chain form from the tuned prompts (v7, run O6-r1).",
+        "code": "# Task (NL)\nUse the key to open the door, then reach the goal.\n\n# Clauses, all hard (form B: Existence of the last step plus one Precedence per pair)\nExistence(at_goal)\nPrecedence(door_open, at_goal)\nPrecedence(has_key, door_open)\n\n# LTLf, one per clause\nExistence(at_goal):             (Fat_goal)\nPrecedence(door_open, at_goal): (((~at_goal)Udoor_open)|(G(~at_goal)))\nPrecedence(has_key, door_open): (((~door_open)Uhas_key)|(G(~door_open)))\n\n# Source: generator loop run v7 / O6-r1 (chain-form prompts), machine as the old compiler wrote it (graphs/old-form-b.rm)\n# Pay on the card's solving plan (19 steps): +11 at step 19 only; total 11 (check/doorkey_forms.py)\n\n# RM text\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u4\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&!door_open&has_key) -> u1\n(u0, !at_goal&door_open&!has_key) -> u2\n(u0, !at_goal&door_open&has_key) -> u3\n(u0, at_goal&!door_open&!has_key) -> u2\n(u0, at_goal&!door_open&has_key) -> u2\n(u0, at_goal&door_open&!has_key) -> u2\n(u0, at_goal&door_open&has_key) -> u4\n(u1, !at_goal&door_open) -> u3\n(u1, at_goal&!door_open) -> u2\n(u1, at_goal&door_open) -> u4\n(u3, at_goal) -> u4\nREWARD_FUNCTION:\n(u0, !at_goal&door_open&!has_key, u2) -> -10\n(u0, at_goal&!door_open&!has_key, u2) -> -10\n(u0, at_goal&!door_open&has_key, u2) -> -10\n(u0, at_goal&door_open&!has_key, u2) -> -10\n(u0, at_goal&door_open&has_key, u4) -> 11\n(u1, at_goal&!door_open, u2) -> -10\n(u1, at_goal&door_open, u4) -> 11\n(u3, at_goal, u4) -> 11"
+       }
+      },
+      {
+       "src": "graphs/main-machine.html",
+       "height": 520,
+       "alt": "Doorkey machine on main, identical for both forms",
+       "caption": "**Either form, after the pay fix** · 5 states · final u4 · well u2\nSame task. Form A and form B compile to this one machine: +1 for the key, +1 for the door, +11 at the goal: 13. Each step on the way pays, whatever the model wrote.",
+       "details": {
+        "title": "Task, both clause lists, LTLf and RM text",
+        "text": "Main `9bd6aeb`. The machine text of form A and of form B is byte-identical (`check/doorkey_forms.py` prints `machine texts identical: True`).",
+        "code": "# Task (NL)\nUse the key to open the door, then reach the goal.\n\n# Form A clauses, all hard\nExistence(at_goal), Existence(has_key), Precedence(door_open, at_goal), Precedence(has_key, door_open)\n# Form B clauses, all hard\nExistence(at_goal), Precedence(door_open, at_goal), Precedence(has_key, door_open)\n\n# LTLf of the form B clauses (form A adds (Fhas_key), which the other three already force)\nExistence(at_goal):             (Fat_goal)\nPrecedence(door_open, at_goal): (((~at_goal)Udoor_open)|(G(~at_goal)))\nPrecedence(has_key, door_open): (((~door_open)Uhas_key)|(G(~door_open)))\n\n# Compiled by main `9bd6aeb` (check/doorkey_forms.py): both forms give this exact machine text (graphs/main-machine.rm)\n# Pay on the card's solving plan (19 steps): +1 at step 7 (key), +1 at step 9 (door), +11 at step 19; total 13\n\n# RM text\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u4\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&!door_open&has_key) -> u1\n(u0, !at_goal&door_open&!has_key) -> u2\n(u0, !at_goal&door_open&has_key) -> u3\n(u0, at_goal&!door_open&!has_key) -> u2\n(u0, at_goal&!door_open&has_key) -> u2\n(u0, at_goal&door_open&!has_key) -> u2\n(u0, at_goal&door_open&has_key) -> u4\n(u1, !at_goal&door_open) -> u3\n(u1, at_goal&!door_open) -> u2\n(u1, at_goal&door_open) -> u4\n(u3, at_goal) -> u4\nREWARD_FUNCTION:\n(u0, !at_goal&!door_open&has_key, u1) -> 1\n(u0, !at_goal&door_open&!has_key, u2) -> -10\n(u0, !at_goal&door_open&has_key, u3) -> 2\n(u0, at_goal&!door_open&!has_key, u2) -> -10\n(u0, at_goal&!door_open&has_key, u2) -> -10\n(u0, at_goal&door_open&!has_key, u2) -> -10\n(u0, at_goal&door_open&has_key, u4) -> 13\n(u1, !at_goal&door_open, u3) -> 1\n(u1, at_goal&!door_open, u2) -> -11\n(u1, at_goal&door_open, u4) -> 12\n(u3, at_goal, u4) -> 11"
+       }
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "heading": "Pay on the solving plan",
+     "text": "The card's own solving plan, 19 steps. `check/doorkey_forms.py`, no model call."
+    },
+    {
+     "type": "table",
+     "columns": [
+      "Machine",
+      "Pay per step",
+      "Total"
+     ],
+     "rows": [
+      [
+       "Form A, old code",
+       "step 7: +1 (key), step 19: +11",
+       "12"
+      ],
+      [
+       "Form B, old code",
+       "step 19: +11",
+       "11"
+      ],
+      [
+       {
+        "text": "Form A or form B, main",
+        "tone": "ok"
+       },
+       {
+        "text": "step 7: +1 (key), step 9: +1 (door), step 19: +11",
+        "tone": "ok"
+       },
+       {
+        "text": "13",
+        "tone": "ok"
+       }
+      ]
+     ]
+    },
+    {
+     "type": "text",
+     "text": "The old form B paid nothing before the goal, which the pay-order check below flags as \"started must pay more than not started\". The fix pays each ordered step on the way to the final (chain-weighted progress) and takes the progress back on a hard break, so the choice between A and B no longer changes what a learner is paid. The prompts still ask for form B: it is the shorter set, and the cards list it first."
+    }
+   ]
+  },
+  {
+   "id": "pay",
+   "title": "Pay-order sweep",
+   "intro": "A machine passes the pay-order check when the pay climbs with progress: finished > started > not started >= soft break > hard break (whole-unit pay, gamma 0.99). The sweep runs it on every card answer (the expected one and each also-ok one) and on every stored bundle. MONA only, no model call.",
+   "blocks": [
+    {
+     "type": "table",
+     "columns": [
+      "Code",
+      "Card answers passing",
+      "Stored bundles passing",
+      "What changed"
+     ],
+     "rows": [
+      [
+       "Main `45c6747`, before the pay fix",
+       "87 of 168",
+       "73 of 108",
+       "baseline"
+      ],
+      [
+       "First version of the pay fix (before the corrections)",
+       "126 of 168",
+       "80 of 108",
+       "39 card answers fixed, 0 newly failing; stored: 9 fixed, 2 newly failing"
+      ],
+      [
+       {
+        "text": "Main `9bd6aeb`, with the corrections (clamped refund)",
+        "tone": "ok"
+       },
+       {
+        "text": "141 of 167",
+        "tone": "ok"
+       },
+       {
+        "text": "91 of 108",
+        "tone": "ok"
+       },
+       "cards: 54 fixed, 0 newly failing; stored: 20 fixed, 2 newly failing"
+      ]
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**Card count.** The reworded cards have 167 answers: the old third also-ok of `tpl-precedence-1-goal` became its `expect`. The sweep above compares the 167 answers both commits have.",
+      "**Still failing.** 26 card answers and 17 stored bundles, all with a final and all on \"started must pay more than not started\". That is a false alarm of the check (a tie with idling), postponed, not a wrong machine. The 2 newly failing stored bundles are the same case: `complex/bundles/farm/cx-box` (Existence(holding_box), Response(box_fell, holding_box)) and `templates/bundles/farm/tpl-responded-existence-1-nogoal~p2` (Existence(door_open), RespondedExistence(has_door_key, door_open)); each used to open for -1 and now opens for 0.",
+      "**Reading the 87 to 126 figure.** It is the first version of the fix; the final main is 87 to 141. Both are on this page so neither gets quoted alone."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "evidence",
+   "title": "Evidence, rerun and code",
+   "blocks": [
+    {
+     "type": "list",
+     "items": [
+      "**`evidence/runs/<version>.json`.** The final clause set and the counts of every generator run, one file per version (v0 to v11, plus the controls v7c, v7n and the soft cases v7s to v10s): 2,430 runs, slimmed from the loop's records (the model traces and the `_work` folders are not copied).",
+      "**Rescore.** `CC_ROOT=<repo root> PYTHONPATH=<repo root>/app python check/rescore.py v0=v0 v7=v7 v11=v11 --first=6 --no-soft --base=v0`. It runs the original `check/chain_score.py` on the slim records (v0 22 of 42, v7 63 of 84, v11 68 of 84). `--soft-only` gives the S1-S4 table, and `v6v7=v6,v7` pools two versions. It needs the repository's `experiments/benchmark` cards at `CC_ROOT` (cards at `9bd6aeb` score the same).",
+      "**`check/` and `evidence/cards/`.** The scorer (`chain_score.py`), the case list (`cases.py`), the hand judgments of failing sets (`judgments.json`) and the soft-case cards (`evidence/cards/local-soft`). The run scripts that called the models are not kept.",
+      "**`evidence/prompts/v0`, `evidence/prompts/v11`, `evidence/final.diff`.** The prompts before and after, and the diff that was merged. `evidence/rounds.md` and `evidence/status.md` are the loop's own notes, round by round.",
+      "**Doorkey graphs.** `graphs/` holds each machine as live HTML, SVG and RM text. `check/doorkey_forms.py` (run from the repo root with `PYTHONPATH=app`) compiles both forms with the code on the path and prices the solving plan; its output is in `evidence/doorkey-pay.txt`.",
+      "**Pay-order sweep.** `check/sweep.py` is the sweep (run it with `PYTHONPATH=<app of the code under test> python check/sweep.py <repo root> out.jsonl`; the old code is `git archive 45c6747 app experiments/benchmark`). `evidence/pay-order-sweep.json` keeps one verdict per answer before and after; `python check/sweep_summary.py` prints the counts above (`evidence/pay-order-sweep.txt`).",
+      "**Not copied.** The 170 MB of full generator and critic traces under `outputs/chain-loop/` (gitignored in the loop's worktree), and the n6 earlier samples, which sit in other worktrees; their totals are quoted from `evidence/rounds.md`.",
+      "**Code.** Branch `MiquelGomezCorral/tp-chain-prompt`, prompt commit `6b28dd0`, in main as merge `45c6747`; pay fix `0ed7052`, in main as merge `229d176`."
+     ]
+    }
+   ]
+  }
+ ]
+}

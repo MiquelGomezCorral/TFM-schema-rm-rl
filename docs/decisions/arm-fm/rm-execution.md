@@ -44,7 +44,7 @@ without changing how labels, transitions, and rewards are interpreted.
   and its time limit, for every RM-wrapped run. When the environment ends the episode and the RM
   text has a `PENDING_PROMISES` section, that step adds the end judgment: `HARD_FAILED_REWARD`
   times the hard promises still open in the RM state after the step, plus `SOFT_FAILED_REWARD`
-  times the soft ones (0 in an accepting state). An RM without that section keeps the flat -0.5 on
+  times the soft ones (0 in an accepting state). An RM without that section keeps the flat -5 on
   a truncated step that did not terminate. An episode the RM ended itself gets neither.
 - The learner reward follows the run's `reward_source`: `rm` (default) the RM reward only,
   `both` environment + RM reward, `env` no RM at all. `info["env_reward"]` always holds the raw
@@ -89,7 +89,7 @@ without changing how labels, transitions, and rewards are interpreted.
 - The end judgment applies once, only on an episode end the RM did not cause, and only to RMs
   whose text has `PENDING_PROMISES`: every compiled machine, with or without a final state (a
   goal is a hard promise). RMs without it, such as imported author bundles and fresh ARM-FM machines, pay the run's
-  `time_limit_penalty` at the time limit (default -0.5, the reproduction value; the [thesis
+  `time_limit_penalty` at the time limit (default -5, the reproduction value; the [thesis
   benchmark](../benchmark/thesis-benchmark.md) sets 0) and get no end judgment. Test exception: an
   ablation variant with `reward_end_judgment` off carries none; every non-ablation machine still does.
 - The compiler never removes states or transitions on environment facts. The critic judges every
@@ -118,17 +118,26 @@ each is a gap to close when a card needs it.
 
 - **A rule closed (or opened) by either of two events hands off to nobody.** `_forced_propositions`
   intersects the forced propositions over all closing (and opening) edges
-  (`app/src/compiler/reward_layer.py:267-298`), so `G(a -> F(b | c))` forces nothing, gets weight 1,
+  (`app/src/compiler/reward_layer.py:359-390`), so `G(a -> F(b | c))` forces nothing, gets weight 1,
   and its middle steps pay 0. The function's docstring states it. No current card has such a rule.
   Fix (per-edge-pair detection) when a card needs it.
-- **A step that only a "before" rule names is never paid.** `Precedence` is satisfied from the
-  start, so it owes 0: accepting states owe 0 (`reward_layer.py:263`) and violated states owe 0
-  (`:332`). The hand-off does not cover it. Whether such a step pays depends on the generator
-  also writing an `Existence` for it. 6 of the 71 FARM main machines that store their clauses (the
-  73 FARM bundles without a `~pN` paraphrase suffix, minus the 2 pilot bundles, which store none):
-  base-key-corridor (`target_room_entered`), tpl-precedence-1-goal (`blocker_moved`),
-  tpl-precedence-1-nogoal (`switch_toggled`), tpl-precedence-2-goal and tpl-precedence-2-nogoal
-  (`door_open`), tpl-precedence-3-nogoal (`blocker_moved`).
+- **A step that only a "before" rule names can still go unpaid** (user-approved 2026-11-20).
+  `Precedence` is satisfied from the start, so the per-clause measure owes 0 for it: accepting
+  states owe 0 (`reward_layer.py:355`) and violated states owe 0 (`:424`). The hand-off does not
+  cover it. Since 2026-11-19 a machine with a final reads its hard stages from the fewest events
+  still needed to reach the final (`_events_to_final`), so a step on a path to the final pays. Left:
+  a machine with no final, which keeps the per-clause measure, and a step that no path to the final
+  needs; whether that step pays then depends on the generator also writing an `Existence` for it.
+  6 of the 71 FARM main machines that store their clauses (the 73 FARM bundles without a `~pN`
+  paraphrase suffix, minus the 2 pilot bundles, which store none) had this shape. 3 now pay the
+  step (reward +1 when only that event happens): base-key-corridor (`target_room_entered`),
+  tpl-precedence-1-goal (`blocker_moved`) and tpl-precedence-1-nogoal (`switch_toggled`, whose
+  stored machine has a final through `Existence(at_exit)`). 3 still pay 0: tpl-precedence-2-nogoal
+  (`door_open`) and tpl-precedence-3-nogoal (`blocker_moved`), with no final, and
+  tpl-precedence-2-goal (`door_open`), whose final needs only `at_goal`. Checked 2026-11-20 on main
+  `9bd6aeb` by running the machines the compiler builds from those stored clauses (no model call).
+  Fix when a card needs it: an `Existence` per step in the generated clauses, or the machine's
+  distance to the final for a machine with no final.
 - **A soft break forgets a trigger on the break step.** Since 2026-11-18 (commit `deff802`) a broken
   soft clause's debt is not refunded, so the break step pays minus the break cost at any chain
   weight, and not reacting always costs (weight + 1) more than reacting. Left: a re-armed soft
@@ -260,6 +269,25 @@ each is a gap to close when a card needs it.
   `check failed: <error>` with a warning). Why: with the old defaults (soft break cost 5, flat -10) the
   worst stream of soft breaks cost more than one hard break, so breaking the hard rule paid better:
   the forcing card `lanes-rules` paid -475 for that stream against -10
+  ([reward layer](../../COMPILER_REWARD_DESIGN.md)).
+- 2026-11-19, user-approved 2026-11-20 (focus: a required chain "a, then b, then c" paid 0, 0, 0 and
+  everything at the goal; rule: "do not add a new reward term, stage or switch on top", read the
+  distance from the machine, the same idea as the soft `Absence` fold): in a machine with a final,
+  a hard stage pays `PROGRESS_REWARD` times the fewest events still needed to reach a final from
+  the source state, minus the same count from the destination (`_events_to_final`, `_progress`,
+  `reward_layer.py:708` and `:725`). An edge costs the positive propositions its guard needs, at
+  least 1; self-loops and edges into the well are left out of that count. Soft clauses and machines
+  with no final keep the per-clause measure of 2026-11-15. No scaling: a chain of `n` events pays `n`
+  on the way and 10 at the end, so doorkey written as `Precedence` pairs and as `Response` both pay
+  1, 1, +11 (13 in all, 11 before for both). Why: a chain is `Existence(last)` plus `Precedence`
+  pairs and only the `Existence` owed a step, so the pay read the rules while the machine already
+  holds the chain. A plain hop count is wrong: `Precedence` lets two events share a step, so the
+  machine keeps a start-to-final edge. Pay-order sweep (MONA, no model calls): 87 of 168 card sets
+  pass before and 126 after (127 of 167 once three cards were reworded to name every step), 39
+  fixed, none newly failing; stored sets 73 to 80 of 108, 9 fixed and 2 newly flagged by "started
+  must pay more than not started", a known false alarm of that check. With the refund and the
+  no-goal skip of the next entry: 141 of 167 cards and 91 of 108 stored sets; the 26 cards and 17
+  stored sets that still fail all have a final and fail on that same line
   ([reward layer](../../COMPILER_REWARD_DESIGN.md)).
 - 2026-11-19, user-approved (refund: "simple, stylish... reuses part of what we had"; clamp, 2026-11-19
   23:57: "go for clamp, take back only gains, never return a charge"): an edge into the rejecting well

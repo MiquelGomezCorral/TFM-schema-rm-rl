@@ -570,3 +570,106 @@ derived, not generated.
 entry's README; the first is `generation-table --root experiments/benchmark --output <file>.json`.
 
 **Code.** `app/scripts/generation_table.py` at `b332ecf` (`experiments/benchmark/REPRODUCE.md` 6.4).
+
+### Critic clues: what helps a small critic (`critic-clues/`), 2026-11-20
+
+**What it shows.** The critic is a small model (`glm-5.3-flash`) that often accepts a wrong clause set.
+Three exact clues computed by the compiler (each rule in plain words, "this hard rule is redundant",
+"every way to finish includes ...") raise the share of labelled defects flagged on the critic's first
+call from 30% to 56% (38 items: 28 wrong clause sets with 41 defects, 10 right ones). Through the full
+loop (46 cards, generator `deepseek-v4.1-flash`) the runs that end with a right machine go from 77% to
+85%, and from 64% to 72% on tasks with ordered steps. Right sets rejected by mistake: 2 of 10, against
+8 of 60 before, so no gain there. Nine other clue ideas were noise and are listed with the reason.
+The page shows two wrong sets with their task, LTLf, RM graph and the exact clue block.
+
+**Evidence.** The critic-set runs of 18 variants, the pipeline loop records of v0 to v5, the two worked
+examples with the prompt whole, the scorers and the code diff. Limit: the final reruns are one run per
+item or card, so most per-case numbers are single runs. The report counts 2 false alarms in v5 of 13
+where the scorer counts 3 (both numbers are on the page).
+
+**Files.** `index.html` (open it from disk), `data.json`, `graphs/` (two machines as live HTML, SVG and
+RM text), `check/` (`rescore.py`, `score.py`, `example_ltlf.py`), `evidence/`.
+
+**Rerun** (no model call, from the repository root in `RM_RL_env`): `python check/rescore.py k0 v3f`
+for the critic set; `D=docs/paper/critic-clues/evidence/loop; CC_ROOT=$PWD PYTHONPATH=app python
+$D/tools/chain_score.py v0=$D/v0/today v3f=$D/v3f/today` for the pipeline. The prototype scripts that
+called the models are not kept: the merged code (`app/src/compiler/critic_clues.py`) does what they did.
+
+**Code.** `app/src/compiler/critic_clues.py` and the prompt changes (`evidence/final.diff`), branch
+`MiquelGomezCorral/tp-critic-clues` on base `45c6747`; commit `3fb0ce0`, merged as `114e5b3`.
+
+### Generator prompt loop: the chain form for ordered tasks (`generator-prompt-loop/`), 2026-11-20
+
+**What it shows.** For "use the key to open the door, then reach the goal" the generator model
+(`deepseek-v4.1-flash`) used to write one "must happen" rule per step plus the order rules (form A).
+The intended answer is one "must happen" rule for the last step plus one order rule per pair (form B,
+the chain form). Version by version (v0 to v11, 2,430 runs), the prompts raised the ordered runs that
+write the chain form from 52% to 81% and cut form A from 40% to 8%. Wrong machines over all runs: 14%
+(18 of 126) to 12% (31 of 252); no earlier case got worse. The later pay fix makes both forms pay the
+same (1, 1, +11, 13 in all, one identical machine), and the pay-order sweep passes 141 of 167 card
+answers (87 of 168 before) and 91 of 108 stored sets (73 before). The page shows the doorkey task with
+its LTLf and the old form A, old form B and current machine as live RM graphs.
+
+**Evidence.** One slim record per version (final clause set and counts), the original scorer, the case
+list, the hand judgments, the prompts before and after, the loop's notes, the pay-order verdicts per
+answer before and after. Limits: the 90% chain target was not reached under the version limit (v7: 75%)
+and the model drifts between hours (v7 scored 75.0% and 70.2% an hour later), so single moves under
+about 10 points are noise. Two of the 108 stored sets are newly flagged by "started must pay more than
+not started", a known false alarm of that check.
+
+**Files.** `index.html`, `data.json`, `graphs/` (three machines), `check/` (`rescore.py`, `chain_score.py`,
+`cases.py`, `judgments.json`, `sweep.py`, `sweep_summary.py`, `doorkey_forms.py`), `evidence/` (runs, cards,
+prompts, `final.diff`, `rounds.md`, `status.md`, `pay-order-sweep.*`, `doorkey-pay.txt`). The 170 MB of full
+traces are not copied, and the scripts that called the models are not kept.
+
+**Rerun** (no model call, from the repository root in `RM_RL_env`): `CC_ROOT=$PWD PYTHONPATH=app python
+docs/paper/generator-prompt-loop/check/rescore.py v0=v0 v7=v7 v11=v11 --first=6 --no-soft --base=v0`;
+the sweep and the doorkey price are in the page's last section.
+
+**Code.** Prompt commit `6b28dd0` on `MiquelGomezCorral/tp-chain-prompt`, in main as merge `45c6747`;
+pay fix `0ed7052`, in main as merge `229d176`.
+
+### Zombie garden: why PPO guards only the top lane (`zombie-garden-warm-start/`), 2026-11-20
+
+**What it shows.** On the zombie garden card (`lanes-rules`: never let a zombie through the top lane;
+try not to let zombies through the other lanes or trample plants) PPO ends up guarding only the top
+lane under every plain setting tried (10 lines, 3 seeds each, RM -18.8 to -26 against -12.9 for a
+scripted top-and-middle policy). The noise check explains part of it: with 10% random actions the
+three-lane policy loses to top-only (-31.5 against -23.7). A warm start from a behaviour clone of a
+hand-written guard policy (a hack, labelled so on the page) keeps the middle lane and reaches -10.7,
+and still tramples 0.34 to 0.64 plants a game (bar 0.2). The page shows the task, the LTLf, the live
+RM graph and the tables.
+
+**Evidence.** The judge output of every round, the noise check output (reruns identically), the loop's
+report and rounds, the settings of each key line, the code diff of `ppo_reward_scale`. One sentence of
+the loop's report (top-only best at PPO's noise) is stricter than its own table, which has the
+top-and-middle policy ahead to 20% noise; the page follows the table.
+
+**Files.** `index.html`, `data.json`, `graphs/lanes-rules.*`, `check/` (`noise_check.py`, `policies.py`,
+`lanes_ltlf.py`), `evidence/`. The clone weights (8 MB each) are not copied; the training scripts need
+the PPO trainer and were not rerun, and the clone, critic-check and replay scripts (they read run folders
+that are not copied) are not kept.
+
+**Rerun** (no model call, no training, about 12 s, from the repository root in `RM_RL_env`):
+`PYTHONPATH=app:docs/paper/zombie-garden-warm-start/check python -W ignore
+docs/paper/zombie-garden-warm-start/check/noise_check.py --procs 8`; the output matches
+`evidence/noise_check.out`.
+
+**Code.** `ppo_reward_scale` (two lines in `app/src/arm_fm/ppo.py` and `app/src/config/config.py`),
+uncommitted in worktree `tp-lanes-tune` (branch `MiquelGomezCorral/tp-lanes-tune`, base `0389b0b`);
+`evidence/ppo_reward_scale.diff`. commit: pending, not merged.
+
+### Reward scale tries (`reward-scale-tries/`), 2026-11-20
+
+**What it shows.** A list of every reward size or scale we changed to make a machine learn, with the
+task and a one-line result each: the x10 whole-unit pay (shop step 2 learns at x10 on 3 of 3 seeds,
+serves 0 at x1), the soft break size 5, 2.5 and 1 with a flat or a ceiling hard break on the zombie
+garden, five shop arms at x10, `ppo_reward_scale` 0.1 and 0.01, and the value clip finding.
+
+**Evidence.** `evidence/` holds copies of the working notes each bullet cites. A list only: no page,
+no rerun.
+
+**Files.** `README.md`, `evidence/`.
+
+**Code.** `deff802` (whole-unit pay, in main); the soft size and ceiling default is in
+`app/src/config/config.py` (`soft_break_cost`, `hard_ceiling`); `ppo_reward_scale` as above.

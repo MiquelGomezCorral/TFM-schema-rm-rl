@@ -141,7 +141,7 @@ tasks, while keeping the generator and critic responsibilities stable.
   states, including accepting and rejecting states. Every compiled machine also gets
   `ACCEPTING_STATES:` (the states with no pending clause, empty in a machine with a final state; a
   broken soft clause, already paid, counts as accepted) before `DEFAULT_REWARD`,
-  `HARD_FAILED_REWARD:` and `SOFT_FAILED_REWARD:` after it (from `Configuration`, -1 and -0.5,
+  `HARD_FAILED_REWARD:` and `SOFT_FAILED_REWARD:` after it (from `Configuration`, -10 and -5,
   editable in the file), and a last `PENDING_PROMISES:` section after `REWARD_FUNCTION`, one row
   per state with open promises (`u2: hard 1, soft 1`). The compiler derives them from the clause
   labels; clause names do not appear.
