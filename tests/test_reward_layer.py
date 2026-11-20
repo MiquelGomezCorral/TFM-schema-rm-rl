@@ -610,9 +610,13 @@ class RewardLayerTests(unittest.TestCase):
             )
         )
 
-        # With a goal the same tie still breaks the order: no progress pays 0 short of the end.
+        # With a goal a remembered `a` is not progress: the goal still owes as much, so the tie is
+        # fine. A key the goal also needs is progress, and paying 0 for it breaks the order.
         names = ("goal", "a", "b")
         machine = compiled((GOAL, PRECEDENCE), (False, False), names, reward_progress=False)
+        order = pay_order(machine, 0.99, 300)
+        self.assertEqual((order.broken, order.skipped), (None, None))
+        machine = compiled((GOAL, KEY), (False, False), ("goal", "key"), reward_progress=False)
         order = pay_order(machine, 0.99, 300)
         self.assertEqual((order.broken, order.skipped), (("started", "not started"), None))
 

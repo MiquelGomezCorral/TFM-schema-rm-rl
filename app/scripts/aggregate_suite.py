@@ -65,6 +65,8 @@ JUDGE_KEYS = (  # open_at_end, the flags and min_hard_activated are built apart
     "non_empty_success",
     "hard_breaks",
     "soft_breaks",
+    "soft_break_count",  # these two only for cards with a soft clause: test_rl.SOFT_QUALITY_MEANS
+    "any_soft_break",
     "env_return_positive",
     "env_return_negative",
     "rm_return_positive",
@@ -89,6 +91,8 @@ METRICS = (
     ("untested rules", "untested_rules"),
     ("hard breaks", "hard_breaks"),
     ("soft breaks", "soft_breaks"),
+    ("separate soft breaks", "soft_break_count"),
+    ("episodes with a soft break", "any_soft_break"),
     ("idle plan soft breaks (soft-only card)", "idle_soft_breaks"),
     ("open at end", "open_at_end"),
     ("idle plan open at end (soft-only card)", "idle_soft_open"),

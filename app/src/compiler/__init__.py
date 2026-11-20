@@ -10,7 +10,7 @@ from .pipeline import (
     materialize_proposal,
 )
 from .reward_layer import RewardSwitches
-from .reward_machine import evaluate_boolean_guard, parse_boolean_guard
+from .reward_machine import evaluate_boolean_guard, fewest_true, parse_boolean_guard
 from .rm_format import (
     PaperRewardMachine,
     RuntimeTransition,

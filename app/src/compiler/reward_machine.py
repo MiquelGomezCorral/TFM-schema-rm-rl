@@ -1,5 +1,6 @@
 """Reward Machine structures and the Boolean guards their transitions carry."""
 
+import math
 import re
 from collections import defaultdict, deque
 from collections.abc import Iterable, Sequence
@@ -163,6 +164,26 @@ def evaluate_boolean_guard(expression, valuation: dict[str, bool]) -> bool:
     return _evaluate(
         expression, {str(key).lower(): bool(value) for key, value in valuation.items()}
     )
+
+
+def fewest_true(expression, holds: bool = True) -> float:
+    """The fewest propositions true on a step where the parsed guard is ``holds``; inf if none.
+
+    Exact when no proposition appears twice in the guard (a conjunction of literals such as
+    ``a&!b``, the form the compiler writes); otherwise an estimate, since each part counts alone.
+    """
+    operator = expression[0]
+    if operator == "constant":
+        return 0.0 if expression[1] == holds else math.inf
+    if operator == "atom":
+        return 1.0 if holds else 0.0
+    if operator == "not":
+        return fewest_true(expression[1], not holds)
+    if operator not in ("and", "or"):
+        raise ValueError(f"Unsupported Boolean operator '{operator}'")
+    parts = (fewest_true(expression[1], holds), fewest_true(expression[2], holds))
+    # A true "and" or a false "or" needs both parts; the other two need one.
+    return sum(parts) if (operator == "and") == holds else min(parts)
 
 
 def states_without_path_to_final(

@@ -7,6 +7,7 @@ Each clause gets ``holds``, ``broken`` (with the 1-based step it broke) or ``ope
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from itertools import zip_longest
 
 HOLDS, BROKEN, OPEN_AT_END = "holds", "broken", "open_at_end"
 HARD, SOFT = "hard", "soft"
@@ -177,6 +178,28 @@ RULES: dict[str, Callable[[Sequence[bool], Sequence[bool]], Verdict]] = {
 }
 
 
+def _break_count(template: str, a: Sequence[bool], b: Sequence[bool]) -> int:
+    """How many separate times the rule broke on the trace, not only the first.
+
+    A broken soft rule still applies. One break lasts while the clause's labels stay as they were
+    on the break step; the rule starts again on the first step where they change. So an Absence
+    counts each time its event turns true, a Precedence each new run of b before any a, a
+    ChainResponse each run of a trigger with no response, and a NotCoExistence each time the pair
+    comes back together. A label true on several steps in a row is one break.
+    """
+    rule, count, start = RULES[template], 0, 0
+    steps = list(zip_longest(a, b))
+    while True:
+        status, step = rule(a[start:], b[start:])
+        if status != BROKEN:
+            return count
+        count += 1
+        broken = start + step - 1
+        start = next(
+            (i for i in range(broken + 1, len(steps)) if steps[i] != steps[broken]), len(steps)
+        )
+
+
 # ======================================================================================
 #                                       JUDGMENT
 # ======================================================================================
@@ -186,13 +209,15 @@ RULES: dict[str, Callable[[Sequence[bool], Sequence[bool]], Verdict]] = {
 class ClauseVerdict:
     """One clause's verdict on one trace; ``step`` is the 1-based step of a break.
 
-    ``activated`` is whether the clause's trigger happened (None: the template has none).
+    ``activated`` is whether the clause's trigger happened (None: the template has none);
+    ``breaks`` how many separate times it broke (``_break_count``).
     """
 
     clause: Clause
     status: str
     step: int | None = None
     activated: bool | None = None
+    breaks: int = 0
 
     @property
     def text(self) -> str:
@@ -235,6 +260,8 @@ class Judgment:
             "activated": [verdict.activated for verdict in self.verdicts],
             "hard_breaks": self.count(BROKEN, HARD),
             "soft_breaks": self.count(BROKEN, SOFT),
+            "soft_break_count": sum(v.breaks for v in self.verdicts if v.clause[2] == SOFT),
+            "any_soft_break": self.count(BROKEN, SOFT) > 0,
             "hard_open": self.count(OPEN_AT_END, HARD),
             "soft_open": self.count(OPEN_AT_END, SOFT),
         }
@@ -246,7 +273,8 @@ def judge_clause(clause: Clause, labels: Sequence[Mapping[str, bool]]) -> Clause
     a = [bool(step.get(propositions[0], False)) for step in labels]
     b = [bool(step.get(propositions[1], False)) for step in labels] if len(propositions) > 1 else []
     status, step = RULES[template](a, b)
-    return ClauseVerdict(clause, status, step, ACTIVATION[template](a, b))
+    breaks = _break_count(template, a, b) if status == BROKEN else 0
+    return ClauseVerdict(clause, status, step, ACTIVATION[template](a, b), breaks)
 
 
 def judge_trace(clauses: Sequence[Clause], labels: Sequence[Mapping[str, bool]]) -> Judgment:

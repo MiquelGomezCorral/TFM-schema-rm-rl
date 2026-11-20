@@ -7,11 +7,12 @@ a machine cannot tell what the world forces, so every figure is what the machine
 
 import itertools
 import math
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import fields
 from typing import NamedTuple
 
-from src.compiler import PaperRewardMachine
+from src.compiler import PaperRewardMachine, fewest_true, parse_boolean_guard
 from src.compiler.reward_layer import RewardSwitches, discounted_steps
 from src.config import Configuration
 
@@ -149,8 +150,11 @@ def pay_order(
     """What ``machine`` pays for each ending over ``step_limit`` steps (one when None) at ``gamma``.
 
     ``finished``: the best path to a final state. ``started``: the best state short of the end
-    that is not the start and that a path reaches without losing pay (a broken soft rule, or a
-    trigger the world fires, loses some), with its end charge. ``not started``: doing nothing, no proposition
+    that is not the start, that a path reaches without losing pay (a broken soft rule, or a
+    trigger the world fires, loses some) and that is closer to the goal: fewer propositions must
+    still come true to reach a final state than from the start (``_owed``), so a state that only
+    remembers a trigger is not started. With no goal, any such state counts (that pair is then
+    skipped). Its pay includes its end charge. ``not started``: doing nothing, no proposition
     ever true. ``soft break``: the worst pay the machine can charge on a step that does not end
     the episode, on every step when a loop pays it. ``hard break``: the mildest edge into a
     rejecting state. The end charge is the end judgment's, paid on the last step; the flat
@@ -177,10 +181,15 @@ def pay_order(
     def end_charge(state: str) -> float:
         return tail * judgment.end_charge(state) if judgment else 0.0
 
+    owed = _owed(machine)
+    start_owed = owed.get(machine.initial_state, math.inf)
     started = [
         best[state] + end_charge(state)
         for state in best
-        if state != machine.initial_state and state not in ends and best[state] >= -_EPSILON
+        if state != machine.initial_state
+        and state not in ends
+        and best[state] >= -_EPSILON
+        and (not machine.final_states or owed.get(state, math.inf) < start_owed)
     ]
     idle, idling_in = _idle_run(machine, steps, gamma)
     if idling_in is not None:
@@ -241,6 +250,48 @@ def _best_returns(edges: Sequence[_Edge], source: str) -> dict[str, float]:
         if not improved:
             break
     return best
+
+
+def _owed(machine: PaperRewardMachine) -> dict[str, float]:
+    """Per state, the fewest propositions that must still come true to reach a final state.
+
+    A shortest path that never enters a rejecting state, where a step costs the propositions its
+    guard needs true (one step may make several true, ``fewest_true``) and an ``else`` step what
+    it takes to make every other guard of its state false, each guard counted alone. A state with
+    no such path is left out.
+    """
+    ends = {*machine.final_states, *machine.rejecting_states}
+    parsed = [
+        (item, None if item.is_else else parse_boolean_guard(item.condition, machine.propositions))
+        for item in machine.transitions
+        if item.source not in ends
+    ]
+    guards = defaultdict(list)
+    for item, guard in parsed:
+        if guard is not None:
+            guards[item.source].append(guard)
+    steps = [
+        (
+            item.source,
+            item.destination,
+            sum(fewest_true(other, holds=False) for other in guards[item.source])
+            if guard is None
+            else fewest_true(guard),
+        )
+        for item, guard in parsed
+        if item.destination not in machine.rejecting_states
+    ]
+
+    owed = dict.fromkeys(machine.final_states, 0.0)
+    for _ in range(len(steps) + 1):
+        improved = False
+        for source, destination, cost in steps:
+            if destination in owed and owed[destination] + cost < owed.get(source, math.inf):
+                owed[source] = owed[destination] + cost
+                improved = True
+        if not improved:
+            break
+    return owed
 
 
 def _idle_run(machine: PaperRewardMachine, steps: int, gamma: float) -> tuple[float, str | None]:

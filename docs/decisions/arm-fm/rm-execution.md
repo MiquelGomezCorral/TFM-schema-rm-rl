@@ -299,7 +299,8 @@ each is a gap to close when a card needs it.
   must pay more than not started", a known false alarm of that check. With the refund and the
   no-goal skip of the next entry: 141 of 167 cards and 91 of 108 stored sets; the 26 cards and 17
   stored sets that still fail all have a final and fail on that same line
-  ([reward layer](../../COMPILER_REWARD_DESIGN.md)).
+  ([reward layer](../../COMPILER_REWARD_DESIGN.md)). Superseded 2026-11-20: that false alarm is
+  fixed and every set passes (entry "started is closer to the goal" below).
 - 2026-11-19, user-approved (refund: "simple, stylish... reuses part of what we had"; clamp, 2026-11-19
   23:57: "go for clamp, take back only gains, never return a charge"): an edge into the rejecting well
   also takes back the progress since the start, as measured by `potential` below; a charge already
@@ -319,7 +320,8 @@ each is a gap to close when a card needs it.
   This reverses the 2026-11-11 choice of no progress score into the well
   ([reward layer](../../COMPILER_REWARD_DESIGN.md)). Why: on a long chain the progress collected (11
   steps) outgrew the hard price (-10), so starting and then breaking paid more than never starting.
-  Pay-order sweep: 141 of 167 cards and 91 of 108 stored sets pass, none lost; break paths that paid
+  Pay-order sweep: 141 of 167 cards and 91 of 108 stored sets pass, none lost (counts superseded
+  2026-11-20, see below); break paths that paid
   more than the hard price went from 51 to 0. Also, the pay-order check skips "started pays more than
   not started" for a machine with no final state, where idling keeps every rule; its summary names the
   skip (user). Such tasks only make sense in a level that forces the agent to act.
@@ -334,3 +336,20 @@ each is a gap to close when a card needs it.
   2026-11-20: KeyGift's hard rule held on 3 of 3 seeds with the promise cost on and off. Also: the
   critic rejects a set that drops a stated order, and an unstated order is never added from
   environment facts (prompts since `42003cf`).
+- 2026-11-20 (user), started is closer to the goal: in the pay-order check a "started" state must
+  owe fewer propositions than the start, where a state owes the fewest propositions that must still
+  come true to reach a final state (shortest path avoiding rejecting states; an edge costs the
+  positive literals its guard needs, so one step can make several true; `_owed`,
+  `app/src/arm_fm/pay_order.py`). A state that only remembers a trigger, such as the `a` of a soft
+  `Precedence(a, goal)`, or of a `Precedence(a, b)` whose `b` the goal does not need, or an opened
+  `Response`, owes as much as the start or more and is not started; a machine with no final keeps
+  the no-goal skip. Why: the line "started must pay more than not started" flagged machines whose
+  only started states were such memories, which by design pay no more than idling. Pay-order sweep
+  (MONA, no model calls, today's cards): 106 of 130 card sets and 91 of 108 stored sets pass
+  before, all 130 and 108 after; the 41 fixed sets all failed that line, none lost. Six soft
+  `Existence` or `ExistenceTwo` card sets lose "started" from their summary, since the goal does
+  not need that event. With promise cost on,
+  125 of 130 pass before and after. Limit, kept on purpose: on the shop the promise-cost stall (a
+  hard promise left open costs -19.0, a hard break -10.1) still reads "ok" in `check-pay-order`,
+  whose summary only notes it ("stall, hard promise open"); only the plan pay shows the stall. The
+  check does not change for it.

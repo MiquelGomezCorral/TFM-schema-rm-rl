@@ -150,6 +150,16 @@ SOFT_ONLY_DEFINITION = (
     "mean_soft_open is above the idle plan's, one of them is below it, and mean_label_changes "
     "is above idle_mean_label_changes."
 )
+# Cards with a soft clause also judge how well the agent kept the soft rules; pass/fail is unchanged.
+SOFT_QUALITY_MEANS = ("soft_break_count", "any_soft_break")
+SOFT_QUALITY_DEFINITION = (
+    "soft_break_count: how many separate times the episode broke a soft rule; a break lasts while "
+    "the rule's labels stay as on its step and the rule starts again once they change, so a soft "
+    "Absence counts each time its event turns true (soft_breaks counts each broken clause once). "
+    "any_soft_break: the episode broke a soft rule at least once, so "
+    "mean_any_soft_break is the share of such episodes. Existence, ExistenceTwo, Response and "
+    "RespondedExistence never break, they only stay open (soft_open). judged_success is unchanged."
+)
 CANNOT_START_DEFINITION = (
     "cannot_start: the machine ended the episode in a final state, the environment did not, and "
     "the episode lasted at most max(1, ceil(0.10 * expected_length)) steps; such an episode is "
@@ -673,13 +683,16 @@ class JudgeRecorder:
         write_json(directory / "judge.json", summary, indent=2)
 
     def _optional_summary(self, episodes: list[dict[str, Any]]) -> dict[str, Any]:
-        """Judge fields only some runs carry, so every other ``judge.json`` stays as it was."""
+        """Judge fields only some runs carry, so every other summary stays as it was."""
         summary: dict[str, Any] = {}
         if self.shop:
             summary = {
                 "served_definition": SERVED_DEFINITION,
                 **judge_means(episodes, SHOP_JUDGE_MEANS),
             }
+        if any(clause[2] == "soft" for clause in self.card.expect):
+            summary["soft_quality_definition"] = SOFT_QUALITY_DEFINITION
+            summary.update(judge_means(episodes, SOFT_QUALITY_MEANS))
         if self.config.rm_state_encoding == "one_hot":
             summary["rm_state_encoding"] = "one_hot"
         return summary
