@@ -102,12 +102,14 @@ def base_id(case):
 
 
 def forced_closure(card):
-    """Precedence pairs the level forces: the transitive closure of the card's forced Precedences."""
-    pairs = {
-        c[1]
-        for i, c in enumerate(card.expect)
-        if i in card.forced and c[0] == "Precedence" and c[2] == H
-    }
+    """Optional Precedence pairs: the transitive closure of the card's hard Precedences.
+
+    Since the stated-order audit (2026-11-20) a stated order is required, not forced. A pair the chain
+    implies (key before goal when key before door before goal) accepts the same runs, so it stays an
+    optional extra. On the runs scored before the audit this gives the same verdicts as the closure
+    over forced Precedences only.
+    """
+    pairs = {c[1] for c in card.expect if c[0] == "Precedence" and c[2] == H}
     grew = True
     while grew:
         grew = False

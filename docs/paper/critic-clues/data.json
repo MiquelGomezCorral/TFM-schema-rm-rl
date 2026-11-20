@@ -44,7 +44,8 @@
       "**Critic set.** 38 items: 28 wrong clause sets with 41 labelled defects, 10 right ones. The critic reads one set at a time; a judge model says which defects its feedback names. Before: 6 runs per item (main code, no clues). After: one run per item (version v3 full).",
       "**Pipeline.** 46 task cards through the full generate, compile, review loop (generator `deepseek-v4.1-flash`, critic `glm-5.3-flash`). Before: 6 runs per card, 276 runs. After: one run per card, 46 runs. The final line counts only the first run of each card; two more cards were rerun and are listed in the version table.",
       "**Limit.** The final reruns have one run per item or card, so most per-case numbers are single runs. The gain shows in the pooled numbers; \"no case got worse\" holds on the evidence there is, with little margin. The run stopped because the budget was used up (198 of about 200 runs in the widened scope).",
-      "**Merged.** The code is on branch `MiquelGomezCorral/tp-critic-clues`, on base `45c6747`: commit `3fb0ce0`, merged as `114e5b3`."
+      "**Merged.** The code is on branch `MiquelGomezCorral/tp-critic-clues`, on base `45c6747`: commit `3fb0ce0`, merged as `114e5b3`.",
+      "**Later fix.** The `Redundant` clue picked a different clause when the same clauses came in another order, and could name a stated rule instead of the extra `Existence`. Fixed in `600d6a0`, merged as `6606ab7`; see the section before the evidence."
      ]
     }
    ]
@@ -623,6 +624,135 @@
    ]
   },
   {
+   "id": "order-fix",
+   "title": "Later fix: the redundant clue no longer depends on clause order",
+   "intro": "Found by an independent review of the merged clues, fixed on 2026-11-20. Same clauses, different order, different `Redundant` line, and the critic acts on that line.",
+   "blocks": [
+    {
+     "type": "text",
+     "text": "Task: *Go to the goal. If you reach the goal, you must also have picked up the key at some point.* Candidate, all hard: `Existence(at_goal)`, `Existence(has_key)`, `RespondedExistence(at_goal, has_key)`. The right set drops `Existence(has_key)`: the goal and the \"if\" rule already force the key. With the goal hard, each of the other two clauses implies the other, so the compiler can truthfully call either one redundant. The old search tried the clauses from last to first and named the first implied one. In this order that was the `RespondedExistence`, a rule the task states, which the critic must keep. The critic rejects only on a redundant listed `Existence`, so it had no clue to remove the extra one."
+    },
+    {
+     "type": "table",
+     "columns": [
+      "Clause order",
+      "Redundant line before the fix",
+      "Since the fix (`600d6a0`)"
+     ],
+     "rows": [
+      [
+       "goal, rule, key",
+       "R3 Existence(has_key)",
+       {
+        "text": "R3 Existence(has_key)",
+        "tone": "ok"
+       }
+      ],
+      [
+       "goal, key, rule (the live check)",
+       {
+        "text": "R3 RespondedExistence(at_goal, has_key)",
+        "tone": "bad"
+       },
+       {
+        "text": "R2 Existence(has_key)",
+        "tone": "ok"
+       }
+      ]
+     ]
+    },
+    {
+     "type": "text",
+     "heading": "The clue block the critic reads, goal, key, rule",
+     "text": "Only the `Redundant` line changes. The fix tries the `Existence` and `ExistenceTwo` clauses first (still last to first), then the rest. An implied listed `Existence` is now named before any other clause, as the decision record asks: a stated order or \"if\" rule stays."
+    },
+    {
+     "type": "code",
+     "text": "# Before (main before 600d6a0, evidence/clues-fix/dry-main.json)\n## Compiler clues (computed from the clauses by the compiler, exact)\n\nRules in plain words:\n- R1 hard Existence(at_goal): at_goal happens at least once; owed from the start until it is met; hard: still owed when the episode ends = failed.\n- R2 hard Existence(has_key): has_key happens at least once; owed from the start until it is met; hard: still owed when the episode ends = failed.\n- R3 hard RespondedExistence(at_goal, has_key): if at_goal happens, has_key happens too, before or after; owed after: at_goal; hard: still owed when the episode ends = failed.\nRedundant: R3 RespondedExistence(at_goal, has_key) is already implied by the other hard rules: every run they accept keeps it, so the machine accepts the same runs without it.\nEvery way to finish includes: at_goal, has_key.\n\n# After (evidence/clues-fix/dry.json; check/clue_order.py prints the same with today's code)\n## Compiler clues (computed from the clauses by the compiler, exact)\n\nRules in plain words:\n- R1 hard Existence(at_goal): at_goal happens at least once; owed from the start until it is met; hard: still owed when the episode ends = failed.\n- R2 hard Existence(has_key): has_key happens at least once; owed from the start until it is met; hard: still owed when the episode ends = failed.\n- R3 hard RespondedExistence(at_goal, has_key): if at_goal happens, has_key happens too, before or after; owed after: at_goal; hard: still owed when the episode ends = failed.\nRedundant: R2 Existence(has_key) is already implied by the other hard rules: every run they accept keeps it, so the machine accepts the same runs without it.\nEvery way to finish includes: at_goal, has_key."
+    },
+    {
+     "type": "table",
+     "columns": [
+      "Critic run",
+      "Level",
+      "Wall",
+      "Verdict",
+      "Feedback, first words"
+     ],
+     "rows": [
+      [
+       "none-r1",
+       "none",
+       "2.5 s",
+       {
+        "text": "rejected",
+        "tone": "ok"
+       },
+       "\"Existence(has_key) is redundant ... Remove Existence(has_key); keep the other two clauses.\""
+      ],
+      [
+       "none-r2",
+       "none",
+       "3.5 s",
+       {
+        "text": "rejected",
+        "tone": "ok"
+       },
+       "\"The compiler itself flags R2 hard Existence(has_key) as redundant ...\""
+      ],
+      [
+       "none-r3",
+       "none",
+       "3.4 s",
+       {
+        "text": "rejected",
+        "tone": "ok"
+       },
+       "\"Existence(has_key) is a redundant hard clause ...\""
+      ],
+      [
+       "high-r1",
+       "high",
+       "13.2 s",
+       {
+        "text": "rejected",
+        "tone": "ok"
+       },
+       "\"the hard Existence(has_key) is redundant and should be removed ...\""
+      ],
+      [
+       "high-r2",
+       "high",
+       "9.8 s",
+       {
+        "text": "rejected",
+        "tone": "ok"
+       },
+       "\"Existence(has_key) is redundant ... the compiler's clue confirms every finishing run already includes has_key ...\""
+      ],
+      [
+       "high-r3",
+       "high",
+       "5.8 s",
+       {
+        "text": "rejected",
+        "tone": "ok"
+       },
+       "\"The hard Existence(has_key) makes picking up the key an unconditional goal, which no sentence of the task states ...\""
+      ]
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**Live check.** The `glm-5.3-flash` critic on the fixed clue block, 3 runs at `none` and 3 at `high`: 6 of 6 reject and ask to remove `Existence(has_key)`. One critic call each. No live run on the old block: its clue named the clause the critic must keep, and the dry run shows it.",
+      "**Brute force: 0 mismatches.** The review's checker compares every clue line with the LTLf meaning over all valuations, on random clause sets. On main after the fix (`6606ab7`): 496 sets right, 0 wrong, 104 skipped (the machine build or the clues raise on that set); sets built to split into several hard groups: 129 right, 0 wrong, 21 skipped. The review's run before the fix gave 482, 0, 118 and 129, 0, 21. No false clue either way: both picks are true statements, and the bug was which one was named.",
+      "**Same commit.** Smaller changes from the review: the start-state check and the group split now refuse or skip clause shapes they cannot handle, a soft clause that can only be owed says \"still owed when the episode ends costs a penalty\", and the critic prompt says \"accepts the same runs without it\", the clue's own words. The unit suite has one new regression test for the order case."
+     ]
+    }
+   ]
+  },
+  {
    "id": "evidence",
    "title": "Evidence, rerun and code",
    "blocks": [
@@ -634,6 +764,7 @@
       "**Rescore the critic set (no model call).** `python check/rescore.py k0 v3f` prints the tables of `check/score.py`, the original scorer. The headline 30% and 56% come from this.",
       "**Rescore the pipeline (no model call).** From the repository root, with the Conda environment `RM_RL_env`: `D=docs/paper/critic-clues/evidence/loop; CC_ROOT=$PWD PYTHONPATH=app python $D/tools/chain_score.py v0=$D/v0/today v3f=$D/v3f/today`. It reads the repository's task cards and `src.benchmark.rm_facts`, so the numbers can move if the cards change. The headline 77% and 85% come from this: `v3f` holds 50 runs, the 46 first runs (39 right, 85%) and two reruns each of U5 and U6 (43 of 50 right pooled, 86%).",
       "**Rerun the models.** The runner scripts that called OpenCode Go (critic `glm-5.3-flash`, judge and generator `deepseek-v4.1-flash`) were prototypes of what the merged code does (`app/src/compiler/critic_clues.py` at commit `3fb0ce0`), so they are not kept. Their run records are in `evidence/runs/` and `evidence/loop/`.",
+      "**`evidence/clues-fix/`.** The order fix: the clue block before (`dry-main.json`) and after (`dry.json`), the six live critic runs (`none-r1..3`, `high-r1..3`; the `prompt` field, about 34 KB each, was removed), and the brute-force outputs before the fix (`review-before-fix-*.out`) and on main `6606ab7` (`main-6606ab7-*.out`). `python check/clue_order.py` (with `PYTHONPATH=app`) prints the clue block for both orders with today's code. The brute-force checker and the live-run tool stay in `.git/agent-memory/plans/farm-final-20261119/` (`clues-review/`, `clues-fix/`): they are review prototypes, not kept to the repository's lint rules, and the live tool calls the model.",
       "**Code.** Commit `3fb0ce0`, merged as `114e5b3` (`app/src/compiler/critic_clues.py` and the prompt changes; the diff is `evidence/final.diff`). Base `45c6747`."
      ]
     }

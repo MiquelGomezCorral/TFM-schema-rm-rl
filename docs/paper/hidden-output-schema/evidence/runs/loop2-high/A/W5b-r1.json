@@ -1,0 +1,64 @@
+{
+ "suite": "templates",
+ "name": "tpl-precedence-3-goal",
+ "task": "Pick up the box in the other room, but do not drop the key while the door is closed until the door has been opened once.",
+ "gen": "deepseek-v4.1-flash",
+ "critic": "glm-5.3-flash",
+ "reasoning": "high",
+ "status": "accepted",
+ "error": null,
+ "wall_s": 79.0,
+ "attempts_used": 2,
+ "critic_rejections": 1,
+ "provider_reruns": 0,
+ "calls": 4,
+ "trace": [
+  {
+   "attempt": 1,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Existence(target_picked_up)\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 1,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: the task states a restriction \u2014 'do not drop the key while the door is closed until the door has been opened once' \u2014 but no clause encodes it. The candidate only has hard Existence(target_picked_up), so a run that drops the key while the door is still shut would finish without any rule penalty. The proposition `key_lost` is defined as exactly this event ('previously acquired the matching key but is no longer carrying it before opening the door', true only when `door_open` is false), so per the wording rule for bans whose event already holds the condition, the fix is a plain hard Absence(key_lost) \u2014 no Precedence needed, since key_lost cannot fire after the door is open (the necessary drop after opening is not key_lost). Add hard Absence(key_lost) and keep hard Existence(target_picked_up)."
+   }
+  },
+  {
+   "attempt": 2,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Existence(target_picked_up)\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Absence(key_lost)\",\n    \"pattern\": \"Absence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"key_lost\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 2,
+   "step": "critic",
+   "value": {
+    "accepted": true,
+    "feedback": "NO CHANGES NEEDED: Existence(target_picked_up) hard captures the goal of picking up the mission's box, and Absence(key_lost) hard captures the ban on dropping the key while the door is closed. The key_lost proposition's definition already contains the condition ('was carrying the key, no longer carries it, and the door is not open'), so the 'until the door has been opened once' part is baked into the event and a plain Absence is the right template \u2014 no Precedence clause is needed. The required drop after door_open is not key_lost (the door is open), so the ban does not block completing the task, and the machine's final state u1 is reachable."
+   }
+  }
+ ],
+ "clauses": [
+  [
+   "Existence",
+   [
+    "target_picked_up"
+   ],
+   "hard"
+  ],
+  [
+   "Absence",
+   [
+    "key_lost"
+   ],
+   "hard"
+  ]
+ ],
+ "texts": [
+  "Existence(target_picked_up)",
+  "Absence(key_lost)"
+ ],
+ "machine": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: u1\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !key_lost&target_picked_up) -> u1\n(u0, key_lost&!target_picked_up) -> u2\n(u0, key_lost&target_picked_up) -> u2\nREWARD_FUNCTION:\n(u0, !key_lost&target_picked_up, u1) -> 11\n(u0, key_lost&!target_picked_up, u2) -> -10\n(u0, key_lost&target_picked_up, u2) -> -10\n"
+}

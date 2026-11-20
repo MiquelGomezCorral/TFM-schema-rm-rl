@@ -598,6 +598,18 @@ called the models are not kept: the merged code (`app/src/compiler/critic_clues.
 **Code.** `app/src/compiler/critic_clues.py` and the prompt changes (`evidence/final.diff`), branch
 `MiquelGomezCorral/tp-critic-clues` on base `45c6747`; commit `3fb0ce0`, merged as `114e5b3`.
 
+**Later fix (same day).** The "redundant" clue depended on clause order. For "Go to the goal. If you
+reach the goal, you must also have picked up the key", with `Existence(at_goal)`, `Existence(has_key)`
+and `RespondedExistence(at_goal, has_key)` all hard, each of the last two implies the other; in the
+order goal, key, rule the old search named the stated "if" rule, which the critic must keep, so it had
+no clue to drop the extra `Existence`. The search now tries the `Existence` and `ExistenceTwo` clauses
+first. Commit `600d6a0`, merged as `6606ab7`. Evidence: the clue block before and after, 6 of 6 live
+`glm-5.3-flash` critic runs (3 at `none`, 3 at `high`) that ask to remove `Existence(has_key)`, and the
+review's brute-force checker on main `6606ab7`: 0 mismatches (496 random sets right, 104 skipped; 129
+multi-group sets right, 21 skipped). Files: `evidence/clues-fix/`, `check/clue_order.py`. Rerun (no model
+call): `PYTHONPATH=app python -W ignore docs/paper/critic-clues/check/clue_order.py` prints the clue block
+of both orders. The checker and the live-run tool are review prototypes and stay in the plan folder.
+
 ### Generator prompt loop: the chain form for ordered tasks (`generator-prompt-loop/`), 2026-11-20
 
 **What it shows.** For "use the key to open the door, then reach the goal" the generator model
@@ -741,3 +753,88 @@ B4=<evidence>/llm-loop/runs/b4/A` for the arm table, `python docs/paper/model-co
 
 **Code.** Critic wording `d5ec36e`, G12 card `e56fcff`, CLI adapter `9f12d3a`, merged into main as `57f6a1a`; the
 critic clues the critic set rests on: `3fb0ce0`, merged as `114e5b3`.
+
+**Loop 2 (later the same day).** Two sections before the open points. The stated-order audit: an order the task
+states is now required even when the level forces it; 8 of 11 cards with optional orders lost them and 16 accepted
+answers that drop a stated order were removed from the repository cards, 10 more from the loop's own cards (rescore: `none` 42 to 40 of 46, B4 stays 46). With two critic prompt
+lines and the relabelled critic set (30 wrong, 8 right), glm at `medium` catches 28 of 30 on call 1, against 24 of 30
+for the earlier `medium` run. The thinking sweep, `low` to `max` on the 46 cards: 46 of 46 right at every level,
+first proposals right 37, 38, 37 and 30, short first proposals 7, 8, 8 and 14, median wall 27 to 166 s, 2 timeouts at
+`max`, the critic catching every wrong first proposal; recommendation `high` if the default moves. The sweep ran
+before the shape fix of `hidden-output-schema/`, and the page marks it. Evidence: `evidence/llm-loop2/` (3.2 MB: the
+audited cards, the card and prompt diffs, the relabelled items, the rescore, one summary and one slim call log per
+run, prompts and schema dropped) and `evidence/llm-loop2-report.md`. The repository's cards changed afterwards, so
+`evidence/cards/` keeps the cards of this entry and `check/cases.py` reads `CARD_DIR` (default: those);
+`check/level_stats.py` is new and `check/chain_score.py` now takes its optional orders from every hard `Precedence`
+of the card. Rerun: the commands in the page's last section. Code: loop 2 ran in worktree `tp-llm-loop2`; its prompt
+changes reached main as `42003cf` (merged as `56a482a`), and the card review made stated orders required on main in
+`ab27c07` (merged as `b3ba9ef`).
+
+### Hidden output schema: why thinking cut the generator's answers short (`hidden-output-schema/`), 2026-11-20
+
+**What it shows.** The generator (`deepseek-v4.1-flash`, through OpenCode) must answer in a JSON shape it is
+never shown: the app sends it only as `response_format: json_schema`, which OpenCode enforces while decoding
+but never puts in the model's context. With thinking on, the model plans under field names it guessed, and
+when the decoder forces the real ones the answer often stops after the first clause. Short first proposals
+on the 46 cards: 0 at `none`, 7, 8, 8 and 14 from `low` to `max` (36 of 37 are one clause). One prompt
+sentence that names the shape fixes it. Replays of the same logged requests: 3 of 4 short before, 0 of 5
+after. At scale: at `max` short 14 to 0 and first proposals right 12 to 26 of 26, total wall 4,470 to
+2,460 s; at `high` short 8 to 0 and first right 37 to 46 of 46. Side gain: a formula in the free-text
+`normalized_clause` field went from 242 of 481 final clauses to 0 of 223. The page quotes the reasoning
+and shows one case (W3a) with its task, LTLf and RM before and after.
+
+**Evidence.** The diagnosis, finding and at-scale reports; the 15 raw replay responses with their
+reasoning; one summary and one slim call log per run for loop 2 and the three shape rounds; the W5a
+replays. Open cost: W5a (`cx-goal-many-rules`) at `max` ended with no machine, six non-streamed calls in
+a row at the SDK's 600 s timeout. Cause: OpenCode never returns a non-streamed reply after about 300 s
+(1,334 logged calls: longest 298.8 s, none between 300 and 600 s); W5a at `max` reasons 12 to 36 K tokens
+at 69 to 125 tokens per second, and streamed the same request came back 6 of 6 times in 154 to 520 s. A
+streaming fix is being implemented and is not merged. Limits: one run per case and level.
+
+**Files.** `index.html` (built from `data.json`; open it from disk), `graphs/` (the two W3a machines as
+live HTML, SVG and RM text), `check/` (`level_stats.py`, `arm_stats.py`, `cases.py`, `chain_score.py`,
+`loopcrit.py`, `judgments.json`, copied from `model-comparison/check/`; `replays.py`, `formula_text.py`,
+`w5a_speed.py`, `sample.py`), `evidence/` (5.7 MB with the page: reports, `probes/`, `scans/`, `runs/`,
+`w5a-timeout/`, `cards/` and `cards-before-audit/`, `creator-prompt-vs-main.diff`). Full call logs with
+prompts and the tools that call the models stay in the plan folder.
+
+**Rerun** (no model call, from the repository root in `RM_RL_env`): the page's last section lists every
+command; the first is `env CC_ROOT=$PWD PYTHONPATH=app:docs/paper/hidden-output-schema/check python -W
+ignore docs/paper/hidden-output-schema/check/level_stats.py low=<runs>/loop2-low/A ...`, and
+`PYTHONPATH=app python -W ignore docs/paper/hidden-output-schema/check/sample.py` rebuilds the sample.
+
+**Code.** The sentence in `app/src/prompts/compiler-rm/reward-ltlf-creator.system.md:82-87`, commit
+`42003cf`, merged as `56a482a`. The streaming fix: pending, not merged.
+
+### Benchmark coverage: which rule shapes the final run really tests (`benchmark-coverage/`), 2026-11-20
+
+**What it shows.** The 8 Declare templates, hard or soft, with or without a goal, make 32 cells. A cell is
+tested well when a trained card on a level that forces the choice judges that rule. Two card reviews read
+every card against that bar, before and after the card fixes: 15 of 32 cells tested well before, 18
+after (both RespondedExistence hard cells). Left: 8 soft-goal cells the result test never judges (a soft
+rule beside a goal passes on the goal alone), 2 gaps (hard Precedence and NotCoExistence without a goal),
+3 weak cells (the level forces the rule or the count comes free) and 1 Absence cell counted once per
+episode. The page has the matrix, the verdict counts, the gaps in plain words, and the 10 card groups,
+each with 2 or 3 sample cards (task, clauses, LTLf, live RM graph and RM text).
+
+**Evidence.** The baseline review (111 cards, 660 plan traces, 165 answers swept; verdicts: OK 46, OK
+generation only 14, pay-order flag only 18, soft rule not judged 10, card issue 23) and the delta review,
+both reviewers' text returns; the two group files; the card-fix report of round 1 and the round-2 diff;
+the delta review's trace-bank and sweep outputs; the cards of main `6606ab7`. Limits: the baseline's own
+counts (15 + 8 + 4 + 2) leave 3 cells unnamed, and read with the delta review's labels its table gives 16;
+`tpl-existence-two-5-nogoal` came after the count; the delta review's finding 1 (two base cards score the
+goal alone as right) is still open on main.
+
+**Files.** `index.html` (built from `data.json`; open it from disk), `graphs/` (24 sample machines as live
+HTML, SVG and RM text; `shop-boil`, 65 states and 10,662 transitions, is too large to draw), `check/card_machines.py`,
+`evidence/` (`card-review-report.md`, `delta-review.md`, `groups.json`, `groups-v2.json`,
+`card-fix-report.json`, `card-fix-round2.out`, `delta-checks/`, `cards/`). The review sweep scripts and
+their 20 MB of traces stay in the plan folder.
+
+**Rerun** (no model call, from the repository root in `RM_RL_env`):
+`PYTHONPATH=app python -W ignore docs/paper/benchmark-coverage/check/card_machines.py` prints each sample's
+task, clauses, LTLf and machine size and writes `graphs/<card>.rm`; `render-rm --rm-file graphs/<card>.rm
+--svg-dir graphs/<card>.svg --html` draws each.
+
+**Code.** The cards in `experiments/benchmark/<suite>/tasks.json`; the card fixes are commit `ab27c07`, merged
+as `b3ba9ef`. Scoring in `app/src/benchmark/rm_facts.py`, the test bars in `app/scripts/test_rl.py`.

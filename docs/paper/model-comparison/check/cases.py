@@ -16,6 +16,8 @@ from src.benchmark.rm_facts import _normalized, clause_status
 
 HERE = Path(__file__).resolve().parent
 ROOT = Path(os.environ.get("CC_ROOT", "/home/turbotowerlnx/Documents/Master/TFM/TFM-schema-rm-rl"))
+# The cards each run was scored against; CARD_DIR=<entry>/evidence/llm-loop2/cards scores the loop-2 runs.
+CARD_DIR = Path(os.environ.get("CARD_DIR", HERE.parent / "evidence" / "cards"))
 
 # case -> (group, suite, bundle name, card id). W6 has one flagged bundle, so only it is in the working set.
 CASES = {
@@ -82,7 +84,7 @@ _JUDGMENTS = HERE / "judgments.json"
 def card_of(case: str) -> Card:
     _g, suite, name = ALL[case]
     base = name.partition("~p")[0]
-    local = HERE.parent / "evidence" / "cards" / suite / "tasks.json"
+    local = CARD_DIR / suite / "tasks.json"
     data = json.loads(
         (
             local if local.exists() else ROOT / "experiments/benchmark" / suite / "tasks.json"

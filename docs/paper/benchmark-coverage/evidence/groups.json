@@ -1,0 +1,188 @@
+[
+  {
+    "group": "Long ordered sequences (base levels)",
+    "family": "Precedence chain + Existence(goal) (form B)",
+    "priority": "hard",
+    "env": "MiniGrid DoorKey, UnlockPickup, BlockedUnlockPickup, KeyCorridorS6R3",
+    "checks": "judged success: every hard clause holds (goal reached in the stated order)",
+    "count": 5,
+    "cards": ["base-doorkey", "base-unlock-pickup", "base-blocked-unlock-pickup", "base-key-corridor", "cx-sequence"],
+    "samples": [
+      {"id": "base-doorkey", "why": "the reference task: learned in every regression, the clearest form B machine (key before door, door before goal)"},
+      {"id": "base-blocked-unlock-pickup", "why": "shows 'in either order' (two Precedences into the door) beside a strict order"},
+      {"id": "cx-sequence", "why": "the longest chain (5 steps), and it shows the level risk: KeyCorridorS6R3 never learned (0/71)"}
+    ],
+    "insights": [
+      "The level forces every order, so these test sequence learning and generation of the stated order, not resisting a shortcut.",
+      "base-key-corridor and cx-sequence sit on KeyCorridorS6R3: 0/71 runs, a random walk opens the door 0/300 (workflow.md:596). Move them to a learnable level (rule 5).",
+      "Loop 2 makes the stated orders required on base-doorkey and cx-sequence; base-doorkey also_ok#0 (Response pair, no Precedence) still drops the stated 'then'."
+    ]
+  },
+  {
+    "group": "Hard template + goal on the key levels",
+    "family": "Existence, ExistenceTwo, Absence, Response, Precedence, RespondedExistence, NotCoExistence (one each)",
+    "priority": "hard",
+    "env": "MiniGrid DoorKey, UnlockPickup, BlockedUnlockPickup, KeyCorridorS6R3",
+    "checks": "judged success: the template and the goal hold",
+    "count": 7,
+    "cards": ["tpl-existence-1-goal", "tpl-existence-two-1-goal", "tpl-absence-1-goal", "tpl-response-1-goal", "tpl-precedence-1-goal", "tpl-responded-existence-1-goal", "tpl-not-co-existence-1-goal"],
+    "samples": [
+      {"id": "tpl-precedence-1-goal", "why": "a real temptation: the key can be taken before the ball is moved, and the wrong plan does it"},
+      {"id": "tpl-absence-1-goal", "why": "taking the key first forces a drop with the door closed, so the rule can break on the way"},
+      {"id": "tpl-response-1-goal", "why": "moved to UnlockPickup on 2026-11-20 and learned 9/9; shows a hard Response inside a form B chain"}
+    ],
+    "insights": [
+      "Only 3 of 7 can break the template on the way (Absence, Precedence, NotCoExistence). On ExistenceTwo, Response, RespondedExistence and the Existence order the level or the goal forces the rule, so any goal-reaching policy passes.",
+      "tpl-responded-existence-1-goal is on the unsolved KeyCorridor level and its also_ok#0 drops the stated 'if' rule.",
+      "tpl-existence-two-1-goal says 'then' but expect has no order clause.",
+      "check-pay-order flags tpl-not-co-existence-1-goal, tpl-responded-existence-1-goal and tpl-absence-1-goal also_ok#0 (class A, machine fine); the pre-training gate will block them until the check change lands."
+    ]
+  },
+  {
+    "group": "Hard goal + reactive rule (service room)",
+    "family": "Response, ChainResponse, Precedence + Existence(exit)",
+    "priority": "hard",
+    "env": "MiniGrid ServiceRoom (siren at step 1-4; box falls by schedule; carry variant)",
+    "checks": "judged success: the reactive rule and the exit hold",
+    "count": 5,
+    "cards": ["cx-siren", "cx-box", "cx-box-carry", "tpl-chain-response-1-goal-carry", "tpl-precedence-4-goal"],
+    "samples": [
+      {"id": "cx-siren", "why": "the cleanest reactive test: the siren always rings before the earliest exit (11 actions); learned 5/5"},
+      {"id": "tpl-chain-response-1-goal-carry", "why": "'very next move' (ChainResponse) with a forced fall 2-8 steps in, whatever the agent does"},
+      {"id": "tpl-precedence-4-goal", "why": "the exit is reachable without the switch, so the order is a real choice"}
+    ],
+    "insights": [
+      "The world fires the trigger before any exit, so no empty pass is possible.",
+      "cx-siren is flagged by check-pay-order (started = not started, class A).",
+      "Box-carry baseline: exiting without the box happens in 0.02-0.03% of training episodes; watch it in training."
+    ]
+  },
+  {
+    "group": "Hard rules, no goal, forcing worlds",
+    "family": "Absence, Response, ChainResponse, Existence, ExistenceTwo",
+    "priority": "hard",
+    "env": "MiniGrid Lanes, KeyGift, ServiceRoom carry and siren, DoorKey",
+    "checks": "judged success; idle fails on every card",
+    "count": 6,
+    "cards": ["lanes-guard", "lanes-rules", "keygift-hard", "tpl-chain-response-1-nogoal-carry", "tpl-existence-1-nogoal", "tpl-existence-two-1-nogoal"],
+    "samples": [
+      {"id": "lanes-guard", "why": "zombies keep coming; doing nothing breaches the top lane"},
+      {"id": "keygift-hard", "why": "keys land in the hands about 1 step in 30, with a quiet end (no key in the last 20 steps)"},
+      {"id": "lanes-rules", "why": "one hard and two soft rules; the hard ceiling makes guarding pay more than giving up (solve -2..-4, idle -96)"}
+    ],
+    "insights": [
+      "No trained hard no-goal card for Precedence, NotCoExistence or RespondedExistence (gaps; hard copies on Lanes and the siren room would close them).",
+      "lanes-rules' soft clauses are counted once per episode and are not judged; forcing/README.md:62-72 still says ending early beats guarding, which is false under the ceiling.",
+      "A Response passes when the agent answers late; the task does not ask for 'at once', so this matches the wording."
+    ]
+  },
+  {
+    "group": "Idle-passable cards still trained (to drop)",
+    "family": "Absence, Response, RespondedExistence; mixed rules",
+    "priority": "hard",
+    "env": "MiniGrid KeyCorridorS6R3, BlockedUnlockPickup, UnlockPickup",
+    "checks": "judged success, which an idle agent already gets",
+    "count": 4,
+    "cards": ["tpl-absence-1-nogoal", "tpl-response-1-nogoal", "tpl-responded-existence-1-nogoal", "cx-rules-only"],
+    "samples": [
+      {"id": "tpl-response-1-nogoal", "why": "the recorded case: no-RM judged 1.00, non-empty 0.00 (thesis-benchmark.md:145-148)"},
+      {"id": "cx-rules-only", "why": "replaced by Lanes (decision C3) but still train: true; also has the trap shape (soft Response on the key, no key Existence)"},
+      {"id": "tpl-absence-1-nogoal", "why": "'never open the locked door' on the unsolved level: idle passes and nothing can be learned"}
+    ],
+    "insights": [
+      "Rule 1: each is covered by a forcing card (lanes-guard, keygift-hard, the forced copies, lanes-rules), so set train false.",
+      "tpl-responded-existence-2-nogoal (siren room, idle fails) is the forcing replacement for the RespondedExistence one."
+    ]
+  },
+  {
+    "group": "Forced start (trigger given at reset)",
+    "family": "Response, RespondedExistence",
+    "priority": "hard",
+    "env": "MiniGrid BlockedUnlockPickup-Cleared, UnlockPickup-KeyHeld",
+    "checks": "judged success; tests keeping an obligation, not reacting",
+    "count": 2,
+    "cards": ["tpl-response-1-nogoal-forced", "tpl-responded-existence-1-nogoal-forced"],
+    "samples": [
+      {"id": "tpl-response-1-nogoal-forced", "why": "the one the record trains, labeled 'trigger given'"},
+      {"id": "tpl-responded-existence-1-nogoal-forced", "why": "shows the mismatch: it trains, but the record says it should not"}
+    ],
+    "insights": [
+      "The record and README say only tpl-response-1-nogoal-forced trains (thesis-benchmark.md:156-157); runs.yaml trains both.",
+      "These do not test reacting to an event; the shop and forcing worlds do."
+    ]
+  },
+  {
+    "group": "Shop levels",
+    "family": "Response chains + ChainResponse (+ Absence, pot Response)",
+    "priority": "hard",
+    "env": "MiniGrid Shop, Shop-Pot (600 steps, quiet end)",
+    "checks": "judged success + served_count (learned = 7.5 or more served per episode)",
+    "count": 6,
+    "cards": ["shop-siren", "shop-serve", "shop-full", "shop-quiet-first", "shop-boil", "shop-pot"],
+    "samples": [
+      {"id": "shop-siren", "why": "level 1: one Response in a busy world, the simplest reactive test"},
+      {"id": "shop-serve", "why": "the serving chain (order, prepare, serve) plus the food slip"},
+      {"id": "shop-boil", "why": "the biggest machine (known limit, rule 7), six rules"}
+    ],
+    "insights": [
+      "The shop learned only with promise cost or end judgment on (round 6); the config default has promise cost off (config.py:273). Pick the S5 default before the final run.",
+      "Every shop result so far is one-hot; the final run uses the embedding default (config.py:339), so it is the first embedding shop run.",
+      "No learning result found for levels 3-5; a 3-seed check under the frozen settings is still missing."
+    ]
+  },
+  {
+    "group": "Soft rule + hard goal",
+    "family": "all eight templates, soft, with Existence(goal); cx goal + soft rules",
+    "priority": "soft",
+    "env": "MiniGrid ServiceRoom (siren, box, carry), BlockedUnlockPickup",
+    "checks": "judged success = the goal only; soft breaks reported per episode with no pass bar",
+    "count": 10,
+    "cards": ["tpl-existence-soft-1-goal", "tpl-existence-two-soft-1-goal", "tpl-absence-soft-1-goal", "tpl-response-soft-1-goal", "tpl-precedence-soft-1-goal", "tpl-chain-response-soft-1-goal", "tpl-responded-existence-soft-1-goal", "tpl-not-co-existence-soft-1-goal", "cx-goal-one-rule", "cx-goal-many-rules"],
+    "samples": [
+      {"id": "tpl-absence-soft-1-goal", "why": "the shortcut (key first) breaks the soft rule; the goal still pays"},
+      {"id": "tpl-response-soft-1-goal", "why": "the siren always rings before the exit, so the soft rule is always at stake"},
+      {"id": "cx-goal-many-rules", "why": "several hard and soft rules together; its answers learned in the chain regression and no trap answer is left"}
+    ],
+    "insights": [
+      "The result test never judges the soft rule here: a policy that reaches the goal and breaks the soft rule every time counts as learned. A bar is needed (for example soft breaks below the breaking plan's or no-RM's).",
+      "Three are flagged by check-pay-order (Precedence, RespondedExistence, NotCoExistence soft, class A).",
+      "Soft cards have no also_ok and no committed bundles yet."
+    ]
+  },
+  {
+    "group": "Soft rules only, forcing worlds (D3)",
+    "family": "Existence, ExistenceTwo, Absence, Response, Precedence, ChainResponse, RespondedExistence, NotCoExistence (soft)",
+    "priority": "soft",
+    "env": "MiniGrid ServiceRoom (siren, carry), Lanes, KeyGift",
+    "checks": "D3: soft breaks and soft open not above idle, one below, label changes above idle",
+    "count": 8,
+    "cards": ["tpl-existence-soft-1-nogoal", "tpl-existence-two-soft-1-nogoal", "tpl-absence-soft-1-nogoal", "tpl-precedence-soft-1-nogoal", "tpl-chain-response-soft-1-nogoal", "tpl-responded-existence-soft-1-nogoal", "tpl-not-co-existence-soft-1-nogoal", "keygift-soft"],
+    "samples": [
+      {"id": "keygift-soft", "why": "idle leaves the first gift open; D3 sees it through soft_open"},
+      {"id": "tpl-chain-response-soft-1-nogoal", "why": "the forced fall makes idle break the rule every episode"},
+      {"id": "tpl-absence-soft-1-nogoal", "why": "shows the coarse count: idle 1 break per episode, and the keep plan also loses a zombie on seed 2"}
+    ],
+    "insights": [
+      "Idle breaks or leaves open every card here, as rule 1 asks.",
+      "Breaks are counted once per clause per episode, so a policy that halves side-lane breaches shows no gain; count break steps for Absence.",
+      "tpl-not-co-existence-soft-1-nogoal passes for a top-lane-only guard, which matches its wording."
+    ]
+  },
+  {
+    "group": "Ablation (reward parts switched off)",
+    "family": "mixed hard + soft",
+    "priority": "hard+soft",
+    "env": "MiniGrid Lanes, BlockedUnlockPickup",
+    "checks": "same judge as each card; 6 variants x FARM",
+    "count": 3,
+    "cards": ["lanes-rules", "cx-goal-one-rule", "cx-goal-many-rules"],
+    "samples": [
+      {"id": "lanes-rules", "why": "the well and the recurrent soft penalty matter most here"},
+      {"id": "cx-goal-many-rules", "why": "the only card where all six parts are present"}
+    ],
+    "insights": [
+      "complex/ablation.json:9-10 still quotes the old -1 and -0.5 pays.",
+      "Seeds [1] only; rule 6 asks for 3."
+    ]
+  }
+]

@@ -12,8 +12,10 @@ LLM-loop additions: s/call (median wall of one generator and one critic request)
 always), --letters: one letter per run and case (R right, A accepted, W wrong), and --cases a,b: only
 those cases.
 
-The call logs (`*.calls.jsonl`, one per run) are not copied (see the entry's README), so the columns "calls
-gen+critic", "s/call" and "output tokens" print 0 here; every other column is computed from the copied records.
+The call logs (`*.calls.jsonl`, one per run) of the first report and the first loop are not copied (see the
+entry's README), so on those runs the columns "calls gen+critic", "s/call" and "output tokens" print 0; every
+other column is computed from the copied records. The loop-2 runs (`evidence/llm-loop2/runs/f-*`) keep slim
+call logs (prompts and schema dropped), so those columns are filled there.
 """
 
 import json

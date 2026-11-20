@@ -1,0 +1,406 @@
+diff --git a/experiments/benchmark/base/README.md b/experiments/benchmark/base/README.md
+index f1a436a..c645717 100644
+--- a/experiments/benchmark/base/README.md
++++ b/experiments/benchmark/base/README.md
+@@ -18,6 +18,13 @@ Scoring treats them as optional extras: the stored clauses may keep or drop them
+ clause alone is a correct output. `base-blocked-unlock-pickup` now says the ball and the key may
+ come in either order.
+
++Order audit (2026-11-20): an order the task states is required even when the world forces it, so
++`forced` now keeps only orders the task does not state. `base-doorkey` ("use the key to open the
++door, then reach the goal") and `base-blocked-unlock-pickup` ("..., unlock the door, and then pick
++up the box") state every order and lost `forced`; the goal clause alone is no longer correct there.
++`base-unlock-pickup` and `base-key-corridor` list their steps with no order word, so their orders
++stay in `forced`. The Response chain of `base-doorkey` stays `also_ok`: it states both orders.
++
+ Layouts: training resets draw new procedural layouts (`layout: procedural`). Evaluation keeps the fixed
+ seeds `eval_seed_base + i`, the same for every run and arm. `layout_seed: 1` stays on the card only for
+ the scripted plans, the trace records and the card checks; the trainer ignores it.
+diff --git a/experiments/benchmark/base/tasks.json b/experiments/benchmark/base/tasks.json
+index 1ee5158..e0ce6b3 100644
+--- a/experiments/benchmark/base/tasks.json
++++ b/experiments/benchmark/base/tasks.json
+@@ -22,7 +22,6 @@
+         ["Precedence", ["door_open", "at_goal"], "hard"],
+         ["Existence", ["at_goal"], "hard"]
+       ],
+-      "forced": [0, 1],
+       "also_ok": [
+         [
+           ["Response", ["has_key", "door_open"], "hard"],
+@@ -52,7 +51,7 @@
+       },
+       "event_seeds": [],
+       "paraphrases": [],
+-      "notes": "Task text: first task of examples/arm-fm/minigrid-doorkey/tasks.json. Pilot bundle generated from this text. Changed in card fix 2: the key-before-door and door-before-goal orders are forced by the world, so they are optional extras in scoring (`forced`); Existence(at_goal) alone is also a correct output. S2 2026-11-19: the Response chain with the first trigger required (Response(first, door_open), Response(door_open, last), Existence(first)) is also a correct output (`also_ok`), the same alternative the pilot and smoke copies of this card already carry."
++      "notes": "Task text: first task of examples/arm-fm/minigrid-doorkey/tasks.json. Pilot bundle generated from this text. Changed in card fix 2: the key-before-door and door-before-goal orders are forced by the world, so they are optional extras in scoring (`forced`); Existence(at_goal) alone is also a correct output. S2 2026-11-19: the Response chain with the first trigger required (Response(first, door_open), Response(door_open, last), Existence(first)) is also a correct output (`also_ok`), the same alternative the pilot and smoke copies of this card already carry. Order audit 2026-11-20: the task states both orders (\"use the key to open the door\", \"then reach the goal\"), and a stated order is required even when the level forces it, so `forced` is gone and Existence(at_goal) alone is no longer correct. The Response chain stays `also_ok`: it states both orders as \"after a, b\"."
+     },
+     {
+       "id": "base-unlock-pickup",
+@@ -105,7 +104,7 @@
+       },
+       "event_seeds": [],
+       "paraphrases": [],
+-      "notes": "Task text: first task of examples/arm-fm/minigrid-unlock-pickup/tasks.json. Pilot bundle generated from this text. The agent carries one object, so it drops the key before taking the box. Changed in card fix 2: the key-before-door and door-before-box orders are forced by the world, so they are optional extras in scoring (`forced`); Existence(target_picked_up) alone is also a correct output. S2 2026-11-19: the Response chain with the first trigger required (Response(first, door_open), Response(door_open, last), Existence(first)) is also a correct output (`also_ok`), the same alternative the pilot and smoke copies of this card already carry."
++      "notes": "Task text: first task of examples/arm-fm/minigrid-unlock-pickup/tasks.json. Pilot bundle generated from this text. The agent carries one object, so it drops the key before taking the box. Changed in card fix 2: the key-before-door and door-before-box orders are forced by the world, so they are optional extras in scoring (`forced`); Existence(target_picked_up) alone is also a correct output. S2 2026-11-19: the Response chain with the first trigger required (Response(first, door_open), Response(door_open, last), Existence(first)) is also a correct output (`also_ok`), the same alternative the pilot and smoke copies of this card already carry. Order audit 2026-11-20: both orders stay `forced`. The task lists the steps with no order word (\"Acquire ..., unlock ..., and pick up ...\"), so it states no order; the same reading makes \"Open the door and pick up the box\" two goals. This is the closest call of the audit; the pilot and smoke copies of this card require both orders."
+     },
+     {
+       "id": "base-blocked-unlock-pickup",
+@@ -128,7 +127,6 @@
+         ["Precedence", ["door_open", "target_picked_up"], "hard"],
+         ["Existence", ["target_picked_up"], "hard"]
+       ],
+-      "forced": [0, 1, 2],
+       "also_ok": [],
+       "env_reward_matches": true,
+       "train": true,
+@@ -157,7 +155,7 @@
+       },
+       "event_seeds": [],
+       "paraphrases": [],
+-      "notes": "Task text: first task of examples/arm-fm/minigrid-blocked-unlock-pickup/tasks.json. The first drop must leave the door reachable. Changed in card fix 2: the wording now says the ball and the key may come in either order (the example task text keeps the ball-first list), because a key-first run satisfies every clause; the three orders are forced by the world, so they are optional extras in scoring (`forced`) and Existence(target_picked_up) alone is also a correct output."
++      "notes": "Task text: first task of examples/arm-fm/minigrid-blocked-unlock-pickup/tasks.json. The first drop must leave the door reachable. Changed in card fix 2: the wording now says the ball and the key may come in either order (the example task text keeps the ball-first list), because a key-first run satisfies every clause; the three orders are forced by the world, so they are optional extras in scoring (`forced`) and Existence(target_picked_up) alone is also a correct output. Order audit 2026-11-20: the list \"..., unlock the door, and then pick up the box\" states all three orders (the ball and the key before the door, the door before the box), and a stated order is required even when the level forces it, so `forced` is gone and Existence(target_picked_up) alone is no longer correct."
+     },
+     {
+       "id": "base-key-corridor",
+@@ -204,7 +202,7 @@
+       },
+       "event_seeds": [],
+       "paraphrases": [],
+-      "notes": "Task text: first task of examples/arm-fm/minigrid-key-corridor/tasks.json. Navigation opens closed unlocked side doors on the way. Changed in card fix 2: the key-before-door and door-before-object orders are forced by the world, so they are optional extras in scoring (`forced`); Existence(target_picked_up) alone is also a correct output, and the card does not measure exploration."
++      "notes": "Task text: first task of examples/arm-fm/minigrid-key-corridor/tasks.json. Navigation opens closed unlocked side doors on the way. Changed in card fix 2: the key-before-door and door-before-object orders are forced by the world, so they are optional extras in scoring (`forced`); Existence(target_picked_up) alone is also a correct output, and the card does not measure exploration. Order audit 2026-11-20: both orders stay `forced`. The task lists the steps with no order word, so it states no order (the same reading as base-unlock-pickup). The stated \"find and acquire the key\" has no clause in `expect`; listed for review."
+     }
+   ]
+ }
+diff --git a/experiments/benchmark/complex/README.md b/experiments/benchmark/complex/README.md
+index 2775a9b..b4df9c9 100644
+--- a/experiments/benchmark/complex/README.md
++++ b/experiments/benchmark/complex/README.md
+@@ -44,6 +44,14 @@ about one seed in three never learns it. The same day it also lost the answer wi
+ `Existence(box)` but no `Existence(has_door_key)` and no door step: the same trap (solve pay 1, -1, 1, 11), never
+ trained. Four answers remain; the later ones are renumbered.
+
++Order audit (2026-11-20): an order the task states is required even when the world forces it, so
++`forced` now keeps only orders the task does not state, and an `also_ok` answer that drops a stated
++order is no longer correct. All three cards state their orders ("and then", "then", "after", "open
++the door with the key", "Then ... and pick up the box") and lost `forced`. `cx-sequence` lost its
++one-Existence-per-step answer, `cx-goal-one-rule` its answer with two Existences and no order, and
++`cx-goal-many-rules` its four remaining answers (none has `Precedence(has_door_key, door_open)`).
++`cx-sequence`'s p3 lists the steps with no order word; it is scored against the same card.
++
+ ## Contents
+
+ - `tasks.json`: the cards.
+diff --git a/experiments/benchmark/complex/tasks.json b/experiments/benchmark/complex/tasks.json
+index 504ba20..989a926 100644
+--- a/experiments/benchmark/complex/tasks.json
++++ b/experiments/benchmark/complex/tasks.json
+@@ -24,16 +24,7 @@
+         ["Precedence", ["target_room_entered", "target_picked_up"], "hard"],
+         ["Existence", ["target_picked_up"], "hard"]
+       ],
+-      "forced": [0, 1, 2, 3],
+-      "also_ok": [
+-        [
+-          ["Existence", ["key_found"], "hard"],
+-          ["Existence", ["has_matching_key"], "hard"],
+-          ["Existence", ["target_door_open"], "hard"],
+-          ["Existence", ["target_room_entered"], "hard"],
+-          ["Existence", ["target_picked_up"], "hard"]
+-        ]
+-      ],
++      "also_ok": [],
+       "env_reward_matches": true,
+       "train": true,
+       "plans": {
+@@ -66,7 +57,7 @@
+         "Locate the key and take it, unlock and open the door, step into the room, and finish by picking up the ball.",
+         "Find the key, take it, open the locked door, walk into the room behind it, and pick up the ball."
+       ],
+-      "notes": "Five ordered steps (long sequence). Every order is forced by the env, so only the last step can fail. Changed in card fix 2: the four orders are optional extras in scoring (`forced`); Existence(target_picked_up) alone is also a correct output. `key_found` now needs a clear view of the key."
++      "notes": "Five ordered steps (long sequence). Every order is forced by the env, so only the last step can fail. Changed in card fix 2: the four orders are optional extras in scoring (`forced`); Existence(target_picked_up) alone is also a correct output. `key_found` now needs a clear view of the key. Order audit 2026-11-20: the list \"..., go into the room, and then pick up the ball\" states all four orders, and a stated order is required even when the level forces it, so `forced` is gone, Existence(target_picked_up) alone is no longer correct, and the answer with one Existence per step (no order) left `also_ok`. p1 (\"First ... Then ...\") and p2 (\"... and finish by picking up the ball\") state the same orders; p3 lists the steps with no order word."
+     },
+     {
+       "id": "cx-rules-only",
+@@ -163,18 +154,12 @@
+         ["Existence", ["target_picked_up"], "hard"],
+         ["Absence", ["key_lost"], "soft"]
+       ],
+-      "forced": [0],
+       "also_ok": [
+         [
+           ["Response", ["door_open", "target_picked_up"], "hard"],
+           ["Existence", ["door_open"], "hard"],
+           ["Absence", ["key_lost"], "soft"]
+         ],
+-        [
+-          ["Existence", ["door_open"], "hard"],
+-          ["Existence", ["target_picked_up"], "hard"],
+-          ["Absence", ["key_lost"], "soft"]
+-        ],
+         [
+           ["Precedence", ["door_open", "target_picked_up"], "hard"],
+           ["Existence", ["door_open"], "hard"],
+@@ -227,7 +212,7 @@
+         "Try not to drop the key while the door is still closed. Open the door, then pick up the box in the other room.",
+         "Open the door, then take the box from the other room; try not to drop the key while the door is still closed."
+       ],
+-      "notes": "Goal of two steps plus one soft rule; the soft rule is not in the env reward. Moved from UnlockPickup to BlockedUnlockPickup in the D10 revision, so it sits on the same world as cx-goal-many-rules: a key-first run has to drop the key with the door closed to move the ball. Changed in card fix 2: the hard door-before-box order is forced by the world, so it is an optional extra in scoring (`forced`). S2 2026-11-19: Precedence(door_open, key_lost) is not an `also_ok` answer for the soft Absence(key_lost): it is weaker, it accepts opening the door, shutting it again and dropping the key, which the wording forbids."
++      "notes": "Goal of two steps plus one soft rule; the soft rule is not in the env reward. Moved from UnlockPickup to BlockedUnlockPickup in the D10 revision, so it sits on the same world as cx-goal-many-rules: a key-first run has to drop the key with the door closed to move the ball. Changed in card fix 2: the hard door-before-box order is forced by the world, so it is an optional extra in scoring (`forced`). S2 2026-11-19: Precedence(door_open, key_lost) is not an `also_ok` answer for the soft Absence(key_lost): it is weaker, it accepts opening the door, shutting it again and dropping the key, which the wording forbids. Order audit 2026-11-20: \"open the door and then pick up the box\" states the order (every paraphrase says \"then\" or \"after\"), and a stated order is required even when the level forces it, so `forced` is gone and the answer with Existence(door_open) and Existence(target_picked_up) but no order left `also_ok`. The Response answer stays: it states the order as \"after the door, the box\"."
+     },
+     {
+       "id": "cx-goal-many-rules",
+@@ -252,41 +237,7 @@
+         ["Precedence", ["door_open", "target_picked_up"], "hard"],
+         ["Existence", ["target_picked_up"], "hard"]
+       ],
+-      "forced": [3, 4],
+-      "also_ok": [
+-        [
+-          ["Precedence", ["blocker_moved", "has_door_key"], "hard"],
+-          ["Absence", ["key_lost"], "soft"],
+-          ["Response", ["has_door_key", "door_open"], "soft"],
+-          ["Existence", ["has_door_key"], "hard"],
+-          ["Existence", ["target_picked_up"], "hard"]
+-        ],
+-        [
+-          ["Precedence", ["blocker_moved", "has_door_key"], "hard"],
+-          ["Absence", ["key_lost"], "soft"],
+-          ["Response", ["has_door_key", "door_open"], "soft"],
+-          ["Existence", ["blocker_moved"], "hard"],
+-          ["Existence", ["has_door_key"], "hard"],
+-          ["Existence", ["target_picked_up"], "hard"]
+-        ],
+-        [
+-          ["Precedence", ["blocker_moved", "has_door_key"], "hard"],
+-          ["Absence", ["key_lost"], "soft"],
+-          ["Response", ["has_door_key", "door_open"], "soft"],
+-          ["Precedence", ["door_open", "target_picked_up"], "hard"],
+-          ["Existence", ["has_door_key"], "hard"],
+-          ["Existence", ["target_picked_up"], "hard"]
+-        ],
+-        [
+-          ["Precedence", ["blocker_moved", "has_door_key"], "hard"],
+-          ["Absence", ["key_lost"], "soft"],
+-          ["Response", ["has_door_key", "door_open"], "soft"],
+-          ["Precedence", ["door_open", "target_picked_up"], "hard"],
+-          ["Existence", ["blocker_moved"], "hard"],
+-          ["Existence", ["has_door_key"], "hard"],
+-          ["Existence", ["target_picked_up"], "hard"]
+-        ]
+-      ],
++      "also_ok": [],
+       "env_reward_matches": false,
+       "train": true,
+       "plans": {
+@@ -345,7 +296,7 @@
+         "Take the key only after the ball is out of the way. Try not to drop the key while the door is still closed. At any moment you are holding the key, try to have the door open then or open it later. Then use the key to open the door and get the box from the other room.",
+         "First clear the ball from the door and only then take the key. Try not to drop the key while the door is still closed, and whenever you hold the key, try to have the door open at that moment or open it afterwards. After that, open the door with the key and pick up the box in the other room."
+       ],
+-      "notes": "One hard rule, two soft rules and a two-step goal. Changed in card fix 2: the soft door rule is worded as the state it checks (the judge needs the door open when you last hold the key or later, so closing the door again while still holding the key leaves the rule open), and the hard door-before-box order is an optional extra in scoring (`forced`). Card fixes 2026-11-18: the soft key-drop ban is unforced once the hard ball-first order is obeyed (a ball-first run never has to drop the key with the door closed), so it is not a second binding trade-off. S2 2026-11-19: Precedence(door_open, key_lost) is not an `also_ok` answer for the soft Absence(key_lost): it is weaker, it accepts opening the door, shutting it again and dropping the key, which the wording forbids. Chain reword 2026-11-19: the task names every step (\"open the door with the key\"), so the hard answer is the chain Existence(box), Precedence(door_open, box), Precedence(has_door_key, door_open) plus the card's own Precedence(blocker_moved, has_door_key); both chain orders are forced by the level (`forced`), and the progress pay reads the machine, so a step with no rule of its own would pay nothing. 2026-11-20: the answer with Precedence(door_open, box), Existence(blocker_moved) and Existence(box) but no Existence(has_door_key) left `also_ok`: it has no key step, so the soft Response charges the key pickup -1 with nothing to offset it (about 1 seed in 3 never learns it). The answer with Existence(blocker_moved) and Existence(box) but no key or door step left too, for the same trap (solve pay 1, -1, 1, 11; never trained)."
++      "notes": "One hard rule, two soft rules and a two-step goal. Changed in card fix 2: the soft door rule is worded as the state it checks (the judge needs the door open when you last hold the key or later, so closing the door again while still holding the key leaves the rule open), and the hard door-before-box order is an optional extra in scoring (`forced`). Card fixes 2026-11-18: the soft key-drop ban is unforced once the hard ball-first order is obeyed (a ball-first run never has to drop the key with the door closed), so it is not a second binding trade-off. S2 2026-11-19: Precedence(door_open, key_lost) is not an `also_ok` answer for the soft Absence(key_lost): it is weaker, it accepts opening the door, shutting it again and dropping the key, which the wording forbids. Chain reword 2026-11-19: the task names every step (\"open the door with the key\"), so the hard answer is the chain Existence(box), Precedence(door_open, box), Precedence(has_door_key, door_open) plus the card's own Precedence(blocker_moved, has_door_key); both chain orders are forced by the level (`forced`), and the progress pay reads the machine, so a step with no rule of its own would pay nothing. 2026-11-20: the answer with Precedence(door_open, box), Existence(blocker_moved) and Existence(box) but no Existence(has_door_key) left `also_ok`: it has no key step, so the soft Response charges the key pickup -1 with nothing to offset it (about 1 seed in 3 never learns it). The answer with Existence(blocker_moved) and Existence(box) but no key or door step left too, for the same trap (solve pay 1, -1, 1, 11; never trained). Order audit 2026-11-20: \"Then open the door with the key and pick up the box\" states both chain orders (the key opens the door; the steps after \"Then\" are a sequence, as the paraphrases' \"Finally\" and \"After that\" say), and a stated order is required even when the level forces it, so `forced` is gone and the four remaining `also_ok` answers left: none has Precedence(has_door_key, door_open), and two also lack Precedence(door_open, target_picked_up)."
+     },
+     {
+       "id": "cx-siren",
+diff --git a/experiments/benchmark/templates/README.md b/experiments/benchmark/templates/README.md
+index 8a22635..979ce02 100644
+--- a/experiments/benchmark/templates/README.md
++++ b/experiments/benchmark/templates/README.md
+@@ -90,6 +90,24 @@ with the key order is now `exact`. `Precedence(has_door_key, target_picked_up)`
+ the key, so it accepts the same traces (checked on the compiled DFAs, every reachable product state of the
+ two sets agrees). Strong models gave this answer in the model comparison and the scorer marked it wrong.
+
++Order audit (2026-11-20): an order the task states is required even when the level forces it. This
++replaces the "Two forms" rule above for stated orders: `forced` keeps only orders the task does not
++state, and an `also_ok` answer that drops a stated order is no longer correct.
++- Lost `forced`: `tpl-existence-1-goal` ("then", "first", "after"), `tpl-response-1-goal` and
++  `tpl-precedence-1-goal` ("open the door with it/the key", then the box).
++- Lost `also_ok` answers: form A of `tpl-existence-1-goal`; `Existence(box)` alone on
++  `tpl-existence-two-1/2-goal`; both answers of `tpl-response-1-goal` and `tpl-precedence-1-goal`;
++  the `RespondedExistence` answer of `tpl-precedence-1-nogoal` and both answers of
++  `tpl-precedence-4-goal`. Those last ones keep the order only because the run ends at the exit.
++- Kept: `tpl-responded-existence-2-goal` keeps both box orders in `forced`. "Then" there follows an
++  "if" rule, not a commanded step, so the task orders no event before the box; the same reading keeps
++  the Response and RespondedExistence goal cards (`tpl-response-2/3-goal`,
++  `tpl-responded-existence-1/3-goal`) without an order. An unordered list ("Open the door and pick up
++  the box") still states no order.
++- Answers that drop a stated rule other than an order (the `RespondedExistence` of the
++  RespondedExistence goal cards, the door or room of `tpl-existence-2/3-goal`, the count of
++  `tpl-existence-two-3-goal`) are unchanged and listed for review in the loop report.
++
+ ## Soft cards (2026-11-19)
+
+ 28 cards word a rule as a wish ("try to ...", "preferably ...") and mark it soft in `expect`, so every
+diff --git a/experiments/benchmark/templates/tasks.json b/experiments/benchmark/templates/tasks.json
+index 8363b47..30aca68 100644
+--- a/experiments/benchmark/templates/tasks.json
++++ b/experiments/benchmark/templates/tasks.json
+@@ -18,12 +18,7 @@
+       "template": "Existence",
+       "status": "draft",
+       "expect": [["Precedence", ["has_key", "at_goal"], "hard"], ["Existence", ["at_goal"], "hard"]],
+-      "forced": [0],
+       "also_ok": [
+-        [
+-          ["Existence", ["has_key"], "hard"],
+-          ["Existence", ["at_goal"], "hard"]
+-        ],
+         [
+           ["Precedence", ["has_key", "at_goal"], "hard"],
+           ["Existence", ["has_key"], "hard"],
+@@ -61,7 +56,7 @@
+         "Grab the key first, then make your way to the goal.",
+         "After you have picked up the key, reach the goal."
+       ],
+-      "notes": "The other clause is implied by the finish, so the env reward pays exactly when it is done. Card fixes 2026-11-18: Existence(at_goal) alone is also correct, because reaching the goal already needs the key; the no-goal cards of the template isolate the clause. Chain prompt loop 2026-11-19: the task states an order, so the primary answer is the chain form (Existence of the last step plus Precedence). The order is forced, so the Precedence is optional and Existence(at_goal) alone still matches `expect`. One Existence per step, alone or with the Precedence, is `also_ok` because the level forces the order, and the judge stays lenient on purpose; the critic rejects an Existence that the chain already forces, so it rejects these answers on purpose. The prompts still write every order the task states, forced or not; only this card is lenient about a forced Precedence. The idle walk breaks only clause 1 (`breaks: [1]`): clause 0 is now the Precedence, which a run that never takes the key keeps."
++      "notes": "The other clause is implied by the finish, so the env reward pays exactly when it is done. Card fixes 2026-11-18: Existence(at_goal) alone is also correct, because reaching the goal already needs the key; the no-goal cards of the template isolate the clause. Chain prompt loop 2026-11-19: the task states an order, so the primary answer is the chain form (Existence of the last step plus Precedence). The order is forced, so the Precedence is optional and Existence(at_goal) alone still matches `expect`. One Existence per step, alone or with the Precedence, is `also_ok` because the level forces the order, and the judge stays lenient on purpose; the critic rejects an Existence that the chain already forces, so it rejects these answers on purpose. The prompts still write every order the task states, forced or not; only this card is lenient about a forced Precedence. The idle walk breaks only clause 1 (`breaks: [1]`): clause 0 is now the Precedence, which a run that never takes the key keeps. Order audit 2026-11-20: the task and every paraphrase state the order (\"then\", \"first\", \"after\"), and a stated order is required even when the level forces it, so this card is no longer lenient: `forced` is gone, Existence(at_goal) alone is no longer correct, and the answer with one Existence per step and no Precedence left `also_ok`."
+     },
+     {
+       "id": "tpl-existence-1-nogoal",
+@@ -286,9 +281,6 @@
+       "status": "draft",
+       "expect": [["ExistenceTwo", ["has_door_key"], "hard"], ["Existence", ["target_picked_up"], "hard"]],
+       "also_ok": [
+-        [
+-          ["Existence", ["target_picked_up"], "hard"]
+-        ],
+         [
+           ["ExistenceTwo", ["has_door_key"], "hard"],
+           ["Precedence", ["has_door_key", "target_picked_up"], "hard"],
+@@ -322,7 +314,7 @@
+         "Pick up the box in the other room, after you were holding the key on at least two different moves.",
+         "Hold the key on two or more different moves, and then take the box from the other room."
+       ],
+-      "notes": "State reading: the judge counts two different steps with the state true (not necessarily consecutive). The other clause is implied by the finish, so the env reward pays exactly when it is done. Any successful box pickup holds the key on two or more steps, so the counting clause cannot be isolated on this goal card; the nogoal sibling tests it. Card fixes 2026-11-18: Existence(target_picked_up) alone is also a correct output (`also_ok`)."
++      "notes": "State reading: the judge counts two different steps with the state true (not necessarily consecutive). The other clause is implied by the finish, so the env reward pays exactly when it is done. Any successful box pickup holds the key on two or more steps, so the counting clause cannot be isolated on this goal card; the nogoal sibling tests it. Card fixes 2026-11-18: Existence(target_picked_up) alone is also a correct output (`also_ok`). Order audit 2026-11-20: Existence(target_picked_up) alone left `also_ok`: it drops both the stated count and the stated \"then\" order. `expect` itself has no key-before-box order; it is kept for now and listed for review."
+     },
+     {
+       "id": "tpl-existence-two-1-nogoal",
+@@ -379,9 +371,6 @@
+       "status": "draft",
+       "expect": [["ExistenceTwo", ["has_door_key"], "hard"], ["Existence", ["target_picked_up"], "hard"]],
+       "also_ok": [
+-        [
+-          ["Existence", ["target_picked_up"], "hard"]
+-        ],
+         [
+           ["ExistenceTwo", ["has_door_key"], "hard"],
+           ["Precedence", ["has_door_key", "target_picked_up"], "hard"],
+@@ -848,19 +837,7 @@
+         ["Precedence", ["door_open", "target_picked_up"], "hard"],
+         ["Existence", ["target_picked_up"], "hard"]
+       ],
+-      "forced": [1, 2],
+-      "also_ok": [
+-        [
+-          ["Response", ["has_door_key", "door_open"], "hard"],
+-          ["Existence", ["door_open"], "hard"],
+-          ["Existence", ["target_picked_up"], "hard"]
+-        ],
+-        [
+-          ["Response", ["has_door_key", "door_open"], "hard"],
+-          ["Precedence", ["door_open", "target_picked_up"], "hard"],
+-          ["Existence", ["target_picked_up"], "hard"]
+-        ]
+-      ],
++      "also_ok": [],
+       "env_reward_matches": false,
+       "train": true,
+       "plans": {
+@@ -893,7 +870,7 @@
+         "If you are holding the key, the door must be open at that point or at a later point. Pick up the key, use it to open the door, and then pick up the box in the other room.",
+         "Any time the key is in your hands, the door must be open right then or opened afterwards. Take the key and open the door with it. Finally, pick up the box in the other room."
+       ],
+-      "notes": "Moved from KeyCorridorS6R3 to UnlockPickup on 2026-11-20: no method (no-RM, ARM-FM, FARM) learned KeyCorridor in 71 runs, so the card could not train, and UnlockPickup was learned (ARM-FM 3 of 3, FARM 1 of 3 on base-unlock-pickup at 1.5M steps). The trigger is has_door_key, a condition that stays true while the key is held, so the door must be open when the key was last held or later (the wording of tpl-response-2-goal and -3-goal); the old key_found trigger and its last-step reading went with the level. The goal forces the door open, so the Response only separates a run that takes the key and stops; a wait plan fails the goal. Chain reword 2026-11-19, kept: the task names every step, so the answer is the chain Existence(box), Precedence(door_open, box), Precedence(has_door_key, door_open) plus the card's Response. Both orders are forced by the level (`forced`: the door opens only with the matching key, the box room has no other entrance), and the progress pay reads the machine, so a step with no rule of its own would pay nothing."
++      "notes": "Moved from KeyCorridorS6R3 to UnlockPickup on 2026-11-20: no method (no-RM, ARM-FM, FARM) learned KeyCorridor in 71 runs, so the card could not train, and UnlockPickup was learned (ARM-FM 3 of 3, FARM 1 of 3 on base-unlock-pickup at 1.5M steps). The trigger is has_door_key, a condition that stays true while the key is held, so the door must be open when the key was last held or later (the wording of tpl-response-2-goal and -3-goal); the old key_found trigger and its last-step reading went with the level. The goal forces the door open, so the Response only separates a run that takes the key and stops; a wait plan fails the goal. Chain reword 2026-11-19, kept: the task names every step, so the answer is the chain Existence(box), Precedence(door_open, box), Precedence(has_door_key, door_open) plus the card's Response. Both orders are forced by the level (`forced`: the door opens only with the matching key, the box room has no other entrance), and the progress pay reads the machine, so a step with no rule of its own would pay nothing. Order audit 2026-11-20: both orders are stated (\"open the door with it\" names the key as the means, \"then\" and \"Finally\" put the box last), and a stated order is required even when the level forces it, so `forced` is gone and both `also_ok` answers left: one has no order after the Response, the other drops Precedence(has_door_key, door_open)."
+     },
+     {
+       "id": "tpl-response-1-nogoal",
+@@ -1125,19 +1102,7 @@
+         ["Precedence", ["door_open", "target_picked_up"], "hard"],
+         ["Existence", ["target_picked_up"], "hard"]
+       ],
+-      "forced": [1, 2],
+-      "also_ok": [
+-        [
+-          ["Precedence", ["blocker_moved", "has_door_key"], "hard"],
+-          ["Existence", ["door_open"], "hard"],
+-          ["Existence", ["target_picked_up"], "hard"]
+-        ],
+-        [
+-          ["Precedence", ["blocker_moved", "has_door_key"], "hard"],
+-          ["Precedence", ["door_open", "target_picked_up"], "hard"],
+-          ["Existence", ["target_picked_up"], "hard"]
+-        ]
+-      ],
++      "also_ok": [],
+       "env_reward_matches": false,
+       "train": true,
+       "plans": {
+@@ -1183,7 +1148,7 @@
+         "Take the key only after the ball is out of the way, then use it to open the door and pick up the box.",
+         "First move the ball off the door, then take the key, open the door with it and pick up the box."
+       ],
+-      "notes": "Not forced by the env: the key can be taken first (it is then dropped to free the hands). Chain reword 2026-11-19: the task names every step, so the answer is the chain Existence(box), Precedence(door_open, box), Precedence(has_door_key, door_open) plus the card's own Precedence(blocker_moved, has_door_key). The key-before-door and door-before-box orders are forced by the level (`forced`); the progress pay reads the machine, so a step with no rule of its own would pay nothing."
++      "notes": "Not forced by the env: the key can be taken first (it is then dropped to free the hands). Chain reword 2026-11-19: the task names every step, so the answer is the chain Existence(box), Precedence(door_open, box), Precedence(has_door_key, door_open) plus the card's own Precedence(blocker_moved, has_door_key). The key-before-door and door-before-box orders are forced by the level (`forced`); the progress pay reads the machine, so a step with no rule of its own would pay nothing. Order audit 2026-11-20: both orders are stated (\"open the door with the key\" names the means; the steps after \"Then\" are a sequence, and p3 says \"First ... then\"), and a stated order is required even when the level forces it, so `forced` is gone and both `also_ok` answers left: each drops Precedence(has_door_key, door_open), and one also drops the door-before-box order."
+     },
+     {
+       "id": "tpl-precedence-1-nogoal",
+@@ -1201,11 +1166,7 @@
+       "template": "Precedence",
+       "status": "draft",
+       "expect": [["Precedence", ["switch_toggled", "at_exit"], "hard"]],
+-      "also_ok": [
+-        [
+-          ["RespondedExistence", ["at_exit", "switch_toggled"], "hard"]
+-        ]
+-      ],
++      "also_ok": [],
+       "env_reward_matches": false,
+       "train": false,
+       "plans": {
+@@ -1224,7 +1185,7 @@
+         "Do not reach the exit until you have flipped the switch.",
+         "Reaching the exit is allowed only once the switch has been flipped."
+       ],
+-      "notes": "The first ring comes at step 1-4 and the exit is at least 6 moves away, so the policy toggles first. Changed in card fix 2: one conditional reading in every wording (a run that never flips the switch and never reaches the exit also passes); the earlier imperative could be read as asking for both. Card fixes 2026-11-18: a wait plan passes it on seeds 1-3 (the exit is never reached), so it no longer trains (train false); the same Precedence gate, with its trigger forced by a goal, is tested where waiting fails by tpl-precedence-1-goal. Kept for generation and plan checks. S2 2026-11-19: RespondedExistence(at_exit, switch_toggled) is also a correct output (`also_ok`): at_exit holds only on the last step and never together with switch_toggled, so a toggle can only come before it and the two readings accept and reject the same runs; the goal twin that trains is tpl-precedence-4-goal."
++      "notes": "The first ring comes at step 1-4 and the exit is at least 6 moves away, so the policy toggles first. Changed in card fix 2: one conditional reading in every wording (a run that never flips the switch and never reaches the exit also passes); the earlier imperative could be read as asking for both. Card fixes 2026-11-18: a wait plan passes it on seeds 1-3 (the exit is never reached), so it no longer trains (train false); the same Precedence gate, with its trigger forced by a goal, is tested where waiting fails by tpl-precedence-1-goal. Kept for generation and plan checks. S2 2026-11-19: RespondedExistence(at_exit, switch_toggled) is also a correct output (`also_ok`): at_exit holds only on the last step and never together with switch_toggled, so a toggle can only come before it and the two readings accept and reject the same runs; the goal twin that trains is tpl-precedence-4-goal. Order audit 2026-11-20: that RespondedExistence left `also_ok`. The task states the order (\"first\", \"after\", \"until\", \"once\"), and the two readings agree only because the level ends the run at the exit; a stated order is now required in the machine itself, not supplied by the level."
+     },
+     {
+       "id": "tpl-precedence-4-goal",
+@@ -1245,16 +1206,7 @@
+         ["Precedence", ["switch_toggled", "at_exit"], "hard"],
+         ["Existence", ["at_exit"], "hard"]
+       ],
+-      "also_ok": [
+-        [
+-          ["RespondedExistence", ["at_exit", "switch_toggled"], "hard"],
+-          ["Existence", ["at_exit"], "hard"]
+-        ],
+-        [
+-          ["Existence", ["switch_toggled"], "hard"],
+-          ["Existence", ["at_exit"], "hard"]
+-        ]
+-      ],
++      "also_ok": [],
+       "env_reward_matches": false,
+       "train": true,
+       "plans": {
+@@ -1274,7 +1226,7 @@
+       },
+       "event_seeds": [1, 2, 3],
+       "paraphrases": [],
+-      "notes": "S2 2026-11-19, C2: the goal twin of tpl-precedence-1-nogoal (same rule plus a hard Existence(at_exit)). A wait plan fails the goal clause, so the card trains; the siren makes the toggle possible but never forces it, so a straight run to the exit breaks the rule. Same ServiceRoom env as the no-goal card; id k = 4 because k = 1 to 3 are the three levels of the suite."
++      "notes": "S2 2026-11-19, C2: the goal twin of tpl-precedence-1-nogoal (same rule plus a hard Existence(at_exit)). A wait plan fails the goal clause, so the card trains; the siren makes the toggle possible but never forces it, so a straight run to the exit breaks the rule. Same ServiceRoom env as the no-goal card; id k = 4 because k = 1 to 3 are the three levels of the suite. Order audit 2026-11-20: both `also_ok` answers left (RespondedExistence(at_exit, switch_toggled) with Existence(at_exit), and Existence(switch_toggled) with Existence(at_exit)). The task states the order (\"first\"); those answers keep it only because the level ends the run at the exit, and a stated order is now required in the machine itself."
+     },
+     {
+       "id": "tpl-precedence-2-goal",
+@@ -1874,7 +1826,7 @@
+       },
+       "event_seeds": [],
+       "paraphrases": [],
+-      "notes": "Card fixes 2026-11-18: Existence(target_picked_up) alone is also a correct output (`also_ok`), because every successful box run moves the ball and takes the key; the no-goal counterpart tests the conditional. Card fix 2026-11-20: the level forces both box orders (`forced`: the door opens only from the ball's cell and with the key, and the box room has no other entrance), so key-before-box and ball-before-box are optional extras of `expect`; the old `also_ok` answer with the key order is now `exact`. `Precedence(has_door_key, target_picked_up)` with `Existence(target_picked_up)` is `also_ok`: its compiled DFAs accept exactly the traces of that answer, because the order and the goal already force the key."
++      "notes": "Card fixes 2026-11-18: Existence(target_picked_up) alone is also a correct output (`also_ok`), because every successful box run moves the ball and takes the key; the no-goal counterpart tests the conditional. Card fix 2026-11-20: the level forces both box orders (`forced`: the door opens only from the ball's cell and with the key, and the box room has no other entrance), so key-before-box and ball-before-box are optional extras of `expect`; the old `also_ok` answer with the key order is now `exact`. `Precedence(has_door_key, target_picked_up)` with `Existence(target_picked_up)` is `also_ok`: its compiled DFAs accept exactly the traces of that answer, because the order and the goal already force the key. Order audit 2026-11-20: both box orders stay `forced`. The task states no order between the ball or the key and the box: the ball is only the condition of the \"if\" rule, and \"Then\" follows that rule sentence rather than a commanded step, so requiring Precedence(has_door_key, target_picked_up) would make the conditional key unconditional. Both `also_ok` answers drop the stated RespondedExistence; they are kept and listed for review, since the audit removes only answers that drop a stated order."
+     },
+     {
+       "id": "tpl-responded-existence-2-nogoal",

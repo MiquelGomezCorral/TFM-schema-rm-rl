@@ -1,0 +1,57 @@
+{
+ "suite": "templates",
+ "name": "tpl-responded-existence-1-nogoal",
+ "task": "If you pick up the key, you must also open the door.",
+ "gen": "deepseek-v4.1-flash",
+ "critic": "glm-5.3-flash",
+ "reasoning": "max",
+ "status": "accepted",
+ "error": null,
+ "wall_s": 178.7,
+ "attempts_used": 2,
+ "critic_rejections": 1,
+ "provider_reruns": 0,
+ "calls": 4,
+ "trace": [
+  {
+   "attempt": 1,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"WQ==\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"has_door_key\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 1,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: wrong template. The task 'If you pick up the key, you must also open the door' is an 'if a happens, b must also happen' wording, which calls for RespondedExistence(has_door_key, door_open) hard. The candidate instead has hard Precedence(door_open, has_door_key), which the machine shows means 'has_door_key may not happen before the first door_open' \u2014 any key pickup while the door is shut lands in the rejecting state u1 (-10). But the environment states 'door_open cannot become true before has_door_key: only toggling with the matching key unlocks the door', so under this clause the door can never open first and the only way to avoid failing is to never pick up the key, making the mission impossible. The clause also never expresses the required consequence that the door must be opened once the key is taken. Replace Precedence(door_open, has_door_key) with a single hard RespondedExistence(has_door_key, door_open): has_door_key is only the 'if' condition and door_open only the consequent, so no Existence clause is needed and the rule-only warning is then valid."
+   }
+  },
+  {
+   "attempt": 2,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"WQ==\",\n    \"pattern\": \"RespondedExistence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 2,
+   "step": "critic",
+   "value": {
+    "accepted": true,
+    "feedback": "NO CHANGES NEEDED: the task 'If you pick up the key, you must also open the door' is exactly the 'if a happens, b must also happen' wording, so the single hard RespondedExistence(has_door_key, door_open) is the right template and argument order. has_door_key appears only as an 'if' condition and door_open is the consequent, so no Existence clause is required and the rule-only warning with empty FINAL_STATES is valid. The 'must' without a preference cue makes hard the correct priority, and the machine reflects the clause: -1 when the key is picked up (promise owed), +1 when the door opens, still owed if the episode ends without it."
+   }
+  }
+ ],
+ "clauses": [
+  [
+   "RespondedExistence",
+   [
+    "has_door_key",
+    "door_open"
+   ],
+   "hard"
+  ]
+ ],
+ "texts": [
+  "WQ=="
+ ],
+ "machine": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&has_door_key) -> u1\n(u0, door_open) -> u2\n(u1, door_open) -> u2\nREWARD_FUNCTION:\n(u0, !door_open&has_door_key, u1) -> -1\n(u1, door_open, u2) -> 1\n"
+}
