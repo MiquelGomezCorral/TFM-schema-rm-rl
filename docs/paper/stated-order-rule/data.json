@@ -1,0 +1,423 @@
+{
+ "title": "Stated-order rule: the machine keeps the order the task states",
+ "eyebrow": "card rule · benchmark answer keys · 2026-11-20",
+ "subtitle": "The user ruled that a Reward Machine matches the instruction, whatever the world forces. Order words (\"then\", \"after\", \"before\") and compounds such as \"find and acquire the key\" state an order, and a stated order is now required; a plain list of facts asks for one Existence per fact, with the ordered chain also accepted. Commit `f29c47a` rewrote three answer keys to that rule. Live at reasoning max, the order words gave the chain in 3 of 3 runs and the plain list gave the chain (accepted) in 3 of 3. The trained \"then\" card learned in 3 of 3 FARM seeds against 0 of 3 without a machine.",
+ "sections": [
+  {
+   "id": "claim",
+   "title": "What it shows",
+   "blocks": [
+    {
+     "type": "callout",
+     "tone": "info",
+     "title": "In plain words",
+     "text": "Each benchmark card holds a task and its answer key: the Declare clauses a right machine contains. Before this change, three cards marked an order the level forces as optional (`forced`). On UnlockPickup the door opens only with the key, so `exact` asked only for the box, and \"key before door\" and \"door before box\" were allowed extras.\n\nThe user ruled that the machine must match the instruction, not the world. Reward Machines exist to shape reward, and the plain environment does not shape an order it merely forces. So an order the task states is now required, and an order it does not state is still never added.\n\nTwo wordings of the same task show the difference. \"Acquire the matching key, then unlock the door, and then pick up the box\" states an order: the answer is the chain, key before door and door before box. \"Acquire the matching key, unlock the door, and pick up the designated box\" is a plain list: three facts, one `Existence` each, and the chain is also accepted there."
+    },
+    {
+     "type": "stats",
+     "items": [
+      {
+       "value": "3 of 3",
+       "label": "live runs with \"then\" that gave the exact chain (arm A)",
+       "tone": "ok"
+      },
+      {
+       "value": "3 of 3",
+       "label": "live runs on the plain list that gave the chain, an accepted answer; none gave the three facts (arm B)",
+       "tone": "ok"
+      },
+      {
+       "value": "3 of 3 vs 0 of 3",
+       "label": "seeds learned on tpl-response-1-goal (\"... then pick up the box\"), FARM against no-RM",
+       "tone": "ok"
+      },
+      {
+       "value": "2 of 3 vs 0 of 3",
+       "label": "seeds learned on base-key-corridor (\"find and acquire the key\"), FARM against no-RM, from the KeyCorridor room-size entry",
+       "tone": "ok"
+      }
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**Card side, not model side.** The commit rewrites answer keys and adds a usage paragraph to `docs/LTLF_TASK_LANGUAGE.md`; no prompt changed. The live runs ran at main `d2d9249`, before the until prompt fix (`f778643`).",
+      "**Same task, other clause list.** The chain and the chain with its implied `Existence`s are the same LTLf by MONA, so base-unlock-pickup accepts both. The facts and the chain are different tasks. The scorer compares clause lists, not tasks: on main, 9 of the 64 `mismatch` FARM bundles state the same task as an accepted answer. Whether they should count is an open user question.",
+      "**One card waits.** Whether \"Then\" after an if-rule also puts the box after the ball (tpl-responded-existence-2-goal) waits for the user. That card does not train."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "rule",
+   "title": "The rule, in the user's words",
+   "intro": "From the project's requirements log (entries of 2026-11-20) and the usage paragraph the commit added. Text in quotes is the user's, verbatim; the rest is the log's own summary of what the user said.",
+   "blocks": [
+    {
+     "type": "list",
+     "items": [
+      "**12:28, stated orders stay.** \"like the task says to get order, do keep it. try to get the LLM to say the right order and all\". The log: a machine keeps every order the task states; on the cards a stated order is required, not an optional `forced` extra; an order the task does not state is still never added from environment facts.",
+      "**About 18:30, the machine matches the instruction (decision 2).** The log: the RM must match the instruction whatever the environment forces; RMs exist for reward shaping, so a stated order goes into the machine even when the world forces it. \"then\" and other order words state an order. A task that only lists facts (base-unlock-pickup) is three facts: one Existence per fact, with the ordered chain also accepted. The usage guide must tell users to put order words between steps.",
+      "**Compound order.** \"Those are not two different tasks that are independent... taking a key may need to first find it... this one is fine, though I said what I said earlier.\" (as the log records it, with its ellipses). A compound over one object where the second verb needs the first, \"find and acquire the key\", states an order. The root's clarification from the user's answer makes it required like any stated order.",
+      "**Scorer.** The user asked to keep the `forced` (optional order) mechanism in the scorer even if no card uses it. After the commit no card uses it."
+     ]
+    },
+    {
+     "type": "callout",
+     "tone": "info",
+     "title": "Usage paragraph added to docs/LTLF_TASK_LANGUAGE.md",
+     "text": "To get an order between steps, use order words such as \"then\", \"after\" and \"before\": \"Acquire the matching key, then unlock the door, and then pick up the box in the other room.\" asks for the key before the door and the door before the box. A plain list of facts gives no order: \"Acquire the matching key, unlock the door, and pick up the designated box in the other room.\" asks for three facts, one `Existence` each (a machine with the ordered chain is also correct there). \"And\" and commas order nothing, except in a compound whose second verb needs the first: \"find and acquire the key\" states that the key is found first. A stated order stays in the machine even when the environment already forces it."
+    }
+   ]
+  },
+  {
+   "id": "cards",
+   "title": "Card changes",
+   "intro": "Commit `f29c47a` changed the answer keys of three cards; base-unlock-pickup also has copies in the smoke suite (`smoke-unlock-pickup-base`) and the pilot suite, changed the same way. `exact` needs every `expect` clause not marked `forced` and nothing outside `expect`; `also_ok` needs one listed answer, clause for clause. The clause lists and LTLf come from `check/order_cards.py`, which reads the cards before and after the commit from `evidence/cards/`.",
+   "blocks": [
+    {
+     "type": "table",
+     "columns": [
+      "card",
+      "task",
+      "before f29c47a",
+      "after f29c47a"
+     ],
+     "rows": [
+      [
+       "base-unlock-pickup, UnlockPickup, trains (same in smoke and pilot)",
+       "Acquire the matching key, unlock the door, and pick up the designated box in the other room.",
+       "`expect`: the chain, `Precedence(has_door_key, door_open)`, `Precedence(door_open, target_picked_up)`, `Existence(target_picked_up)`, both Precedences `forced`, so `exact` needed only `Existence(target_picked_up)`. `also_ok`: two Responses and `Existence(has_door_key)`.",
+       "`expect`: the three facts, `Existence(has_door_key)`, `Existence(door_open)`, `Existence(target_picked_up)`. `also_ok`: the chain, and the chain with the three Existences. Nothing `forced`."
+      ],
+      [
+       "base-key-corridor, KeyCorridorS4R3, trains",
+       "Explore the side rooms, find and acquire the key matching the locked target room, return to the corridor, open the target door, and pick up the designated object.",
+       "`expect`: the chain, `Precedence(has_matching_key, target_door_open)`, `Precedence(target_door_open, target_picked_up)`, `Existence(target_picked_up)`, both Precedences `forced`. No `also_ok`.",
+       "`expect`: three facts plus the compound order, `Existence(has_matching_key)`, `Existence(target_door_open)`, `Existence(target_picked_up)`, `Precedence(key_found, has_matching_key)`. `also_ok`: the chain plus `Precedence(key_found, has_matching_key)`."
+      ],
+      [
+       "tpl-responded-existence-2-goal, BlockedUnlockPickup, does not train",
+       "If you move the ball, you must also take the key. Then pick up the box in the other room.",
+       "`expect`: `RespondedExistence(blocker_moved, has_door_key)`, `Existence(target_picked_up)`, `Precedence(has_door_key, target_picked_up)`, `Precedence(blocker_moved, target_picked_up)`; both box orders `forced`.",
+       "The same four clauses, none `forced`: \"Then\" is an order word, so both box orders are required. Open question below."
+      ]
+     ]
+    },
+    {
+     "type": "text",
+     "text": "**Every answer of the three cards, as clauses and LTLf (from evidence/order-cards.out)**"
+    },
+    {
+     "type": "code",
+     "text": "== base/base-unlock-pickup (MiniGrid-UnlockPickup-v0, train True)\n   task: Acquire the matching key, unlock the door, and pick up the designated box in the other room.\n   before f29c47a, forced [0, 1]:\n     expect:\n       hard Precedence(has_door_key, door_open): (((~door_open) U has_door_key) | (G (~door_open)))\n       hard Precedence(door_open, target_picked_up): (((~target_picked_up) U door_open) | (G (~target_picked_up)))\n       hard Existence(target_picked_up): (F target_picked_up)\n     expect without forced (what `exact` required):\n       hard Existence(target_picked_up): (F target_picked_up)\n     also_ok[0]:\n       hard Response(has_door_key, door_open): (G (has_door_key -> (F door_open)))\n       hard Response(door_open, target_picked_up): (G (door_open -> (F target_picked_up)))\n       hard Existence(has_door_key): (F has_door_key)\n   after f29c47a, forced []:\n     expect:\n       hard Existence(has_door_key): (F has_door_key)\n       hard Existence(door_open): (F door_open)\n       hard Existence(target_picked_up): (F target_picked_up)\n     also_ok[0]:\n       hard Precedence(has_door_key, door_open): (((~door_open) U has_door_key) | (G (~door_open)))\n       hard Precedence(door_open, target_picked_up): (((~target_picked_up) U door_open) | (G (~target_picked_up)))\n       hard Existence(target_picked_up): (F target_picked_up)\n     also_ok[1]:\n       hard Precedence(has_door_key, door_open): (((~door_open) U has_door_key) | (G (~door_open)))\n       hard Precedence(door_open, target_picked_up): (((~target_picked_up) U door_open) | (G (~target_picked_up)))\n       hard Existence(has_door_key): (F has_door_key)\n       hard Existence(door_open): (F door_open)\n       hard Existence(target_picked_up): (F target_picked_up)\n\n== base/base-key-corridor (MiniGrid-KeyCorridorS4R3-v0, train True)\n   task: Explore the side rooms, find and acquire the key matching the locked target room, return to the corridor, open the target door, and pick up the designated object.\n   before f29c47a, forced [0, 1]:\n     expect:\n       hard Precedence(has_matching_key, target_door_open): (((~target_door_open) U has_matching_key) | (G (~target_door_open)))\n       hard Precedence(target_door_open, target_picked_up): (((~target_picked_up) U target_door_open) | (G (~target_picked_up)))\n       hard Existence(target_picked_up): (F target_picked_up)\n     expect without forced (what `exact` required):\n       hard Existence(target_picked_up): (F target_picked_up)\n   after f29c47a, forced []:\n     expect:\n       hard Existence(has_matching_key): (F has_matching_key)\n       hard Existence(target_door_open): (F target_door_open)\n       hard Existence(target_picked_up): (F target_picked_up)\n       hard Precedence(key_found, has_matching_key): (((~has_matching_key) U key_found) | (G (~has_matching_key)))\n     also_ok[0]:\n       hard Precedence(key_found, has_matching_key): (((~has_matching_key) U key_found) | (G (~has_matching_key)))\n       hard Precedence(has_matching_key, target_door_open): (((~target_door_open) U has_matching_key) | (G (~target_door_open)))\n       hard Precedence(target_door_open, target_picked_up): (((~target_picked_up) U target_door_open) | (G (~target_picked_up)))\n       hard Existence(target_picked_up): (F target_picked_up)\n\n== templates/tpl-responded-existence-2-goal (MiniGrid-BlockedUnlockPickup-v0, train False)\n   task: If you move the ball, you must also take the key. Then pick up the box in the other room.\n   before f29c47a, forced [2, 3]:\n     expect:\n       hard RespondedExistence(blocker_moved, has_door_key): ((F blocker_moved) -> (F has_door_key))\n       hard Existence(target_picked_up): (F target_picked_up)\n       hard Precedence(has_door_key, target_picked_up): (((~target_picked_up) U has_door_key) | (G (~target_picked_up)))\n       hard Precedence(blocker_moved, target_picked_up): (((~target_picked_up) U blocker_moved) | (G (~target_picked_up)))\n     expect without forced (what `exact` required):\n       hard RespondedExistence(blocker_moved, has_door_key): ((F blocker_moved) -> (F has_door_key))\n       hard Existence(target_picked_up): (F target_picked_up)\n   after f29c47a, forced []:\n     expect: the same four clauses"
+    },
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/bup-chain.html",
+       "height": 520,
+       "alt": "Reward Machine bup-chain: 5 states",
+       "caption": "**`bup-chain`** · UnlockPickup · 5 states, 11 transitions · final u4, rejecting u1\nTask: *Acquire the matching key, unlock the door, and pick up the designated box in the other room.* The chain: the old `expect`, now `also_ok[0]`. The door open without the key, or the box before the door, breaks it (-10 from u0, -11 from u2). The chain with the three Existences written out (`also_ok[1]`) compiles to this same text.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Compiled by `check/order_cards.py` from `also_ok[0]` of the card in `evidence/cards/after/base/tasks.json`, with the default reward switches and the level's step limit (288). `also_ok[1]` gives the same machine text, and so does every live run of both arms (`graphs/live-a.rm`, `graphs/live-b.rm`).",
+        "code": "# Task (NL)\nAcquire the matching key, unlock the door, and pick up the designated box in the other room.\n\n# Clauses and LTLf (also_ok[0] of the new card; the old expect)\nhard Precedence(has_door_key, door_open): (((~door_open) U has_door_key) | (G (~door_open)))\nhard Precedence(door_open, target_picked_up): (((~target_picked_up) U door_open) | (G (~target_picked_up)))\nhard Existence(target_picked_up): (F target_picked_up)\n\n# RM text (graphs/bup-chain.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u4\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&!has_door_key&target_picked_up) -> u1\n(u0, !door_open&has_door_key&!target_picked_up) -> u2\n(u0, !door_open&has_door_key&target_picked_up) -> u1\n(u0, door_open&!has_door_key&!target_picked_up) -> u1\n(u0, door_open&!has_door_key&target_picked_up) -> u1\n(u0, door_open&has_door_key&!target_picked_up) -> u3\n(u0, door_open&has_door_key&target_picked_up) -> u4\n(u2, !door_open&target_picked_up) -> u1\n(u2, door_open&!target_picked_up) -> u3\n(u2, door_open&target_picked_up) -> u4\n(u3, target_picked_up) -> u4\nREWARD_FUNCTION:\n(u0, !door_open&!has_door_key&target_picked_up, u1) -> -10\n(u0, !door_open&has_door_key&!target_picked_up, u2) -> 1\n(u0, !door_open&has_door_key&target_picked_up, u1) -> -10\n(u0, door_open&!has_door_key&!target_picked_up, u1) -> -10\n(u0, door_open&!has_door_key&target_picked_up, u1) -> -10\n(u0, door_open&has_door_key&!target_picked_up, u3) -> 2\n(u0, door_open&has_door_key&target_picked_up, u4) -> 13\n(u2, !door_open&target_picked_up, u1) -> -11\n(u2, door_open&!target_picked_up, u3) -> 1\n(u2, door_open&target_picked_up, u4) -> 12\n(u3, target_picked_up, u4) -> 11\n"
+       }
+      },
+      {
+       "src": "graphs/bup-facts.html",
+       "height": 520,
+       "alt": "Reward Machine bup-facts: 8 states",
+       "caption": "**`bup-facts`** · UnlockPickup · 8 states, 19 transitions · final u7, no rejecting state\nTask: *Acquire the matching key, unlock the door, and pick up the designated box in the other room.* The new `expect`: one Existence per fact. Each new fact pays +1, in any order, and the step that completes all three adds 10. Nothing breaks it.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Compiled by `check/order_cards.py` from `expect` of the card in `evidence/cards/after/base/tasks.json`, with the default reward switches and the level's step limit (288). No live run gave this answer.",
+        "code": "# Task (NL)\nAcquire the matching key, unlock the door, and pick up the designated box in the other room.\n\n# Clauses and LTLf (expect of the new card)\nhard Existence(has_door_key): (F has_door_key)\nhard Existence(door_open): (F door_open)\nhard Existence(target_picked_up): (F target_picked_up)\n\n# RM text (graphs/bup-facts.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6, u7\nINITIAL_STATE: u0\nFINAL_STATES: u7\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&!has_door_key&target_picked_up) -> u1\n(u0, !door_open&has_door_key&!target_picked_up) -> u2\n(u0, !door_open&has_door_key&target_picked_up) -> u3\n(u0, door_open&!has_door_key&!target_picked_up) -> u4\n(u0, door_open&!has_door_key&target_picked_up) -> u5\n(u0, door_open&has_door_key&!target_picked_up) -> u6\n(u0, door_open&has_door_key&target_picked_up) -> u7\n(u1, !door_open&has_door_key) -> u3\n(u1, door_open&!has_door_key) -> u5\n(u1, door_open&has_door_key) -> u7\n(u2, !door_open&target_picked_up) -> u3\n(u2, door_open&!target_picked_up) -> u6\n(u2, door_open&target_picked_up) -> u7\n(u3, door_open) -> u7\n(u4, !has_door_key&target_picked_up) -> u5\n(u4, has_door_key&!target_picked_up) -> u6\n(u4, has_door_key&target_picked_up) -> u7\n(u5, has_door_key) -> u7\n(u6, target_picked_up) -> u7\nREWARD_FUNCTION:\n(u0, !door_open&!has_door_key&target_picked_up, u1) -> 1\n(u0, !door_open&has_door_key&!target_picked_up, u2) -> 1\n(u0, !door_open&has_door_key&target_picked_up, u3) -> 2\n(u0, door_open&!has_door_key&!target_picked_up, u4) -> 1\n(u0, door_open&!has_door_key&target_picked_up, u5) -> 2\n(u0, door_open&has_door_key&!target_picked_up, u6) -> 2\n(u0, door_open&has_door_key&target_picked_up, u7) -> 13\n(u1, !door_open&has_door_key, u3) -> 1\n(u1, door_open&!has_door_key, u5) -> 1\n(u1, door_open&has_door_key, u7) -> 12\n(u2, !door_open&target_picked_up, u3) -> 1\n(u2, door_open&!target_picked_up, u6) -> 1\n(u2, door_open&target_picked_up, u7) -> 12\n(u3, door_open, u7) -> 11\n(u4, !has_door_key&target_picked_up, u5) -> 1\n(u4, has_door_key&!target_picked_up, u6) -> 1\n(u4, has_door_key&target_picked_up, u7) -> 12\n(u5, has_door_key, u7) -> 11\n(u6, target_picked_up, u7) -> 11\n"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "same-task",
+   "title": "Same task or not",
+   "intro": "Two answers state the same task when their hard clauses' conjunctions are equivalent LTLf, and their soft ones too: MONA's minimal DFA of (A & ~B) | (~A & B) has no accepting state. `check/order_cards.py` runs this check (`same_ltlf` of `check/equiv_check.py`) on every pair of answers of each new card.",
+   "blocks": [
+    {
+     "type": "table",
+     "columns": [
+      "card",
+      "answers compared",
+      "same task (MONA)",
+      "what it means"
+     ],
+     "rows": [
+      [
+       "base-unlock-pickup",
+       "the chain (`also_ok[0]`) and the chain with the three Existences (`also_ok[1]`)",
+       {
+        "text": "yes",
+        "tone": "ok"
+       },
+       "The chain already implies each fact: the box must come, the door before it, the key before the door. Both forms are listed because the scorer compares clause lists."
+      ],
+      [
+       "base-unlock-pickup",
+       "the facts (`expect`) and either chain answer",
+       {
+        "text": "no",
+        "tone": "warn"
+       },
+       "Different tasks: the facts allow any order, the chain does not. The card accepts both (user rule, decision 2)."
+      ],
+      [
+       "base-key-corridor",
+       "the facts plus the compound order (`expect`) and the chain plus the compound order (`also_ok[0]`)",
+       {
+        "text": "no",
+        "tone": "warn"
+       },
+       "Different tasks; the card accepts both. The S4R3 FARM bundle gives `also_ok[0]`."
+      ],
+      [
+       "tpl-responded-existence-2-goal",
+       "`expect` and the regenerated FARM bundle",
+       {
+        "text": "no",
+        "tone": "bad"
+       },
+       "The bundle orders only the key before the box: `mismatch` under the card (open question below)."
+      ]
+     ]
+    },
+    {
+     "type": "callout",
+     "tone": "warn",
+     "title": "The scorer compares clause lists, not tasks",
+     "text": "`clause_status` in `app/src/benchmark/rm_facts.py` counts clauses. A bundle is `exact` when it holds every required clause and nothing outside `expect`, `also_ok` when it equals one listed answer, and `mismatch` otherwise; MONA is never asked. So an answer that states the same task with other, redundant clauses still scores `mismatch`.\n\nThe sweep of all 169 FARM bundles on main (`evidence/equiv/equiv-main.json`, made for this entry): 92 `exact`, 9 `also_ok`, 64 `mismatch`, 4 `missing`. Of the 64, 5 hold an accepted answer plus implied Existences, 4 state it with other equivalent clauses, and 55 are a different task. Whether those 9 should count is an open user question. base-unlock-pickup was one of them before the commit (`evidence/equiv/equiv-all.json`); its second `also_ok` now accepts it."
+    },
+    {
+     "type": "table",
+     "heading": "The 9 same-task mismatches on main (`check/equiv_summary.py evidence/equiv/equiv-main.json`)",
+     "columns": [
+      "bundle",
+      "kind",
+      "same task as",
+      "extra clauses",
+      "machine with the bundle's switches"
+     ],
+     "rows": [
+      ["base: base-blocked-unlock-pickup", "implied extras", "expect", "Existence(blocker_moved), Existence(door_open), Existence(has_door_key)", "same shape, 8 reward differences"],
+      ["base: base-doorkey", "implied extras", "expect", "Existence(door_open), Existence(has_key)", "same shape, 4 reward differences"],
+      ["templates: tpl-precedence-1-goal~p1", "implied extras", "expect", "Existence(blocker_moved), Existence(door_open), Existence(has_door_key)", "same shape, 6 reward differences"],
+      ["templates: tpl-precedence-1-goal~p2", "implied extras", "expect", "Existence(door_open)", "same shape, 6 reward differences"],
+      ["templates: tpl-precedence-1-goal~p3", "implied extras", "expect", "Existence(door_open), Existence(has_door_key)", "same shape, 6 reward differences"],
+      ["templates: tpl-not-co-existence-1-nogoal", "equivalent, other clauses", "expect", "-", "same rewards"],
+      ["templates: tpl-not-co-existence-1-nogoal~p1", "equivalent, other clauses", "expect", "-", "same rewards"],
+      ["templates: tpl-not-co-existence-1-nogoal~p2", "equivalent, other clauses", "expect", "-", "same rewards"],
+      ["templates: tpl-not-co-existence-1-nogoal~p3", "equivalent, other clauses", "expect", "-", "same rewards"]
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**Same task is not always the same reward.** With each bundle's recorded reward switches, the implied Existences keep the machine's shape but change some penalties: on the stale base-unlock-pickup bundle (end judgment on), 4 hard-break and end charges grow, for example -20 to -40 on the first break (`evidence/equiv/equiv-base-unlock-pickup.json`). With the default switches, the chain and the chain with Existences compile to the same text (`evidence/order-cards.out`)."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "live",
+   "title": "Live test at reasoning max",
+   "intro": "Production pair: generator deepseek-v4.1-flash and critic glm-5.3-flash through OpenCode, reasoning max, FARM path on MiniGrid-UnlockPickup-v0, main `d2d9249` (before the until prompt fix `f778643`). Three runs per arm. Scored by `check/score_live.py`: arm A against a temporary card whose `expect` is the chain (`evidence/live/card-A.json`, not a benchmark card), arm B against base-unlock-pickup as merged.",
+   "blocks": [
+    {
+     "type": "table",
+     "columns": [
+      "arm",
+      "task",
+      "card answer",
+      "runs",
+      "result"
+     ],
+     "rows": [
+      [
+       "A, order words",
+       "Acquire the matching key, then unlock the door, and then pick up the box in the other room.",
+       "the chain (`expect`); the chain with Existences (`also_ok`)",
+       "A-1, A-2, A-3",
+       {
+        "text": "3 of 3 `exact`, first attempt",
+        "tone": "ok"
+       }
+      ],
+      [
+       "B, plain list",
+       "Acquire the matching key, unlock the door, and pick up the designated box in the other room.",
+       "the facts (`expect`); the chain or the chain with Existences (`also_ok`)",
+       "B-1, B-2, B-3",
+       {
+        "text": "3 of 3 `also_ok` (the chain), first attempt; the facts 0 of 3",
+        "tone": "ok"
+       }
+      ]
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**All six runs gave the same answer**: `Existence(target_picked_up)`, `Precedence(door_open, target_picked_up)`, `Precedence(has_door_key, door_open)`, LTLf (F target_picked_up) & (((~target_picked_up) U door_open) | (G (~target_picked_up))) & (((~door_open) U has_door_key) | (G (~door_open))). The six `reward_machine.txt` files are byte-identical, and the critic changed nothing in any run (`critic_interventions` 0 in each manifest).",
+      "**The plain list still got an order.** The models read the list as the chain in every run. The card accepts that: the decision 2 log asks that the plain wording get either answer. The three-facts answer never came up."
+     ]
+    },
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/live-a.html",
+       "height": 520,
+       "alt": "Reward Machine live-a: 5 states",
+       "caption": "**`live-a`** · UnlockPickup · 5 states, 11 transitions · final u4, rejecting u1\nTask: *Acquire the matching key, then unlock the door, and then pick up the box in the other room.* All three runs: the chain, `exact`. Same text as `bup-chain`.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "`evidence/live/A-1/reward_machine.txt`; A-2 and A-3 are identical. Generator deepseek-v4.1-flash, critic glm-5.3-flash, reasoning max, commit `d2d9249` (from the manifests).",
+        "code": "# Task (NL)\nAcquire the matching key, then unlock the door, and then pick up the box in the other room.\n\n# Clauses and LTLf (runs A-1 to A-3)\nhard Existence(target_picked_up): (F target_picked_up)\nhard Precedence(door_open, target_picked_up): (((~target_picked_up) U door_open) | (G (~target_picked_up)))\nhard Precedence(has_door_key, door_open): (((~door_open) U has_door_key) | (G (~door_open)))\n\n# RM text (graphs/live-a.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u4\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&!has_door_key&target_picked_up) -> u1\n(u0, !door_open&has_door_key&!target_picked_up) -> u2\n(u0, !door_open&has_door_key&target_picked_up) -> u1\n(u0, door_open&!has_door_key&!target_picked_up) -> u1\n(u0, door_open&!has_door_key&target_picked_up) -> u1\n(u0, door_open&has_door_key&!target_picked_up) -> u3\n(u0, door_open&has_door_key&target_picked_up) -> u4\n(u2, !door_open&target_picked_up) -> u1\n(u2, door_open&!target_picked_up) -> u3\n(u2, door_open&target_picked_up) -> u4\n(u3, target_picked_up) -> u4\nREWARD_FUNCTION:\n(u0, !door_open&!has_door_key&target_picked_up, u1) -> -10\n(u0, !door_open&has_door_key&!target_picked_up, u2) -> 1\n(u0, !door_open&has_door_key&target_picked_up, u1) -> -10\n(u0, door_open&!has_door_key&!target_picked_up, u1) -> -10\n(u0, door_open&!has_door_key&target_picked_up, u1) -> -10\n(u0, door_open&has_door_key&!target_picked_up, u3) -> 2\n(u0, door_open&has_door_key&target_picked_up, u4) -> 13\n(u2, !door_open&target_picked_up, u1) -> -11\n(u2, door_open&!target_picked_up, u3) -> 1\n(u2, door_open&target_picked_up, u4) -> 12\n(u3, target_picked_up, u4) -> 11\n"
+       }
+      },
+      {
+       "src": "graphs/live-b.html",
+       "height": 520,
+       "alt": "Reward Machine live-b: 5 states",
+       "caption": "**`live-b`** · UnlockPickup · 5 states, 11 transitions · final u4, rejecting u1\nTask: *Acquire the matching key, unlock the door, and pick up the designated box in the other room.* All three runs: the chain, `also_ok`; no run gave the three facts. Same text as `live-a`.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "`evidence/live/B-1/reward_machine.txt`; B-2 and B-3 are identical. Generator deepseek-v4.1-flash, critic glm-5.3-flash, reasoning max, commit `d2d9249` (from the manifests).",
+        "code": "# Task (NL)\nAcquire the matching key, unlock the door, and pick up the designated box in the other room.\n\n# Clauses and LTLf (runs B-1 to B-3)\nhard Existence(target_picked_up): (F target_picked_up)\nhard Precedence(door_open, target_picked_up): (((~target_picked_up) U door_open) | (G (~target_picked_up)))\nhard Precedence(has_door_key, door_open): (((~door_open) U has_door_key) | (G (~door_open)))\n\n# RM text (graphs/live-b.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u4\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&!has_door_key&target_picked_up) -> u1\n(u0, !door_open&has_door_key&!target_picked_up) -> u2\n(u0, !door_open&has_door_key&target_picked_up) -> u1\n(u0, door_open&!has_door_key&!target_picked_up) -> u1\n(u0, door_open&!has_door_key&target_picked_up) -> u1\n(u0, door_open&has_door_key&!target_picked_up) -> u3\n(u0, door_open&has_door_key&target_picked_up) -> u4\n(u2, !door_open&target_picked_up) -> u1\n(u2, door_open&!target_picked_up) -> u3\n(u2, door_open&target_picked_up) -> u4\n(u3, target_picked_up) -> u4\nREWARD_FUNCTION:\n(u0, !door_open&!has_door_key&target_picked_up, u1) -> -10\n(u0, !door_open&has_door_key&!target_picked_up, u2) -> 1\n(u0, !door_open&has_door_key&target_picked_up, u1) -> -10\n(u0, door_open&!has_door_key&!target_picked_up, u1) -> -10\n(u0, door_open&!has_door_key&target_picked_up, u1) -> -10\n(u0, door_open&has_door_key&!target_picked_up, u3) -> 2\n(u0, door_open&has_door_key&target_picked_up, u4) -> 13\n(u2, !door_open&target_picked_up, u1) -> -11\n(u2, door_open&!target_picked_up, u3) -> 1\n(u2, door_open&target_picked_up, u4) -> 12\n(u3, target_picked_up, u4) -> 11\n"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "training",
+   "title": "Training with a stated order",
+   "intro": "PPO, 1.5M steps, 3 seeds per arm, judged on 100 episodes; learned = judged success of at least 0.8 (`check/judge_summary.py` on each seed's `judge.json`). tpl-response-1-goal's FARM bundles were made again for UnlockPickup in this commit, and the gate (`check/gate_order.py`: scorer, pay order, plan traces, labeling against the reference labeler, plan check) passed for the card and its three paraphrase bundles before training. The FARM seeds used `rm_state_encoding: embedding` (each seed's `config.yaml`).",
+   "blocks": [
+    {
+     "type": "table",
+     "heading": "tpl-response-1-goal on MiniGrid-UnlockPickup-v0 (`evidence/runs/`)",
+     "columns": [
+      "arm",
+      "seed",
+      "judged success",
+      "env success",
+      "hard breaks per episode",
+      "hard clause open at end",
+      "RM return",
+      "length",
+      "steps to 0.9 eval success",
+      "learned"
+     ],
+     "rows": [
+      ["FARM", "1", "0.99", "0.99", "0.00", "0.02", "12.88", "20", "282,624", {"text": "yes", "tone": "ok"}],
+      ["FARM", "2", "1.00", "1.00", "0.00", "0.00", "13.00", "18", "253,952", {"text": "yes", "tone": "ok"}],
+      ["FARM", "3", "1.00", "1.00", "0.00", "0.00", "13.00", "18", "221,184", {"text": "yes", "tone": "ok"}],
+      ["no-RM", "1", "0.00", "0.00", "0.00", "1.00", "-", "288", "never", {"text": "no", "tone": "bad"}],
+      ["no-RM", "2", "0.00", "0.00", "0.00", "1.00", "-", "288", "never", {"text": "no", "tone": "bad"}],
+      ["no-RM", "3", "0.00", "0.00", "0.00", "1.00", "-", "288", "never", {"text": "no", "tone": "bad"}]
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**The compound order trains too.** base-key-corridor on KeyCorridorS4R3, whose machine carries `Precedence(key_found, has_matching_key)` for \"find and acquire the key\": FARM 2 of 3 seeds (0.85, 0.82, 0.00) against no-RM 0 of 3, at 1.5M steps. The runs, the machine and the judge files are in the [KeyCorridor room-size entry](../keycorridor-room-size/index.html) and are not copied here.",
+      "**base-unlock-pickup did not train here.** Its FARM bundle now scores `also_ok`, but it was built with the end judgment on and the old x0.1 reward scale, so it waits for the freeze regeneration."
+     ]
+    },
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/tpl-response-1-goal-farm.html",
+       "height": 520,
+       "alt": "Reward Machine tpl-response-1-goal-farm: 7 states",
+       "caption": "**`tpl-response-1-goal-farm`** · UnlockPickup · 7 states, 18 transitions · final u4, rejecting u1\nTask: *Whenever you are holding the key, the door must be open at that moment or opened afterwards. Pick up the key, open the door with it, then pick up the box in the other room.* The trained FARM machine, `exact`: key before door and door before box are required. Once the door has been open, holding the key with the door shut again costs -1 (u3 to u5) until the door opens again (+1).",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "`reward_machine.txt` of `experiments/benchmark/templates/bundles/farm/tpl-response-1-goal` on main (made in this commit; the three FARM seeds trained it). Gate record: `evidence/gate/tpl-response-1-goal.json`.",
+        "code": "# Task (NL)\nWhenever you are holding the key, the door must be open at that moment or opened afterwards. Pick up the key, open the door with it, then pick up the box in the other room.\n\n# Clauses and LTLf (the bundle's clauses, the card's expect)\nhard Existence(target_picked_up): (F target_picked_up)\nhard Precedence(door_open, target_picked_up): (((~target_picked_up) U door_open) | (G (~target_picked_up)))\nhard Precedence(has_door_key, door_open): (((~door_open) U has_door_key) | (G (~door_open)))\nhard Response(has_door_key, door_open): (G (has_door_key -> (F door_open)))\n\n# RM text (graphs/tpl-response-1-goal-farm.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6\nINITIAL_STATE: u0\nFINAL_STATES: u4\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&!has_door_key&target_picked_up) -> u1\n(u0, !door_open&has_door_key&!target_picked_up) -> u2\n(u0, !door_open&has_door_key&target_picked_up) -> u1\n(u0, door_open&!has_door_key&!target_picked_up) -> u1\n(u0, door_open&!has_door_key&target_picked_up) -> u1\n(u0, door_open&has_door_key&!target_picked_up) -> u3\n(u0, door_open&has_door_key&target_picked_up) -> u4\n(u2, !door_open&target_picked_up) -> u1\n(u2, door_open&!target_picked_up) -> u3\n(u2, door_open&target_picked_up) -> u4\n(u3, !door_open&!has_door_key&target_picked_up) -> u4\n(u3, !door_open&has_door_key&!target_picked_up) -> u5\n(u3, !door_open&has_door_key&target_picked_up) -> u6\n(u3, door_open&target_picked_up) -> u4\n(u5, !door_open&target_picked_up) -> u6\n(u5, door_open&!target_picked_up) -> u3\n(u5, door_open&target_picked_up) -> u4\n(u6, door_open) -> u4\nREWARD_FUNCTION:\n(u0, !door_open&!has_door_key&target_picked_up, u1) -> -10\n(u0, !door_open&has_door_key&!target_picked_up, u2) -> 1\n(u0, !door_open&has_door_key&target_picked_up, u1) -> -10\n(u0, door_open&!has_door_key&!target_picked_up, u1) -> -10\n(u0, door_open&!has_door_key&target_picked_up, u1) -> -10\n(u0, door_open&has_door_key&!target_picked_up, u3) -> 2\n(u0, door_open&has_door_key&target_picked_up, u4) -> 13\n(u2, !door_open&target_picked_up, u1) -> -11\n(u2, door_open&!target_picked_up, u3) -> 1\n(u2, door_open&target_picked_up, u4) -> 12\n(u3, !door_open&!has_door_key&target_picked_up, u4) -> 11\n(u3, !door_open&has_door_key&!target_picked_up, u5) -> -1\n(u3, door_open&target_picked_up, u4) -> 11\n(u5, !door_open&target_picked_up, u6) -> 1\n(u5, door_open&!target_picked_up, u3) -> 1\n(u5, door_open&target_picked_up, u4) -> 12\n(u6, door_open, u4) -> 11\n"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "open",
+   "title": "Open: does \"Then\" after an if-rule order the box after the ball?",
+   "blocks": [
+    {
+     "type": "callout",
+     "tone": "warn",
+     "title": "Waiting for the user",
+     "text": "tpl-responded-existence-2-goal: \"If you move the ball, you must also take the key. Then pick up the box in the other room.\" The card now reads \"Then\" as an order word after both earlier steps, so the key before the box and the ball before the box are both required. Ordering the box after the ball makes moving the ball mandatory, although the task names the ball only as the condition of the if-rule.\n\nThe FARM bundle generated again (production pair, reasoning max) keeps the if-rule and the key before the box, but not the ball before the box: `mismatch` under the card, possibly right under the other reading, and not the same task as the card's `expect` by MONA. The card does not train either way. The old bundle, with neither box order, is kept in `experiments/benchmark/templates/order-rule-r0/farm/`."
+    },
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/tpl-responded-existence-2-goal-farm.html",
+       "height": 520,
+       "alt": "Reward Machine tpl-responded-existence-2-goal-farm: 5 states",
+       "caption": "**`tpl-responded-existence-2-goal-farm`** · BlockedUnlockPickup · 5 states, 11 transitions · final u3, rejecting u1\nTask: *If you move the ball, you must also take the key. Then pick up the box in the other room.* The regenerated FARM bundle: the box without the key breaks it (-10), and moving the ball first is not required (u0 to u2 on the key alone). `mismatch` under the card.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "`reward_machine.txt` of `experiments/benchmark/templates/bundles/farm/tpl-responded-existence-2-goal` on main (made in this commit). Gate record: `evidence/gate/tpl-responded-existence-2-goal.json` (failed: `mismatch`). The card's `expect` adds `hard Precedence(blocker_moved, target_picked_up): (((~target_picked_up) U blocker_moved) | (G (~target_picked_up)))`.",
+        "code": "# Task (NL)\nIf you move the ball, you must also take the key. Then pick up the box in the other room.\n\n# Clauses and LTLf (the bundle's clauses)\nhard Existence(target_picked_up): (F target_picked_up)\nhard Precedence(has_door_key, target_picked_up): (((~target_picked_up) U has_door_key) | (G (~target_picked_up)))\nhard RespondedExistence(blocker_moved, has_door_key): ((F blocker_moved) -> (F has_door_key))\n\n# RM text (graphs/tpl-responded-existence-2-goal-farm.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u3\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !blocker_moved&!has_door_key&target_picked_up) -> u1\n(u0, !blocker_moved&has_door_key&!target_picked_up) -> u2\n(u0, !blocker_moved&has_door_key&target_picked_up) -> u3\n(u0, blocker_moved&!has_door_key&!target_picked_up) -> u4\n(u0, blocker_moved&!has_door_key&target_picked_up) -> u1\n(u0, blocker_moved&has_door_key&!target_picked_up) -> u2\n(u0, blocker_moved&has_door_key&target_picked_up) -> u3\n(u2, target_picked_up) -> u3\n(u4, !has_door_key&target_picked_up) -> u1\n(u4, has_door_key&!target_picked_up) -> u2\n(u4, has_door_key&target_picked_up) -> u3\nREWARD_FUNCTION:\n(u0, !blocker_moved&!has_door_key&target_picked_up, u1) -> -10\n(u0, !blocker_moved&has_door_key&!target_picked_up, u2) -> 1\n(u0, !blocker_moved&has_door_key&target_picked_up, u3) -> 12\n(u0, blocker_moved&!has_door_key&target_picked_up, u1) -> -10\n(u0, blocker_moved&has_door_key&!target_picked_up, u2) -> 1\n(u0, blocker_moved&has_door_key&target_picked_up, u3) -> 12\n(u2, target_picked_up, u3) -> 11\n(u4, !has_door_key&target_picked_up, u1) -> -10\n(u4, has_door_key&!target_picked_up, u2) -> 1\n(u4, has_door_key&target_picked_up, u3) -> 12\n"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "evidence",
+   "title": "Evidence, rerun and code",
+   "blocks": [
+    {
+     "type": "list",
+     "items": [
+      "**Cards:** `evidence/cards/before/<suite>/tasks.json` and `evidence/cards/after/<suite>/tasks.json` for base, smoke, pilot and templates, the four card files at `f29c47a^` and `f29c47a`. `evidence/order-cards.out` is what `check/order_cards.py` prints.",
+      "**Same task:** `evidence/equiv/equiv-main.json`, the sweep of the 169 FARM bundles on main `bf1a2a3`; `equiv-all.json`, the same sweep run before the commit, with the cards of that moment; `equiv-base-unlock-pickup.json` and `equiv-tpl-responded-existence-2-goal.json`, the one-bundle checks.",
+      "**Live:** `evidence/live/A-1` to `A-3` and `B-1` to `B-3`, the six generated bundles (manifest, attempts, raw responses, machine, labeling, state descriptions, embeddings, execution evidence), and `card-A.json`, arm A's temporary card.",
+      "**Gate:** `evidence/gate/`: tpl-response-1-goal and its three paraphrases (passed), tpl-responded-existence-2-goal (failed: `mismatch`) and base-unlock-pickup (failed: run before the card's second `also_ok` was added; the bundle is stale and is not trained either way).",
+      "**Training:** `evidence/runs/runs-tpl-response-1-goal.yaml` and, per seed, `judge.json`, `summary.json`, `eval.csv`, `config.yaml` and `test.json` (no weights, no traces).",
+      "**Machines:** `graphs/<name>.rm`, drawn as `.svg` and `.html`.",
+      "**Scripts:** `check/order_cards.py` (new for this entry) and, copied from the plan folder, `equiv_check.py`, `equiv_summary.py`, `score_live.py`, `judge_summary.py` and `gate_order.py`. `equiv_check.py` has one helper split out for the lint, and `gate_order.py` now writes to `evidence/gate/`. The tools that called the models stay in the plan folder.",
+      "**Limits:** three live runs per arm on one level; the live runs predate the until prompt fix; the trained card is one card and one level; the same-task check covers LTLf, not rewards. The commit also stopped training `tpl-existence-two-1-nogoal`, a counting card, not an order change."
+     ]
+    },
+    {
+     "type": "text",
+     "text": "**Rerun (from the repository root in RM_RL_env)**"
+    },
+    {
+     "type": "code",
+     "text": "# card changes, same-task checks and the two compiled answers (no model call)\nPYTHONPATH=app python -W ignore docs/paper/stated-order-rule/check/order_cards.py\n# scorer verdicts of the live runs\nE=docs/paper/stated-order-rule\nPYTHONPATH=app python -W ignore $E/check/score_live.py $E/evidence/live/card-A.json live-A \\\n    $E/evidence/live/A-1 $E/evidence/live/A-2 $E/evidence/live/A-3\nPYTHONPATH=app python -W ignore $E/check/score_live.py $E/evidence/cards/after/base/tasks.json \\\n    base-unlock-pickup $E/evidence/live/B-1 $E/evidence/live/B-2 $E/evidence/live/B-3\n# same-task sweep over every FARM bundle, then its grouped mismatches\nPYTHONPATH=app python -W ignore $E/check/equiv_check.py OUT.json \\\n    base pilot templates complex forcing forced-start shop box-carry\npython $E/check/equiv_summary.py OUT.json\n# training table from the copied judge files\npython $E/check/judge_summary.py $E/evidence/runs \\\n    bench__templates__tpl-response-1-goal__farm__ppo bench__templates__tpl-response-1-goal__no-rm__ppo\n# the gate (writes evidence/gate/) and the training (about 17 min per FARM seed, 21 per no-RM seed)\nPYTHONPATH=app OMP_NUM_THREADS=2 python $E/check/gate_order.py templates \\\n    experiments/benchmark/templates/bundles/farm/tpl-response-1-goal\npython app/main.py run-suite --suite $E/evidence/runs/runs-tpl-response-1-goal.yaml --parallel 6\n# a graph\npython app/main.py render-rm --rm-file $E/graphs/bup-facts.rm --svg-dir $E/graphs/bup-facts.svg --html"
+    },
+    {
+     "type": "text",
+     "text": "Code: commit `f29c47a` (merge `97baab7`): the cards in `experiments/benchmark/{base,smoke,pilot,templates}/tasks.json`, the usage paragraph in `docs/LTLF_TASK_LANGUAGE.md`, and the tpl-response-1-goal FARM bundles made again for UnlockPickup. The scorer (`clause_status` in `app/src/benchmark/rm_facts.py`) did not change and keeps its `forced` field. Record: `docs/decisions/benchmark/thesis-benchmark.md`, entry of 2026-11-20."
+    }
+   ]
+  }
+ ]
+}

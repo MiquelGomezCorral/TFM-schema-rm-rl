@@ -847,9 +847,9 @@ door opened in 155 of 300 random episodes and crashed in 144. After the fix, 0 d
 Pipeline side, not model side. With the fixed labeling (1.5M steps, judged on 100 episodes, learned = at least
 0.8), FARM learns cx-sequence in 3 of 3 seeds (0.91, 0.81, 0.87) and base-key-corridor in 2 of 3 (0.85, 0.82,
 0.00); no-RM learns 0 of 3 on both. The base-key-corridor machine adds Precedence(key_found, has_matching_key):
-the user ruled on 2026-11-20 that "find and acquire the key" states that order, so it counts, but the card that
-says so is being updated in the order-cards change and is not merged yet. The page shows the old and new labeling
-line and both machines with task, LTLf, live RM graph and RM text.
+the user ruled on 2026-11-20 that "find and acquire the key" states that order, so it counts. Since commit
+`f29c47a` (merge `97baab7`, entry `stated-order-rule/`) the card accepts it and the S4R3 bundle scores `also_ok`.
+The page shows the old and new labeling line and both machines with task, LTLf, live RM graph and RM text.
 
 **Evidence.** The labeling checks before and after (old bundles on S4R3, new bundles on three sizes, the paraphrase
 bundles, the fixed reference labeler) and the two bundle gates; the judge tables, queues and run log; per seed of
@@ -1008,3 +1008,44 @@ PYTHONPATH=$PWD/app python -W ignore round_table.py before-max=../evidence/runs/
 
 **Code.** Commit `40e6614`, merged as `f778643`: `app/src/prompts/compiler-rm/reward-ltlf-creator.system.md` and
 `app/src/prompts/compiler-rm/declare-templates.md`, which the critic prompt shares.
+
+### Stated-order rule: the machine keeps the order the task states (`stated-order-rule/`), 2026-11-20
+
+**What it shows.** The user ruled that a Reward Machine matches the instruction, whatever the world forces ("like
+the task says to get order, do keep it"). Order words ("then", "after", "before") and a compound whose second verb
+needs the first ("find and acquire the key") state an order, and a stated order is now required; a plain list of
+facts is one `Existence` per fact, with the ordered chain also accepted. Before, three cards marked the orders the
+level forces as optional (`forced`). Commit `f29c47a` rewrote them: base-unlock-pickup (and its smoke and pilot
+copies) now expects the three facts and accepts the chain and the chain with its implied `Existence`s, which MONA
+finds the same task; base-key-corridor expects the facts plus `Precedence(key_found, has_matching_key)`;
+tpl-responded-existence-2-goal requires both box orders. Live at reasoning `max` (production pair, main `d2d9249`),
+"then" gave the exact chain in 3 of 3 runs and the plain list gave the chain, an accepted answer, in 3 of 3; no run
+gave the facts. The trained "then" card tpl-response-1-goal, with its FARM bundles made again for UnlockPickup,
+learned in FARM 3 of 3 seeds against no-RM 0 of 3; base-key-corridor's compound order learned in FARM 2 of 3
+against 0 of 3 (shown in `keycorridor-room-size/`). The scorer compares clause lists, not tasks: on main, 9 of the 64 `mismatch` FARM
+bundles state the same task as an accepted answer, an open user question. Also open: whether "Then" after an
+if-rule puts the box after the ball (tpl-responded-existence-2-goal, which does not train). The page shows every
+answer with task, LTLf, live RM graph and RM text.
+
+**Evidence.** The four card files before and after the commit and the per-card clause and LTLf listing
+(`order-cards.out`); the same-task sweep of all 169 FARM bundles on main, the sweep before the commit and two
+one-bundle checks; the six live bundles and arm A's temporary card; six gate records; per seed of the six training
+runs `judge.json`, `summary.json`, `eval.csv`, `config.yaml` and `test.json` (no weights, no traces), and the runs
+file. Limits: three live runs per arm on one level, run before the until prompt fix; one trained card; the FARM
+seeds used the `embedding` RM state encoding; base-unlock-pickup's bundle is stale (end judgment on, old x0.1
+scale) and was not trained.
+
+**Files.** `index.html` (built from `data.json`; open it from disk), `graphs/` (six machines as live HTML, SVG and
+RM text), `check/` (`order_cards.py`, new, and `equiv_check.py`, `equiv_summary.py`, `score_live.py`,
+`judge_summary.py`, `gate_order.py` from the plan folder), `evidence/` (`cards/before/`, `cards/after/`,
+`order-cards.out`, `equiv/`, `live/`, `gate/`, `runs/`). The tools that called the models stay in the plan folder.
+
+**Rerun** (no model call, from the repository root in `RM_RL_env`): `PYTHONPATH=app python -W ignore
+docs/paper/stated-order-rule/check/order_cards.py` prints the card changes and the MONA checks and writes the two
+compiled answers to `graphs/`; the page's last section has the live scoring, the sweep, the training table, the
+gate and the training queue (about 17 min per FARM seed).
+
+**Code.** Commit `f29c47a`, merged as `97baab7`: the cards in `experiments/benchmark/{base,smoke,pilot,templates}/
+tasks.json`, the usage paragraph in `docs/LTLF_TASK_LANGUAGE.md` and the tpl-response-1-goal FARM bundles. The scorer
+(`clause_status` in `app/src/benchmark/rm_facts.py`) is unchanged and keeps `forced`. Record:
+`docs/decisions/benchmark/thesis-benchmark.md`, entry of 2026-11-20.
