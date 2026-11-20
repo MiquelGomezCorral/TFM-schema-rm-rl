@@ -1,0 +1,448 @@
+{
+ "title": "Zombie garden: why PPO guards only the top lane",
+ "eyebrow": "ppo on the lanes card · branch tp-lanes-tune · 2026-11-20",
+ "subtitle": "PPO from scratch ends up guarding only the lane whose breach ends the episode, under every plain setting we tried. A warm start from a hand-written guard policy keeps the side trips. That warm start is a hack, and the page says so.",
+ "sections": [
+  {
+   "id": "result",
+   "title": "What it shows",
+   "blocks": [
+    {
+     "type": "callout",
+     "tone": "info",
+     "title": "In plain words",
+     "text": "Zombies walk along three lanes toward a garden. One lane must never be breached (a breach ends the episode at -96.1). Breaches of the other two lanes and trampled plants cost 1 each. A better policy than \"guard only the top lane\" exists: scripted policies that also walk to the middle lane score -12.9, against -18.4 for top-only. PPO from scratch never keeps it. While PPO is still noisy, a trip to a side lane risks the top lane, so PPO drops trips, learns the top guard, and never tries trips again. If PPO starts from a clone of a hand-written guard policy, it keeps the middle-lane trips and reaches -10.7. That clone is a hack: a trained agent is not meant to start from a scripted policy."
+    },
+    {
+     "type": "stats",
+     "items": [
+      {
+       "value": "10 lines, 1 result",
+       "label": "plain settings (scale, entropy decay, longer run, forced exploration, lambda, 64 envs): all top-only, RM -18.8 to -26",
+       "tone": "bad"
+      },
+      {
+       "value": "5% noise",
+       "label": "random actions up to which the three-lane policy gp8 still beats top-only; at 10% it loses (-31.5 against -23.7)",
+       "tone": "info"
+      },
+      {
+       "value": "-18.9 to -10.7",
+       "label": "mean return, best plain PPO to PPO started from a 12-round clone (hack), 3 seeds each",
+       "tone": "ok"
+      },
+      {
+       "value": "0 of 3",
+       "label": "warm-started seeds that pass the plants bar (0.34 to 0.64 trampled a game, bar 0.2)",
+       "tone": "warn"
+      }
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**Task.** The zombie garden, card `lanes-rules` on `MiniGrid-Lanes-v0`: full 11x11 grid, lanes on rows 1 (top), 5 and 9, zombies need 27 steps from spawn to breach, up to 3 plants, 300 steps. The machine has one live state (see the graph below).",
+      "**Judge.** 100 greedy test episodes per run (seeds 2000000 and up), one-hot machine state, seeds 1 to 3 per variant. The bar for a pass on 3 of 3 seeds: top lane held at least 0.88, side breaches at most 5.5 a game, plants trampled at most 0.2, machine return at least -17.06 (the scripted guard).",
+      "**Plain versus hack.** Plain means only training settings and one standard code option (`ppo_reward_scale`). Hacks are marked on this page: starting from a behaviour clone of a scripted policy, adding the environment's kill reward (`reward_source: both`), and continuing a run that began that way.",
+      "**Limit.** One card, one environment, 3 seeds per line. The result explains the settings tried; it does not prove no setting works. No plain setting moved side defence at all.",
+      "**Code.** `ppo_reward_scale` is an uncommitted two-line change in worktree `tp-lanes-tune` (branch `MiquelGomezCorral/tp-lanes-tune`, base `0389b0b`); `evidence/ppo_reward_scale.diff` keeps it. commit: pending, not merged. `init_from` and `reward_source` already exist on main."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "machine",
+   "title": "The task and its machine",
+   "intro": "The graph is the live RM component (drag a state, click an edge, Ctrl + scroll to zoom). Open the fold-out for the task, the clauses, the LTLf and the RM text.",
+   "blocks": [
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/lanes-rules.html",
+       "height": 480,
+       "alt": "Reward Machine of the zombie garden card",
+       "caption": "**Zombie garden (`lanes-rules`)** · 2 states · no final · well u1\nTask: *Never let a zombie through the top lane. Try not to let zombies through the other lanes, and try not to step on plants.* Top breach: -96.0959 and the episode ends. Side breach or trampled plant: -1, stay in u0.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "The bundle of the live generation run, machine text unchanged in every training run of this page.",
+        "code": "# Task (NL)\nNever let a zombie through the top lane. Try not to let zombies through the other lanes, and try not to step on plants.\n\n# Clauses (card `lanes-rules`, `evidence/card/lanes-rules.json`)\nAbsence(top_breach)      hard   \"Never let a zombie through the top lane.\"\nAbsence(side_breach)     soft   \"Try not to let zombies through the other lanes.\"\nAbsence(plant_trampled)  soft   \"Try not to step on plants.\"\n\n# LTLf, one per clause (check/lanes_ltlf.py)\nAbsence(top_breach):     (~(Ftop_breach))\nAbsence(side_breach):    (~(Fside_breach))\nAbsence(plant_trampled): (~(Fplant_trampled))\n\n# Pricing: gamma 0.99, step limit 300, one soft break per step, default pay of main.\n# u0 is the only live state; u1 rejects and ends the episode (-96.0959, the hard ceiling).\n# A side breach or a trampled plant costs -1 and stays in u0 (-2 when both happen on one step).\n\n# RM text (graphs/lanes-rules.rm)\nREWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !plant_trampled&!side_breach&top_breach) -> u1\n(u0, !plant_trampled&side_breach&!top_breach) -> u0\n(u0, !plant_trampled&side_breach&top_breach) -> u1\n(u0, plant_trampled&!side_breach&!top_breach) -> u0\n(u0, plant_trampled&!side_breach&top_breach) -> u1\n(u0, plant_trampled&side_breach&!top_breach) -> u0\n(u0, plant_trampled&side_breach&top_breach) -> u1\nREWARD_FUNCTION:\n(u0, !plant_trampled&!side_breach&top_breach, u1) -> -96.0959\n(u0, !plant_trampled&side_breach&!top_breach, u0) -> -1\n(u0, !plant_trampled&side_breach&top_breach, u1) -> -96.0959\n(u0, plant_trampled&!side_breach&!top_breach, u0) -> -1\n(u0, plant_trampled&!side_breach&top_breach, u1) -> -96.0959\n(u0, plant_trampled&side_breach&!top_breach, u0) -> -2\n(u0, plant_trampled&side_breach&top_breach, u1) -> -96.0959"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "why",
+   "title": "Why plain PPO guards only the top lane",
+   "blocks": [
+    {
+     "type": "text",
+     "heading": "A better policy exists",
+     "text": "Scripted policies, 100 test seeds, greedy, machine return (RM). \"Top held\" is the share of episodes with no top breach. The two-lane policy `gp8m` and the three-lane policy `gp8` beat top-only by about 5.5."
+    },
+    {
+     "type": "table",
+     "columns": [
+      "Policy",
+      "Top held",
+      "Side breaches a game",
+      "RM"
+     ],
+     "rows": [
+      [
+       "idle",
+       "0.00",
+       "1.98",
+       "-98.08"
+      ],
+      [
+       "top_only (scripted)",
+       "0.99",
+       "17.43",
+       "-18.39"
+      ],
+      [
+       "guard (scripted, top first then nearest side zombie)",
+       "0.88",
+       "5.53",
+       "-17.06"
+      ],
+      [
+       "gp8 (scripted, three lanes)",
+       "0.93",
+       "6.26",
+       "-12.99"
+      ],
+      [
+       {
+        "text": "gp8m (scripted, top and middle)",
+        "tone": "ok"
+       },
+       "0.97",
+       "10.01",
+       {
+        "text": "-12.89",
+        "tone": "ok"
+       }
+      ],
+      [
+       "gp12p33 (scripted)",
+       "0.92",
+       "6.13",
+       "-13.82"
+      ],
+      [
+       "rollout (scripted look-ahead)",
+       "0.99",
+       "12.09",
+       "-13.08"
+      ],
+      [
+       {
+        "text": "PPO from scratch, 3M steps (E3)",
+        "tone": "bad"
+       },
+       "0.86",
+       "16.6",
+       "-29.85"
+      ]
+     ]
+    },
+    {
+     "type": "text",
+     "heading": "The on-policy cliff",
+     "text": "PPO learns from its own noisy play. The noise check gives each scripted policy a uniformly random action (of 7) with probability eps, same 100 seeds, same machine. eps 0.05, 0.10, 0.20 and 0.30 are about 0.25, 0.45, 0.76 and 1.03 nats of entropy; PPO ended at 0.5 to 0.9. Cells show RM, with top held and side breaches in brackets."
+    },
+    {
+     "type": "table",
+     "columns": [
+      "eps",
+      "top_only",
+      "gp8m (top + middle)",
+      "gp8 (three lanes)",
+      "guard (three lanes)"
+     ],
+     "rows": [
+      [
+       "0.00",
+       "-18.39 (0.99 / 17.4)",
+       {
+        "text": "-12.89 (0.97 / 10.0)",
+        "tone": "ok"
+       },
+       "-12.99 (0.93 / 6.3)",
+       "-17.06 (0.88 / 5.5)"
+      ],
+      [
+       "0.05",
+       "-23.66 (0.93 / 16.9)",
+       "-18.86 (0.91 / 10.2)",
+       {
+        "text": "-16.02 (0.91 / 7.4)",
+        "tone": "ok"
+       },
+       "-25.34 (0.80 / 6.1)"
+      ],
+      [
+       "0.10",
+       "-23.71 (0.93 / 17.0)",
+       {
+        "text": "-21.99 (0.88 / 10.4)",
+        "tone": "ok"
+       },
+       {
+        "text": "-31.48 (0.75 / 7.4)",
+        "tone": "bad"
+       },
+       {
+        "text": "-36.10 (0.69 / 6.3)",
+        "tone": "bad"
+       }
+      ],
+      [
+       "0.20",
+       "-29.87 (0.86 / 16.3)",
+       {
+        "text": "-26.26 (0.84 / 10.8)",
+        "tone": "ok"
+       },
+       {
+        "text": "-47.67 (0.58 / 7.3)",
+        "tone": "bad"
+       },
+       {
+        "text": "-54.54 (0.50 / 6.4)",
+        "tone": "bad"
+       }
+      ],
+      [
+       "0.30",
+       {
+        "text": "-50.75 (0.61 / 13.2)",
+        "tone": "ok"
+       },
+       "-58.12 (0.49 / 9.1)",
+       "-78.37 (0.25 / 6.2)",
+       "-78.99 (0.23 / 5.0)"
+      ]
+     ]
+    },
+    {
+     "type": "text",
+     "text": "Read it plainly. The three-lane policy `gp8` beats top-only up to eps 0.05 and the scripted `guard` only without noise; both are far worse by 0.20. The top-and-middle policy `gp8m` keeps a small lead up to eps 0.20 and loses at 0.30. At eps 0.20, top-only gives top 0.86 and side 16.3: close to the numbers of PPO from scratch (0.86 and 16.6). The noise check therefore explains why the bottom and the full three-lane trips are never kept. It does not by itself explain why PPO also drops the middle trips; the warm-start ladder below does: a policy that loses the top lane too often pays more for its trips than they save."
+    },
+    {
+     "type": "list",
+     "items": [
+      "**The agent never goes there.** Replays of the judged greedy episodes (the replay script is not kept; the numbers are in `evidence/lanes-tune-report.md`): every from-scratch run spends 0% of its steps in rows 6 to 9, kills 0 bottom-lane zombies and at most 0.67 middle-lane zombies a game.",
+      "**It is not a blind spot.** The agent sees the whole grid. A behaviour clone of `gp8` fits 99.5% of the expert's actions on every action type (`evidence/bc-gp8.out`), and a trained critic prices one side zombie at -1.2 to -1.3 RM (`evidence/lanes-tune-report.md`), so the value side knows side zombies cost.",
+      "**The reward scale mattered for the top guard, not for the side lanes.** The -96 top price against -1 side prices made the critic fail. With the value clip at 0.1 the critic cannot follow; with the clip off, the value loss swamps the shared trunk and the policy collapses to entropy 0. `ppo_reward_scale` 0.1 (a standard reward-scaling option, logged returns stay unscaled) leaves the idle plateau at 0.5 to 1.2M steps instead of 1 to 1.5M and improves the top guard (RM -29.85 to -18.89). It does not bring side defence. See `reward-scale-tries/`.",
+      "**Gamma cannot be tuned here.** `train-rl` refuses gamma 0.95: the bundle prices the top breach for gamma 0.99, and rebuilding the rewards would change the machine."
+     ]
+    },
+    {
+     "type": "details",
+     "items": [
+      {
+       "title": "Plain settings tried, one line each (3 seeds, judged greedy on 100 test seeds)",
+       "preview": "None moved side defence: every line ends top-only with about 17 side breaches a game.",
+       "text": "Rounds as named in the loop notes. Each line is 3 seeds, 3M steps unless noted; every other setting is the E3 default.",
+       "blocks": [
+        {
+         "type": "table",
+         "columns": [
+          "Round",
+          "Setting",
+          "Result",
+          "Mean RM"
+         ],
+         "rows": [
+          [
+           "R1 base6m",
+           "E3 settings, 6M steps",
+           "side 16.6, top-only",
+           "-23.79"
+          ],
+          [
+           "R1 vl, vlent, vl6m",
+           "value clip off",
+           "collapsed to entropy 0, killed",
+           "-"
+          ],
+          [
+           "R2 rs01",
+           "`ppo_reward_scale` 0.1",
+           "side 16.9",
+           "-22.10"
+          ],
+          [
+           "R2 rs001",
+           "scale 0.01",
+           "side 17.2",
+           "-20.81"
+          ],
+          [
+           "R2 rs001vl",
+           "scale 0.01, value clip off",
+           "side 17.2",
+           "-21.52"
+          ],
+          [
+           "R3 rs01ed",
+           "scale 0.1, entropy 0.01 to 0 over 2.5M, 3M steps",
+           "top 0.98, side 17.15; best plain line",
+           {
+            "text": "-18.89",
+            "tone": "ok"
+           }
+          ],
+          [
+           "R3 rs001ed",
+           "scale 0.01, entropy decay",
+           "side 17.3",
+           "-20.32"
+          ],
+          [
+           "R3 rs01ed6m",
+           "scale 0.1, entropy decay over 5M, 6M steps",
+           "side 17.2",
+           "-18.85"
+          ],
+          [
+           "R4 eps",
+           "R3 `rs01ed` plus forced exploration, epsilon 0.5 to 0 over 1.5M",
+           "top-only",
+           "-18.79"
+          ],
+          [
+           "R4 g95",
+           "gamma 0.95",
+           "refused by `train-rl`",
+           "-"
+          ],
+          [
+           "R4c lam99",
+           "R3 `rs01ed` with GAE lambda 0.99",
+           "worse, one seed at top 0.81",
+           "-26.14"
+          ],
+          [
+           "R5b n64",
+           "R3 `rs01ed` with 64 envs x 128 steps (2x faster)",
+           "top-only",
+           "-20.56"
+          ]
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "warm",
+   "title": "The warm start (a hack)",
+   "blocks": [
+    {
+     "type": "callout",
+     "tone": "warn",
+     "title": "Label: this is a hack, not a training result",
+     "text": "The agent does not learn the guard from the machine. Its network starts as a behaviour clone of `gp8`, a hand-written three-lane guard policy that reads the grid and walks to zombies (DAgger, loaded through `init_from`; the logs are `evidence/bc-gp8.out` and `evidence/bc-gp8-12.out`). Same machine, same PPO settings, same judge as the plain lines; only the starting weights differ. It is a diagnostic: it asks whether PPO keeps a better policy once it has one. It is not a way to train the agent for the paper's claims."
+    },
+    {
+     "type": "table",
+     "columns": [
+      "Start",
+      "Clone alone: top / side / RM",
+      "PPO after 3M steps, mean of 3 seeds: top / side / plants / RM",
+      "End policy"
+     ],
+     "rows": [
+      [
+       "No warm start (best plain line, R3 `rs01ed`)",
+       "-",
+       "0.98 / 17.15 / 0.14 / -18.89",
+       "top-only"
+      ],
+      [
+       {
+        "text": "Plain clone, no DAgger (R5c)",
+        "tone": "bad"
+       },
+       "0.27 / 4.46 / -75.48",
+       {
+        "text": "0.98 / 17.22 / 0.05 / -19.19",
+        "tone": "bad"
+       },
+       "top-only again"
+      ],
+      [
+       "4-round DAgger clone (R5)",
+       "0.67 / 6.26 / -38.70",
+       "0.99 / 10.17 / 0.44 / -11.57",
+       "top + middle"
+      ],
+      [
+       {
+        "text": "12-round DAgger clone (R5d)",
+        "tone": "ok"
+       },
+       "0.80 / 6.69 / -26.18",
+       {
+        "text": "1.00 / 9.85 / 0.50 / -10.67",
+        "tone": "ok"
+       },
+       "top + middle"
+      ],
+      [
+       "R5 agents, 2M more steps at entropy 0 (R6)",
+       "-",
+       "1.00 / 9.89 / 0.40 / -10.29",
+       "top + middle"
+      ],
+      [
+       "Kill-bonus agents (R4 `both`, hack)",
+       "-",
+       "seed 2: 1.00 / 11.05 / 0.17 / -11.22; seeds 1 and 3 top-only",
+       "one seed in three"
+      ]
+     ]
+    },
+    {
+     "type": "text",
+     "text": "Per seed, RM: R5 -11.60, -10.72, -12.39; R5c -18.42, -19.42, -19.73; R5d -10.27, -11.34, -10.40; R6 -10.19, -10.25, -10.44. The better the clone guards the top, the more PPO keeps. A weak clone loses the top lane so often that its trips cost more than they save; PPO prunes them while it learns the top guard and never finds them again. Replays of the warm-started agents: middle lane 33 to 61% of steps, kills at the top 9.6 to 9.8, middle 7.9 to 8.7, bottom 0 a game."
+    },
+    {
+     "type": "list",
+     "items": [
+      "**It never guards the bottom lane.** Every warm-started agent drops the clone's bottom trips and keeps the top lane at 0.99 to 1.00. For this agent the machine's prices rate \"top and middle, top never lost\" above \"three lanes, top lost 7%\".",
+      "**Even with the hack, no pass.** Plants trampled 0.34 to 0.64 a game (bar 0.2; the scripted policies trample none), and side breaches about 10 (bar 5.5, but equal to the scripted two-lane policy `gp8m`, 10.0). The kill-bonus line works on 1 seed of 3. The warm start is better than every scripted policy on RM (-10.29 against -12.89) and still not a winner.",
+      "**What to carry on.** A warm start is kept by the machine only if it already holds the hard rule well; a weak one is wasted. Before tuning, run the noise check: if the better policy only wins at low noise, expect PPO from scratch to settle on the safe policy. Check the bar against the machine too: the best policy found here (two lanes, top never lost) cannot meet side <= 5.5."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "evidence",
+   "title": "Evidence, rerun and code",
+   "blocks": [
+    {
+     "type": "list",
+     "items": [
+      "**Noise check, rerun.** `PYTHONPATH=app:docs/paper/zombie-garden-warm-start/check python -W ignore docs/paper/zombie-garden-warm-start/check/noise_check.py --procs 8`, from the repository root. Scripted policies only: no model call, no training, about 12 seconds. The output is byte-identical to `evidence/noise_check.out` (the original run). `check/policies.py` holds the scripted policies and the machine pricing.",
+      "**Per-seed results.** `evidence/judge-R*.out`: the judge's line for every run (top held, side breaches, plants, kills, RM, discounted RM). `evidence/lanes-tune-report.md` and `evidence/lanes-tune-rounds.md` are the loop's notes, round by round.",
+      "**Settings.** `evidence/configs/`: the seed-1 config of each key line (plain R3 `rs01ed`, R2 `rs01`, R5b `n64`; hack lines R5, R5c, R5d, R6, R4 `both`). The seeds 2 and 3 differ only in the seed and the run name. `evidence/ppo_reward_scale.diff` is the code change.",
+      "**Clones.** The scripts that built the behaviour clone, priced the critic and replayed the episodes were written for the `tp-lanes-tune` layout (they read run folders and configs that are not copied), so they are not kept. `evidence/bc-gp8.out` and `evidence/bc-gp8-12.out` are the DAgger logs (4 and 12 rounds). Training scripts need the PPO trainer and take hours, so they were not rerun for this page; the clone weights (8 MB each) are not copied.",
+      "**Graph and card.** `graphs/lanes-rules.html`, `.svg` and `.rm`; `evidence/card/lanes-rules.json`. `check/lanes_ltlf.py` prints the LTLf.",
+      "**Source reports.** The numbers on this page come from `evidence/judge-R*.out` and `evidence/noise_check.out`. One sentence of the loop's report (\"top-only is the best choice at PPO's noise\") is stricter than its own table, which has `gp8m` ahead of top-only at eps 0.10 and 0.20; the page follows the table.",
+      "**Code.** `ppo_reward_scale`: uncommitted diff in worktree `tp-lanes-tune` (branch `MiquelGomezCorral/tp-lanes-tune`, base `0389b0b`). commit: pending, not merged."
+     ]
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,63 @@
+{
+ "suite": "templates",
+ "name": "tpl-precedence-2-goal",
+ "task": "Do not drop the key while the door is closed until the door has been opened once. Reach the goal.",
+ "gen": "deepseek-v4.1-flash",
+ "critic": "glm-5.3-flash",
+ "status": "accepted",
+ "error": null,
+ "wall_s": 9.3,
+ "attempts_used": 2,
+ "critic_rejections": 1,
+ "provider_reruns": 0,
+ "calls": 4,
+ "trace": [
+  {
+   "attempt": 1,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"If key_lost ever happens, door_open must also happen at some time, before, with, or after it.\",\n    \"pattern\": \"RespondedExistence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"key_lost\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"at_goal is true at least once.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"at_goal\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 1,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: the task says 'Do not drop the key while the door is closed until the door has been opened once', which is a plain ban: dropping before the door opens is `key_lost`, and the proposition's own definition ('no longer carrying it before opening the door') already contains the condition, so the correct clause is a hard `Absence(key_lost)`. The candidate instead uses RespondedExistence(key_lost, door_open), which merely says that any drop must eventually be followed by opening the door \u2014 it does not forbid dropping the key while the door is closed, and it would allow dropping and later opening without ever violating the task's actual ban. Remove the RespondedExistence clause and replace it with a hard Absence(key_lost); keep the hard Existence(at_goal)."
+   }
+  },
+  {
+   "attempt": 2,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"key_lost is never true.\",\n    \"pattern\": \"Absence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"key_lost\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"at_goal is true at least once.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"at_goal\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 2,
+   "step": "critic",
+   "value": {
+    "accepted": true,
+    "feedback": "NO CHANGES NEEDED: The task says not to drop the key while the door is closed, which is exactly what key_lost means, so Absence(key_lost) hard is correct; and Existence(at_goal) hard captures the goal."
+   }
+  }
+ ],
+ "clauses": [
+  [
+   "Absence",
+   [
+    "key_lost"
+   ],
+   "hard"
+  ],
+  [
+   "Existence",
+   [
+    "at_goal"
+   ],
+   "hard"
+  ]
+ ],
+ "texts": [
+  "key_lost is never true.",
+  "at_goal is true at least once."
+ ],
+ "machine": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: u2\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&key_lost) -> u1\n(u0, at_goal&!key_lost) -> u2\n(u0, at_goal&key_lost) -> u1\nREWARD_FUNCTION:\n(u0, !at_goal&key_lost, u1) -> -10\n(u0, at_goal&!key_lost, u2) -> 11\n(u0, at_goal&key_lost, u1) -> -10\n"
+}

@@ -1,0 +1,1 @@
+- lanes-rules PPO: `ppo_clip_vloss: false` loses all randomness within 120k steps (9/9 runs): actor and value share one network and returns reach ~96; the 0.1 value clip keeps it alive (2026-11-19).
