@@ -50,8 +50,14 @@ diagnostics to reproduce a failed run without changing compilation semantics.
   training does: each replay stops at the first final or rejecting state, whatever the card's `goal`
   (ARM-FM machines always have a final state), and nothing after it counts. The solving plan must stop
   in a final state without entering the well first (a machine with no final state must end owing
-  nothing). A plan that breaks a hard rule must not stop in a final state (no final: ends owing or in
-  the well); a plan that breaks only soft rules must pay a negative reward. A machine that stops
+  nothing). A plan that breaks a hard rule must not stop in a final state; a plan that breaks only
+  soft rules must pay a negative reward. Since 2026-11-20 a machine with no final state also plays an
+  idle plan: every wrong plan, and the idle plan where it breaks a rule of the card, must pay less
+  than the solving plan on the same layout, plain and discounted at the bundle's gamma, and must end
+  in the well where it breaks a hard rule for good (`broken@i` in the card's judge); an idle plan
+  that keeps every rule is held to the solving plan's rules, and a bundle whose solving plan paid on
+  no layout fails. This replaces "ends owing or in the well", which failed 38 of 62 checked no-goal
+  bundles with the end charge off. A machine that stops
   before the agent acts (its initial state is final or rejecting) fails every plan. A bundle with no
   labeling source is unchecked, not failed. A failure fails the bundle with the reason
   `plan-check-failed`; each `--retry-failed` run generates it once more. A bundle that passes is

@@ -153,7 +153,8 @@ def build_reward_machine(
     ``switches`` default to the ``Configuration`` class defaults. With ``minimize_machine`` the
     priced states that no step sequence can tell apart are merged into one.
     Raises ``ValueError`` on a non-total DFA, conflicting clauses, a positive reward cycle, or
-    a ``hard_ceiling`` that prices repeating soft breaks without a ``step_limit``.
+    a ``hard_ceiling`` that prices repeating soft breaks or a promise cost that charges a hard
+    break without a ``step_limit``.
     """
     switches = switches or RewardSwitches()
     if len(dfas) != len(soft):
@@ -604,8 +605,10 @@ def _price_edges(
     approximate both ways: it can call a clause paid
     that changes nothing, or inert when it changes rewards. It follows the ``switches``: a part
     switched off pays 0, so a soft clause that only that part paid counts as inert. With the
-    promise cost on, every edge out of a state with a hard promise open (the well and finishing
-    edges too) pays it once; idle loops there become priced edges, so they stay in the machine.
+    promise cost on, every edge out of a state with a hard promise open (the finishing edges
+    too) pays it once; idle loops there become priced edges, so they stay in the machine. An
+    edge into the well from such a state pays it ``step_limit`` times, the most that keeping
+    the promise open to the end could cost, so a hard break never pays more than keeping it.
     """
     labels = product.labels
     progress = (
@@ -627,6 +630,13 @@ def _price_edges(
                 else 0.0
             )
             well = _well_charge(soft_clauses, switches) if switches.reward_well else 0.0
+            if promise_cost:  # the episode ends here, so this step pays the cost of every step left
+                if switches.step_limit is None:
+                    raise ValueError(
+                        "the promise cost charges a hard break over the level's step limit: "
+                        "give the level (step_limit, or gym_id and env_kwargs)"
+                    )
+                promise_cost *= switches.step_limit
             priced.append((edge, round(progress[edge] + well + charge + promise_cost, 9)))
             continue
 

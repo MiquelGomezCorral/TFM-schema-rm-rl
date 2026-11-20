@@ -4,9 +4,14 @@ Each plan is judged the way training plays it: the episode stops at the first fi
 state of the machine (the runtime's ``terminate_on_rm``), whatever the card's ``goal``, and
 nothing after that counts. The solving plan must stop in a final state without entering the well
 first; a machine with no final state must end it with nothing owed. A wrong plan that breaks a
-hard rule must not stop in a final state; with no final it ends owing or in the well. A wrong plan
-that breaks only soft rules still reaches the goal, so it must pay a negative reward (the trace
-bank's R43 rule). A machine that stops before the agent acts fails every plan. The plans run in
+hard rule must not stop in a final state. A wrong plan that breaks only soft rules still reaches
+the goal, so it must pay a negative reward (the trace bank's R43 rule). With no final state, every
+wrong plan, and an idle plan where it breaks a rule of the card, must pay less than the solving
+plan on the same layout, plain and discounted at the bundle's gamma (the card review's pay test; a
+bundle whose solving plan paid on no layout fails), and must end in the well where it breaks a
+hard rule for good (``broken@i`` in the card's judge, not ``open_at_end``). An idle run that keeps
+every rule is held to the solving plan's rules. A machine that stops before the agent acts fails
+every plan. The plans run in
 the card's real env on the layouts of the trace bank, through the bundle's own labeling and Reward
 Machine. No model call. The record of one bundle sits beside its folder, like the labeling check's.
 """
@@ -15,9 +20,10 @@ from pathlib import Path
 from typing import Any
 
 from src.arm_fm.artifacts import ArtifactBundle
+from src.config import Configuration
 
 from .cards import Card
-from .declare_judge import HARD
+from .declare_judge import BROKEN, HARD, Judgment, judge_trace
 from .plans import PlanError, run_plan
 from .reference_labels import NoReferenceLabelerError
 from .traces import (
@@ -33,13 +39,20 @@ from .traces import (
 RECORD_SUFFIX = ".plan_check.json"
 FAILED_REASON = "plan-check-failed"  # the reason a failed generation records
 FINAL, WELL, OPEN = "final", "well", "open"  # where a plan's episode stops
+IDLE = "idle"  # the plan that only waits, played on a machine with no final state
+KEEPS_RULES = "keeps-rules"  # the kind of an idle run that breaks no rule of its card
+# A wait stops where the env ends the episode (plans.py), so this one waits to the level's end.
+_IDLE_STEPS = ({"do": "wait", "n": 10**6},)
 
 
 def check_card_plans(bundle: ArtifactBundle, card: Card, run_seed: int) -> dict[str, Any]:
     """Play every plan of ``card`` through ``bundle``; the record says if the machine pays them.
 
-    ``passed`` is None when nothing was checked: no plan could run in the card's env (each is
-    listed with its ``error``, not a failure of the machine) or the bundle has no labeling.
+    A machine with no final state also plays the idle plan, and its wrong runs must pay less than
+    the solving run of their layout (``_check_pay``) and end in the well where they break a hard
+    rule for good (``_unpriced_breaks``). ``passed`` is None when nothing was checked:
+    no plan could run in the card's env (each is listed with its ``error``, not a failure of the
+    machine) or the bundle has no labeling.
     """
     if not bundle.labeling_source.strip():
         return {
@@ -48,12 +61,18 @@ def check_card_plans(bundle: ArtifactBundle, card: Card, run_seed: int) -> dict[
             "problems": ["no labeling source: nothing to replay"],
             "runs": [],
         }
+    no_goal = not bundle.reward_machine.final_states
+    plans = plans_of(card) + ([(IDLE, _IDLE_STEPS, [])] if no_goal else [])
+    gamma = bundle.manifest.effective_settings.get("gamma") or Configuration.gamma
     runs = [
-        _check_run(bundle, card, plan, seed)
+        _check_run(bundle, card, plan, seed, gamma)
         for seed in card.reset_seeds(run_seed)
-        for plan in plans_of(card)
+        for plan in plans
     ]
-    problems = [f"{run['plan']}-s{run['seed']}: {text}" for run in runs for text in run["problems"]]
+    problems = _check_pay(runs) if no_goal else []
+    problems += [
+        f"{run['plan']}-s{run['seed']}: {text}" for run in runs for text in run["problems"]
+    ]
     checked = sum("error" not in run for run in runs)
     return {
         "card": card.id,
@@ -86,7 +105,7 @@ def _kind(card: Card, breaks: list[int] | None) -> str:
 
 
 def _check_run(
-    bundle: ArtifactBundle, card: Card, plan: tuple[str, Any, Any], seed: int
+    bundle: ArtifactBundle, card: Card, plan: tuple[str, Any, Any], seed: int, gamma: float
 ) -> dict[str, Any]:
     name, steps, breaks = plan
     kind = _kind(card, breaks)
@@ -95,12 +114,16 @@ def _check_run(
         rollout = run_plan(card.env, steps, seed)
     except (PlanError, NoReferenceLabelerError) as error:
         return {**entry, "error": f"cannot run: {error}"}
+    machine = bundle.reward_machine
+    finals, well = set(machine.final_states), set(machine.rejecting_states)
+    judgment = None if finals or kind == SOLVE else judge_trace(card.expect, rollout.labels)
+    if name == IDLE:  # idling is a wrong plan only on a layout where it breaks a rule
+        broken = judgment.failed()
+        entry["kind"] = _kind(card, broken) if broken else KEEPS_RULES
     replay = replay_in_bundle(bundle, make_record("", card, name, "plan", rollout))
     if replay.error:
         return {**entry, "problems": [f"the labeling failed: {replay.error}"]}
 
-    machine = bundle.reward_machine
-    finals, well = set(machine.final_states), set(machine.rejecting_states)
     # Training stops at the first final or rejecting state; the replay plays on, so cut it there.
     states = replay.rm_states
     stop = next((i for i, state in enumerate(states) if state in finals | well), len(states) - 1)
@@ -111,8 +134,46 @@ def _check_run(
         "end": FINAL if state in finals else WELL if state in well else OPEN,
         "owed": machine.judgment.end_charge(state) if machine.judgment else 0.0,
     }
-    problems = _problems(kind, bool(finals), ending, replay.rewards[:stop])
-    return {**entry, "problems": problems, **ending}
+    rewards = replay.rewards[:stop]
+    discounted = sum(gamma**step * reward for step, reward in enumerate(rewards))
+    problems = _problems(entry["kind"], bool(finals), ending, rewards)
+    if judgment is not None and ending["end"] != WELL:
+        problems += _unpriced_breaks(judgment)
+    return {
+        **entry,
+        "problems": problems,
+        **ending,
+        "pay": [round(sum(rewards), 4), round(discounted, 4)],
+    }
+
+
+def _check_pay(runs: list[dict[str, Any]]) -> list[str]:
+    """Add a problem to each wrong run that pays as much as the solving run of its seed.
+
+    ``pay`` is ``[plain, discounted]``; a wrong run must pay less on both. An idle run that keeps
+    every rule and a seed whose solving run did not play are not compared. Returns the problem of
+    the bundle as a whole: no solving run paid on any seed, so nothing was compared.
+    """
+    solved = {run["seed"]: run["pay"] for run in runs if run["kind"] == SOLVE and "pay" in run}
+    if not solved:
+        return ["no solving run to compare pay with"]
+    for run in runs:
+        best = solved.get(run["seed"])
+        if run["kind"] in (SOLVE, KEEPS_RULES) or best is None or "pay" not in run:
+            continue
+        if any(paid >= solve for paid, solve in zip(run["pay"], best, strict=True)):
+            run["problems"].append(f"pays {run['pay']}, not less than the solving plan's {best}")
+    return []
+
+
+def _unpriced_breaks(judgment: Judgment) -> list[str]:
+    """The hard rules a run breaks for good although the machine kept it out of the well."""
+    return [
+        f"breaks hard {verdict.clause[0]}({', '.join(verdict.clause[1])}) at step {verdict.step} "
+        "and does not end in the well"
+        for verdict in judgment.verdicts
+        if verdict.clause[2] == HARD and verdict.status == BROKEN
+    ]
 
 
 def _problems(
@@ -128,14 +189,10 @@ def _problems(
             if any(reward < 0 for reward in rewards)
             else ["breaks only soft rules and pays nothing"]
         )
-    if kind == SOLVE:
+    if kind in (SOLVE, KEEPS_RULES):  # an idle run that keeps every rule must not be punished
         if end == WELL:
             return [f"enters the well at step {steps}"]
         if has_final and end != FINAL:
             return [f"ends in {ending['end_state']}, not the final"]
         return [f"ends owing {owed}"] if not has_final and owed else []
-    if end == FINAL:
-        return [f"reaches the final at step {steps}"]
-    if not has_final and end == OPEN and not owed:
-        return ["ends with nothing owed and out of the well"]
-    return []
+    return [f"reaches the final at step {steps}"] if end == FINAL else []

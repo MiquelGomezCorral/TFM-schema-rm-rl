@@ -14,7 +14,7 @@ CASES = [
     (SOLVE, False, OPEN, 9, -1.0, [0.0], "ends owing -1.0"),
     (HARD_BREAK, True, FINAL, 4, 0.0, [0.0], "reaches the final at step 4"),
     (HARD_BREAK, True, OPEN, 9, 0.0, [0.0], None),
-    (HARD_BREAK, False, OPEN, 9, 0.0, [0.0], "ends with nothing owed and out of the well"),
+    (HARD_BREAK, False, OPEN, 9, 0.0, [0.0], None),  # with no final, the pay test judges it
     (HARD_BREAK, False, WELL, 3, 0.0, [0.0], None),
     (SOFT_BREAK, True, FINAL, 4, 0.0, [0.0, -0.5], None),
     (SOFT_BREAK, True, FINAL, 4, 0.0, [0.0, 1.0], "breaks only soft rules and pays nothing"),

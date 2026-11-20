@@ -121,10 +121,10 @@ def rebuild_rewards(
             for name in (*PRICING, "step_limit")
         )
     )
-    if switches.hard_ceiling and switches.step_limit is None:
+    if (switches.hard_ceiling or switches.reward_promise_cost) and switches.step_limit is None:
         print_warning(
-            "rebuild-rewards: the hard ceiling needs the level's step limit; "
-            "pass --gym-id or --step-limit, or --no-hard-ceiling"
+            "rebuild-rewards: the hard ceiling and the promise cost need the level's step limit; "
+            "pass --gym-id or --step-limit, or --no-hard-ceiling without the promise cost"
         )
         return False
     result, machine = _build(environment, proposal, dfas, switches)

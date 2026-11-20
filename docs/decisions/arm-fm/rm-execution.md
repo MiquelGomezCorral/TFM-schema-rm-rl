@@ -251,7 +251,11 @@ each is a gap to close when a card needs it.
   checks that states, finals, end judgment and every edge that moves are unchanged instead of the
   text; `rebuild-rewards --promise-cost` turns it on in a saved bundle, and a copy is
   `cp -r BUNDLE COPY` first. The setting is recorded in `effective_settings`; ablation does not
-  offer it (user).
+  offer it (user). Since 2026-11-20 (user decision: a hard break is charged the promise cost still
+  open) the step into the well pays it once per step of the level's step limit (-0.1 x 600 = -60
+  on the shop), so a hard break never pays more than keeping the promise open to the end; the end
+  charge and the well's own charge are unchanged. The build refuses the promise cost without a
+  step limit, the bundle records it, and `train-rl` refuses a level with another step limit.
 - 2026-11-12: The flat -0.5 at the time limit becomes the run setting `time_limit_penalty`
   (default -0.5, so reproduction runs keep it); the thesis benchmark sets 0 for ARM-FM machines,
   as the ARM-FM paper pays nothing there. FARM's end judgment is unchanged (user decision).
@@ -307,7 +311,8 @@ each is a gap to close when a card needs it.
   paid is never paid back as a reward. It adds `PROGRESS_REWARD * min(0, potential(source) - potential(start))` to the
   well price, `potential(u)` being the events still needed to reach a final (`_events_to_final`) plus
   the stages still owed (the soft clauses' with a final, every clause's without one); the finite
-  charge, the end charge of the state it leaves and the promise cost stay. So a hard break costs the
+  charge, the end charge of the state it leaves and the promise cost (since 2026-11-20 the step
+  limit's worth, see the promise cost entry) stay. So a hard break costs the
   same however far along the agent was: on doorkey with lava, breaking at once, after the key, or
   after the door all total -10. A charge paid after some progress (a Response trigger, for example)
   cancels that progress, so the take-back is net: in a chain of 2, `e0` pays +1, `alarm` pays -1, then
@@ -352,4 +357,6 @@ each is a gap to close when a card needs it.
   125 of 130 pass before and after. Limit, kept on purpose: on the shop the promise-cost stall (a
   hard promise left open costs -19.0, a hard break -10.1) still reads "ok" in `check-pay-order`,
   whose summary only notes it ("stall, hard promise open"); only the plan pay shows the stall. The
-  check does not change for it.
+  check does not change for it. Resolved 2026-11-20 by the well price of the promise cost entry: a
+  hard break on `shop-serve` now costs -70, below the -19.0 stall (`check-pay-order`: "hard break
+  -70; ok; stall, hard promise open -19.0117").
