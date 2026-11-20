@@ -45,7 +45,8 @@
       "**Thinking fixes the generator.** U5, S2 and O7 are right in 3 of 3 runs at `medium`; W5a in 2 of 3. Thinking also makes glm a much better critic (22 of 28 wrong sets caught on call 1, against 14 of 28).",
       "**A prompt rule clashed.** A strong critic (luna) looped on task G12 because two critic rules disagreed. One sentence in the critic prompt removed it: luna's G12 went from 7.33 rounds and 20 of 22 false alarms per run to 1 round and 0 of 2.",
       "**Part of the \"wrong\" was the scorer.** On G12 the card did not list a machine that accepts exactly the same runs. A DFA equality proof added it: old G12 runs scored right go from 2/9 to 6/9.",
-      "**Limits.** One run per task in most rows, so single cases are single runs. The final 46/46 run (B4) changes three things at once (thinking, the critic wording, the card fix); the earlier `medium` run (m1) came before the critic wording and scored 19/20 on the hard cases and five random ones. The `none` rerun with the new wording was not run (budget). The CLI models think hard while the app default is `none`: arms compare a model plus its thinking, not a model alone."
+      "**Limits.** One run per task in most rows, so single cases are single runs. The final 46/46 run (B4) changes three things at once (thinking, the critic wording, the card fix); the earlier `medium` run (m1) came before the critic wording and scored 19/20 on the hard cases and five random ones. The `none` rerun with the new wording was not run (budget). The CLI models think hard while the app default is `none`: arms compare a model plus its thinking, not a model alone.",
+      "**Later (loop 2).** A card audit made every stated order required (rescore: `none` 42 to 40 of 46, B4 stays 46). A sweep from `low` to `max` ends 46 of 46 at every level; `max` costs 4.5 times the `medium` wall time and doubles the short first proposals. Both sections sit before the open points; the sweep ran before the shape fix of `docs/paper/hidden-output-schema/`."
      ]
     }
    ]
@@ -832,16 +833,238 @@
    ]
   },
   {
+   "id": "audit",
+   "title": "Later: the stated-order audit of the cards",
+   "intro": "Loop 2, 2026-11-20. The user rule: an order the task states is kept, even when the level already forces it. The cards had marked many such orders `forced` (optional) and accepted answers without them. The audit made them required and rescored the old runs.",
+   "blocks": [
+    {
+     "type": "table",
+     "columns": [
+      "Change",
+      "Count",
+      "Examples"
+     ],
+     "rows": [
+      [
+       "Cards with `forced` orders",
+       "11",
+       "`base-doorkey`, `cx-sequence`, `cx-goal-many-rules` (W5a), `tpl-precedence-1-goal`, the local soft cards S1-S4"
+      ],
+      [
+       "Lost `forced`: every order is stated",
+       "8",
+       "\"use the key to open the door, then reach the goal\": both Precedences now required"
+      ],
+      [
+       "Keep `forced`",
+       "3",
+       "`base-unlock-pickup`, `base-key-corridor` (a list with no order word), G12 (a \"Then\" after an \"if\" rule)"
+      ],
+      [
+       "`also_ok` answers removed (they drop a stated order)",
+       "16 repo + 10 local",
+       "one `Existence` per step for `cx-sequence`; all four remaining answers of `cx-goal-many-rules`"
+      ]
+     ]
+    },
+    {
+     "type": "table",
+     "columns": [
+      "Run",
+      "Right, old cards to audited",
+      "First proposal right",
+      "What changed"
+     ],
+     "rows": [
+      [
+       "B4 (medium, 46)",
+       "46 to 46",
+       "39 to 38",
+       "O2's first proposal, a lone goal `Existence(box)`, is now wrong"
+      ],
+      [
+       "m1 (medium, 20)",
+       {
+        "text": "19 to 18",
+        "tone": "warn"
+       },
+       "15 to 15",
+       "S2 r2 has no door-to-goal order"
+      ],
+      [
+       "none (A at none, 46)",
+       {
+        "text": "42 to 40",
+        "tone": "warn"
+       },
+       "40 to 37",
+       "S3 and S4 drop the order into the soft last step; O7's first proposal"
+      ]
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**Prompts.** Two generator lines (a soft last step keeps its `Precedence`; the last check looks for every stated pair) and two critic lines (a stated order needs its `Precedence`, even when the level guarantees it). At `medium` the full run stays 46 of 46 right.",
+      "**Critic set.** Relabelled for stated orders: 30 wrong items, 8 right (was 28 and 10). glm at `medium` catches 28 of 30 on call 1, with 0 of 8 false alarms; the earlier glm `medium` run, relabelled, caught 24 of 30. One run per item, so +4 is a gain, not a precise number.",
+      "**Scorer.** `check/chain_score.py` now takes its optional implied orders from every hard `Precedence` of the card, not only the forced ones (key before goal when key before door before goal accepts the same runs). On the runs scored before the audit it gives the same verdicts.",
+      "**The 4 machines the rescore turned wrong** are older runs, kept with their NL, LTLf and RM text in `evidence/llm-loop2/rescore/wrong/` and listed in `evidence/llm-loop2-report.md`."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "sweep",
+   "title": "Later: thinking from low to max",
+   "intro": "Loop 2, after the audit: the production pair on the 46 cards at four levels, both models at the same level, one run per card, scored with the audited cards.",
+   "blocks": [
+    {
+     "type": "callout",
+     "tone": "warn",
+     "title": "Ran before the shape fix",
+     "text": "This sweep ran with the old generator prompt, which never named the JSON shape. The short first proposals below are what that fix removed: at `max` and `high`, 0 short and every first proposal right afterwards. See `docs/paper/hidden-output-schema/`."
+    },
+    {
+     "type": "table",
+     "columns": [
+      "Level",
+      "Right",
+      "First proposal right",
+      "Short first proposals",
+      "Wall per run, median (total)",
+      "Call timeouts",
+      "Critic catch on call 1",
+      "False alarms",
+      "Critic calls per run"
+     ],
+     "rows": [
+      [
+       "low",
+       "46/46",
+       "37/46",
+       "7",
+       "27 s (1,431 s)",
+       "0",
+       "9/9",
+       "0/46",
+       "1.20"
+      ],
+      [
+       "medium",
+       "46/46",
+       "38/46",
+       "8",
+       "34 s (1,928 s)",
+       "0",
+       "8/8",
+       "2/48",
+       "1.24"
+      ],
+      [
+       {
+        "text": "high",
+        "tone": "ok"
+       },
+       "46/46",
+       "37/46",
+       "8",
+       "48 s (2,553 s)",
+       "0",
+       "9/9",
+       "1/47",
+       "1.22"
+      ],
+      [
+       "max",
+       "46/46",
+       {
+        "text": "30/46",
+        "tone": "warn"
+       },
+       {
+        "text": "14",
+        "tone": "warn"
+       },
+       {
+        "text": "166 s (8,664 s)",
+        "tone": "warn"
+       },
+       {
+        "text": "2 (G12)",
+        "tone": "warn"
+       },
+       "16/16",
+       "0/46",
+       "1.35"
+      ]
+     ]
+    },
+    {
+     "type": "table",
+     "columns": [
+      "Critic subset, 21 items",
+      "low",
+      "medium",
+      "high",
+      "max"
+     ],
+     "rows": [
+      [
+       "Defects flagged on call 1",
+       "22/27 (81%)",
+       "22/27 (81%)",
+       {
+        "text": "26/27 (96%)",
+        "tone": "ok"
+       },
+       "26/27 (96%)"
+      ],
+      [
+       "Wrong items caught on call 1",
+       "15/16",
+       "15/16",
+       "15/16",
+       "16/16"
+      ],
+      [
+       "False alarms",
+       "1/5",
+       "0/5",
+       "0/5",
+       "0/5"
+      ],
+      [
+       "Critic output tokens (reasoning)",
+       "18,277 (12,795)",
+       "18,599 (13,570)",
+       "50,631 (44,591)",
+       "143,240 (136,457)"
+      ]
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**The final machine does not depend on the level.** 46 of 46 right at every level; the critic caught every wrong first proposal. Level buys critic recall and costs time.",
+      "**Short first proposals are one clause.** 36 of 37 hold a single clause. Cause found later: the generator was never shown the JSON shape (`docs/paper/hidden-output-schema/`).",
+      "**Max costs 4.5 times the medium wall time** and two 600 s generator timeouts (G12, third try after about 315 s). Generator calls reach 31,662 output tokens.",
+      "**Recommendation: `high` if the default moves.** Same final result as `medium`, 96% of defects flagged on the critic's first call against 81%, for +32% total wall time and about 2.7 times the critic tokens. Not `max`. `CONFIG.reasoning` was not changed.",
+      "**Limits.** One run per card and level; the critic sweep used a fixed 21-item subset (16 wrong, 5 right, seed 20261120), so one item either way is noise; `none` was not rerun in loop 2."
+     ]
+    }
+   ]
+  },
+  {
    "id": "open",
    "title": "Open points",
    "blocks": [
     {
      "type": "list",
      "items": [
-      "**The reasoning default.** The loop recommends `medium` for both roles (46/46 against 42/46, critic catch 14 to 22 of 28, same calls per run, 6 times the wall time). `CONFIG.reasoning` still defaults to `none`; no default was changed. The user decides.",
-      "**Stated orders the level forces.** Every strong critic (luna, Haiku, glm at `medium`) asks for them (s02, w08, w03, r05, G4), while the cards mark them `forced`, optional. Critic rule 8 says to keep them. The decision records (`docs/decisions/arm-fm/task-and-rm-identity.md:109-111`, `rm-execution.md:95-98`) say the critic rejects a clause that restates an environment-guaranteed order. The three disagree. Today it costs extra rounds, not wrong machines.",
+      "**The reasoning default.** The loop recommends `medium` for both roles (46/46 against 42/46, critic catch 14 to 22 of 28, same calls per run, 6 times the wall time). `CONFIG.reasoning` still defaults to `none`; no default was changed. The user decides. Loop 2 later recommends `high` if the default moves (see the sweep).",
+      "**Stated orders the level forces.** Every strong critic (luna, Haiku, glm at `medium`) asks for them (s02, w08, w03, r05, G4), while the cards mark them `forced`, optional. Critic rule 8 says to keep them. The decision records (`docs/decisions/arm-fm/task-and-rm-identity.md:109-111`, `rm-execution.md:95-98`) say the critic rejects a clause that restates an environment-guaranteed order. The three disagree. Today it costs extra rounds, not wrong machines. Since settled for the cards: the user rule keeps every stated order (`docs/decisions/` updated in main `9ead827`), and the audit made them required.",
       "**glm at `medium` still accepts 8 of 28 critic-set items with a defect left** (luna 1, Haiku 0). In the pipeline it caught 11 of 12 wrong first proposals.",
-      "**Short first proposals at `medium`** (10 of 66). They are safe only while the critic catches them; glm did, 10 of 10. No change made; watch them in the next full run.",
+      "**Short first proposals at `medium`** (10 of 66). They are safe only while the critic catches them; glm did, 10 of 10. No change made; watch them in the next full run. Cause found and fixed since: the generator was never shown the JSON shape (`docs/paper/hidden-output-schema/`).",
       "**The `none` rerun** of W5a, U5, S2, O7 with the new critic wording was not run (budget). B2 touches only candidates whose clues list a redundant non-`Existence` clause, so no change is expected there."
      ]
     }
@@ -855,6 +1078,8 @@
      "type": "list",
      "items": [
       "**`evidence/`** (1.8 MB): `model-compare-report.md` and `llm-loop-report.md` (every number on this page comes from them or from the records below); `items.json` and `items-b2.json` (the 38 critic items and their B2 form); `b1-equiv.txt`; `cards/local-soft/tasks.json`; `model-compare/runs/` and `llm-loop/runs/`: one summary JSON per run (`<round>/<arm>/<case>-r<k>.json`, with status, clauses, trace, machine text, wall time), the `.rm` files of the wrong machines, `round.log` per round (it holds the exact cases, arms and reasoning level), and `explain*.json` (the verdict and nearest card answer of each non-right machine).",
+      "**`evidence/llm-loop2/`** (3.2 MB, loop 2): `cards/` (the audited cards the loop scored with), `cards.diff` and `prompt.diff`, `items.json` (the relabelled critic set; `items-old.json` the earlier one), `critic-subset.txt`, `rescore/` (old against new verdicts and the 4 machines turned wrong), `runs/f-{low,medium,high,max}/A` (one summary per run, a slim call log per run with stage, reply, wall time, error and token usage; prompts and schema dropped; `round.log`), `runs/critic/glm-*` (critic-set records without `first_prompt`) and `runs/sweep-table.md`. The report is `evidence/llm-loop2-report.md`.",
+      "**Cards pinned.** The repository's cards changed after this entry (the audit, then the card review), so `evidence/cards/{base,complex,templates}/` keeps the cards the first report and loop scored with (main `57f6a1a`). `check/cases.py` reads `CARD_DIR` (default: those pinned cards); `CARD_DIR=docs/paper/model-comparison/evidence/llm-loop2/cards` scores against the audited ones.",
       "**Not copied** (all still in `.git/agent-memory/plans/farm-final-20261119/model-compare-evidence` and `llm-loop-evidence`, about 93 MB): the 434 call logs `*.calls.jsonl` (55.5 MB; they hold seconds per call, tokens and usage), the per-run `.log` files, the `*_work` folders (one per run, 22 MB), the 8 dry runs `p1` (run before the context stripping), the `STOP` marker, `__pycache__`, and the run tools `run_arms.py/.sh`, `run_critic_set.py/.sh`, `critic_cli.py`, `gen_one.py`, `critic_one.py`, `budget*.py`, `explain.py`. The run tools call the models and read the `.env` credentials, so they are not part of a rerun here.",
       "**Edited copy.** The 172 critic-set records had `first_prompt` removed (the whole critic prompt, about 70 KB each, 6.9 MB in all); the other fields are unchanged. The prompts rebuild from `items.json` and the critic prompt in git.",
       "**Numbers that need the call logs:** the calls per arm, seconds per call, and output and reasoning tokens. `arm_stats.py` and `critic_stats.py` print 0 for those columns on the copy; the figures on this page are the ones the loop report printed from the logs."
@@ -867,7 +1092,7 @@
     },
     {
      "type": "code",
-     "text": "E=docs/paper/model-comparison/evidence\nM=$E/model-compare/runs; L=$E/llm-loop/runs; F=docs/paper/model-comparison/check\n\n# per-arm table (right, accepted, wrong, first proposal, catch, false alarms, rounds, wall time); add --letters --cases W5a,U5,S2,O7,G12\nCC_ROOT=$PWD PYTHONPATH=app python -W ignore $F/arm_stats.py A=$M/r1/A B=$M/r1b/B,$M/r3/B C=$M/r2/C D=$M/r2/D E=$L/e1/E Amed=$L/m1/A Ahigh=$L/h1/A B4=$L/b4/A\n\n# critic-set table and defects per kind\nC1=$M/critic; C2=$L/critic\npython $F/critic_stats.py \"glm none=$C1/glm,$C2/glm\" \"glm medium=$C2/glm-medium\" \"luna=$C1/luna,$C2/luna\" \"haiku=$C2/haiku\" --kinds\n\n# B2 test: luna's pipeline on 9 cases, before and after\nCC_ROOT=$PWD PYTHONPATH=app python -W ignore $F/arm_stats.py --cases G12,G4,G6,C2,W2b,O5,U1,U6,W5b B=$M/r1b/B,$M/r3/B B2=$L/b2/B,$L/b2g/B\n\n# G12 equality proof, task and LTLf of the machines drawn above\nPYTHONPATH=app python -W ignore $F/equiv.py '<set 1>' '<set 2>'\nPYTHONPATH=app python -W ignore $F/machines.py"
+     "text": "E=docs/paper/model-comparison/evidence\nM=$E/model-compare/runs; L=$E/llm-loop/runs; F=docs/paper/model-comparison/check\n\n# per-arm table (right, accepted, wrong, first proposal, catch, false alarms, rounds, wall time); add --letters --cases W5a,U5,S2,O7,G12\nCC_ROOT=$PWD PYTHONPATH=app python -W ignore $F/arm_stats.py A=$M/r1/A B=$M/r1b/B,$M/r3/B C=$M/r2/C D=$M/r2/D E=$L/e1/E Amed=$L/m1/A Ahigh=$L/h1/A B4=$L/b4/A\n\n# critic-set table and defects per kind\nC1=$M/critic; C2=$L/critic\npython $F/critic_stats.py \"glm none=$C1/glm,$C2/glm\" \"glm medium=$C2/glm-medium\" \"luna=$C1/luna,$C2/luna\" \"haiku=$C2/haiku\" --kinds\n\n# B2 test: luna's pipeline on 9 cases, before and after\nCC_ROOT=$PWD PYTHONPATH=app python -W ignore $F/arm_stats.py --cases G12,G4,G6,C2,W2b,O5,U1,U6,W5b B=$M/r1b/B,$M/r3/B B2=$L/b2/B,$L/b2g/B\n\n# G12 equality proof, task and LTLf of the machines drawn above\nPYTHONPATH=app python -W ignore $F/equiv.py '<set 1>' '<set 2>'\nPYTHONPATH=app python -W ignore $F/machines.py\n\n# loop 2: rescore B4, m1 and none on the audited cards (drop CARD_DIR for the old ones)\nCARD_DIR=$E/llm-loop2/cards CC_ROOT=$PWD PYTHONPATH=app python -W ignore $F/arm_stats.py B4=$L/b4/A m1=$L/m1/A none=$M/r1/A\n\n# loop 2: the reasoning sweep and the critic subset\nS=$E/llm-loop2/runs\nCARD_DIR=$E/llm-loop2/cards CC_ROOT=$PWD PYTHONPATH=app python -W ignore $F/level_stats.py low=$S/f-low/A medium=$S/f-medium/A high=$S/f-high/A max=$S/f-max/A\npython $F/critic_stats.py low=$S/critic/glm-low medium=$S/critic/glm-medium high=$S/critic/glm-high max=$S/critic/glm-max --items $(cat $E/llm-loop2/critic-subset.txt)\npython $F/critic_stats.py medium=$S/critic/glm-medium"
     },
     {
      "type": "text",
@@ -877,7 +1102,7 @@
     {
      "type": "text",
      "heading": "Code",
-     "text": "Critic wording: commit `d5ec36e` (`fix(critic): call only a listed Existence redundant; a stated order or if-rule always stays`). G12 card: `e56fcff`. CLI adapter (`experiments/dev/model-compare/cli_engine.py`): `9f12d3a`. All three merged as `57f6a1a` on main. The critic clues the critic set and pipeline were built on: `3fb0ce0`, merged as `114e5b3` (see `docs/paper/critic-clues/`). The first report's arms ran in worktree `tp-model-compare` on main `54f2c71` plus the untracked adapter. The loop moved it to main `cdae068` and made the two fixes and the adapter change there, uncommitted; they reached main as the commits above. The page and `check/` were built on main `57f6a1a`."
+     "text": "Critic wording: commit `d5ec36e` (`fix(critic): call only a listed Existence redundant; a stated order or if-rule always stays`). G12 card: `e56fcff`. CLI adapter (`experiments/dev/model-compare/cli_engine.py`): `9f12d3a`. All three merged as `57f6a1a` on main. The critic clues the critic set and pipeline were built on: `3fb0ce0`, merged as `114e5b3` (see `docs/paper/critic-clues/`). The first report's arms ran in worktree `tp-model-compare` on main `54f2c71` plus the untracked adapter. The loop moved it to main `cdae068` and made the two fixes and the adapter change there, uncommitted; they reached main as the commits above. The page and `check/` were built on main `57f6a1a`. Loop 2 (audit, prompts, sweep) ran in worktree `tp-llm-loop2`; its prompt changes reached main as `42003cf` (merged as `56a482a`); the card review then made stated orders required on main in `ab27c07` (merged as `b3ba9ef`)."
     }
    ]
   }

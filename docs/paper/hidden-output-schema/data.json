@@ -1,0 +1,564 @@
+{
+  "title": "Hidden output schema: why thinking cut the generator's answers short",
+  "eyebrow": "reward machine generator · OpenCode structured output · 2026-11-20",
+  "subtitle": "The generator must answer in a fixed JSON shape that it is never shown. With thinking on, it plans under guessed field names and often stops after the first clause. One prompt sentence that names the shape fixes it.",
+  "sections": [
+    {
+      "id": "claim",
+      "title": "What it shows",
+      "blocks": [
+        {
+          "type": "callout",
+          "tone": "info",
+          "title": "In plain words",
+          "text": "The generator (`deepseek-v4.1-flash`, through OpenCode) writes the clause set as JSON. The app sends the JSON shape only as `response_format: json_schema`. OpenCode enforces that shape while it decodes the answer, but never puts it in the model's context. With thinking on, the model plans its answer under field names it guessed (`template`, `arguments`). When the decoder forces the real names (`pattern`, `propositions`, `normalized_clause`), the answer often closes the list after the first clause. One sentence in the generator prompt now names the shape, and the short answers are gone."
+        },
+        {
+          "type": "stats",
+          "items": [
+            {
+              "value": "0 to 14 of 46",
+              "label": "short first proposals: 0 without thinking, 7 to 14 from low to max",
+              "tone": "warn"
+            },
+            {
+              "value": "3 of 4 to 0 of 5",
+              "label": "short replies in the replays, before and after the sentence",
+              "tone": "ok"
+            },
+            {
+              "value": "12/26 to 26/26",
+              "label": "first proposals right at max, same 26 cases",
+              "tone": "ok"
+            },
+            {
+              "value": "4,470 s to 2,460 s",
+              "label": "total wall time of those 26 runs",
+              "tone": "ok"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "items": [
+            "**Pair.** Generator `deepseek-v4.1-flash`, critic `glm-5.3-flash`, both through OpenCode, both at the same reasoning level. The generator writes the first proposal; the critic reviews the compiled Reward Machine and may ask for a new one.",
+            "**Short first proposal.** A first proposal that is not right and has fewer clauses than the card's smallest accepted answer. 36 of the 37 shorts from low to max are a single clause, always the task's first one.",
+            "**The fix.** `app/src/prompts/compiler-rm/reward-ltlf-creator.system.md:82-87`: \"Return only JSON matching the caller-provided schema\" becomes one sentence that spells out the object. No engine change.",
+            "**Side gain.** The free-text field `normalized_clause` now holds words. Before, 242 of 481 final clauses had a formula there (\"Precedence(blocker_moved, has_door_key)\"); after, 0 of 223.",
+            "**Open cost.** W5a at max ended with no machine: six non-streamed generator calls in a row hit the 600 s timeout. The cause is OpenCode, not the prompt: it never returns a non-streamed reply after about 300 s. A streaming fix is being implemented and is not merged yet.",
+            "**Limit.** One run per case in every round, so \"0 short\" means not seen, not impossible. The replays are 15 calls at `medium`."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "levels",
+      "title": "More thinking, more short answers",
+      "intro": "The same 46 task cards at five reasoning levels, before the fix. One run per card.",
+      "blocks": [
+        {
+          "type": "table",
+          "columns": [
+            "Level",
+            "Short first proposals",
+            "Of them one clause",
+            "First proposal right",
+            "Wall per run, median (total)"
+          ],
+          "rows": [
+            [
+              "none",
+              {
+                "text": "0 of 46",
+                "tone": "ok"
+              },
+              "0",
+              "40/46",
+              "6 s (362 s)"
+            ],
+            [
+              "low",
+              "7 of 46",
+              "7",
+              "37/46",
+              "27 s (1,431 s)"
+            ],
+            [
+              "medium",
+              "8 of 46",
+              "8",
+              "38/46",
+              "34 s (1,928 s)"
+            ],
+            [
+              "high",
+              "8 of 46",
+              "7",
+              "37/46",
+              "48 s (2,553 s)"
+            ],
+            [
+              "max",
+              {
+                "text": "14 of 46",
+                "tone": "warn"
+              },
+              "14",
+              "30/46",
+              "166 s (8,664 s)"
+            ]
+          ]
+        },
+        {
+          "type": "list",
+          "items": [
+            "**Rows low to max** are loop 2 (stated-order prompts, the audited cards in `evidence/cards/`). All four end 46 of 46 right: the glm critic rejected every short first proposal, so a short answer cost a round and its wall time, not a wrong machine.",
+            "**Row none** is the model-comparison run (older prompts), scored with the cards of that time (`evidence/cards-before-audit/`). Scored with the audited cards it has 4 short by count, one of them a single clause (G1): the audit made stated orders required, and the older prompts did not always write them.",
+            "**Why none is clean.** Without thinking there is no plan in guessed field names to clash with the decoder."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reasoning",
+      "title": "What the model says while it thinks",
+      "intro": "From the replays: the logged first request of a short run, sent again unchanged (`medium`, OpenCode). The reasoning holds the full plan; the content holds one clause. 9 of the 10 original-prompt replays say in their reasoning that the schema is not shown; none of the 5 fixed ones does.",
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            "**W3a-orig, the plan.** \"So two clauses: 1. ChainResponse(box_fell, holding_box) — hard 2. Response(at_exit, holding_box) — hard\". Then: \"The schema isn't shown explicitly but presumably: {\"clauses\": [{\"template\": ..., \"arguments\": [...], \"priority\": \"hard\"}]}. ... Let me use \"template\", \"arguments\", \"priority\" keys.\" The content held only the ChainResponse.",
+            "**U2-orig.** \"Need infer schema? Not explicitly provided in prompt except \"caller-provided schema\" absent. Need know likely fields.\"",
+            "**W2b-orig.** \"This is a meta instruction; the actual schema is in the caller code, not shown. ... Since we don't see it, we have to guess.\""
+          ]
+        },
+        {
+          "type": "text",
+          "heading": "Marks in the free-text field",
+          "text": "`normalized_clause` is the only free-text field, and the model's own words leak into it: \"I need to write a JSON object, not this.\" (max W3a, a one-clause proposal of a soft `NotCoExistence` the task does not ask for), \"error\" (max C1), \"x\" (max G6), \"OPEN_THE_DOOR\" (max U5). They are a symptom only: some full replies also hold a bare template name there."
+        }
+      ]
+    },
+    {
+      "id": "fix",
+      "title": "The fix: name the shape",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "One sentence of the generator prompt, `reward-ltlf-creator.system.md:82-87`. The replays tested the placeholder \"<the task words this clause covers>\"; the rounds at scale and the merged prompt use \"<the requirement this clause covers, in natural language>\", the meaning the tagger and both labeling prompts read from that field."
+        },
+        {
+          "type": "code",
+          "text": "-Return only JSON matching the caller-provided schema. Do not output formulas, rewards,\n+Return only one JSON object of this shape, with one entry per clause:\n+`{\"clauses\": [{\"normalized_clause\": \"<the requirement this clause covers, in natural language>\",\n+\"pattern\": \"<template>\", \"propositions\": [\"a\", \"b\"], \"priority\": \"hard\"}]}`. `pattern` is a\n+template name from the table, `propositions` holds its arguments in order (one for a unary\n+template), `priority` is `hard` or `soft`. Do not output formulas, rewards,\n states, transitions, explanations, or fields not requested by that schema."
+        }
+      ]
+    },
+    {
+      "id": "replays",
+      "title": "Replays: the same request, before and after",
+      "intro": "15 resends of logged first generator requests (deepseek at `medium`, OpenCode, the app's own client). Each fix replay is the original request with only that sentence changed, sent at the same moment as its original.",
+      "blocks": [
+        {
+          "type": "table",
+          "columns": [
+            "Replay",
+            "Prompt",
+            "Clauses",
+            "Score",
+            "Short",
+            "Reasoning says schema not shown"
+          ],
+          "rows": [
+            [
+              "O5-a, O5-b, O5-c",
+              "original",
+              "2, 2, 2",
+              "right",
+              "no",
+              "yes, yes, no"
+            ],
+            [
+              "U6-a, U6-b, U6-c",
+              "original",
+              "3, 3, 3",
+              "right",
+              "no",
+              "yes"
+            ],
+            [
+              "U2-orig",
+              "original",
+              {
+                "text": "1",
+                "tone": "bad"
+              },
+              "wrong",
+              "yes",
+              "yes"
+            ],
+            [
+              "W1b-orig",
+              "original",
+              {
+                "text": "1",
+                "tone": "bad"
+              },
+              "wrong",
+              "yes",
+              "yes"
+            ],
+            [
+              "W3a-orig",
+              "original",
+              {
+                "text": "1",
+                "tone": "bad"
+              },
+              "wrong",
+              "yes",
+              "yes"
+            ],
+            [
+              "W2b-orig",
+              "original",
+              "2",
+              "right",
+              "no",
+              "yes"
+            ],
+            [
+              "U2-fix",
+              "shape named",
+              {
+                "text": "2",
+                "tone": "ok"
+              },
+              "right",
+              "no",
+              "no"
+            ],
+            [
+              "W1b-fix-a, W1b-fix-b",
+              "shape named",
+              {
+                "text": "3, 3",
+                "tone": "ok"
+              },
+              "right",
+              "no",
+              "no"
+            ],
+            [
+              "W2b-fix",
+              "shape named",
+              "2",
+              "right",
+              "no",
+              "no"
+            ],
+            [
+              "W3a-fix",
+              "shape named",
+              {
+                "text": "2",
+                "tone": "ok"
+              },
+              "right",
+              "no",
+              "no"
+            ]
+          ]
+        },
+        {
+          "type": "list",
+          "items": [
+            "**Head to head.** The four requests that had run short (U2, W1b, W2b, W3a): 3 of 4 short with the original prompt, 0 of 5 with the shape named, all 5 right. Under the original rate, 0 of 5 has p of about 0.05 (Fisher, one-sided).",
+            "**Ruled out.** `finish_reason` was `stop` in all 15; no `max_tokens` is sent; the app parses the whole content; short and full runs had the same prompt lengths and ran side by side. The full list is in `evidence/short-proposal-report.md`."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scale",
+      "title": "At scale: the rounds with the shape named",
+      "intro": "Same pair and level, one run per case. Max: the 22 cases short in either loop plus 5 passing ones drawn with seed 20261120, W5a on its own line. High: all 46. None: 10 cases drawn with the same seed.",
+      "blocks": [
+        {
+          "type": "table",
+          "columns": [
+            "Round",
+            "Right",
+            "First proposal right",
+            "Short first",
+            "Critic calls per run",
+            "Wall per run, median (total)",
+            "Generator output tokens, median / max"
+          ],
+          "rows": [
+            [
+              "max, 26 cases, before (loop 2)",
+              "26/26",
+              "12/26",
+              "14",
+              "1.54",
+              "179 s (4,470 s)",
+              "4,618 / 19,975"
+            ],
+            [
+              {
+                "text": "max, 26 cases, shape named",
+                "tone": "ok"
+              },
+              "26/26",
+              {
+                "text": "26/26",
+                "tone": "ok"
+              },
+              {
+                "text": "0",
+                "tone": "ok"
+              },
+              "1.00",
+              "88 s (2,460 s)",
+              "2,292 / 12,335"
+            ],
+            [
+              "max, W5a, before",
+              "1/1",
+              "1/1",
+              "0",
+              "1",
+              "302 s",
+              "31,662"
+            ],
+            [
+              {
+                "text": "max, W5a, shape named",
+                "tone": "bad"
+              },
+              {
+                "text": "0/1, no machine",
+                "tone": "bad"
+              },
+              "-",
+              "-",
+              "0",
+              "3,600 s (killed)",
+              "- (5 timeouts logged, the 6th killed)"
+            ],
+            [
+              "high, 46 cases, before (loop 2)",
+              "46/46",
+              "37/46",
+              "8",
+              "1.22",
+              "48 s (2,553 s)",
+              "2,404 / 7,705"
+            ],
+            [
+              {
+                "text": "high, 46 cases, shape named",
+                "tone": "ok"
+              },
+              "46/46",
+              {
+                "text": "46/46",
+                "tone": "ok"
+              },
+              {
+                "text": "0",
+                "tone": "ok"
+              },
+              "1.02",
+              "35 s (2,336 s)",
+              "1,734 / 7,949"
+            ],
+            [
+              "none, 10 cases, before (older prompts)",
+              "6/10",
+              "5/10",
+              "2",
+              "1.10",
+              "6 s (74 s)",
+              "not logged"
+            ],
+            [
+              "none, 10 cases, shape named",
+              "7/10",
+              "7/10",
+              "2",
+              "1.10",
+              "6 s (71 s)",
+              "177 / 225"
+            ]
+          ]
+        },
+        {
+          "type": "list",
+          "items": [
+            "**Max.** Every first proposal right on the 26 cases that finished, and the critic needed one call per run. The median run halved and the total fell from 4,470 s to 2,460 s.",
+            "**High.** W5a timed out once (600 s), then answered in 29 s; the total includes that timeout. One false alarm (G9), the same \"whenever, then reach the goal\" pattern loop 2 saw; it cost one round.",
+            "**None.** 3 wrong machines (S3, U5, W5a). They are the same mistakes the `none` run made before the fix, so the generator picked wrong clauses and the critic at `none` accepted them: LLM side. The two short ones (S3, W5a) left clauses out; they are not the one-clause cut. Both none rows are scored with the audited cards, which is why \"before\" reads 6/10 here and 40/46 in the level table."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "w5a",
+      "title": "Open cost: W5a at max times out",
+      "intro": "W5a (`cx-goal-many-rules`, six clauses, the longest answer among the max cases) produced no machine at max once the shape was named.",
+      "blocks": [
+        {
+          "type": "table",
+          "columns": [
+            "Call",
+            "Streamed",
+            "Wall",
+            "Output tokens",
+            "Tokens per second",
+            "Result"
+          ],
+          "rows": [
+            [
+              "loop 2, max (before the fix)",
+              "no",
+              "254 s",
+              "31,662",
+              "125",
+              "reply"
+            ],
+            [
+              "shape named, max, calls 1-5",
+              "no",
+              "600 s each",
+              "-",
+              "-",
+              {
+                "text": "timeout at the SDK's 600 s",
+                "tone": "bad"
+              }
+            ],
+            [
+              "shape named, high, calls 1-2",
+              "no",
+              "600 s, 29 s",
+              "-, 2,197",
+              "-, 76",
+              "timeout, then reply"
+            ],
+            [
+              "replay before the fix (pre-max-1)",
+              "yes",
+              "166 s",
+              "19,327",
+              "116",
+              {
+                "text": "6 clauses",
+                "tone": "ok"
+              }
+            ],
+            [
+              "replays after the fix (post-max-1 to 5)",
+              "yes",
+              "155, 154, 520, 310, 387 s",
+              "18,209 to 35,829",
+              "69 to 118",
+              {
+                "text": "6 clauses, 5 of 5",
+                "tone": "ok"
+              }
+            ],
+            [
+              "replay after the fix, not streamed (post-max-ns-2)",
+              "no",
+              "900 s",
+              "-",
+              "-",
+              {
+                "text": "read timeout",
+                "tone": "bad"
+              }
+            ]
+          ]
+        },
+        {
+          "type": "list",
+          "items": [
+            "**The cause.** OpenCode never returns a non-streamed reply after about 300 s. Across 1,334 logged calls of this plan (the diagnosis count), the longest non-streamed reply took 298.8 s, none ended between 300 and 600 s, and every timeout sat at the SDK's 600 s. The call logs copied here agree: 636 calls, longest reply 265 s, every failed call ended at 600 s.",
+            "**Why W5a.** At max it reasons 12 to 36 K tokens at 69 to 125 tokens per second, so it often crosses 300 s. It did so before the fix too (19.3 K and 31.7 K tokens); the provider was faster then and kept it under.",
+            "**Streaming works.** The same request, streamed, came back 6 of 6 times in 154 to 520 s, each with all 6 clauses. One more non-streamed replay (post-max-ns-1) failed at 201 s on a decoding error of the replay tool, not of the model.",
+            "**Status.** A fix that streams the OpenCode call with an idle limit is being implemented and is not merged yet. Until then the cost of the shape fix at max is this one case."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sample",
+      "title": "Sample: W3a before and after",
+      "intro": "The replay pair W3a-orig and W3a-fix: the same logged request, sent at the same moment, with only the shape sentence changed. Each machine is compiled from the reply with the repository's code (`check/sample.py`); the after machine equals the one the at-scale run `shape-max/A/W3a-r1` stored. Open the fold-out for the task, clauses, LTLf and RM text.",
+      "blocks": [
+        {
+          "type": "gallery",
+          "width": 490,
+          "items": [
+            {
+              "src": "graphs/before-W3a.html",
+              "height": 520,
+              "alt": "Reward Machine of the W3a reply with the original prompt: one ChainResponse clause, three states",
+              "caption": "**Before: original prompt (W3a-orig)** · 3 states · no final state · rejecting u2\nTask: *Each time the box falls, pick it up again on your very next move. If you reach the exit, you must be carrying the box.* The reply holds one clause. The exit rule is missing, though the reasoning planned it.",
+              "details": {
+                "title": "Task, clauses, LTLf and RM text",
+                "text": "Card `tpl-chain-response-2-nogoal` (ServiceRoom, step limit 200, no goal). Its answer: hard ChainResponse(box_fell, holding_box) and hard Response(at_exit, holding_box). Score: wrong, short (1 of 2).",
+                "code": "# Task (NL)\nEach time the box falls, pick it up again on your very next move. If you reach the exit, you must be carrying the box.\n\n# Reply content (finish_reason stop)\n{\"clauses\":[{\"normalized_clause\":\"Each time the box falls, the agent holds the box on the very next step\",\"pattern\":\"ChainResponse\",\"propositions\":[\"box_fell\",\"holding_box\"],\"priority\":\"hard\"}]}\n\n# Clauses and LTLf\nhard ChainResponse(box_fell, holding_box): (G(box_fell->(Xholding_box)))\n\n# RM text (graphs/before-W3a.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, box_fell) -> u1\n(u1, !box_fell&!holding_box) -> u2\n(u1, !box_fell&holding_box) -> u0\n(u1, box_fell&!holding_box) -> u2\nREWARD_FUNCTION:\n(u0, box_fell, u1) -> -1\n(u1, !box_fell&!holding_box, u2) -> -10\n(u1, !box_fell&holding_box, u0) -> 1\n(u1, box_fell&!holding_box, u2) -> -10"
+              }
+            },
+            {
+              "src": "graphs/after-W3a.html",
+              "height": 520,
+              "alt": "Reward Machine of the W3a reply with the shape named: ChainResponse and Response, five states",
+              "caption": "**After: shape named (W3a-fix)** · 5 states · no final state · rejecting u4\nSame task. The reply holds both clauses, the card's answer. Reaching the exit without the box now leaves a debt (u2, u3) that only picking the box up pays.",
+              "details": {
+                "title": "Task, clauses, LTLf and RM text",
+                "text": "Card `tpl-chain-response-2-nogoal`. Score: right. The same machine is stored by the at-scale run `evidence/runs/shape-max/A/W3a-r1`.",
+                "code": "# Task (NL)\nEach time the box falls, pick it up again on your very next move. If you reach the exit, you must be carrying the box.\n\n# Reply content (finish_reason stop)\n{\"clauses\":[{\"normalized_clause\":\"Each time the box falls, pick it up again on your very next move.\",\"pattern\":\"ChainResponse\",\"propositions\":[\"box_fell\",\"holding_box\"],\"priority\":\"hard\"},{\"normalized_clause\":\"If you reach the exit, you must be carrying the box.\",\"pattern\":\"Response\",\"propositions\":[\"at_exit\",\"holding_box\"],\"priority\":\"hard\"}]}\n\n# Clauses and LTLf\nhard ChainResponse(box_fell, holding_box): (G(box_fell->(Xholding_box)))\nhard Response(at_exit, holding_box):       (G(at_exit->(Fholding_box)))\n\n# RM text (graphs/after-W3a.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u4\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_exit&box_fell) -> u1\n(u0, at_exit&!box_fell&!holding_box) -> u2\n(u0, at_exit&box_fell&!holding_box) -> u3\n(u0, at_exit&box_fell&holding_box) -> u1\n(u1, !at_exit&!box_fell&!holding_box) -> u4\n(u1, !at_exit&!box_fell&holding_box) -> u0\n(u1, !at_exit&box_fell&!holding_box) -> u4\n(u1, at_exit&!box_fell&!holding_box) -> u4\n(u1, at_exit&!box_fell&holding_box) -> u0\n(u1, at_exit&box_fell&!holding_box) -> u4\n(u2, !box_fell&holding_box) -> u0\n(u2, box_fell&!holding_box) -> u3\n(u2, box_fell&holding_box) -> u1\n(u3, !box_fell&!holding_box) -> u4\n(u3, !box_fell&holding_box) -> u0\n(u3, box_fell&!holding_box) -> u4\n(u3, box_fell&holding_box) -> u1\nREWARD_FUNCTION:\n(u0, !at_exit&box_fell, u1) -> -1\n(u0, at_exit&!box_fell&!holding_box, u2) -> -1\n(u0, at_exit&box_fell&!holding_box, u3) -> -2\n(u0, at_exit&box_fell&holding_box, u1) -> -1\n(u1, !at_exit&!box_fell&!holding_box, u4) -> -10\n(u1, !at_exit&!box_fell&holding_box, u0) -> 1\n(u1, !at_exit&box_fell&!holding_box, u4) -> -10\n(u1, at_exit&!box_fell&!holding_box, u4) -> -10\n(u1, at_exit&!box_fell&holding_box, u0) -> 1\n(u1, at_exit&box_fell&!holding_box, u4) -> -10\n(u2, !box_fell&holding_box, u0) -> 1\n(u2, box_fell&!holding_box, u3) -> -1\n(u3, !box_fell&!holding_box, u4) -> -10\n(u3, !box_fell&holding_box, u0) -> 2\n(u3, box_fell&!holding_box, u4) -> -10\n(u3, box_fell&holding_box, u1) -> 1"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "evidence",
+      "title": "Evidence, rerun and code",
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            "**Reports.** `evidence/short-proposal-report.md` (the diagnosis and the replays), `short-proposal-finding.md` (the early note), `shape-fix-report.md` (the rounds at scale). Every number on this page comes from them or from the records below.",
+            "**Replays.** `evidence/probes/*.json`: the 15 raw responses, reasoning text included, and `ledger.txt` (when each was sent). `fix-shape.json` is the sentence the fix replays swapped in. `scans/` holds the scans of the loop logs: per short run the clause count, tokens, reply and marks.",
+            "**Runs.** `evidence/runs/<round>/A/<case>-r1.json`: one summary per run (status, clauses, trace, machine text, wall time). `loop2-{low,medium,high,max}` is loop 2 before the fix, `shape-{max,high,none}` the rounds with the shape named, `none-r1` the model-comparison run at `none`. The `.calls.jsonl` call logs are slim copies: one line per model call with the stage, reply, wall time, error and token usage; the system prompt, user prompt and schema were dropped. `round.log` keeps each round's arguments; `case-sets.txt` the drawn cases.",
+            "**W5a.** `evidence/w5a-timeout/*.json`: the 8 replay summaries (label, streamed or not, wall, usage, clauses) and `ledger.txt`. The replay tool calls the model, so it and its raw chunk files stay in the plan folder.",
+            "**Cards.** `evidence/cards/` the audited cards loop 2 and the shape rounds were scored with; `evidence/cards-before-audit/` the cards of the model-comparison run. `creator-prompt-vs-main.diff` is the whole generator-prompt change of commit `42003cf` (stated orders plus the shape sentence).",
+            "**Not copied.** The full call logs with prompts and schemas, the per-run `_work` folders and logs, and the tools that call the models. They stay in `.git/agent-memory/plans/farm-final-20261119/`."
+          ]
+        },
+        {
+          "type": "text",
+          "heading": "Rerun without a model call",
+          "text": "From the repository root, in `RM_RL_env`. Each prints the rows of one table on this page."
+        },
+        {
+          "type": "code",
+          "text": "H=docs/paper/hidden-output-schema; E=$H/evidence/runs; T=\"CC_ROOT=$PWD PYTHONPATH=app:$H/check\"\n\n# short first proposals by level (loop 2, audited cards) and the none row (cards of that time)\nenv $T python -W ignore $H/check/level_stats.py low=$E/loop2-low/A medium=$E/loop2-medium/A high=$E/loop2-high/A max=$E/loop2-max/A\nenv CARD_DIR=$H/evidence/cards-before-audit $T python -W ignore $H/check/level_stats.py none=$E/none-r1/A\n\n# replay table\nenv $T python -W ignore $H/check/replays.py\n\n# rounds at scale: max on the 26 cases, high on 46, none on 10\nM=G6,G7,G9,O5,O8,S1,S2,S3,U1,U2,U5,U6,W1a,W1b,W2b,W3a,W4a,W4b,W5b,W6,C1,O2,O6,G1,G3,G5\nenv $T python -W ignore $H/check/level_stats.py before=$E/loop2-max/A after=$E/shape-max/A --cases $M\nenv $T python -W ignore $H/check/level_stats.py before=$E/loop2-high/A after=$E/shape-high/A\nenv $T python -W ignore $H/check/level_stats.py before=$E/none-r1/A after=$E/shape-none/A --cases W4a,W5a,C2,U5,O5,O6,O8,G11,S3,S4\n\n# formula text in normalized_clause, the W5a calls, the sample machines\npython $H/check/formula_text.py\npython $H/check/w5a_speed.py\nPYTHONPATH=app python -W ignore $H/check/sample.py\n\n# graphs\nPYTHONPATH=app python app/main.py render-rm --rm-file $H/graphs/after-W3a.rm --svg-dir $H/graphs/after-W3a.svg --html"
+        },
+        {
+          "type": "list",
+          "items": [
+            "**Scripts.** `check/level_stats.py`, `arm_stats.py`, `cases.py`, `chain_score.py`, `loopcrit.py` and `judgments.json` are the loop's scorers, copied from `model-comparison/check/` (only the `arm_stats.py` docstring differs); `CARD_DIR` picks the cards and defaults to this entry's `evidence/cards/`. `replays.py`, `formula_text.py`, `w5a_speed.py` and `sample.py` are new for this page. `sample.py` compiles the two replies with `src.utils.ltlf_of`, `flat_tool.compile_dfa` and `src.compiler.reward_layer.build_reward_machine` at the card's step limit.",
+            "**Code.** The shape sentence and the stated-order rules: commit `42003cf`, merged as `56a482a`. The streaming fix for W5a is not merged."
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -53,7 +53,8 @@
             "**Thinking fixes the generator.** U5, S2 and O7 are right in 3 of 3 runs at `medium`; W5a in 2 of 3. Thinking also makes glm a much better critic (22 of 28 wrong sets caught on call 1, against 14 of 28).",
             "**A prompt rule clashed.** A strong critic (luna) looped on task G12 because two critic rules disagreed. One sentence in the critic prompt removed it: luna's G12 went from 7.33 rounds and 20 of 22 false alarms per run to 1 round and 0 of 2.",
             "**Part of the \"wrong\" was the scorer.** On G12 the card did not list a machine that accepts exactly the same runs. A DFA equality proof added it: old G12 runs scored right go from 2/9 to 6/9.",
-            "**Limits.** One run per task in most rows, so single cases are single runs. The final 46/46 run (B4) changes three things at once (thinking, the critic wording, the card fix); the earlier `medium` run (m1) came before the critic wording and scored 19/20 on the hard cases and five random ones. The `none` rerun with the new wording was not run (budget). The CLI models think hard while the app default is `none`: arms compare a model plus its thinking, not a model alone."
+            "**Limits.** One run per task in most rows, so single cases are single runs. The final 46/46 run (B4) changes three things at once (thinking, the critic wording, the card fix); the earlier `medium` run (m1) came before the critic wording and scored 19/20 on the hard cases and five random ones. The `none` rerun with the new wording was not run (budget). The CLI models think hard while the app default is `none`: arms compare a model plus its thinking, not a model alone.",
+            "**Later (loop 2).** A card audit made every stated order required (rescore: `none` 42 to 40 of 46, B4 stays 46). A sweep from `low` to `max` ends 46 of 46 at every level; `max` costs 4.5 times the `medium` wall time and doubles the short first proposals. Both sections sit before the open points; the sweep ran before the shape fix of `docs/paper/hidden-output-schema/`."
           ]
         }
       ]
@@ -840,16 +841,238 @@
       ]
     },
     {
+      "id": "audit",
+      "title": "Later: the stated-order audit of the cards",
+      "intro": "Loop 2, 2026-11-20. The user rule: an order the task states is kept, even when the level already forces it. The cards had marked many such orders `forced` (optional) and accepted answers without them. The audit made them required and rescored the old runs.",
+      "blocks": [
+        {
+          "type": "table",
+          "columns": [
+            "Change",
+            "Count",
+            "Examples"
+          ],
+          "rows": [
+            [
+              "Cards with `forced` orders",
+              "11",
+              "`base-doorkey`, `cx-sequence`, `cx-goal-many-rules` (W5a), `tpl-precedence-1-goal`, the local soft cards S1-S4"
+            ],
+            [
+              "Lost `forced`: every order is stated",
+              "8",
+              "\"use the key to open the door, then reach the goal\": both Precedences now required"
+            ],
+            [
+              "Keep `forced`",
+              "3",
+              "`base-unlock-pickup`, `base-key-corridor` (a list with no order word), G12 (a \"Then\" after an \"if\" rule)"
+            ],
+            [
+              "`also_ok` answers removed (they drop a stated order)",
+              "16 repo + 10 local",
+              "one `Existence` per step for `cx-sequence`; all four remaining answers of `cx-goal-many-rules`"
+            ]
+          ]
+        },
+        {
+          "type": "table",
+          "columns": [
+            "Run",
+            "Right, old cards to audited",
+            "First proposal right",
+            "What changed"
+          ],
+          "rows": [
+            [
+              "B4 (medium, 46)",
+              "46 to 46",
+              "39 to 38",
+              "O2's first proposal, a lone goal `Existence(box)`, is now wrong"
+            ],
+            [
+              "m1 (medium, 20)",
+              {
+                "text": "19 to 18",
+                "tone": "warn"
+              },
+              "15 to 15",
+              "S2 r2 has no door-to-goal order"
+            ],
+            [
+              "none (A at none, 46)",
+              {
+                "text": "42 to 40",
+                "tone": "warn"
+              },
+              "40 to 37",
+              "S3 and S4 drop the order into the soft last step; O7's first proposal"
+            ]
+          ]
+        },
+        {
+          "type": "list",
+          "items": [
+            "**Prompts.** Two generator lines (a soft last step keeps its `Precedence`; the last check looks for every stated pair) and two critic lines (a stated order needs its `Precedence`, even when the level guarantees it). At `medium` the full run stays 46 of 46 right.",
+            "**Critic set.** Relabelled for stated orders: 30 wrong items, 8 right (was 28 and 10). glm at `medium` catches 28 of 30 on call 1, with 0 of 8 false alarms; the earlier glm `medium` run, relabelled, caught 24 of 30. One run per item, so +4 is a gain, not a precise number.",
+            "**Scorer.** `check/chain_score.py` now takes its optional implied orders from every hard `Precedence` of the card, not only the forced ones (key before goal when key before door before goal accepts the same runs). On the runs scored before the audit it gives the same verdicts.",
+            "**The 4 machines the rescore turned wrong** are older runs, kept with their NL, LTLf and RM text in `evidence/llm-loop2/rescore/wrong/` and listed in `evidence/llm-loop2-report.md`."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sweep",
+      "title": "Later: thinking from low to max",
+      "intro": "Loop 2, after the audit: the production pair on the 46 cards at four levels, both models at the same level, one run per card, scored with the audited cards.",
+      "blocks": [
+        {
+          "type": "callout",
+          "tone": "warn",
+          "title": "Ran before the shape fix",
+          "text": "This sweep ran with the old generator prompt, which never named the JSON shape. The short first proposals below are what that fix removed: at `max` and `high`, 0 short and every first proposal right afterwards. See `docs/paper/hidden-output-schema/`."
+        },
+        {
+          "type": "table",
+          "columns": [
+            "Level",
+            "Right",
+            "First proposal right",
+            "Short first proposals",
+            "Wall per run, median (total)",
+            "Call timeouts",
+            "Critic catch on call 1",
+            "False alarms",
+            "Critic calls per run"
+          ],
+          "rows": [
+            [
+              "low",
+              "46/46",
+              "37/46",
+              "7",
+              "27 s (1,431 s)",
+              "0",
+              "9/9",
+              "0/46",
+              "1.20"
+            ],
+            [
+              "medium",
+              "46/46",
+              "38/46",
+              "8",
+              "34 s (1,928 s)",
+              "0",
+              "8/8",
+              "2/48",
+              "1.24"
+            ],
+            [
+              {
+                "text": "high",
+                "tone": "ok"
+              },
+              "46/46",
+              "37/46",
+              "8",
+              "48 s (2,553 s)",
+              "0",
+              "9/9",
+              "1/47",
+              "1.22"
+            ],
+            [
+              "max",
+              "46/46",
+              {
+                "text": "30/46",
+                "tone": "warn"
+              },
+              {
+                "text": "14",
+                "tone": "warn"
+              },
+              {
+                "text": "166 s (8,664 s)",
+                "tone": "warn"
+              },
+              {
+                "text": "2 (G12)",
+                "tone": "warn"
+              },
+              "16/16",
+              "0/46",
+              "1.35"
+            ]
+          ]
+        },
+        {
+          "type": "table",
+          "columns": [
+            "Critic subset, 21 items",
+            "low",
+            "medium",
+            "high",
+            "max"
+          ],
+          "rows": [
+            [
+              "Defects flagged on call 1",
+              "22/27 (81%)",
+              "22/27 (81%)",
+              {
+                "text": "26/27 (96%)",
+                "tone": "ok"
+              },
+              "26/27 (96%)"
+            ],
+            [
+              "Wrong items caught on call 1",
+              "15/16",
+              "15/16",
+              "15/16",
+              "16/16"
+            ],
+            [
+              "False alarms",
+              "1/5",
+              "0/5",
+              "0/5",
+              "0/5"
+            ],
+            [
+              "Critic output tokens (reasoning)",
+              "18,277 (12,795)",
+              "18,599 (13,570)",
+              "50,631 (44,591)",
+              "143,240 (136,457)"
+            ]
+          ]
+        },
+        {
+          "type": "list",
+          "items": [
+            "**The final machine does not depend on the level.** 46 of 46 right at every level; the critic caught every wrong first proposal. Level buys critic recall and costs time.",
+            "**Short first proposals are one clause.** 36 of 37 hold a single clause. Cause found later: the generator was never shown the JSON shape (`docs/paper/hidden-output-schema/`).",
+            "**Max costs 4.5 times the medium wall time** and two 600 s generator timeouts (G12, third try after about 315 s). Generator calls reach 31,662 output tokens.",
+            "**Recommendation: `high` if the default moves.** Same final result as `medium`, 96% of defects flagged on the critic's first call against 81%, for +32% total wall time and about 2.7 times the critic tokens. Not `max`. `CONFIG.reasoning` was not changed.",
+            "**Limits.** One run per card and level; the critic sweep used a fixed 21-item subset (16 wrong, 5 right, seed 20261120), so one item either way is noise; `none` was not rerun in loop 2."
+          ]
+        }
+      ]
+    },
+    {
       "id": "open",
       "title": "Open points",
       "blocks": [
         {
           "type": "list",
           "items": [
-            "**The reasoning default.** The loop recommends `medium` for both roles (46/46 against 42/46, critic catch 14 to 22 of 28, same calls per run, 6 times the wall time). `CONFIG.reasoning` still defaults to `none`; no default was changed. The user decides.",
-            "**Stated orders the level forces.** Every strong critic (luna, Haiku, glm at `medium`) asks for them (s02, w08, w03, r05, G4), while the cards mark them `forced`, optional. Critic rule 8 says to keep them. The decision records (`docs/decisions/arm-fm/task-and-rm-identity.md:109-111`, `rm-execution.md:95-98`) say the critic rejects a clause that restates an environment-guaranteed order. The three disagree. Today it costs extra rounds, not wrong machines.",
+            "**The reasoning default.** The loop recommends `medium` for both roles (46/46 against 42/46, critic catch 14 to 22 of 28, same calls per run, 6 times the wall time). `CONFIG.reasoning` still defaults to `none`; no default was changed. The user decides. Loop 2 later recommends `high` if the default moves (see the sweep).",
+            "**Stated orders the level forces.** Every strong critic (luna, Haiku, glm at `medium`) asks for them (s02, w08, w03, r05, G4), while the cards mark them `forced`, optional. Critic rule 8 says to keep them. The decision records (`docs/decisions/arm-fm/task-and-rm-identity.md:109-111`, `rm-execution.md:95-98`) say the critic rejects a clause that restates an environment-guaranteed order. The three disagree. Today it costs extra rounds, not wrong machines. Since settled for the cards: the user rule keeps every stated order (`docs/decisions/` updated in main `9ead827`), and the audit made them required.",
             "**glm at `medium` still accepts 8 of 28 critic-set items with a defect left** (luna 1, Haiku 0). In the pipeline it caught 11 of 12 wrong first proposals.",
-            "**Short first proposals at `medium`** (10 of 66). They are safe only while the critic catches them; glm did, 10 of 10. No change made; watch them in the next full run.",
+            "**Short first proposals at `medium`** (10 of 66). They are safe only while the critic catches them; glm did, 10 of 10. No change made; watch them in the next full run. Cause found and fixed since: the generator was never shown the JSON shape (`docs/paper/hidden-output-schema/`).",
             "**The `none` rerun** of W5a, U5, S2, O7 with the new critic wording was not run (budget). B2 touches only candidates whose clues list a redundant non-`Existence` clause, so no change is expected there."
           ]
         }
@@ -863,6 +1086,8 @@
           "type": "list",
           "items": [
             "**`evidence/`** (1.8 MB): `model-compare-report.md` and `llm-loop-report.md` (every number on this page comes from them or from the records below); `items.json` and `items-b2.json` (the 38 critic items and their B2 form); `b1-equiv.txt`; `cards/local-soft/tasks.json`; `model-compare/runs/` and `llm-loop/runs/`: one summary JSON per run (`\u003cround>/\u003carm>/\u003ccase>-r\u003ck>.json`, with status, clauses, trace, machine text, wall time), the `.rm` files of the wrong machines, `round.log` per round (it holds the exact cases, arms and reasoning level), and `explain*.json` (the verdict and nearest card answer of each non-right machine).",
+            "**`evidence/llm-loop2/`** (3.2 MB, loop 2): `cards/` (the audited cards the loop scored with), `cards.diff` and `prompt.diff`, `items.json` (the relabelled critic set; `items-old.json` the earlier one), `critic-subset.txt`, `rescore/` (old against new verdicts and the 4 machines turned wrong), `runs/f-{low,medium,high,max}/A` (one summary per run, a slim call log per run with stage, reply, wall time, error and token usage; prompts and schema dropped; `round.log`), `runs/critic/glm-*` (critic-set records without `first_prompt`) and `runs/sweep-table.md`. The report is `evidence/llm-loop2-report.md`.",
+            "**Cards pinned.** The repository's cards changed after this entry (the audit, then the card review), so `evidence/cards/{base,complex,templates}/` keeps the cards the first report and loop scored with (main `57f6a1a`). `check/cases.py` reads `CARD_DIR` (default: those pinned cards); `CARD_DIR=docs/paper/model-comparison/evidence/llm-loop2/cards` scores against the audited ones.",
             "**Not copied** (all still in `.git/agent-memory/plans/farm-final-20261119/model-compare-evidence` and `llm-loop-evidence`, about 93 MB): the 434 call logs `*.calls.jsonl` (55.5 MB; they hold seconds per call, tokens and usage), the per-run `.log` files, the `*_work` folders (one per run, 22 MB), the 8 dry runs `p1` (run before the context stripping), the `STOP` marker, `__pycache__`, and the run tools `run_arms.py/.sh`, `run_critic_set.py/.sh`, `critic_cli.py`, `gen_one.py`, `critic_one.py`, `budget*.py`, `explain.py`. The run tools call the models and read the `.env` credentials, so they are not part of a rerun here.",
             "**Edited copy.** The 172 critic-set records had `first_prompt` removed (the whole critic prompt, about 70 KB each, 6.9 MB in all); the other fields are unchanged. The prompts rebuild from `items.json` and the critic prompt in git.",
             "**Numbers that need the call logs:** the calls per arm, seconds per call, and output and reasoning tokens. `arm_stats.py` and `critic_stats.py` print 0 for those columns on the copy; the figures on this page are the ones the loop report printed from the logs."
@@ -875,7 +1100,7 @@
         },
         {
           "type": "code",
-          "text": "E=docs/paper/model-comparison/evidence\nM=$E/model-compare/runs; L=$E/llm-loop/runs; F=docs/paper/model-comparison/check\n\n# per-arm table (right, accepted, wrong, first proposal, catch, false alarms, rounds, wall time); add --letters --cases W5a,U5,S2,O7,G12\nCC_ROOT=$PWD PYTHONPATH=app python -W ignore $F/arm_stats.py A=$M/r1/A B=$M/r1b/B,$M/r3/B C=$M/r2/C D=$M/r2/D E=$L/e1/E Amed=$L/m1/A Ahigh=$L/h1/A B4=$L/b4/A\n\n# critic-set table and defects per kind\nC1=$M/critic; C2=$L/critic\npython $F/critic_stats.py \"glm none=$C1/glm,$C2/glm\" \"glm medium=$C2/glm-medium\" \"luna=$C1/luna,$C2/luna\" \"haiku=$C2/haiku\" --kinds\n\n# B2 test: luna's pipeline on 9 cases, before and after\nCC_ROOT=$PWD PYTHONPATH=app python -W ignore $F/arm_stats.py --cases G12,G4,G6,C2,W2b,O5,U1,U6,W5b B=$M/r1b/B,$M/r3/B B2=$L/b2/B,$L/b2g/B\n\n# G12 equality proof, task and LTLf of the machines drawn above\nPYTHONPATH=app python -W ignore $F/equiv.py '\u003cset 1>' '\u003cset 2>'\nPYTHONPATH=app python -W ignore $F/machines.py"
+          "text": "E=docs/paper/model-comparison/evidence\nM=$E/model-compare/runs; L=$E/llm-loop/runs; F=docs/paper/model-comparison/check\n\n# per-arm table (right, accepted, wrong, first proposal, catch, false alarms, rounds, wall time); add --letters --cases W5a,U5,S2,O7,G12\nCC_ROOT=$PWD PYTHONPATH=app python -W ignore $F/arm_stats.py A=$M/r1/A B=$M/r1b/B,$M/r3/B C=$M/r2/C D=$M/r2/D E=$L/e1/E Amed=$L/m1/A Ahigh=$L/h1/A B4=$L/b4/A\n\n# critic-set table and defects per kind\nC1=$M/critic; C2=$L/critic\npython $F/critic_stats.py \"glm none=$C1/glm,$C2/glm\" \"glm medium=$C2/glm-medium\" \"luna=$C1/luna,$C2/luna\" \"haiku=$C2/haiku\" --kinds\n\n# B2 test: luna's pipeline on 9 cases, before and after\nCC_ROOT=$PWD PYTHONPATH=app python -W ignore $F/arm_stats.py --cases G12,G4,G6,C2,W2b,O5,U1,U6,W5b B=$M/r1b/B,$M/r3/B B2=$L/b2/B,$L/b2g/B\n\n# G12 equality proof, task and LTLf of the machines drawn above\nPYTHONPATH=app python -W ignore $F/equiv.py '\u003cset 1>' '\u003cset 2>'\nPYTHONPATH=app python -W ignore $F/machines.py\n\n# loop 2: rescore B4, m1 and none on the audited cards (drop CARD_DIR for the old ones)\nCARD_DIR=$E/llm-loop2/cards CC_ROOT=$PWD PYTHONPATH=app python -W ignore $F/arm_stats.py B4=$L/b4/A m1=$L/m1/A none=$M/r1/A\n\n# loop 2: the reasoning sweep and the critic subset\nS=$E/llm-loop2/runs\nCARD_DIR=$E/llm-loop2/cards CC_ROOT=$PWD PYTHONPATH=app python -W ignore $F/level_stats.py low=$S/f-low/A medium=$S/f-medium/A high=$S/f-high/A max=$S/f-max/A\npython $F/critic_stats.py low=$S/critic/glm-low medium=$S/critic/glm-medium high=$S/critic/glm-high max=$S/critic/glm-max --items $(cat $E/llm-loop2/critic-subset.txt)\npython $F/critic_stats.py medium=$S/critic/glm-medium"
         },
         {
           "type": "text",
@@ -885,12 +1110,897 @@
         {
           "type": "text",
           "heading": "Code",
-          "text": "Critic wording: commit `d5ec36e` (`fix(critic): call only a listed Existence redundant; a stated order or if-rule always stays`). G12 card: `e56fcff`. CLI adapter (`experiments/dev/model-compare/cli_engine.py`): `9f12d3a`. All three merged as `57f6a1a` on main. The critic clues the critic set and pipeline were built on: `3fb0ce0`, merged as `114e5b3` (see `docs/paper/critic-clues/`). The first report's arms ran in worktree `tp-model-compare` on main `54f2c71` plus the untracked adapter. The loop moved it to main `cdae068` and made the two fixes and the adapter change there, uncommitted; they reached main as the commits above. The page and `check/` were built on main `57f6a1a`."
+          "text": "Critic wording: commit `d5ec36e` (`fix(critic): call only a listed Existence redundant; a stated order or if-rule always stays`). G12 card: `e56fcff`. CLI adapter (`experiments/dev/model-compare/cli_engine.py`): `9f12d3a`. All three merged as `57f6a1a` on main. The critic clues the critic set and pipeline were built on: `3fb0ce0`, merged as `114e5b3` (see `docs/paper/critic-clues/`). The first report's arms ran in worktree `tp-model-compare` on main `54f2c71` plus the untracked adapter. The loop moved it to main `cdae068` and made the two fixes and the adapter change there, uncommitted; they reached main as the commits above. The page and `check/` were built on main `57f6a1a`. Loop 2 (audit, prompts, sweep) ran in worktree `tp-llm-loop2`; its prompt changes reached main as `42003cf` (merged as `56a482a`); the card review then made stated orders required on main in `ab27c07` (merged as `b3ba9ef`)."
         }
       ]
     }
   ],
-  "version": 1
+  "version": 2,
+  "previous": {
+    "title": "Model comparison: who makes the wrong reward machines",
+    "eyebrow": "reward machine generator and critic · models and thinking level · 2026-11-20",
+    "subtitle": "Five generator and critic pairs, the thinking level of the production pair, and the two fixes that followed. Every wrong machine shows its task, LTLf and Reward Machine.",
+    "sections": [
+      {
+        "id": "claim",
+        "title": "What it shows",
+        "blocks": [
+          {
+            "type": "callout",
+            "tone": "info",
+            "title": "In plain words",
+            "text": "The app turns a task in plain English into a Reward Machine in two steps: a generator model proposes rules, a critic model checks them. In production the generator is `deepseek-v4.1-flash` and the critic is `glm-5.3-flash`, both with reasoning set to `none`. With that pair, the three wrong machines have one cause: deepseek's first proposal is wrong and glm accepts it. Giving both models `medium` thinking, plus a critic wording fix and a card fix, makes all 46 test tasks come out right (46/46, against 42/46). A run then takes about 6 times longer."
+          },
+          {
+            "type": "stats",
+            "items": [
+              {
+                "value": "42 to 46 of 46",
+                "label": "right machines, production pair, none to medium",
+                "tone": "ok"
+              },
+              {
+                "value": "14 to 22 of 28",
+                "label": "wrong clause sets glm catches on its first call, none to medium",
+                "tone": "ok"
+              },
+              {
+                "value": "6 s to 39 s",
+                "label": "median time of one run, none to medium",
+                "tone": "warn"
+              },
+              {
+                "value": "10 of 66",
+                "label": "medium runs with a too-short first proposal (none: 0 of 46)",
+                "tone": "warn"
+              }
+            ]
+          },
+          {
+            "type": "list",
+            "items": [
+              "**Who fails at `none`.** All 3 wrong machines of the production pair (W5a, U5, S2) are deepseek first proposals that glm accepted on its first call; a fourth task (O7) was accepted with redundant hard clauses. Swap either model and those cases come out right: Haiku + glm 6/6, deepseek + luna 6/6.",
+              "**Thinking fixes the generator.** U5, S2 and O7 are right in 3 of 3 runs at `medium`; W5a in 2 of 3. Thinking also makes glm a much better critic (22 of 28 wrong sets caught on call 1, against 14 of 28).",
+              "**A prompt rule clashed.** A strong critic (luna) looped on task G12 because two critic rules disagreed. One sentence in the critic prompt removed it: luna's G12 went from 7.33 rounds and 20 of 22 false alarms per run to 1 round and 0 of 2.",
+              "**Part of the \"wrong\" was the scorer.** On G12 the card did not list a machine that accepts exactly the same runs. A DFA equality proof added it: old G12 runs scored right go from 2/9 to 6/9.",
+              "**Limits.** One run per task in most rows, so single cases are single runs. The final 46/46 run (B4) changes three things at once (thinking, the critic wording, the card fix); the earlier `medium` run (m1) came before the critic wording and scored 19/20 on the hard cases and five random ones. The `none` rerun with the new wording was not run (budget). The CLI models think hard while the app default is `none`: arms compare a model plus its thinking, not a model alone."
+            ]
+          }
+        ]
+      },
+      {
+        "id": "setup",
+        "title": "Setup: five arms",
+        "intro": "An arm is one generator plus one critic. Every arm runs the app's own generate, compile, review loop on the benchmark task cards and counts the final machine.",
+        "blocks": [
+          {
+            "type": "table",
+            "columns": [
+              "Arm",
+              "Generator",
+              "Critic",
+              "Calls",
+              "Runs"
+            ],
+            "rows": [
+              [
+                "A",
+                "deepseek-v4.1-flash",
+                "glm-5.3-flash",
+                "OpenCode API, the app's own engine; reasoning `none` (app default), later `medium` and `high`",
+                "46 cards at `none`; `medium`: 20 runs, then 46"
+              ],
+              [
+                "B",
+                "claude-haiku-5-5",
+                "gpt-6-luna",
+                "Claude Code and Codex one-shots through an adapter",
+                "46 cards, plus 2 more on G12"
+              ],
+              [
+                "C",
+                "claude-haiku-5-5",
+                "glm-5.3-flash",
+                "Haiku by adapter, glm by OpenCode",
+                "hard subset, 2 runs each"
+              ],
+              [
+                "D",
+                "deepseek-v4.1-flash",
+                "gpt-6-luna",
+                "deepseek by OpenCode, luna by adapter",
+                "hard subset, 2 runs each"
+              ],
+              [
+                "E",
+                "gpt-6-luna",
+                "claude-haiku-5-5",
+                "both by adapter",
+                "46 cards"
+              ]
+            ]
+          },
+          {
+            "type": "list",
+            "items": [
+              "**Task cards.** 46 cards from `experiments/benchmark` in six groups (W, C, U, O, G, S; the S cards are local copies). Each card has the right clause sets. A machine is **right** when a card answer matches and no hard `Existence` sits on an earlier step; **accepted** when it matches only with such an extra `Existence`; **wrong** otherwise, or when the run ends with no machine.",
+              "**Hard subset (arms C and D).** W5a, U5, S2 and G12 (the cases A or B got wrong) plus U6, O5, G2, G7, G11 (random right ones), two runs each. Their right share is not comparable with A, B and E; compare case by case.",
+              "**CLI models.** The adapter calls Claude Code with `--safe-mode --strict-mcp-config --disable-slash-commands --tools \"\"` and the app's system prompt; Haiku runs at `--effort max`. Codex runs with `--ignore-user-config --strict-config`, the app prompt as `model_instructions_file`, five instruction blocks and 14 features off; luna runs at `xhigh`. Checked on one call each: the Claude call carried 661 cache tokens instead of about 42 K, the Codex call 9.3 K input tokens instead of 23.5 K. No Codex flag removes `~/.codex/AGENTS.md`, which is still sent as a user message. No call used a tool.",
+              "**Budget.** Final run limits were set to 130 OpenCode runs and 300 calls; the loop used 116 runs and 301 calls, one call over (a guard tripped after the last B4 run had started). Subscriptions never went above 30% of any window."
+            ]
+          },
+          {
+            "type": "callout",
+            "tone": "warn",
+            "title": "Read arms as model plus thinking",
+            "text": "Haiku and luna think hard in every call. The app sends both OpenCode models `reasoning=none`, although glm is a thinking-only model. So arm B against arm A compares models and thinking together. Arms A at `none`, `medium` and `high` change only the thinking."
+          }
+        ]
+      },
+      {
+        "id": "arms",
+        "title": "Per arm",
+        "intro": "Every row is scored with the fixed G12 card. C and D are the hard subset only. Rows A to E, A medium and B4 come from `check/arm_stats.py` on the copied records.",
+        "blocks": [
+          {
+            "type": "table",
+            "columns": [
+              "Arm",
+              "Generator + critic",
+              "Runs",
+              "Right",
+              "Accepted",
+              "Wrong",
+              "First proposal right",
+              "Critic catch on call 1",
+              "False alarms",
+              "Critic calls per run"
+            ],
+            "rows": [
+              [
+                "A",
+                "deepseek + glm, none",
+                "46",
+                "42 (91%)",
+                "1",
+                "3",
+                "40/46",
+                "3/6",
+                "4/46",
+                "1.17"
+              ],
+              [
+                "B",
+                "Haiku + luna",
+                "48",
+                "47 (98%)",
+                "0",
+                "1",
+                "48/48",
+                "0/0",
+                "24/71",
+                "1.48"
+              ],
+              [
+                "C (hard)",
+                "Haiku + glm, none",
+                "18",
+                {
+                  "text": "18 (100%)",
+                  "tone": "ok"
+                },
+                "0",
+                "0",
+                "18/18",
+                "0/0",
+                "0/18",
+                "1.00"
+              ],
+              [
+                "D (hard)",
+                "deepseek + luna",
+                "18",
+                "16 (89%)",
+                "0",
+                "2",
+                "13/18",
+                "5/5",
+                "25/41",
+                "2.56"
+              ],
+              [
+                "E",
+                "luna + Haiku",
+                "46",
+                {
+                  "text": "46 (100%)",
+                  "tone": "ok"
+                },
+                "0",
+                "0",
+                "46/46",
+                "0/0",
+                "3/49",
+                "1.07"
+              ],
+              [
+                "A medium (hard)",
+                "deepseek + glm, medium, 10 cases x 2",
+                "20",
+                "19 (95%)",
+                "0",
+                "1",
+                "15/20",
+                "4/5",
+                "1/20",
+                "1.25"
+              ],
+              [
+                "A high",
+                "deepseek + glm, high, W5a only",
+                "1",
+                "1",
+                "0",
+                "0",
+                "1/1",
+                "0/0",
+                "0/1",
+                "1.00"
+              ],
+              [
+                "B4",
+                "deepseek + glm, medium, with both fixes",
+                "46",
+                {
+                  "text": "46 (100%)",
+                  "tone": "ok"
+                },
+                "0",
+                "0",
+                "39/46",
+                "7/7",
+                "2/48",
+                "1.20"
+              ]
+            ]
+          },
+          {
+            "type": "text",
+            "text": "Catch on call 1 means the critic rejected a first proposal that was not right. A false alarm is a right candidate the critic rejected, on any call. Before the card fix (the first report) B had 45 of 48 right and C 17 of 18. B's two card-gap machines and C's ball-before-box machine are right since the fix."
+          },
+          {
+            "type": "table",
+            "heading": "Cost per arm",
+            "columns": [
+              "Arm",
+              "Calls gen + critic",
+              "Wall s per run, median (sum)",
+              "s per call, gen and critic",
+              "Output tokens (reasoning)"
+            ],
+            "rows": [
+              [
+                "A",
+                "54 + 54",
+                "6 (362)",
+                "4, 2",
+                "not logged"
+              ],
+              [
+                "B",
+                "71 + 71",
+                "59 (5,882)",
+                "48, 16",
+                "1,136,441 (70,102)"
+              ],
+              [
+                "C",
+                "18 + 18",
+                "42 (960)",
+                "40, 2",
+                "228,156"
+              ],
+              [
+                "D",
+                "46 + 46",
+                "39 (1,250)",
+                "4, 18",
+                "52,163 (48,881)"
+              ],
+              [
+                "E",
+                "49 + 49",
+                "102 (5,066)",
+                "16, 78",
+                "1,012,942 (45,639)"
+              ],
+              [
+                "A medium",
+                "25 + 25",
+                "60 (1,713)",
+                "38, 4",
+                "125,533 (119,364)"
+              ],
+              [
+                "A high",
+                "1 + 1",
+                "282",
+                "267, 14",
+                "21,212 (20,663)"
+              ],
+              [
+                "B4",
+                "55 + 55",
+                "39 (2,271)",
+                "32, 3",
+                "161,496 (149,193)"
+              ]
+            ]
+          },
+          {
+            "type": "text",
+            "text": "Calls, seconds per call and tokens come from the call logs, which are not copied (see the last section); the wall-time column reruns from the copied records. OpenCode usage is logged only since the second loop, so arms A to D at `none` show no tokens; Claude CLI reports thinking inside output tokens."
+          },
+          {
+            "type": "table",
+            "heading": "Per case on the hard subset (one letter per run: R right, A accepted, W wrong)",
+            "columns": [
+              "Case",
+              "A",
+              "B",
+              "C",
+              "D",
+              "E",
+              "A medium",
+              "B4"
+            ],
+            "rows": [
+              [
+                "W5a",
+                {
+                  "text": "W",
+                  "tone": "bad"
+                },
+                "R",
+                "RR",
+                "RR",
+                "R",
+                "RW",
+                "R"
+              ],
+              [
+                "U5",
+                {
+                  "text": "W",
+                  "tone": "bad"
+                },
+                "R",
+                "RR",
+                "RR",
+                "R",
+                "RR",
+                "R"
+              ],
+              [
+                "S2",
+                {
+                  "text": "W",
+                  "tone": "bad"
+                },
+                "R",
+                "RR",
+                "RR",
+                "R",
+                "RR",
+                "R"
+              ],
+              [
+                "O7",
+                {
+                  "text": "A",
+                  "tone": "warn"
+                },
+                "R",
+                "-",
+                "-",
+                "R",
+                "RR",
+                "R"
+              ],
+              [
+                "G12",
+                "R",
+                "RRW",
+                "RR",
+                {
+                  "text": "WW",
+                  "tone": "bad"
+                },
+                "R",
+                "RR",
+                "R"
+              ],
+              [
+                "U6, O5, G2, G7, G11",
+                "R each",
+                "R each",
+                "RR each",
+                "RR each",
+                "R each",
+                "RR each",
+                "R each"
+              ]
+            ]
+          },
+          {
+            "type": "text",
+            "text": "The W in B for G12 and both W in D are luna runs that used all 10 attempts without a machine (the rule clash below). The W in A medium for W5a is the one `medium` slip: hard `Existence(door_open)` in place of `Precedence(door_open, target_picked_up)` (`evidence/llm-loop/runs/m1/A/W5a-r2.rm`)."
+          }
+        ]
+      },
+      {
+        "id": "critic",
+        "title": "Critic set: glm, luna and Haiku on the same items",
+        "intro": "The critic set has 38 items from the critic-clues loop: 28 wrong clause sets with 41 labelled defects, and 10 right ones. The critic reads one candidate at a time; a judge model (deepseek) says which defects its feedback names. Items w03 and r05 use UnlockPickup's events (a mechanical fix; they errored in the first report, which therefore had 36 items). The critic prompt is the old one for every row.",
+        "blocks": [
+          {
+            "type": "table",
+            "columns": [
+              "Critic",
+              "Caught on call 1",
+              "Defects flagged on call 1",
+              "Flagged in the run",
+              "Accepted with a defect left",
+              "Rejected the fixed candidate",
+              "False alarms (right items)",
+              "Critic calls",
+              "Wall s median"
+            ],
+            "rows": [
+              [
+                "glm, none",
+                "14/28",
+                "20/41 (49%)",
+                "21/41",
+                "15",
+                "0",
+                "0/10",
+                "55",
+                "3"
+              ],
+              [
+                "glm, medium",
+                "22/28",
+                "30/41 (73%)",
+                "33/41",
+                "8",
+                "3",
+                "2/10",
+                "63",
+                "9"
+              ],
+              [
+                "luna",
+                "27/28",
+                "39/41 (95%)",
+                "40/41",
+                "1",
+                "5",
+                "2/10",
+                "66",
+                "35"
+              ],
+              [
+                "Haiku",
+                {
+                  "text": "28/28",
+                  "tone": "ok"
+                },
+                "41/41 (100%)",
+                "41/41",
+                "0",
+                "4",
+                "2/10",
+                "66",
+                "141"
+              ]
+            ]
+          },
+          {
+            "type": "list",
+            "items": [
+              "**First report, 36 items.** glm at `none` caught 13 of 27 wrong items on call 1 and flagged 20 of 40 defects; luna caught 26 of 27 and flagged 38 of 40. Both numbers reproduce from the copied records with `--items` on the same folders.",
+              "**By defect kind (flagged / labelled).** glm none: event 0/5, extra 1/7, missing 5/8, template 5/8. glm medium: event 3/5, extra 4/7, missing 6/8, template 7/8. luna and Haiku miss at most one per kind. glm at `medium` still accepts w01, w02, w04, w05, w10, w12, w16 and w22 with a defect left.",
+              "**What every strong critic rejects.** s02, w08 (W5a), w03, r05 and r10: they ask for orders the task states and the level forces (key before door, door before box). The cards mark those orders `forced`, so optional.",
+              "**Inside the pipeline.** glm caught 3 of 6 wrong first proposals of deepseek at `none`, and 11 of 12 at `medium` (4/5 in m1, 7/7 in B4); luna caught 5 of 5 in arm D. glm at `none` leaks its own reasoning into the feedback (\"... holding_box)? No —\", \"wait, at_goal is soft\")."
+            ]
+          },
+          {
+            "type": "text",
+            "text": "Luna asks for too much. It rejected 24 of 71 right candidates in arm B and 25 of 41 in arm D, against glm's 4 of 46 in A and 0 of 18 in C. The cause on G12 is the prompt, shown in the fixes."
+          }
+        ]
+      },
+      {
+        "id": "thinking",
+        "title": "Thinking level: none against medium",
+        "intro": "`CONFIG.reasoning` reaches OpenCode as `reasoning_effort`. The same pair (deepseek + glm) at three settings; `medium` is B4 on all 46 cases or m1 on the 10 hard and random ones; `high` was run once, on W5a.",
+        "blocks": [
+          {
+            "type": "table",
+            "columns": [
+              "",
+              "none",
+              "medium",
+              "high"
+            ],
+            "rows": [
+              [
+                "Hard cases W5a, U5, S2, O7, G12",
+                "1 right, 1 accepted, 3 wrong (1 run each)",
+                "9/10 right (m1, 2 runs each); B4 5/5",
+                "W5a 1/1"
+              ],
+              [
+                "5 random cases right at none",
+                "5/5",
+                "10/10",
+                "-"
+              ],
+              [
+                "All 46 cases",
+                "42 right, 1 accepted, 3 wrong",
+                {
+                  "text": "46/46 (B4)",
+                  "tone": "ok"
+                },
+                "-"
+              ],
+              [
+                "Calls per run (generator + critic)",
+                "2.35",
+                "2.39 (B4)",
+                "2"
+              ],
+              [
+                "Generator call, median",
+                "4 s",
+                "32 s (B4), 38 s (m1)",
+                "267 s (W5a)"
+              ],
+              [
+                "Critic call, median",
+                "2 s",
+                "3 s",
+                "14 s"
+              ],
+              [
+                "Run wall, median (sum of 46)",
+                "6 s (362 s)",
+                "39 s (2,271 s)",
+                "-"
+              ],
+              [
+                "Generator output tokens, median (max)",
+                "not logged",
+                "2,889 (22,376 on W5a)",
+                "20,183"
+              ],
+              [
+                "Critic output tokens, median",
+                "not logged (glm: 0 reasoning)",
+                "238 (111 reasoning)",
+                "1,029"
+              ],
+              [
+                "Critic set, glm caught on call 1",
+                "14/28",
+                "22/28",
+                "-"
+              ]
+            ]
+          },
+          {
+            "type": "list",
+            "items": [
+              "**Mistakes fixed by `medium`.** U5 (a soft `Precedence(door_open, key_lost)` for \"try not to drop the key while the door is still closed\"), S2 (the hard last step on the key, not the door), O7 (hard `Existence` of the ball and the key after glm's false alarm), and W5a in 2 of 3 runs.",
+              "**`high`.** One run, one case: right, at the same cost as `medium` on W5a (285 to 303 s and 22.7 K tokens at `medium`). One sample says nothing about `high`.",
+              "**New failure at `medium`: short first proposals.** In 10 of 66 `medium` runs (m1 plus B4) deepseek's first answer had fewer clauses than any card answer, often one clause. It never happened at `none` (0 of 46). The JSON was valid and the call had reasoned 1.4 to 4.6 K tokens, so the cause is unknown. glm at `medium` rejected all 10 and the second answer was right, so they cost a round, not a wrong machine.",
+              "**The price.** The same number of calls per run (2.35 against 2.39), about 6 times the wall time, and about 1,500 output tokens per call on average."
+            ]
+          }
+        ]
+      },
+      {
+        "id": "fixes",
+        "title": "Two fixes: the critic wording and the G12 card",
+        "blocks": [
+          {
+            "type": "text",
+            "heading": "B2: critic redundancy rule",
+            "text": "On G12 the critic prompt contradicted itself. Rule 8 keeps an order the task states; rule 6 rejects a redundancy. G12 has a stated \"if you move the ball you must also take the key\" that the key-before-box order and the goal already imply. luna called it redundant, asked to drop it, then (with deepseek) asked for it back. The fix limits \"redundant, reject\" to a listed `Existence` and keeps any stated order or \"if\" rule. With it luna answers: \"The conditional clause is redundant but is stated in the task, so it should stay\"."
+          },
+          {
+            "type": "code",
+            "text": "- `Redundant`: a hard clause the other hard clauses already imply, so the machine is the\n-  same without it. It is a defect on its own: reject and ask to drop it, usually the `Existence`\n-  of an earlier step of a `Precedence` chain, and keep the chain and the `Existence` of the last\n-  step.\n+  same without it. A listed `Existence` is a defect on its own: reject and ask to drop it, usually\n+  the `Existence` of an earlier step of a `Precedence` chain, and keep the chain and the `Existence`\n+  of the last step. Any other listed clause that a task sentence states, such as an order or an\n+  \"if\" rule, stays: never ask to drop it.\n(checklist 6: \"One redundancy is worth a rejection\" becomes \"One redundant `Existence` is worth a rejection\")"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Test",
+              "Before",
+              "After"
+            ],
+            "rows": [
+              [
+                "luna, arm B pipeline: G12 x2, G4, G6, C2, W2b + random O5, U1, U6, W5b",
+                "10/11 right, false alarms 24/34, 3.09 rounds per run, 3,678 s",
+                {
+                  "text": "10/10 right, false alarms 5/15, 1.50 rounds per run, 1,412 s",
+                  "tone": "ok"
+                }
+              ],
+              [
+                "luna, arm B, G12 only",
+                "2/3 right (one ran out of 10 attempts), false alarms 20/22, 7.33 rounds per run",
+                {
+                  "text": "2/2 right, false alarms 0/2, 1 round",
+                  "tone": "ok"
+                }
+              ],
+              [
+                "luna, fixed candidates s02, s05, w08, w16 (1 call each)",
+                "4/4 rejected",
+                "3/4 rejected (w16 now accepted)"
+              ],
+              [
+                "glm medium, same fixed candidates",
+                "s02 and w08 rejected, s05 accepted, w16 never reached",
+                "s02, w08 rejected; s05, w16 accepted"
+              ],
+              [
+                "Redundancy catches w17, w18 (items whose clues list a redundant clause)",
+                "luna and glm medium caught them",
+                "same, both critics"
+              ],
+              [
+                "Right items r08, r09",
+                "accepted",
+                "accepted by both critics"
+              ],
+              [
+                "glm medium, G12 in the pipeline",
+                "2/2 right (m1)",
+                "right in B4, accepted on call 1 with `RespondedExistence` listed as redundant"
+              ]
+            ]
+          },
+          {
+            "type": "text",
+            "text": "glm loses no catch. luna's other false alarms stay: G4 (3, asks for key and door orders the level forces), G6 (1, `Absence` against `Precedence` for the key drop), C2 (1, an environment fact about a missing siren). On w17 the judge graded glm's feedback as flagging nothing although it names both redundant `Existence` clauses; the page counts it by hand, as the loop report does. The first two rows reproduce from `check/arm_stats.py` on the `b2` and `b2g` records."
+          },
+          {
+            "type": "text",
+            "heading": "B1: G12 card gap",
+            "text": "Two runs in arm B ended on `Existence(target_picked_up)` plus hard `Precedence(has_door_key, target_picked_up)`. The card's own answer adds `RespondedExistence(blocker_moved, has_door_key)`. A product of the clause DFAs shows the two sets accept exactly the same runs: the hard order plus the hard goal already force the key. The scorer could not see it. The card now lists that set as an answer, and both box orders as `forced` (the door opens only from the ball's cell and with the key, and the box room has no other entrance)."
+          },
+          {
+            "type": "code",
+            "text": "$ PYTHONPATH=app python docs/paper/model-comparison/check/equiv.py '[[\"Precedence\",[\"has_door_key\",\"target_picked_up\"]],[\"Existence\",[\"target_picked_up\"]]]' '[[\"RespondedExistence\",[\"blocker_moved\",\"has_door_key\"]],[\"Precedence\",[\"has_door_key\",\"target_picked_up\"]],[\"Existence\",[\"target_picked_up\"]]]'\nEQUAL over alphabet ['blocker_moved', 'has_door_key', 'target_picked_up']: 8 reachable product states, 8 valuations each, every one agrees\n\ncontrols (evidence/b1-equiv.txt)\ngoal alone VS RespondedExistence + goal:  DIFFERENT, trace [['blocker_moved', 'target_picked_up']]\nkey order + goal VS goal alone:           DIFFERENT, trace [['target_picked_up']]"
+          },
+          {
+            "type": "text",
+            "text": "Scoring effect on every old G12 run (A, B x3, C x2, D x2, E): 2 of 9 right before the card fix, 6 of 9 after. Arm B went from 45 to 47 of 48 right, C from 17 to 18 of 18, E from 45 to 46 of 46. The three still wrong are luna loops that end with no machine (B r3-r2 and both D runs), the clash B2 removes."
+          }
+        ]
+      },
+      {
+        "id": "machines",
+        "title": "The wrong machines, at none and at medium",
+        "intro": "Each card is the Reward Machine drawn by `render-rm --html` (drag a state, click an edge, Ctrl + scroll to zoom), with the task, the LTLf of every clause and the RM text in the fold-out. \"None\" cards are arm A's run; \"medium\" cards are the same case as built in B4.",
+        "blocks": [
+          {
+            "type": "text",
+            "heading": "W5a: an extra rule the world already forces",
+            "text": "At `none`, deepseek adds hard `Existence(door_open)` and `Existence(has_door_key)`; glm accepted on call 1. At `medium` it writes the order chain."
+          },
+          {
+            "type": "gallery",
+            "width": 900,
+            "items": [
+              {
+                "src": "graphs/none-W5a.html",
+                "height": 640,
+                "alt": "Reward Machine of W5a at none: wrong, extra rule",
+                "caption": "**W5a at none: wrong, extra rule** · 14 states\n\nHard `Existence(door_open)` and `Existence(has_door_key)` sit next to the box goal; the world already forces both.\n\nTask: *Move the ball away from the door before you take the key. Try not to drop the key while the door is still closed. Whenever you are holding the key, try to have the door open at that moment or open it afterwards. Then open the door with the key and pick up the box in the other room.*\n\nLTLf: `(((~has_door_key)Ublocker_moved)|(G(~has_door_key)))` ; `(Fhas_door_key)` ; `(~(Fkey_lost))` soft ; `(G(has_door_key->(Fdoor_open)))` soft ; `(Fdoor_open)` ; `(Ftarget_picked_up)`",
+                "details": {
+                  "title": "RM text, clauses and LTLf",
+                  "code": "# Task (NL)\nMove the ball away from the door before you take the key. Try not to drop the key while the door is still closed. Whenever you are holding the key, try to have the door open at that moment or open it afterwards. Then open the door with the key and pick up the box in the other room.\n\n# Clauses and LTLf (check/machines.py)\nhard Precedence(blocker_moved, has_door_key): (((~has_door_key)Ublocker_moved)|(G(~has_door_key)))\nhard Existence(has_door_key): (Fhas_door_key)\nsoft Absence(key_lost): (~(Fkey_lost))\nsoft Response(has_door_key, door_open): (G(has_door_key->(Fdoor_open)))\nhard Existence(door_open): (Fdoor_open)\nhard Existence(target_picked_up): (Ftarget_picked_up)\n\n# RM text (graphs/none-W5a.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13\nINITIAL_STATE: u0\nFINAL_STATES: u12\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up) -> u0\n(u0, !blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up) -> u2\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up) -> u2\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up) -> u2\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&target_picked_up) -> u2\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up) -> u3\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up) -> u4\n(u0, !blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up) -> u3\n(u0, !blocker_moved&door_open&!has_door_key&key_lost&target_picked_up) -> u4\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up) -> u2\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&target_picked_up) -> u2\n(u0, !blocker_moved&door_open&has_door_key&key_lost&!target_picked_up) -> u2\n(u0, !blocker_moved&door_open&has_door_key&key_lost&target_picked_up) -> u2\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&!target_picked_up) -> u5\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up) -> u6\n(u0, blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up) -> u5\n(u0, blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up) -> u6\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up) -> u7\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up) -> u8\n(u0, blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up) -> u7\n(u0, blocker_moved&!door_open&has_door_key&key_lost&target_picked_up) -> u8\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up) -> u9\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up) -> u10\n(u0, blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up) -> u9\n(u0, blocker_moved&door_open&!has_door_key&key_lost&target_picked_up) -> u10\n(u0, blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up) -> u11\n(u0, blocker_moved&door_open&has_door_key&!key_lost&target_picked_up) -> u12\n(u0, blocker_moved&door_open&has_door_key&key_lost&!target_picked_up) -> u11\n(u0, blocker_moved&door_open&has_door_key&key_lost&target_picked_up) -> u12\n(u1, !blocker_moved&!door_open&!has_door_key&key_lost) -> u1\n(u1, !blocker_moved&!door_open&has_door_key&!key_lost) -> u2\n(u1, !blocker_moved&!door_open&has_door_key&key_lost) -> u2\n(u1, !blocker_moved&door_open&!has_door_key&!key_lost) -> u4\n(u1, !blocker_moved&door_open&!has_door_key&key_lost) -> u4\n(u1, !blocker_moved&door_open&has_door_key&!key_lost) -> u2\n(u1, !blocker_moved&door_open&has_door_key&key_lost) -> u2\n(u1, blocker_moved&!door_open&!has_door_key&!key_lost) -> u6\n(u1, blocker_moved&!door_open&!has_door_key&key_lost) -> u6\n(u1, blocker_moved&!door_open&has_door_key&!key_lost) -> u8\n(u1, blocker_moved&!door_open&has_door_key&key_lost) -> u8\n(u1, blocker_moved&door_open&!has_door_key&!key_lost) -> u10\n(u1, blocker_moved&door_open&!has_door_key&key_lost) -> u10\n(u1, blocker_moved&door_open&has_door_key&!key_lost) -> u12\n(u1, blocker_moved&door_open&has_door_key&key_lost) -> u12\n(u3, !blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up) -> u4\n(u3, !blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up) -> u3\n(u3, !blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up) -> u4\n(u3, !blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up) -> u2\n(u3, !blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up) -> u2\n(u3, !blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up) -> u2\n(u3, !blocker_moved&!door_open&has_door_key&key_lost&target_picked_up) -> u2\n(u3, !blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up) -> u4\n(u3, !blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up) -> u3\n(u3, !blocker_moved&door_open&!has_door_key&key_lost&target_picked_up) -> u4\n(u3, !blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up) -> u2\n(u3, !blocker_moved&door_open&has_door_key&!key_lost&target_picked_up) -> u2\n(u3, !blocker_moved&door_open&has_door_key&key_lost&!target_picked_up) -> u2\n(u3, !blocker_moved&door_open&has_door_key&key_lost&target_picked_up) -> u2\n(u3, blocker_moved&!door_open&!has_door_key&!key_lost&!target_picked_up) -> u9\n(u3, blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up) -> u10\n(u3, blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up) -> u9\n(u3, blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up) -> u10\n(u3, blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up) -> u13\n(u3, blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up) -> u12\n(u3, blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up) -> u13\n(u3, blocker_moved&!door_open&has_door_key&key_lost&target_picked_up) -> u12\n(u3, blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up) -> u9\n(u3, blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up) -> u10\n(u3, blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up) -> u9\n(u3, blocker_moved&door_open&!has_door_key&key_lost&target_picked_up) -> u10\n(u3, blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up) -> u11\n(u3, blocker_moved&door_open&has_door_key&!key_lost&target_picked_up) -> u12\n(u3, blocker_moved&door_open&has_door_key&key_lost&!target_picked_up) -> u11\n(u3, blocker_moved&door_open&has_door_key&key_lost&target_picked_up) -> u12\n(u4, !blocker_moved&!door_open&!has_door_key&key_lost) -> u4\n(u4, !blocker_moved&!door_open&has_door_key&!key_lost) -> u2\n(u4, !blocker_moved&!door_open&has_door_key&key_lost) -> u2\n(u4, !blocker_moved&door_open&!has_door_key&key_lost) -> u4\n(u4, !blocker_moved&door_open&has_door_key&!key_lost) -> u2\n(u4, !blocker_moved&door_open&has_door_key&key_lost) -> u2\n(u4, blocker_moved&!door_open&!has_door_key&!key_lost) -> u10\n(u4, blocker_moved&!door_open&!has_door_key&key_lost) -> u10\n(u4, blocker_moved&!door_open&has_door_key&!key_lost) -> u12\n(u4, blocker_moved&!door_open&has_door_key&key_lost) -> u12\n(u4, blocker_moved&door_open&!has_door_key&!key_lost) -> u10\n(u4, blocker_moved&door_open&!has_door_key&key_lost) -> u10\n(u4, blocker_moved&door_open&has_door_key&!key_lost) -> u12\n(u4, blocker_moved&door_open&has_door_key&key_lost) -> u12\n(u5, !door_open&!has_door_key&!key_lost&target_picked_up) -> u6\n(u5, !door_open&!has_door_key&key_lost&!target_picked_up) -> u5\n(u5, !door_open&!has_door_key&key_lost&target_picked_up) -> u6\n(u5, !door_open&has_door_key&!key_lost&!target_picked_up) -> u7\n(u5, !door_open&has_door_key&!key_lost&target_picked_up) -> u8\n(u5, !door_open&has_door_key&key_lost&!target_picked_up) -> u7\n(u5, !door_open&has_door_key&key_lost&target_picked_up) -> u8\n(u5, door_open&!has_door_key&!key_lost&!target_picked_up) -> u9\n(u5, door_open&!has_door_key&!key_lost&target_picked_up) -> u10\n(u5, door_open&!has_door_key&key_lost&!target_picked_up) -> u9\n(u5, door_open&!has_door_key&key_lost&target_picked_up) -> u10\n(u5, door_open&has_door_key&!key_lost&!target_picked_up) -> u11\n(u5, door_open&has_door_key&!key_lost&target_picked_up) -> u12\n(u5, door_open&has_door_key&key_lost&!target_picked_up) -> u11\n(u5, door_open&has_door_key&key_lost&target_picked_up) -> u12\n(u6, !door_open&!has_door_key&key_lost) -> u6\n(u6, !door_open&has_door_key&!key_lost) -> u8\n(u6, !door_open&has_door_key&key_lost) -> u8\n(u6, door_open&!has_door_key&!key_lost) -> u10\n(u6, door_open&!has_door_key&key_lost) -> u10\n(u6, door_open&has_door_key&!key_lost) -> u12\n(u6, door_open&has_door_key&key_lost) -> u12\n(u7, !door_open&!key_lost&target_picked_up) -> u8\n(u7, !door_open&key_lost&!target_picked_up) -> u7\n(u7, !door_open&key_lost&target_picked_up) -> u8\n(u7, door_open&!key_lost&!target_picked_up) -> u11\n(u7, door_open&!key_lost&target_picked_up) -> u12\n(u7, door_open&key_lost&!target_picked_up) -> u11\n(u7, door_open&key_lost&target_picked_up) -> u12\n(u8, !door_open&key_lost) -> u8\n(u8, door_open&!key_lost) -> u12\n(u8, door_open&key_lost) -> u12\n(u9, !door_open&!has_door_key&!key_lost&target_picked_up) -> u10\n(u9, !door_open&!has_door_key&key_lost&!target_picked_up) -> u9\n(u9, !door_open&!has_door_key&key_lost&target_picked_up) -> u10\n(u9, !door_open&has_door_key&!key_lost&!target_picked_up) -> u13\n(u9, !door_open&has_door_key&!key_lost&target_picked_up) -> u12\n(u9, !door_open&has_door_key&key_lost&!target_picked_up) -> u13\n(u9, !door_open&has_door_key&key_lost&target_picked_up) -> u12\n(u9, door_open&!has_door_key&!key_lost&target_picked_up) -> u10\n(u9, door_open&!has_door_key&key_lost&!target_picked_up) -> u9\n(u9, door_open&!has_door_key&key_lost&target_picked_up) -> u10\n(u9, door_open&has_door_key&!key_lost&!target_picked_up) -> u11\n(u9, door_open&has_door_key&!key_lost&target_picked_up) -> u12\n(u9, door_open&has_door_key&key_lost&!target_picked_up) -> u11\n(u9, door_open&has_door_key&key_lost&target_picked_up) -> u12\n(u10, !door_open&!has_door_key&key_lost) -> u10\n(u10, !door_open&has_door_key&!key_lost) -> u12\n(u10, !door_open&has_door_key&key_lost) -> u12\n(u10, door_open&!has_door_key&key_lost) -> u10\n(u10, door_open&has_door_key&!key_lost) -> u12\n(u10, door_open&has_door_key&key_lost) -> u12\n(u11, !door_open&!has_door_key&!key_lost&target_picked_up) -> u12\n(u11, !door_open&!has_door_key&key_lost&!target_picked_up) -> u11\n(u11, !door_open&!has_door_key&key_lost&target_picked_up) -> u12\n(u11, !door_open&has_door_key&!key_lost&!target_picked_up) -> u13\n(u11, !door_open&has_door_key&!key_lost&target_picked_up) -> u12\n(u11, !door_open&has_door_key&key_lost&!target_picked_up) -> u13\n(u11, !door_open&has_door_key&key_lost&target_picked_up) -> u12\n(u11, door_open&!key_lost&target_picked_up) -> u12\n(u11, door_open&key_lost&!target_picked_up) -> u11\n(u11, door_open&key_lost&target_picked_up) -> u12\n(u13, !door_open&!key_lost&target_picked_up) -> u12\n(u13, !door_open&key_lost&!target_picked_up) -> u13\n(u13, !door_open&key_lost&target_picked_up) -> u12\n(u13, door_open&!key_lost&!target_picked_up) -> u11\n(u13, door_open&!key_lost&target_picked_up) -> u12\n(u13, door_open&key_lost&!target_picked_up) -> u11\n(u13, door_open&key_lost&target_picked_up) -> u12\nREWARD_FUNCTION:\n(u0, !blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up, u1) -> 1\n(u0, !blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up, u0) -> -1\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up, u2) -> -100.694\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up, u2) -> -100.694\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up, u2) -> -100.694\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&target_picked_up, u2) -> -100.694\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up, u3) -> 1\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up, u4) -> 2\n(u0, !blocker_moved&door_open&!has_door_key&key_lost&target_picked_up, u4) -> 1\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up, u2) -> -100.694\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&target_picked_up, u2) -> -100.694\n(u0, !blocker_moved&door_open&has_door_key&key_lost&!target_picked_up, u2) -> -100.694\n(u0, !blocker_moved&door_open&has_door_key&key_lost&target_picked_up, u2) -> -100.694\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&!target_picked_up, u5) -> 1\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up, u6) -> 2\n(u0, blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up, u6) -> 1\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up, u7) -> 1\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up, u8) -> 2\n(u0, blocker_moved&!door_open&has_door_key&key_lost&target_picked_up, u8) -> 1\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up, u9) -> 2\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up, u10) -> 3\n(u0, blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up, u9) -> 1\n(u0, blocker_moved&door_open&!has_door_key&key_lost&target_picked_up, u10) -> 2\n(u0, blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up, u11) -> 3\n(u0, blocker_moved&door_open&has_door_key&!key_lost&target_picked_up, u12) -> 14\n(u0, blocker_moved&door_open&has_door_key&key_lost&!target_picked_up, u11) -> 2\n(u0, blocker_moved&door_open&has_door_key&key_lost&target_picked_up, u12) -> 13\n(u1, !blocker_moved&!door_open&!has_door_key&key_lost, u1) -> -1\n(u1, !blocker_moved&!door_open&has_door_key&!key_lost, u2) -> -101.694\n(u1, !blocker_moved&!door_open&has_door_key&key_lost, u2) -> -101.694\n(u1, !blocker_moved&door_open&!has_door_key&!key_lost, u4) -> 1\n(u1, !blocker_moved&door_open&has_door_key&!key_lost, u2) -> -101.694\n(u1, !blocker_moved&door_open&has_door_key&key_lost, u2) -> -101.694\n(u1, blocker_moved&!door_open&!has_door_key&!key_lost, u6) -> 1\n(u1, blocker_moved&!door_open&has_door_key&!key_lost, u8) -> 1\n(u1, blocker_moved&door_open&!has_door_key&!key_lost, u10) -> 2\n(u1, blocker_moved&door_open&!has_door_key&key_lost, u10) -> 1\n(u1, blocker_moved&door_open&has_door_key&!key_lost, u12) -> 13\n(u1, blocker_moved&door_open&has_door_key&key_lost, u12) -> 12\n(u3, !blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up, u4) -> 1\n(u3, !blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up, u3) -> -1\n(u3, !blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up, u2) -> -101.694\n(u3, !blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up, u2) -> -101.694\n(u3, !blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up, u2) -> -101.694\n(u3, !blocker_moved&!door_open&has_door_key&key_lost&target_picked_up, u2) -> -101.694\n(u3, !blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up, u4) -> 1\n(u3, !blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up, u3) -> -1\n(u3, !blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up, u2) -> -101.694\n(u3, !blocker_moved&door_open&has_door_key&!key_lost&target_picked_up, u2) -> -101.694\n(u3, !blocker_moved&door_open&has_door_key&key_lost&!target_picked_up, u2) -> -101.694\n(u3, !blocker_moved&door_open&has_door_key&key_lost&target_picked_up, u2) -> -101.694\n(u3, blocker_moved&!door_open&!has_door_key&!key_lost&!target_picked_up, u9) -> 1\n(u3, blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up, u10) -> 2\n(u3, blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up, u10) -> 1\n(u3, blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up, u13) -> 1\n(u3, blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up, u12) -> 8\n(u3, blocker_moved&!door_open&has_door_key&key_lost&target_picked_up, u12) -> 7\n(u3, blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up, u9) -> 1\n(u3, blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up, u10) -> 2\n(u3, blocker_moved&door_open&!has_door_key&key_lost&target_picked_up, u10) -> 1\n(u3, blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up, u11) -> 2\n(u3, blocker_moved&door_open&has_door_key&!key_lost&target_picked_up, u12) -> 13\n(u3, blocker_moved&door_open&has_door_key&key_lost&!target_picked_up, u11) -> 1\n(u3, blocker_moved&door_open&has_door_key&key_lost&target_picked_up, u12) -> 12\n(u4, !blocker_moved&!door_open&!has_door_key&key_lost, u4) -> -1\n(u4, !blocker_moved&!door_open&has_door_key&!key_lost, u2) -> -102.694\n(u4, !blocker_moved&!door_open&has_door_key&key_lost, u2) -> -102.694\n(u4, !blocker_moved&door_open&!has_door_key&key_lost, u4) -> -1\n(u4, !blocker_moved&door_open&has_door_key&!key_lost, u2) -> -102.694\n(u4, !blocker_moved&door_open&has_door_key&key_lost, u2) -> -102.694\n(u4, blocker_moved&!door_open&!has_door_key&!key_lost, u10) -> 1\n(u4, blocker_moved&!door_open&has_door_key&!key_lost, u12) -> 7\n(u4, blocker_moved&!door_open&has_door_key&key_lost, u12) -> 6\n(u4, blocker_moved&door_open&!has_door_key&!key_lost, u10) -> 1\n(u4, blocker_moved&door_open&has_door_key&!key_lost, u12) -> 12\n(u4, blocker_moved&door_open&has_door_key&key_lost, u12) -> 11\n(u5, !door_open&!has_door_key&!key_lost&target_picked_up, u6) -> 1\n(u5, !door_open&!has_door_key&key_lost&!target_picked_up, u5) -> -1\n(u5, !door_open&has_door_key&!key_lost&target_picked_up, u8) -> 1\n(u5, !door_open&has_door_key&key_lost&!target_picked_up, u7) -> -1\n(u5, door_open&!has_door_key&!key_lost&!target_picked_up, u9) -> 1\n(u5, door_open&!has_door_key&!key_lost&target_picked_up, u10) -> 2\n(u5, door_open&!has_door_key&key_lost&target_picked_up, u10) -> 1\n(u5, door_open&has_door_key&!key_lost&!target_picked_up, u11) -> 2\n(u5, door_open&has_door_key&!key_lost&target_picked_up, u12) -> 13\n(u5, door_open&has_door_key&key_lost&!target_picked_up, u11) -> 1\n(u5, door_open&has_door_key&key_lost&target_picked_up, u12) -> 12\n(u6, !door_open&!has_door_key&key_lost, u6) -> -1\n(u6, !door_open&has_door_key&key_lost, u8) -> -1\n(u6, door_open&!has_door_key&!key_lost, u10) -> 1\n(u6, door_open&has_door_key&!key_lost, u12) -> 12\n(u6, door_open&has_door_key&key_lost, u12) -> 11\n(u7, !door_open&!key_lost&target_picked_up, u8) -> 1\n(u7, !door_open&key_lost&!target_picked_up, u7) -> -1\n(u7, door_open&!key_lost&!target_picked_up, u11) -> 2\n(u7, door_open&!key_lost&target_picked_up, u12) -> 13\n(u7, door_open&key_lost&!target_picked_up, u11) -> 1\n(u7, door_open&key_lost&target_picked_up, u12) -> 12\n(u8, !door_open&key_lost, u8) -> -1\n(u8, door_open&!key_lost, u12) -> 12\n(u8, door_open&key_lost, u12) -> 11\n(u9, !door_open&!has_door_key&!key_lost&target_picked_up, u10) -> 1\n(u9, !door_open&!has_door_key&key_lost&!target_picked_up, u9) -> -1\n(u9, !door_open&has_door_key&!key_lost&target_picked_up, u12) -> 7\n(u9, !door_open&has_door_key&key_lost&!target_picked_up, u13) -> -1\n(u9, !door_open&has_door_key&key_lost&target_picked_up, u12) -> 6\n(u9, door_open&!has_door_key&!key_lost&target_picked_up, u10) -> 1\n(u9, door_open&!has_door_key&key_lost&!target_picked_up, u9) -> -1\n(u9, door_open&has_door_key&!key_lost&!target_picked_up, u11) -> 1\n(u9, door_open&has_door_key&!key_lost&target_picked_up, u12) -> 12\n(u9, door_open&has_door_key&key_lost&target_picked_up, u12) -> 11\n(u10, !door_open&!has_door_key&key_lost, u10) -> -1\n(u10, !door_open&has_door_key&!key_lost, u12) -> 6\n(u10, !door_open&has_door_key&key_lost, u12) -> 5\n(u10, door_open&!has_door_key&key_lost, u10) -> -1\n(u10, door_open&has_door_key&!key_lost, u12) -> 11\n(u10, door_open&has_door_key&key_lost, u12) -> 10\n(u11, !door_open&!has_door_key&!key_lost&target_picked_up, u12) -> 11\n(u11, !door_open&!has_door_key&key_lost&!target_picked_up, u11) -> -1\n(u11, !door_open&!has_door_key&key_lost&target_picked_up, u12) -> 10\n(u11, !door_open&has_door_key&!key_lost&!target_picked_up, u13) -> -1\n(u11, !door_open&has_door_key&!key_lost&target_picked_up, u12) -> 6\n(u11, !door_open&has_door_key&key_lost&!target_picked_up, u13) -> -2\n(u11, !door_open&has_door_key&key_lost&target_picked_up, u12) -> 5\n(u11, door_open&!key_lost&target_picked_up, u12) -> 11\n(u11, door_open&key_lost&!target_picked_up, u11) -> -1\n(u11, door_open&key_lost&target_picked_up, u12) -> 10\n(u13, !door_open&!key_lost&target_picked_up, u12) -> 7\n(u13, !door_open&key_lost&!target_picked_up, u13) -> -1\n(u13, !door_open&key_lost&target_picked_up, u12) -> 6\n(u13, door_open&!key_lost&!target_picked_up, u11) -> 1\n(u13, door_open&!key_lost&target_picked_up, u12) -> 12\n(u13, door_open&key_lost&target_picked_up, u12) -> 11"
+                }
+              },
+              {
+                "src": "graphs/medium-W5a.html",
+                "height": 520,
+                "alt": "Reward Machine of W5a at medium: right",
+                "caption": "**W5a at medium: right** · 7 states\n\nThe order chain `blocker_moved`, `has_door_key`, `door_open`, `target_picked_up` and the two soft rules.\n\nTask: *Move the ball away from the door before you take the key. Try not to drop the key while the door is still closed. Whenever you are holding the key, try to have the door open at that moment or open it afterwards. Then open the door with the key and pick up the box in the other room.*\n\nLTLf: `(((~has_door_key)Ublocker_moved)|(G(~has_door_key)))` ; `(((~door_open)Uhas_door_key)|(G(~door_open)))` ; `(((~target_picked_up)Udoor_open)|(G(~target_picked_up)))` ; `(Ftarget_picked_up)` ; `(~(Fkey_lost))` soft ; `(G(has_door_key->(Fdoor_open)))` soft",
+                "details": {
+                  "title": "RM text, clauses and LTLf",
+                  "code": "# Task (NL)\nMove the ball away from the door before you take the key. Try not to drop the key while the door is still closed. Whenever you are holding the key, try to have the door open at that moment or open it afterwards. Then open the door with the key and pick up the box in the other room.\n\n# Clauses and LTLf (check/machines.py)\nhard Precedence(blocker_moved, has_door_key): (((~has_door_key)Ublocker_moved)|(G(~has_door_key)))\nhard Precedence(has_door_key, door_open): (((~door_open)Uhas_door_key)|(G(~door_open)))\nhard Precedence(door_open, target_picked_up): (((~target_picked_up)Udoor_open)|(G(~target_picked_up)))\nhard Existence(target_picked_up): (Ftarget_picked_up)\nsoft Absence(key_lost): (~(Fkey_lost))\nsoft Response(has_door_key, door_open): (G(has_door_key->(Fdoor_open)))\n\n# RM text (graphs/medium-W5a.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6\nINITIAL_STATE: u0\nFINAL_STATES: u5\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up) -> u0\n(u0, !blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up) -> u1\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up) -> u1\n(u0, !blocker_moved&door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up) -> u1\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&target_picked_up) -> u1\n(u0, !blocker_moved&door_open&has_door_key&key_lost&!target_picked_up) -> u1\n(u0, !blocker_moved&door_open&has_door_key&key_lost&target_picked_up) -> u1\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&!target_picked_up) -> u2\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u0, blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up) -> u2\n(u0, blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up) -> u3\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up) -> u1\n(u0, blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up) -> u3\n(u0, blocker_moved&!door_open&has_door_key&key_lost&target_picked_up) -> u1\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up) -> u1\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u0, blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up) -> u1\n(u0, blocker_moved&door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u0, blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up) -> u4\n(u0, blocker_moved&door_open&has_door_key&!key_lost&target_picked_up) -> u5\n(u0, blocker_moved&door_open&has_door_key&key_lost&!target_picked_up) -> u4\n(u0, blocker_moved&door_open&has_door_key&key_lost&target_picked_up) -> u5\n(u2, !door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u2, !door_open&!has_door_key&key_lost&!target_picked_up) -> u2\n(u2, !door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u2, !door_open&has_door_key&!key_lost&!target_picked_up) -> u3\n(u2, !door_open&has_door_key&!key_lost&target_picked_up) -> u1\n(u2, !door_open&has_door_key&key_lost&!target_picked_up) -> u3\n(u2, !door_open&has_door_key&key_lost&target_picked_up) -> u1\n(u2, door_open&!has_door_key&!key_lost&!target_picked_up) -> u1\n(u2, door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u2, door_open&!has_door_key&key_lost&!target_picked_up) -> u1\n(u2, door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u2, door_open&has_door_key&!key_lost&!target_picked_up) -> u4\n(u2, door_open&has_door_key&!key_lost&target_picked_up) -> u5\n(u2, door_open&has_door_key&key_lost&!target_picked_up) -> u4\n(u2, door_open&has_door_key&key_lost&target_picked_up) -> u5\n(u3, !door_open&!key_lost&target_picked_up) -> u1\n(u3, !door_open&key_lost&!target_picked_up) -> u3\n(u3, !door_open&key_lost&target_picked_up) -> u1\n(u3, door_open&!key_lost&!target_picked_up) -> u4\n(u3, door_open&!key_lost&target_picked_up) -> u5\n(u3, door_open&key_lost&!target_picked_up) -> u4\n(u3, door_open&key_lost&target_picked_up) -> u5\n(u4, !door_open&!has_door_key&!key_lost&target_picked_up) -> u5\n(u4, !door_open&!has_door_key&key_lost&!target_picked_up) -> u4\n(u4, !door_open&!has_door_key&key_lost&target_picked_up) -> u5\n(u4, !door_open&has_door_key&!key_lost&!target_picked_up) -> u6\n(u4, !door_open&has_door_key&!key_lost&target_picked_up) -> u5\n(u4, !door_open&has_door_key&key_lost&!target_picked_up) -> u6\n(u4, !door_open&has_door_key&key_lost&target_picked_up) -> u5\n(u4, door_open&!key_lost&target_picked_up) -> u5\n(u4, door_open&key_lost&!target_picked_up) -> u4\n(u4, door_open&key_lost&target_picked_up) -> u5\n(u6, !door_open&!key_lost&target_picked_up) -> u5\n(u6, !door_open&key_lost&!target_picked_up) -> u6\n(u6, !door_open&key_lost&target_picked_up) -> u5\n(u6, door_open&!key_lost&!target_picked_up) -> u4\n(u6, door_open&!key_lost&target_picked_up) -> u5\n(u6, door_open&key_lost&!target_picked_up) -> u4\n(u6, door_open&key_lost&target_picked_up) -> u5\nREWARD_FUNCTION:\n(u0, !blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&!door_open&!has_door_key&key_lost&!target_picked_up, u0) -> -1\n(u0, !blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&!target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&!door_open&has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&!has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&has_door_key&key_lost&!target_picked_up, u1) -> -100.694\n(u0, !blocker_moved&door_open&has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&!target_picked_up, u2) -> 1\n(u0, blocker_moved&!door_open&!has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&!door_open&!has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&!target_picked_up, u3) -> 1\n(u0, blocker_moved&!door_open&has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&!door_open&has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&!target_picked_up, u1) -> -100.694\n(u0, blocker_moved&door_open&!has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&door_open&!has_door_key&key_lost&!target_picked_up, u1) -> -100.694\n(u0, blocker_moved&door_open&!has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, blocker_moved&door_open&has_door_key&!key_lost&!target_picked_up, u4) -> 3\n(u0, blocker_moved&door_open&has_door_key&!key_lost&target_picked_up, u5) -> 14\n(u0, blocker_moved&door_open&has_door_key&key_lost&!target_picked_up, u4) -> 2\n(u0, blocker_moved&door_open&has_door_key&key_lost&target_picked_up, u5) -> 13\n(u2, !door_open&!has_door_key&!key_lost&target_picked_up, u1) -> -101.694\n(u2, !door_open&!has_door_key&key_lost&!target_picked_up, u2) -> -1\n(u2, !door_open&!has_door_key&key_lost&target_picked_up, u1) -> -101.694\n(u2, !door_open&has_door_key&!key_lost&target_picked_up, u1) -> -101.694\n(u2, !door_open&has_door_key&key_lost&!target_picked_up, u3) -> -1\n(u2, !door_open&has_door_key&key_lost&target_picked_up, u1) -> -101.694\n(u2, door_open&!has_door_key&!key_lost&!target_picked_up, u1) -> -101.694\n(u2, door_open&!has_door_key&!key_lost&target_picked_up, u1) -> -101.694\n(u2, door_open&!has_door_key&key_lost&!target_picked_up, u1) -> -101.694\n(u2, door_open&!has_door_key&key_lost&target_picked_up, u1) -> -101.694\n(u2, door_open&has_door_key&!key_lost&!target_picked_up, u4) -> 2\n(u2, door_open&has_door_key&!key_lost&target_picked_up, u5) -> 13\n(u2, door_open&has_door_key&key_lost&!target_picked_up, u4) -> 1\n(u2, door_open&has_door_key&key_lost&target_picked_up, u5) -> 12\n(u3, !door_open&!key_lost&target_picked_up, u1) -> -101.694\n(u3, !door_open&key_lost&!target_picked_up, u3) -> -1\n(u3, !door_open&key_lost&target_picked_up, u1) -> -101.694\n(u3, door_open&!key_lost&!target_picked_up, u4) -> 2\n(u3, door_open&!key_lost&target_picked_up, u5) -> 13\n(u3, door_open&key_lost&!target_picked_up, u4) -> 1\n(u3, door_open&key_lost&target_picked_up, u5) -> 12\n(u4, !door_open&!has_door_key&!key_lost&target_picked_up, u5) -> 11\n(u4, !door_open&!has_door_key&key_lost&!target_picked_up, u4) -> -1\n(u4, !door_open&!has_door_key&key_lost&target_picked_up, u5) -> 10\n(u4, !door_open&has_door_key&!key_lost&!target_picked_up, u6) -> -1\n(u4, !door_open&has_door_key&!key_lost&target_picked_up, u5) -> 6\n(u4, !door_open&has_door_key&key_lost&!target_picked_up, u6) -> -2\n(u4, !door_open&has_door_key&key_lost&target_picked_up, u5) -> 5\n(u4, door_open&!key_lost&target_picked_up, u5) -> 11\n(u4, door_open&key_lost&!target_picked_up, u4) -> -1\n(u4, door_open&key_lost&target_picked_up, u5) -> 10\n(u6, !door_open&!key_lost&target_picked_up, u5) -> 7\n(u6, !door_open&key_lost&!target_picked_up, u6) -> -1\n(u6, !door_open&key_lost&target_picked_up, u5) -> 6\n(u6, door_open&!key_lost&!target_picked_up, u4) -> 1\n(u6, door_open&!key_lost&target_picked_up, u5) -> 12\n(u6, door_open&key_lost&target_picked_up, u5) -> 11"
+                }
+              }
+            ]
+          },
+          {
+            "type": "text",
+            "heading": "U5, S2: wrong template and wrong event",
+            "text": "U5 at `none` turns \"try not to drop the key\" into a soft order instead of a soft ban. S2 at `none` makes `has_key` the last hard step, so opening the door becomes optional."
+          },
+          {
+            "type": "gallery",
+            "width": 490,
+            "groups": [
+              {
+                "title": "U5",
+                "items": [
+                  {
+                    "src": "graphs/none-U5.html",
+                    "height": 520,
+                    "alt": "Reward Machine of U5 at none: wrong template",
+                    "caption": "**U5 at none: wrong template** · 5 states\n\nSoft `Precedence(door_open, key_lost)` instead of soft `Absence(key_lost)`; the card note says that reading is weaker.\n\nTask: *Open the door, then take the box from the other room; try not to drop the key while the door is still closed.*\n\nLTLf: `(Ftarget_picked_up)` ; `(((~target_picked_up)Udoor_open)|(G(~target_picked_up)))` ; `(((~key_lost)Udoor_open)|(G(~key_lost)))` soft",
+                    "details": {
+                      "title": "RM text, clauses and LTLf",
+                      "code": "# Task (NL)\nOpen the door, then take the box from the other room; try not to drop the key while the door is still closed.\n\n# Clauses and LTLf (check/machines.py)\nhard Existence(target_picked_up): (Ftarget_picked_up)\nhard Precedence(door_open, target_picked_up): (((~target_picked_up)Udoor_open)|(G(~target_picked_up)))\nsoft Precedence(door_open, key_lost): (((~key_lost)Udoor_open)|(G(~key_lost)))\n\n# RM text (graphs/none-U5.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u4\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&!key_lost&target_picked_up) -> u1\n(u0, !door_open&key_lost&!target_picked_up) -> u2\n(u0, !door_open&key_lost&target_picked_up) -> u1\n(u0, door_open&!target_picked_up) -> u3\n(u0, door_open&target_picked_up) -> u4\n(u2, !door_open&!key_lost&!target_picked_up) -> u0\n(u2, !door_open&!key_lost&target_picked_up) -> u1\n(u2, !door_open&key_lost&!target_picked_up) -> u2\n(u2, !door_open&key_lost&target_picked_up) -> u1\n(u2, door_open&!target_picked_up) -> u3\n(u2, door_open&target_picked_up) -> u4\n(u3, target_picked_up) -> u4\nREWARD_FUNCTION:\n(u0, !door_open&!key_lost&target_picked_up, u1) -> -100.694\n(u0, !door_open&key_lost&!target_picked_up, u2) -> -1\n(u0, !door_open&key_lost&target_picked_up, u1) -> -100.694\n(u0, door_open&!target_picked_up, u3) -> 1\n(u0, door_open&target_picked_up, u4) -> 12\n(u2, !door_open&!key_lost&target_picked_up, u1) -> -100.694\n(u2, !door_open&key_lost&!target_picked_up, u2) -> -1\n(u2, !door_open&key_lost&target_picked_up, u1) -> -100.694\n(u2, door_open&!target_picked_up, u3) -> 1\n(u2, door_open&target_picked_up, u4) -> 12\n(u3, target_picked_up, u4) -> 11"
+                    }
+                  },
+                  {
+                    "src": "graphs/medium-U5.html",
+                    "height": 520,
+                    "alt": "Reward Machine of U5 at medium: right",
+                    "caption": "**U5 at medium: right** · 4 states\n\nSoft `Absence(key_lost)`.\n\nTask: *Open the door, then take the box from the other room; try not to drop the key while the door is still closed.*\n\nLTLf: `(Ftarget_picked_up)` ; `(((~target_picked_up)Udoor_open)|(G(~target_picked_up)))` ; `(~(Fkey_lost))` soft",
+                    "details": {
+                      "title": "RM text, clauses and LTLf",
+                      "code": "# Task (NL)\nOpen the door, then take the box from the other room; try not to drop the key while the door is still closed.\n\n# Clauses and LTLf (check/machines.py)\nhard Existence(target_picked_up): (Ftarget_picked_up)\nhard Precedence(door_open, target_picked_up): (((~target_picked_up)Udoor_open)|(G(~target_picked_up)))\nsoft Absence(key_lost): (~(Fkey_lost))\n\n# RM text (graphs/medium-U5.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&!key_lost&target_picked_up) -> u1\n(u0, !door_open&key_lost&!target_picked_up) -> u0\n(u0, !door_open&key_lost&target_picked_up) -> u1\n(u0, door_open&!key_lost&!target_picked_up) -> u2\n(u0, door_open&!key_lost&target_picked_up) -> u3\n(u0, door_open&key_lost&!target_picked_up) -> u2\n(u0, door_open&key_lost&target_picked_up) -> u3\n(u2, !key_lost&target_picked_up) -> u3\n(u2, key_lost&!target_picked_up) -> u2\n(u2, key_lost&target_picked_up) -> u3\nREWARD_FUNCTION:\n(u0, !door_open&!key_lost&target_picked_up, u1) -> -100.694\n(u0, !door_open&key_lost&!target_picked_up, u0) -> -1\n(u0, !door_open&key_lost&target_picked_up, u1) -> -100.694\n(u0, door_open&!key_lost&!target_picked_up, u2) -> 1\n(u0, door_open&!key_lost&target_picked_up, u3) -> 12\n(u0, door_open&key_lost&target_picked_up, u3) -> 11\n(u2, !key_lost&target_picked_up, u3) -> 11\n(u2, key_lost&!target_picked_up, u2) -> -1\n(u2, key_lost&target_picked_up, u3) -> 10"
+                    }
+                  }
+                ]
+              },
+              {
+                "title": "S2",
+                "items": [
+                  {
+                    "src": "graphs/none-S2.html",
+                    "height": 520,
+                    "alt": "Reward Machine of S2 at none: wrong event",
+                    "caption": "**S2 at none: wrong event** · 3 states\n\nHard `Existence(has_key)` instead of `Existence(door_open)`.\n\nTask: *Pick up the key, then open the door, and then, ideally, walk onto the goal.*\n\nLTLf: `(Fhas_key)` ; `(((~door_open)Uhas_key)|(G(~door_open)))` ; `(((~at_goal)Udoor_open)|(G(~at_goal)))` ; `(Fat_goal)` soft",
+                    "details": {
+                      "title": "RM text, clauses and LTLf",
+                      "code": "# Task (NL)\nPick up the key, then open the door, and then, ideally, walk onto the goal.\n\n# Clauses and LTLf (check/machines.py)\nhard Existence(has_key): (Fhas_key)\nhard Precedence(has_key, door_open): (((~door_open)Uhas_key)|(G(~door_open)))\nhard Precedence(door_open, at_goal): (((~at_goal)Udoor_open)|(G(~at_goal)))\nsoft Existence(at_goal): (Fat_goal)\n\n# RM text (graphs/none-S2.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: u1\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&!door_open&has_key) -> u1\n(u0, !at_goal&door_open&!has_key) -> u2\n(u0, !at_goal&door_open&has_key) -> u1\n(u0, at_goal&!door_open&!has_key) -> u2\n(u0, at_goal&!door_open&has_key) -> u2\n(u0, at_goal&door_open&!has_key) -> u2\n(u0, at_goal&door_open&has_key) -> u1\nREWARD_FUNCTION:\n(u0, !at_goal&!door_open&has_key, u1) -> 7\n(u0, !at_goal&door_open&!has_key, u2) -> -100.839\n(u0, !at_goal&door_open&has_key, u1) -> 7\n(u0, at_goal&!door_open&!has_key, u2) -> -100.839\n(u0, at_goal&!door_open&has_key, u2) -> -100.839\n(u0, at_goal&door_open&!has_key, u2) -> -100.839\n(u0, at_goal&door_open&has_key, u1) -> 12"
+                    }
+                  },
+                  {
+                    "src": "graphs/medium-S2.html",
+                    "height": 520,
+                    "alt": "Reward Machine of S2 at medium: right",
+                    "caption": "**S2 at medium: right** · 4 states\n\nHard `Existence(door_open)` is the last hard step; reaching the goal stays soft.\n\nTask: *Pick up the key, then open the door, and then, ideally, walk onto the goal.*\n\nLTLf: `(Fdoor_open)` ; `(((~door_open)Uhas_key)|(G(~door_open)))` ; `(((~at_goal)Udoor_open)|(G(~at_goal)))` ; `(Fat_goal)` soft",
+                    "details": {
+                      "title": "RM text, clauses and LTLf",
+                      "code": "# Task (NL)\nPick up the key, then open the door, and then, ideally, walk onto the goal.\n\n# Clauses and LTLf (check/machines.py)\nhard Existence(door_open): (Fdoor_open)\nhard Precedence(has_key, door_open): (((~door_open)Uhas_key)|(G(~door_open)))\nhard Precedence(door_open, at_goal): (((~at_goal)Udoor_open)|(G(~at_goal)))\nsoft Existence(at_goal): (Fat_goal)\n\n# RM text (graphs/medium-S2.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&!door_open&has_key) -> u1\n(u0, !at_goal&door_open&!has_key) -> u2\n(u0, !at_goal&door_open&has_key) -> u3\n(u0, at_goal&!door_open&!has_key) -> u2\n(u0, at_goal&!door_open&has_key) -> u2\n(u0, at_goal&door_open&!has_key) -> u2\n(u0, at_goal&door_open&has_key) -> u3\n(u1, !at_goal&door_open) -> u3\n(u1, at_goal&!door_open) -> u2\n(u1, at_goal&door_open) -> u3\nREWARD_FUNCTION:\n(u0, !at_goal&!door_open&has_key, u1) -> 1\n(u0, !at_goal&door_open&!has_key, u2) -> -100.839\n(u0, !at_goal&door_open&has_key, u3) -> 8\n(u0, at_goal&!door_open&!has_key, u2) -> -100.839\n(u0, at_goal&!door_open&has_key, u2) -> -100.839\n(u0, at_goal&door_open&!has_key, u2) -> -100.839\n(u0, at_goal&door_open&has_key, u3) -> 13\n(u1, !at_goal&door_open, u3) -> 7\n(u1, at_goal&!door_open, u2) -> -101.839\n(u1, at_goal&door_open, u3) -> 12"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "text",
+            "heading": "O7: accepted with redundant clauses, same machine",
+            "text": "At `none` the critic accepted hard `Existence(blocker_moved)` and `Existence(has_door_key)` next to the order rules. At `medium` they are gone. The two clause sets compile to the same RM (the two `.rm` files are byte-identical), so the difference lives in the clause list, not in the machine."
+          },
+          {
+            "type": "gallery",
+            "width": 490,
+            "items": [
+              {
+                "src": "graphs/O7.html",
+                "height": 520,
+                "alt": "Reward Machine of O7: the machine of both runs",
+                "caption": "**O7: the machine of both runs** · 7 states\n\nAt `none`: accepted, with the two redundant `Existence` clauses listed in the fold-out. At `medium` (B4): right, the same RM without them (clauses in the fold-out).\n\nTask: *Pick up the blocking ball and the key, in either order, unlock the door, and then pick up the box in the other room.*\n\nLTLf: `(Fblocker_moved)` ; `(Fhas_door_key)` ; `(((~door_open)Ublocker_moved)|(G(~door_open)))` ; `(((~door_open)Uhas_door_key)|(G(~door_open)))` ; `(((~target_picked_up)Udoor_open)|(G(~target_picked_up)))` ; `(Ftarget_picked_up)`\n\nAt medium: `(Ftarget_picked_up)` ; `(((~door_open)Ublocker_moved)|(G(~door_open)))` ; `(((~door_open)Uhas_door_key)|(G(~door_open)))` ; `(((~target_picked_up)Udoor_open)|(G(~target_picked_up)))`",
+                "details": {
+                  "title": "RM text, clauses and LTLf",
+                  "code": "# Task (NL)\nPick up the blocking ball and the key, in either order, unlock the door, and then pick up the box in the other room.\n\n# Clauses and LTLf (check/machines.py)\nhard Existence(blocker_moved): (Fblocker_moved)\nhard Existence(has_door_key): (Fhas_door_key)\nhard Precedence(blocker_moved, door_open): (((~door_open)Ublocker_moved)|(G(~door_open)))\nhard Precedence(has_door_key, door_open): (((~door_open)Uhas_door_key)|(G(~door_open)))\nhard Precedence(door_open, target_picked_up): (((~target_picked_up)Udoor_open)|(G(~target_picked_up)))\nhard Existence(target_picked_up): (Ftarget_picked_up)\n\n# Clauses at medium (B4), same RM\nhard Existence(target_picked_up): (Ftarget_picked_up)\nhard Precedence(blocker_moved, door_open): (((~door_open)Ublocker_moved)|(G(~door_open)))\nhard Precedence(has_door_key, door_open): (((~door_open)Uhas_door_key)|(G(~door_open)))\nhard Precedence(door_open, target_picked_up): (((~target_picked_up)Udoor_open)|(G(~target_picked_up)))\n\n# RM text (graphs/O7.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6\nINITIAL_STATE: u0\nFINAL_STATES: u6\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !blocker_moved&!door_open&!has_door_key&target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&has_door_key&!target_picked_up) -> u2\n(u0, !blocker_moved&!door_open&has_door_key&target_picked_up) -> u1\n(u0, !blocker_moved&door_open&!has_door_key&!target_picked_up) -> u1\n(u0, !blocker_moved&door_open&!has_door_key&target_picked_up) -> u1\n(u0, !blocker_moved&door_open&has_door_key&!target_picked_up) -> u1\n(u0, !blocker_moved&door_open&has_door_key&target_picked_up) -> u1\n(u0, blocker_moved&!door_open&!has_door_key&!target_picked_up) -> u3\n(u0, blocker_moved&!door_open&!has_door_key&target_picked_up) -> u1\n(u0, blocker_moved&!door_open&has_door_key&!target_picked_up) -> u4\n(u0, blocker_moved&!door_open&has_door_key&target_picked_up) -> u1\n(u0, blocker_moved&door_open&!has_door_key&!target_picked_up) -> u1\n(u0, blocker_moved&door_open&!has_door_key&target_picked_up) -> u1\n(u0, blocker_moved&door_open&has_door_key&!target_picked_up) -> u5\n(u0, blocker_moved&door_open&has_door_key&target_picked_up) -> u6\n(u2, !blocker_moved&!door_open&target_picked_up) -> u1\n(u2, !blocker_moved&door_open&!target_picked_up) -> u1\n(u2, !blocker_moved&door_open&target_picked_up) -> u1\n(u2, blocker_moved&!door_open&!target_picked_up) -> u4\n(u2, blocker_moved&!door_open&target_picked_up) -> u1\n(u2, blocker_moved&door_open&!target_picked_up) -> u5\n(u2, blocker_moved&door_open&target_picked_up) -> u6\n(u3, !door_open&!has_door_key&target_picked_up) -> u1\n(u3, !door_open&has_door_key&!target_picked_up) -> u4\n(u3, !door_open&has_door_key&target_picked_up) -> u1\n(u3, door_open&!has_door_key&!target_picked_up) -> u1\n(u3, door_open&!has_door_key&target_picked_up) -> u1\n(u3, door_open&has_door_key&!target_picked_up) -> u5\n(u3, door_open&has_door_key&target_picked_up) -> u6\n(u4, !door_open&target_picked_up) -> u1\n(u4, door_open&!target_picked_up) -> u5\n(u4, door_open&target_picked_up) -> u6\n(u5, target_picked_up) -> u6\nREWARD_FUNCTION:\n(u0, !blocker_moved&!door_open&!has_door_key&target_picked_up, u1) -> -10\n(u0, !blocker_moved&!door_open&has_door_key&!target_picked_up, u2) -> 1\n(u0, !blocker_moved&!door_open&has_door_key&target_picked_up, u1) -> -10\n(u0, !blocker_moved&door_open&!has_door_key&!target_picked_up, u1) -> -10\n(u0, !blocker_moved&door_open&!has_door_key&target_picked_up, u1) -> -10\n(u0, !blocker_moved&door_open&has_door_key&!target_picked_up, u1) -> -10\n(u0, !blocker_moved&door_open&has_door_key&target_picked_up, u1) -> -10\n(u0, blocker_moved&!door_open&!has_door_key&!target_picked_up, u3) -> 1\n(u0, blocker_moved&!door_open&!has_door_key&target_picked_up, u1) -> -10\n(u0, blocker_moved&!door_open&has_door_key&!target_picked_up, u4) -> 2\n(u0, blocker_moved&!door_open&has_door_key&target_picked_up, u1) -> -10\n(u0, blocker_moved&door_open&!has_door_key&!target_picked_up, u1) -> -10\n(u0, blocker_moved&door_open&!has_door_key&target_picked_up, u1) -> -10\n(u0, blocker_moved&door_open&has_door_key&!target_picked_up, u5) -> 3\n(u0, blocker_moved&door_open&has_door_key&target_picked_up, u6) -> 14\n(u2, !blocker_moved&!door_open&target_picked_up, u1) -> -11\n(u2, !blocker_moved&door_open&!target_picked_up, u1) -> -11\n(u2, !blocker_moved&door_open&target_picked_up, u1) -> -11\n(u2, blocker_moved&!door_open&!target_picked_up, u4) -> 1\n(u2, blocker_moved&!door_open&target_picked_up, u1) -> -11\n(u2, blocker_moved&door_open&!target_picked_up, u5) -> 2\n(u2, blocker_moved&door_open&target_picked_up, u6) -> 13\n(u3, !door_open&!has_door_key&target_picked_up, u1) -> -11\n(u3, !door_open&has_door_key&!target_picked_up, u4) -> 1\n(u3, !door_open&has_door_key&target_picked_up, u1) -> -11\n(u3, door_open&!has_door_key&!target_picked_up, u1) -> -11\n(u3, door_open&!has_door_key&target_picked_up, u1) -> -11\n(u3, door_open&has_door_key&!target_picked_up, u5) -> 2\n(u3, door_open&has_door_key&target_picked_up, u6) -> 13\n(u4, !door_open&target_picked_up, u1) -> -12\n(u4, door_open&!target_picked_up, u5) -> 1\n(u4, door_open&target_picked_up, u6) -> 12\n(u5, target_picked_up, u6) -> 11"
+                }
+              }
+            ]
+          },
+          {
+            "type": "text",
+            "heading": "G12: the machine the scorer called wrong",
+            "text": "Left: the clause set two arm-B runs ended on, scored wrong before the card fix. Right: the card's own answer, as B4 built it. The sets accept the same runs (proof above); the right machine has one more state, `u4`, which remembers that the ball moved and pays the same on matching edges."
+          },
+          {
+            "type": "gallery",
+            "width": 490,
+            "items": [
+              {
+                "src": "graphs/oldcard-G12.html",
+                "height": 520,
+                "alt": "Reward Machine of G12, arm B: right (card gap)",
+                "caption": "**G12, arm B: right (card gap)** · 4 states\n\nDropped `RespondedExistence`; scored wrong under the old card, `also_ok` since the fix.\n\nTask: *If you move the ball, you must also take the key. Then pick up the box in the other room.*\n\nLTLf: `(((~target_picked_up)Uhas_door_key)|(G(~target_picked_up)))` ; `(Ftarget_picked_up)`",
+                "details": {
+                  "title": "RM text, clauses and LTLf",
+                  "code": "# Task (NL)\nIf you move the ball, you must also take the key. Then pick up the box in the other room.\n\n# Clauses and LTLf (check/machines.py)\nhard Precedence(has_door_key, target_picked_up): (((~target_picked_up)Uhas_door_key)|(G(~target_picked_up)))\nhard Existence(target_picked_up): (Ftarget_picked_up)\n\n# RM text (graphs/oldcard-G12.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !has_door_key&target_picked_up) -> u1\n(u0, has_door_key&!target_picked_up) -> u2\n(u0, has_door_key&target_picked_up) -> u3\n(u2, target_picked_up) -> u3\nREWARD_FUNCTION:\n(u0, !has_door_key&target_picked_up, u1) -> -10\n(u0, has_door_key&!target_picked_up, u2) -> 1\n(u0, has_door_key&target_picked_up, u3) -> 12\n(u2, target_picked_up, u3) -> 11"
+                }
+              },
+              {
+                "src": "graphs/medium-G12.html",
+                "height": 520,
+                "alt": "Reward Machine of G12 at medium (B4): right",
+                "caption": "**G12 at medium (B4): right** · 5 states\n\nThe card's main answer.\n\nTask: *If you move the ball, you must also take the key. Then pick up the box in the other room.*\n\nLTLf: `((Fblocker_moved)->(Fhas_door_key))` ; `(((~target_picked_up)Uhas_door_key)|(G(~target_picked_up)))` ; `(Ftarget_picked_up)`",
+                "details": {
+                  "title": "RM text, clauses and LTLf",
+                  "code": "# Task (NL)\nIf you move the ball, you must also take the key. Then pick up the box in the other room.\n\n# Clauses and LTLf (check/machines.py)\nhard RespondedExistence(blocker_moved, has_door_key): ((Fblocker_moved)->(Fhas_door_key))\nhard Precedence(has_door_key, target_picked_up): (((~target_picked_up)Uhas_door_key)|(G(~target_picked_up)))\nhard Existence(target_picked_up): (Ftarget_picked_up)\n\n# RM text (graphs/medium-G12.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u3\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !blocker_moved&!has_door_key&target_picked_up) -> u1\n(u0, !blocker_moved&has_door_key&!target_picked_up) -> u2\n(u0, !blocker_moved&has_door_key&target_picked_up) -> u3\n(u0, blocker_moved&!has_door_key&!target_picked_up) -> u4\n(u0, blocker_moved&!has_door_key&target_picked_up) -> u1\n(u0, blocker_moved&has_door_key&!target_picked_up) -> u2\n(u0, blocker_moved&has_door_key&target_picked_up) -> u3\n(u2, target_picked_up) -> u3\n(u4, !has_door_key&target_picked_up) -> u1\n(u4, has_door_key&!target_picked_up) -> u2\n(u4, has_door_key&target_picked_up) -> u3\nREWARD_FUNCTION:\n(u0, !blocker_moved&!has_door_key&target_picked_up, u1) -> -10\n(u0, !blocker_moved&has_door_key&!target_picked_up, u2) -> 1\n(u0, !blocker_moved&has_door_key&target_picked_up, u3) -> 12\n(u0, blocker_moved&!has_door_key&target_picked_up, u1) -> -10\n(u0, blocker_moved&has_door_key&!target_picked_up, u2) -> 1\n(u0, blocker_moved&has_door_key&target_picked_up, u3) -> 12\n(u2, target_picked_up, u3) -> 11\n(u4, !has_door_key&target_picked_up, u1) -> -10\n(u4, has_door_key&!target_picked_up, u2) -> 1\n(u4, has_door_key&target_picked_up, u3) -> 12"
+                }
+              }
+            ]
+          },
+          {
+            "type": "text",
+            "text": "W5a at `medium` also has one wrong run (m1, run 2): `evidence/llm-loop/runs/m1/A/W5a-r2.rm`. Arm C's G12 run 2 added a ball-before-box order, `exact` after the card fix. Luna's G12 runs that ended with no machine have no RM."
+          }
+        ]
+      },
+      {
+        "id": "open",
+        "title": "Open points",
+        "blocks": [
+          {
+            "type": "list",
+            "items": [
+              "**The reasoning default.** The loop recommends `medium` for both roles (46/46 against 42/46, critic catch 14 to 22 of 28, same calls per run, 6 times the wall time). `CONFIG.reasoning` still defaults to `none`; no default was changed. The user decides.",
+              "**Stated orders the level forces.** Every strong critic (luna, Haiku, glm at `medium`) asks for them (s02, w08, w03, r05, G4), while the cards mark them `forced`, optional. Critic rule 8 says to keep them. The decision records (`docs/decisions/arm-fm/task-and-rm-identity.md:109-111`, `rm-execution.md:95-98`) say the critic rejects a clause that restates an environment-guaranteed order. The three disagree. Today it costs extra rounds, not wrong machines.",
+              "**glm at `medium` still accepts 8 of 28 critic-set items with a defect left** (luna 1, Haiku 0). In the pipeline it caught 11 of 12 wrong first proposals.",
+              "**Short first proposals at `medium`** (10 of 66). They are safe only while the critic catches them; glm did, 10 of 10. No change made; watch them in the next full run.",
+              "**The `none` rerun** of W5a, U5, S2, O7 with the new critic wording was not run (budget). B2 touches only candidates whose clues list a redundant non-`Existence` clause, so no change is expected there."
+            ]
+          }
+        ]
+      },
+      {
+        "id": "evidence",
+        "title": "Evidence, rerun and code",
+        "blocks": [
+          {
+            "type": "list",
+            "items": [
+              "**`evidence/`** (1.8 MB): `model-compare-report.md` and `llm-loop-report.md` (every number on this page comes from them or from the records below); `items.json` and `items-b2.json` (the 38 critic items and their B2 form); `b1-equiv.txt`; `cards/local-soft/tasks.json`; `model-compare/runs/` and `llm-loop/runs/`: one summary JSON per run (`\u003cround>/\u003carm>/\u003ccase>-r\u003ck>.json`, with status, clauses, trace, machine text, wall time), the `.rm` files of the wrong machines, `round.log` per round (it holds the exact cases, arms and reasoning level), and `explain*.json` (the verdict and nearest card answer of each non-right machine).",
+              "**Not copied** (all still in `.git/agent-memory/plans/farm-final-20261119/model-compare-evidence` and `llm-loop-evidence`, about 93 MB): the 434 call logs `*.calls.jsonl` (55.5 MB; they hold seconds per call, tokens and usage), the per-run `.log` files, the `*_work` folders (one per run, 22 MB), the 8 dry runs `p1` (run before the context stripping), the `STOP` marker, `__pycache__`, and the run tools `run_arms.py/.sh`, `run_critic_set.py/.sh`, `critic_cli.py`, `gen_one.py`, `critic_one.py`, `budget*.py`, `explain.py`. The run tools call the models and read the `.env` credentials, so they are not part of a rerun here.",
+              "**Edited copy.** The 172 critic-set records had `first_prompt` removed (the whole critic prompt, about 70 KB each, 6.9 MB in all); the other fields are unchanged. The prompts rebuild from `items.json` and the critic prompt in git.",
+              "**Numbers that need the call logs:** the calls per arm, seconds per call, and output and reasoning tokens. `arm_stats.py` and `critic_stats.py` print 0 for those columns on the copy; the figures on this page are the ones the loop report printed from the logs."
+            ]
+          },
+          {
+            "type": "text",
+            "heading": "Rerun without a model call",
+            "text": "From the repository root, in `RM_RL_env`. Each prints the page's table rows."
+          },
+          {
+            "type": "code",
+            "text": "E=docs/paper/model-comparison/evidence\nM=$E/model-compare/runs; L=$E/llm-loop/runs; F=docs/paper/model-comparison/check\n\n# per-arm table (right, accepted, wrong, first proposal, catch, false alarms, rounds, wall time); add --letters --cases W5a,U5,S2,O7,G12\nCC_ROOT=$PWD PYTHONPATH=app python -W ignore $F/arm_stats.py A=$M/r1/A B=$M/r1b/B,$M/r3/B C=$M/r2/C D=$M/r2/D E=$L/e1/E Amed=$L/m1/A Ahigh=$L/h1/A B4=$L/b4/A\n\n# critic-set table and defects per kind\nC1=$M/critic; C2=$L/critic\npython $F/critic_stats.py \"glm none=$C1/glm,$C2/glm\" \"glm medium=$C2/glm-medium\" \"luna=$C1/luna,$C2/luna\" \"haiku=$C2/haiku\" --kinds\n\n# B2 test: luna's pipeline on 9 cases, before and after\nCC_ROOT=$PWD PYTHONPATH=app python -W ignore $F/arm_stats.py --cases G12,G4,G6,C2,W2b,O5,U1,U6,W5b B=$M/r1b/B,$M/r3/B B2=$L/b2/B,$L/b2g/B\n\n# G12 equality proof, task and LTLf of the machines drawn above\nPYTHONPATH=app python -W ignore $F/equiv.py '\u003cset 1>' '\u003cset 2>'\nPYTHONPATH=app python -W ignore $F/machines.py"
+          },
+          {
+            "type": "text",
+            "heading": "Rerun with models",
+            "text": "The loop's tools (kept next to the reports, not copied) took `run_arms.sh ROUND CASES [ARMS] [REPS] [PARALLEL] [REASONING]` and `run_critic_set.sh LABEL CRITIC_MODEL [PARALLEL] [ITEMS] [REASONING]`. The `round.log` of each round records its arguments: `r1` arm A and `r1b` arm B on the 46 cards at `none`; `r2` arms C and D on W5a,U5,S2,G12,U6,O5,G2,G7,G11; `r3` arm B on G12; `e1` arm E on the 46 cards; `m1` arm A at `medium` on W5a,U5,S2,O7,G12,U6,O5,G2,G7,G11; `h1` arm A at `high` on W5a; `b4` arm A at `medium` on the 46 cards; `b2` arm B on G12,G4,G6,C2,W2b,O5,U1,U6,W5b and `b2g` on G12. Critic sets: `critic/glm` and `critic/luna` (first report, all items at `none`), the same labels in the loop for w03 and r05, `glm-medium` and `glm-medium-b2` at `medium`, `haiku`, `luna-b2`. They need the OpenCode key and the Claude Code and Codex CLIs."
+          },
+          {
+            "type": "text",
+            "heading": "Code",
+            "text": "Critic wording: commit `d5ec36e` (`fix(critic): call only a listed Existence redundant; a stated order or if-rule always stays`). G12 card: `e56fcff`. CLI adapter (`experiments/dev/model-compare/cli_engine.py`): `9f12d3a`. All three merged as `57f6a1a` on main. The critic clues the critic set and pipeline were built on: `3fb0ce0`, merged as `114e5b3` (see `docs/paper/critic-clues/`). The first report's arms ran in worktree `tp-model-compare` on main `54f2c71` plus the untracked adapter. The loop moved it to main `cdae068` and made the two fixes and the adapter change there, uncommitted; they reached main as the commits above. The page and `check/` were built on main `57f6a1a`."
+          }
+        ]
+      }
+    ]
+  }
 }
 </script>
 <!-- Icon catalog from ../icons.json; fill.py copies it in. -->

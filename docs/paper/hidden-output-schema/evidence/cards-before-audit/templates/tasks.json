@@ -1,0 +1,3572 @@
+{
+  "suite": "templates",
+  "schema": 1,
+  "cards": [
+    {
+      "id": "tpl-existence-1-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-doorkey/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-DoorKey-8x8-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Pick up the key, then reach the goal.",
+      "goal": true,
+      "template": "Existence",
+      "status": "draft",
+      "expect": [["Precedence", ["has_key", "at_goal"], "hard"], ["Existence", ["at_goal"], "hard"]],
+      "forced": [0],
+      "also_ok": [
+        [
+          ["Existence", ["has_key"], "hard"],
+          ["Existence", ["at_goal"], "hard"]
+        ],
+        [
+          ["Precedence", ["has_key", "at_goal"], "hard"],
+          ["Existence", ["has_key"], "hard"],
+          ["Existence", ["at_goal"], "hard"]
+        ]
+      ],
+      "env_reward_matches": true,
+      "train": true,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "goto", "obj": "goal"}
+        ],
+        "wrong": [
+          {
+            "breaks": [1],
+            "why": "Takes the key and opens the door, then waits and never reaches the goal.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "wait", "n": 1000}
+            ]
+          },
+          {
+            "breaks": [1],
+            "why": "Never takes the key and never reaches the goal.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [
+        "Take the key and then get to the goal.",
+        "Grab the key first, then make your way to the goal.",
+        "After you have picked up the key, reach the goal."
+      ],
+      "notes": "The other clause is implied by the finish, so the env reward pays exactly when it is done. Card fixes 2026-11-18: Existence(at_goal) alone is also correct, because reaching the goal already needs the key; the no-goal cards of the template isolate the clause. Chain prompt loop 2026-11-19: the task states an order, so the primary answer is the chain form (Existence of the last step plus Precedence). The order is forced, so the Precedence is optional and Existence(at_goal) alone still matches `expect`. One Existence per step, alone or with the Precedence, is `also_ok` because the level forces the order, and the judge stays lenient on purpose; the critic rejects an Existence that the chain already forces, so it rejects these answers on purpose. The prompts still write every order the task states, forced or not; only this card is lenient about a forced Precedence. The idle walk breaks only clause 1 (`breaks: [1]`): clause 0 is now the Precedence, which a run that never takes the key keeps."
+    },
+    {
+      "id": "tpl-existence-1-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": true, "box": false, "require": [], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Flip the switch on the wall.",
+      "goal": false,
+      "template": "Existence",
+      "status": "draft",
+      "expect": [["Existence", ["switch_toggled"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Ignores the siren and never touches the switch.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["siren"]}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [
+        "Toggle the wall switch.",
+        "Operate the switch fixed to the wall.",
+        "At some point, flip the wall switch."
+      ],
+      "notes": ""
+    },
+    {
+      "id": "tpl-existence-2-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-UnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Open the door and pick up the box in the other room.",
+      "goal": true,
+      "template": "Existence",
+      "status": "draft",
+      "expect": [["Existence", ["door_open"], "hard"], ["Existence", ["target_picked_up"], "hard"]],
+      "also_ok": [
+        [
+          ["Existence", ["target_picked_up"], "hard"]
+        ],
+        [
+          ["Precedence", ["door_open", "target_picked_up"], "hard"],
+          ["Existence", ["target_picked_up"], "hard"]
+        ]
+      ],
+      "env_reward_matches": true,
+      "train": false,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "box"}
+        ],
+        "wrong": [
+          {
+            "breaks": [1],
+            "why": "Takes the key and opens the door, then waits and never picks up the box.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Card fixes 2026-11-18: Existence(target_picked_up) alone is also a correct output (`also_ok`), because picking up the box already needs the door open; the no-goal cards of the template isolate the clause."
+    },
+    {
+      "id": "tpl-existence-2-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-blocked-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-BlockedUnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Pick up the ball that blocks the door.",
+      "goal": false,
+      "template": "Existence",
+      "status": "draft",
+      "expect": [["Existence", ["blocker_moved"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "pickup", "obj": "ball"}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Does nothing, so the ball stays in front of the door.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": ""
+    },
+    {
+      "id": "tpl-existence-3-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-key-corridor/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-KeyCorridorS6R3-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Get into the locked room and pick up the ball.",
+      "goal": true,
+      "template": "Existence",
+      "status": "draft",
+      "expect": [
+        ["Existence", ["target_room_entered"], "hard"],
+        ["Existence", ["target_picked_up"], "hard"]
+      ],
+      "also_ok": [
+        [
+          ["Existence", ["target_picked_up"], "hard"]
+        ],
+        [
+          ["Precedence", ["target_room_entered", "target_picked_up"], "hard"],
+          ["Existence", ["target_picked_up"], "hard"]
+        ]
+      ],
+      "env_reward_matches": true,
+      "train": false,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door:locked"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "ball"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0, 1],
+            "why": "Takes the key and opens the locked door, then waits outside the room.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door:locked"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Card fixes 2026-11-18: Existence(target_picked_up) alone is also a correct output (`also_ok`), because picking up the ball already needs entering the room (standing on the doorway counts as entering); the no-goal cards of the template isolate the clause."
+    },
+    {
+      "id": "tpl-existence-3-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-UnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Open the door.",
+      "goal": false,
+      "template": "Existence",
+      "status": "draft",
+      "expect": [["Existence", ["door_open"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "pickup", "obj": "key"}, {"do": "toggle", "obj": "door"}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Does nothing, so the door stays locked.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": ""
+    },
+    {
+      "id": "tpl-existence-two-1-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-UnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Be holding the key on at least two different moves, then pick up the box in the other room.",
+      "goal": true,
+      "template": "ExistenceTwo",
+      "status": "draft",
+      "expect": [["ExistenceTwo", ["has_door_key"], "hard"], ["Existence", ["target_picked_up"], "hard"]],
+      "also_ok": [
+        [
+          ["Existence", ["target_picked_up"], "hard"]
+        ],
+        [
+          ["ExistenceTwo", ["has_door_key"], "hard"],
+          ["Precedence", ["has_door_key", "target_picked_up"], "hard"],
+          ["Existence", ["target_picked_up"], "hard"]
+        ]
+      ],
+      "env_reward_matches": true,
+      "train": true,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "box"}
+        ],
+        "wrong": [
+          {
+            "breaks": [1],
+            "why": "Holds the key and opens the door, then waits and never picks up the box.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [
+        "First have the key in your hands on at least two separate moves; afterwards pick up the box in the other room.",
+        "Pick up the box in the other room, after you were holding the key on at least two different moves.",
+        "Hold the key on two or more different moves, and then take the box from the other room."
+      ],
+      "notes": "State reading: the judge counts two different steps with the state true (not necessarily consecutive). The other clause is implied by the finish, so the env reward pays exactly when it is done. Any successful box pickup holds the key on two or more steps, so the counting clause cannot be isolated on this goal card; the nogoal sibling tests it. Card fixes 2026-11-18: Existence(target_picked_up) alone is also a correct output (`also_ok`)."
+    },
+    {
+      "id": "tpl-existence-two-1-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-doorkey/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-DoorKey-8x8-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Be holding the key on at least two different moves.",
+      "goal": false,
+      "template": "ExistenceTwo",
+      "status": "draft",
+      "expect": [["ExistenceTwo", ["has_key"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "pickup", "obj": "key"}, {"do": "wait", "n": 3}],
+        "wrong": [
+          {"breaks": [0], "why": "Never takes the key.", "steps": [{"do": "wait", "n": 1000}]},
+          {
+            "breaks": [0],
+            "why": "Picks up the key and stops there, so it is held on one step only.",
+            "steps": [{"do": "pickup", "obj": "key"}]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [
+        "Hold the key on two or more different moves.",
+        "Carry the key on at least two different moves.",
+        "Have the key in your hands on at least two separate moves."
+      ],
+      "notes": "Changed in card fix 2: added the once-against-twice negative (the plan ends at the first pickup), which this trained counting card lacked."
+    },
+    {
+      "id": "tpl-existence-two-2-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-blocked-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-BlockedUnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Be holding the key on at least two different moves, then pick up the box in the other room.",
+      "goal": true,
+      "template": "ExistenceTwo",
+      "status": "draft",
+      "expect": [["ExistenceTwo", ["has_door_key"], "hard"], ["Existence", ["target_picked_up"], "hard"]],
+      "also_ok": [
+        [
+          ["Existence", ["target_picked_up"], "hard"]
+        ],
+        [
+          ["ExistenceTwo", ["has_door_key"], "hard"],
+          ["Precedence", ["has_door_key", "target_picked_up"], "hard"],
+          ["Existence", ["target_picked_up"], "hard"]
+        ]
+      ],
+      "env_reward_matches": true,
+      "train": false,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "ball"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "box"}
+        ],
+        "wrong": [
+          {
+            "breaks": [1],
+            "why": "Clears the ball and takes the key, opens the door, then waits and never picks up the box.",
+            "steps": [
+              {"do": "pickup", "obj": "ball"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Card fixes 2026-11-18: any successful box pickup holds the key on two or more steps, so the counting clause cannot be isolated on this goal card (the no-goal sibling tests it); Existence(target_picked_up) alone is also a correct output (`also_ok`)."
+    },
+    {
+      "id": "tpl-existence-two-2-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-key-corridor/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-KeyCorridorS6R3-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Be holding the matching key on at least two different moves.",
+      "goal": false,
+      "template": "ExistenceTwo",
+      "status": "draft",
+      "expect": [["ExistenceTwo", ["has_matching_key"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "pickup", "obj": "key"}, {"do": "wait", "n": 3}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Picks up the key and stops there, so it is held on one step only.",
+            "steps": [{"do": "pickup", "obj": "key"}]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Changed in card fix 2: the once-against-twice negative now ends at the first pickup; the earlier drop step could walk and turn first, so on KeyCorridor seeds 14, 15 and 20 the key stayed in hand for several steps and the plan passed."
+    },
+    {
+      "id": "tpl-existence-two-3-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-doorkey/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-DoorKey-8x8-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Be holding the key on at least two different moves, open the door and reach the goal.",
+      "goal": true,
+      "template": "ExistenceTwo",
+      "status": "draft",
+      "expect": [["ExistenceTwo", ["has_key"], "hard"], ["Existence", ["at_goal"], "hard"]],
+      "also_ok": [
+        [
+          ["Existence", ["at_goal"], "hard"]
+        ],
+        [
+          ["ExistenceTwo", ["has_key"], "hard"],
+          ["Existence", ["door_open"], "hard"],
+          ["Existence", ["at_goal"], "hard"]
+        ],
+        [
+          ["ExistenceTwo", ["has_key"], "hard"],
+          ["Precedence", ["has_key", "door_open"], "hard"],
+          ["Precedence", ["door_open", "at_goal"], "hard"],
+          ["Existence", ["at_goal"], "hard"]
+        ]
+      ],
+      "env_reward_matches": true,
+      "train": false,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "goto", "obj": "goal"}
+        ],
+        "wrong": [
+          {
+            "breaks": [1],
+            "why": "Holds the key and opens the door, then waits and never reaches the goal.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Card fixes 2026-11-18: any successful goal run holds the key on two or more steps, so the counting clause cannot be isolated on this goal card (the no-goal sibling tests it); Existence(at_goal) alone is also a correct output (`also_ok`)."
+    },
+    {
+      "id": "tpl-existence-two-3-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-UnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Be holding the key on at least two different moves.",
+      "goal": false,
+      "template": "ExistenceTwo",
+      "status": "draft",
+      "expect": [["ExistenceTwo", ["has_door_key"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "pickup", "obj": "key"}, {"do": "wait", "n": 3}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Picks up the key and stops there, so it is held on one step only.",
+            "steps": [{"do": "pickup", "obj": "key"}]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Changed in card fix 2: the once-against-twice negative now ends at the first pickup; the earlier drop step could walk and turn first, so on UnlockPickup seeds 4, 8, 26 and 36 the key stayed in hand for several steps and the plan passed."
+    },
+    {
+      "id": "tpl-absence-1-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-blocked-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-BlockedUnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Pick up the box in the other room, and never drop the key while the door is still closed.",
+      "goal": true,
+      "template": "Absence",
+      "status": "draft",
+      "expect": [["Absence", ["key_lost"], "hard"], ["Existence", ["target_picked_up"], "hard"]],
+      "also_ok": [
+        [
+          ["NotCoExistence", ["key_lost", "door_open"], "hard"],
+          ["Existence", ["target_picked_up"], "hard"]
+        ]
+      ],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "ball"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "box"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Takes the key before the ball and has to drop it with the door closed, then finishes.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "ball"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "box"}
+            ]
+          },
+          {
+            "breaks": [1],
+            "why": "Moves the ball, takes the key and opens the door, then waits and never picks up the box.",
+            "steps": [
+              {"do": "pickup", "obj": "ball"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [
+        "Never drop the key while the door is still closed, and pick up the box in the other room.",
+        "Get the box from the other room, and do not drop the key while the door is closed.",
+        "While the door is still closed, you must not drop the key. Pick up the box in the other room."
+      ],
+      "notes": "With the finish, Absence(key_lost) and NotCoExistence(key_lost, door_open) mean the same. S2 2026-11-19: Precedence(door_open, key_lost) is not an `also_ok` answer: it is weaker, it accepts opening the door, shutting it again and dropping the key, which the wording forbids."
+    },
+    {
+      "id": "tpl-absence-1-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-key-corridor/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-KeyCorridorS6R3-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Never open the locked door.",
+      "goal": false,
+      "template": "Absence",
+      "status": "draft",
+      "expect": [["Absence", ["target_door_open"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "pickup", "obj": "key"}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Takes the key and opens the locked door.",
+            "steps": [{"do": "pickup", "obj": "key"}, {"do": "toggle", "obj": "door:locked"}]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [
+        "Do not open the locked door.",
+        "Keep the locked door shut.",
+        "The locked door must never be opened."
+      ],
+      "notes": "Card fixes 2026-11-18: doing nothing passes (idle success is rule compliance, not task completion)."
+    },
+    {
+      "id": "tpl-absence-2-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-doorkey/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-DoorKey-8x8-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Reach the goal, and never drop the key while the door is still closed.",
+      "goal": true,
+      "template": "Absence",
+      "status": "draft",
+      "expect": [["Absence", ["key_lost"], "hard"], ["Existence", ["at_goal"], "hard"]],
+      "also_ok": [
+        [
+          ["NotCoExistence", ["key_lost", "door_open"], "hard"],
+          ["Existence", ["at_goal"], "hard"]
+        ]
+      ],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "goto", "obj": "goal"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Drops the key while the door is still closed, picks it up again, then finishes.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "goto", "obj": "goal"}
+            ]
+          },
+          {
+            "breaks": [1],
+            "why": "Keeps the key and opens the door, then waits and never reaches the goal.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "S2 2026-11-19: Precedence(door_open, key_lost) is not an `also_ok` answer: it is weaker, it accepts opening the door, shutting it again and dropping the key, which the wording forbids."
+    },
+    {
+      "id": "tpl-absence-2-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-blocked-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-BlockedUnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Don't drop the key while the door is still closed.",
+      "goal": false,
+      "template": "Absence",
+      "status": "draft",
+      "expect": [["Absence", ["key_lost"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "pickup", "obj": "ball"}, {"do": "drop"}, {"do": "pickup", "obj": "key"}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Takes the key first and drops it again to free its hands for the ball.",
+            "steps": [{"do": "pickup", "obj": "key"}, {"do": "drop"}, {"do": "pickup", "obj": "ball"}]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Card fixes 2026-11-18: doing nothing passes (idle success is rule compliance, not task completion). Never trained (train false), a generation and plan-check card; the same env and clause with a goal, where waiting fails, is tpl-absence-1-goal (trained). S2 2026-11-19: Precedence(door_open, key_lost) is not an `also_ok` answer: it is weaker, it accepts opening the door, shutting it again and dropping the key, which the wording forbids; NotCoExistence(key_lost, door_open) is weaker too, since with no goal the door may never open."
+    },
+    {
+      "id": "tpl-absence-3-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-UnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Pick up the box in the other room, and never drop the key while the door is still closed.",
+      "goal": true,
+      "template": "Absence",
+      "status": "draft",
+      "expect": [["Absence", ["key_lost"], "hard"], ["Existence", ["target_picked_up"], "hard"]],
+      "also_ok": [
+        [
+          ["NotCoExistence", ["key_lost", "door_open"], "hard"],
+          ["Existence", ["target_picked_up"], "hard"]
+        ]
+      ],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "box"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Drops the key with the door closed, picks it up again, then finishes.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "box"}
+            ]
+          },
+          {
+            "breaks": [1],
+            "why": "Keeps the key and opens the door, then waits and never picks up the box.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "S2 2026-11-19: Precedence(door_open, key_lost) is not an `also_ok` answer: it is weaker, it accepts opening the door, shutting it again and dropping the key, which the wording forbids."
+    },
+    {
+      "id": "tpl-absence-3-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": true, "box": false, "require": [], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Never flip the wall switch.",
+      "goal": false,
+      "template": "Absence",
+      "status": "draft",
+      "expect": [["Absence", ["switch_toggled"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": ["siren"]}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Turns the siren off with the switch.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": []}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "The siren rings, so the solving plan has to leave it ringing. Changed in card fix 2: the wording is one action, flipping the switch (the clause observes toggling only), not touching or bumping its panel. Card fixes 2026-11-18: a wait plan passes it on seeds 1-3 (the siren tempts but forces nothing); never trained (train false), a generation and plan-check card. A ban on an own action under a goal route that breaks it is tested where waiting fails by tpl-absence-1-goal (trained)."
+    },
+    {
+      "id": "tpl-response-1-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-UnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Whenever you are holding the key, the door must be open at that moment or opened afterwards. Pick up the key, open the door with it, then pick up the box in the other room.",
+      "goal": true,
+      "template": "Response",
+      "status": "draft",
+      "expect": [
+        ["Response", ["has_door_key", "door_open"], "hard"],
+        ["Precedence", ["has_door_key", "door_open"], "hard"],
+        ["Precedence", ["door_open", "target_picked_up"], "hard"],
+        ["Existence", ["target_picked_up"], "hard"]
+      ],
+      "forced": [1, 2],
+      "also_ok": [
+        [
+          ["Response", ["has_door_key", "door_open"], "hard"],
+          ["Existence", ["door_open"], "hard"],
+          ["Existence", ["target_picked_up"], "hard"]
+        ],
+        [
+          ["Response", ["has_door_key", "door_open"], "hard"],
+          ["Precedence", ["door_open", "target_picked_up"], "hard"],
+          ["Existence", ["target_picked_up"], "hard"]
+        ]
+      ],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "box"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0, 3],
+            "why": "Takes the key, then waits: the door is never opened.",
+            "steps": [{"do": "pickup", "obj": "key"}, {"do": "wait", "n": 1000}]
+          },
+          {
+            "breaks": [3],
+            "why": "Takes the key and opens the door, then waits and never picks up the box.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [
+        "At any moment you are holding the key, the door has to be open then or opened later. Take the key, open the door with it and then take the box in the other room.",
+        "If you are holding the key, the door must be open at that point or at a later point. Pick up the key, use it to open the door, and then pick up the box in the other room.",
+        "Any time the key is in your hands, the door must be open right then or opened afterwards. Take the key and open the door with it. Finally, pick up the box in the other room."
+      ],
+      "notes": "Moved from KeyCorridorS6R3 to UnlockPickup on 2026-11-20: no method (no-RM, ARM-FM, FARM) learned KeyCorridor in 71 runs, so the card could not train, and UnlockPickup was learned (ARM-FM 3 of 3, FARM 1 of 3 on base-unlock-pickup at 1.5M steps). The trigger is has_door_key, a condition that stays true while the key is held, so the door must be open when the key was last held or later (the wording of tpl-response-2-goal and -3-goal); the old key_found trigger and its last-step reading went with the level. The goal forces the door open, so the Response only separates a run that takes the key and stops; a wait plan fails the goal. Chain reword 2026-11-19, kept: the task names every step, so the answer is the chain Existence(box), Precedence(door_open, box), Precedence(has_door_key, door_open) plus the card's Response. Both orders are forced by the level (`forced`: the door opens only with the matching key, the box room has no other entrance), and the progress pay reads the machine, so a step with no rule of its own would pay nothing."
+    },
+    {
+      "id": "tpl-response-1-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-blocked-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-BlockedUnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Whenever the ball is out of the way of the door, you must be holding the key at that moment or pick it up afterwards.",
+      "goal": false,
+      "template": "Response",
+      "status": "draft",
+      "expect": [["Response", ["blocker_moved", "has_door_key"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "pickup", "obj": "ball"}, {"do": "drop"}, {"do": "pickup", "obj": "key"}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Moves the ball, then waits and never takes the key.",
+            "steps": [{"do": "pickup", "obj": "ball"}, {"do": "drop"}, {"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [
+        "At every moment the ball is out of the way of the door, you have to be carrying the key then, or pick it up later.",
+        "If the ball has been moved away from the door, you must be holding the key at that point or at some later point.",
+        "Any time the ball is away from the door, the key must be in your hands at that moment or afterwards."
+      ],
+      "notes": "Changed in card fix 2: the trigger blocker_moved is a condition, not a latch (false again when the ball is dropped back on its cell), so Response needs the key in hand at the last moment the ball was out of the way or later. The task says exactly that and not 'keep holding it': a run that puts the key down and takes it again, or restores the ball and then takes and drops the key, satisfies the clause."
+    },
+    {
+      "id": "tpl-response-2-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-doorkey/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-DoorKey-8x8-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Whenever you are holding the key, the door must be open at that moment or opened afterwards. Then reach the goal.",
+      "goal": true,
+      "template": "Response",
+      "status": "draft",
+      "expect": [["Response", ["has_key", "door_open"], "hard"], ["Existence", ["at_goal"], "hard"]],
+      "also_ok": [
+        [
+          ["Response", ["has_key", "door_open"], "hard"],
+          ["Precedence", ["door_open", "at_goal"], "hard"],
+          ["Existence", ["at_goal"], "hard"]
+        ]
+      ],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "goto", "obj": "goal"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0, 1],
+            "why": "Takes the key, then waits: the door is never opened.",
+            "steps": [{"do": "pickup", "obj": "key"}, {"do": "wait", "n": 1000}]
+          },
+          {
+            "breaks": [1],
+            "why": "Takes the key and opens the door, then waits and never reaches the goal.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "No also_ok: Response and Precedence on a state that can turn false again are not equivalent. Changed in card fix 2: the trigger has_key stays true while the key is held, so the door must be open when the key was last held or later; the task now states that condition instead of the event reading, and a trace that opens then shuts the door while still holding the key fails by that wording."
+    },
+    {
+      "id": "tpl-response-2-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-UnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Whenever you are holding the key, the door must be open at that moment or opened afterwards.",
+      "goal": false,
+      "template": "Response",
+      "status": "draft",
+      "expect": [["Response", ["has_door_key", "door_open"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "pickup", "obj": "key"}, {"do": "toggle", "obj": "door"}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Takes the key, then waits: the door is never opened.",
+            "steps": [{"do": "pickup", "obj": "key"}, {"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Changed in card fix 2: the trigger has_door_key stays true while the key is held, so the door must be open when the key was last held or later; the task now states that condition instead of the event reading, and a trace that opens then shuts the door while still holding the key fails by that wording."
+    },
+    {
+      "id": "tpl-response-3-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-blocked-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-BlockedUnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Whenever you are holding the key, the door must be open at that moment or opened afterwards. Then pick up the box in the other room.",
+      "goal": true,
+      "template": "Response",
+      "status": "draft",
+      "expect": [
+        ["Response", ["has_door_key", "door_open"], "hard"],
+        ["Existence", ["target_picked_up"], "hard"]
+      ],
+      "also_ok": [
+        [
+          ["Response", ["has_door_key", "door_open"], "hard"],
+          ["Precedence", ["door_open", "target_picked_up"], "hard"],
+          ["Existence", ["target_picked_up"], "hard"]
+        ]
+      ],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "ball"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "box"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0, 1],
+            "why": "Clears the ball and takes the key, then waits: the door is never opened.",
+            "steps": [
+              {"do": "pickup", "obj": "ball"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Changed in card fix 2: the trigger has_door_key stays true while the key is held, so the door must be open when the key was last held or later; the task now states that condition instead of the event reading, and a trace that opens then shuts the door while still holding the key fails by that wording."
+    },
+    {
+      "id": "tpl-response-3-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-key-corridor/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-KeyCorridorS6R3-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Once you have found the key, the locked door must be open on the last step of the episode.",
+      "goal": false,
+      "template": "Response",
+      "status": "draft",
+      "expect": [["Response", ["key_found", "target_door_open"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "pickup", "obj": "key"}, {"do": "toggle", "obj": "door:locked"}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Takes the key, then waits: the locked door is never opened.",
+            "steps": [{"do": "pickup", "obj": "key"}, {"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Changed in card fix 2: the trigger key_found stays true once set, so Response needs the door open on the final step of the trace, not all the way through. The task says exactly that and not 'leave it open': a run that shuts the door and opens it again satisfies the clause. Card fixes 2026-11-18: a wait plan passes it on seeds 1-3 (the key is not in view); never trained (train false), a generation and plan-check card. The same env and clause with a goal, where waiting fails, is tpl-response-1-goal (trained)."
+    },
+    {
+      "id": "tpl-precedence-1-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-blocked-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-BlockedUnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Move the ball away from the door before you take the key. Then open the door with the key and pick up the box.",
+      "goal": true,
+      "template": "Precedence",
+      "status": "draft",
+      "expect": [
+        ["Precedence", ["blocker_moved", "has_door_key"], "hard"],
+        ["Precedence", ["has_door_key", "door_open"], "hard"],
+        ["Precedence", ["door_open", "target_picked_up"], "hard"],
+        ["Existence", ["target_picked_up"], "hard"]
+      ],
+      "forced": [1, 2],
+      "also_ok": [
+        [
+          ["Precedence", ["blocker_moved", "has_door_key"], "hard"],
+          ["Existence", ["door_open"], "hard"],
+          ["Existence", ["target_picked_up"], "hard"]
+        ],
+        [
+          ["Precedence", ["blocker_moved", "has_door_key"], "hard"],
+          ["Precedence", ["door_open", "target_picked_up"], "hard"],
+          ["Existence", ["target_picked_up"], "hard"]
+        ]
+      ],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "ball"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "box"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Takes the key before the ball is moved, then fixes it and finishes.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "ball"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "box"}
+            ]
+          },
+          {
+            "breaks": [3],
+            "why": "Does it in the right order but waits after opening the door.",
+            "steps": [
+              {"do": "pickup", "obj": "ball"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [
+        "Before taking the key, move the ball away from the door. Then open the door with the key and pick up the box.",
+        "Take the key only after the ball is out of the way, then use it to open the door and pick up the box.",
+        "First move the ball off the door, then take the key, open the door with it and pick up the box."
+      ],
+      "notes": "Not forced by the env: the key can be taken first (it is then dropped to free the hands). Chain reword 2026-11-19: the task names every step, so the answer is the chain Existence(box), Precedence(door_open, box), Precedence(has_door_key, door_open) plus the card's own Precedence(blocker_moved, has_door_key). The key-before-door and door-before-box orders are forced by the level (`forced`); the progress pay reads the machine, so a step with no rule of its own would pay nothing."
+    },
+    {
+      "id": "tpl-precedence-1-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": true, "box": false, "require": [], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "If you reach the exit, you must have flipped the switch first.",
+      "goal": false,
+      "template": "Precedence",
+      "status": "draft",
+      "expect": [["Precedence", ["switch_toggled", "at_exit"], "hard"]],
+      "also_ok": [
+        [
+          ["RespondedExistence", ["at_exit", "switch_toggled"], "hard"]
+        ]
+      ],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Ignores the siren, so the exit is reached with no switch toggled before.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["siren"]}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [
+        "You may only reach the exit after you have flipped the switch.",
+        "Do not reach the exit until you have flipped the switch.",
+        "Reaching the exit is allowed only once the switch has been flipped."
+      ],
+      "notes": "The first ring comes at step 1-4 and the exit is at least 6 moves away, so the policy toggles first. Changed in card fix 2: one conditional reading in every wording (a run that never flips the switch and never reaches the exit also passes); the earlier imperative could be read as asking for both. Card fixes 2026-11-18: a wait plan passes it on seeds 1-3 (the exit is never reached), so it no longer trains (train false); the same Precedence gate, with its trigger forced by a goal, is tested where waiting fails by tpl-precedence-1-goal. Kept for generation and plan checks. S2 2026-11-19: RespondedExistence(at_exit, switch_toggled) is also a correct output (`also_ok`): at_exit holds only on the last step and never together with switch_toggled, so a toggle can only come before it and the two readings accept and reject the same runs; the goal twin that trains is tpl-precedence-4-goal."
+    },
+    {
+      "id": "tpl-precedence-4-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": true, "box": false, "require": [], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Reach the exit, but you must have flipped the switch first.",
+      "goal": true,
+      "template": "Precedence",
+      "status": "draft",
+      "expect": [
+        ["Precedence", ["switch_toggled", "at_exit"], "hard"],
+        ["Existence", ["at_exit"], "hard"]
+      ],
+      "also_ok": [
+        [
+          ["RespondedExistence", ["at_exit", "switch_toggled"], "hard"],
+          ["Existence", ["at_exit"], "hard"]
+        ],
+        [
+          ["Existence", ["switch_toggled"], "hard"],
+          ["Existence", ["at_exit"], "hard"]
+        ]
+      ],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Ignores the siren, so the exit is reached with no switch toggled before.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["siren"]}]
+          },
+          {
+            "breaks": [1],
+            "why": "Waits in place and never reaches the exit.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "S2 2026-11-19, C2: the goal twin of tpl-precedence-1-nogoal (same rule plus a hard Existence(at_exit)). A wait plan fails the goal clause, so the card trains; the siren makes the toggle possible but never forces it, so a straight run to the exit breaks the rule. Same ServiceRoom env as the no-goal card; id k = 4 because k = 1 to 3 are the three levels of the suite."
+    },
+    {
+      "id": "tpl-precedence-2-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-doorkey/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-DoorKey-8x8-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Do not drop the key while the door is closed until the door has been opened once. Reach the goal.",
+      "goal": true,
+      "template": "Precedence",
+      "status": "draft",
+      "expect": [["Precedence", ["door_open", "key_lost"], "hard"], ["Existence", ["at_goal"], "hard"]],
+      "also_ok": [
+        [
+          ["Absence", ["key_lost"], "hard"],
+          ["Existence", ["at_goal"], "hard"]
+        ],
+        [
+          ["NotCoExistence", ["key_lost", "door_open"], "hard"],
+          ["Existence", ["at_goal"], "hard"]
+        ]
+      ],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "goto", "obj": "goal"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Drops the key while the door is still closed, picks it up again, then finishes.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "goto", "obj": "goal"}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "S2 2026-11-19: Absence(key_lost) and NotCoExistence(key_lost, door_open) are also correct outputs (`also_ok`): the goal forces the door open, and they are stronger than Precedence only on dropping the key after the door was opened and shut again, which the task never needs."
+    },
+    {
+      "id": "tpl-precedence-2-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-UnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Don't drop the key while the door is closed until the door has been opened once.",
+      "goal": false,
+      "template": "Precedence",
+      "status": "draft",
+      "expect": [["Precedence", ["door_open", "key_lost"], "hard"]],
+      "also_ok": [
+        [
+          ["Absence", ["key_lost"], "hard"]
+        ]
+      ],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "pickup", "obj": "key"}, {"do": "toggle", "obj": "door"}, {"do": "drop"}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Drops the key at once, with the door still closed.",
+            "steps": [{"do": "pickup", "obj": "key"}, {"do": "drop"}]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Card fixes 2026-11-18: a wait plan passes it on seeds 1-3 (the key is never dropped); never trained (train false), a generation and plan-check card. The same env and clause with a goal, where waiting fails, is tpl-precedence-3-goal (not trained); the trained Precedence gate is tpl-precedence-1-goal. S2 2026-11-19: Absence(key_lost) is also a correct output (`also_ok`): it is stronger than Precedence only on dropping the key after the door was opened and shut again, which the task never needs. NotCoExistence(key_lost, door_open) is not one: with no goal the door may never open, so it is weaker."
+    },
+    {
+      "id": "tpl-precedence-3-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-UnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Pick up the box in the other room, but do not drop the key while the door is closed until the door has been opened once.",
+      "goal": true,
+      "template": "Precedence",
+      "status": "draft",
+      "expect": [
+        ["Precedence", ["door_open", "key_lost"], "hard"],
+        ["Existence", ["target_picked_up"], "hard"]
+      ],
+      "also_ok": [
+        [
+          ["Absence", ["key_lost"], "hard"],
+          ["Existence", ["target_picked_up"], "hard"]
+        ],
+        [
+          ["NotCoExistence", ["key_lost", "door_open"], "hard"],
+          ["Existence", ["target_picked_up"], "hard"]
+        ]
+      ],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "box"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Drops the key while the door is still closed, picks it up again, then finishes.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "box"}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "S2 2026-11-19: Absence(key_lost) and NotCoExistence(key_lost, door_open) are also correct outputs (`also_ok`): the goal forces the door open, and they are stronger than Precedence only on dropping the key after the door was opened and shut again, which the task never needs."
+    },
+    {
+      "id": "tpl-precedence-3-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-blocked-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-BlockedUnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Do not take the key until you have moved the ball away from the door.",
+      "goal": false,
+      "template": "Precedence",
+      "status": "draft",
+      "expect": [["Precedence", ["blocker_moved", "has_door_key"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "pickup", "obj": "ball"}, {"do": "drop"}, {"do": "pickup", "obj": "key"}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Takes the key before the ball is moved.",
+            "steps": [{"do": "pickup", "obj": "key"}, {"do": "drop"}, {"do": "pickup", "obj": "ball"}]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Changed in card fix 2: the wording is the conditional ban (taking the key is allowed only after the ball has moved); a run that moves nothing and takes nothing also passes, so the earlier imperative no longer reads as a required action. Card fixes 2026-11-18: a wait plan passes it on seeds 1-3; never trained (train false), a generation and plan-check card. The same env and clause with a goal, where waiting fails, is tpl-precedence-1-goal (trained)."
+    },
+    {
+      "id": "tpl-chain-response-1-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": false, "box": true, "require": ["holding_box"], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Carry the box to the exit. Whenever the box falls, pick it up again on your very next move.",
+      "goal": true,
+      "template": "ChainResponse",
+      "status": "draft",
+      "expect": [
+        ["ChainResponse", ["box_fell", "holding_box"], "hard"],
+        ["Existence", ["at_exit"], "hard"],
+        ["Response", ["at_exit", "holding_box"], "hard"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0, 2],
+            "why": "Does not react to the fall and reaches the exit without the box.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [2],
+            "why": "Walks straight to the exit and never touches the box.",
+            "steps": [{"do": "goto", "obj": "exit"}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [
+        "Take the box to the exit. Each time the box falls, pick it up on your very next move.",
+        "Reach the exit with the box in your hands, and if the box falls, pick it up again on the very next move.",
+        "Get to the exit carrying the box; every time the box falls, your very next move must pick it up again."
+      ],
+      "notes": "Event room only: box_fell is an event, so the judge table can hold. The next-step pickup works when the box lands on the free front cell (the first cell tried); the solving policy waits in place with the box until its falls are done. The env require holding_box is deliberate: a fall only starts after a pickup. Changed in card fix 2: the task asks to carry the box to the exit, checked at the exit step (Response(at_exit, holding_box)), so a direct exit no longer passes; the solving policy was fixed for wall-side falls. S2 2026-11-19: generation-only: unfair in training, use the box-carry copy (a fall here does not turn the agent, see service_room.py face_fallen = carry); train false."
+    },
+    {
+      "id": "tpl-chain-response-1-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": false, "box": true, "require": ["holding_box"], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Whenever the box falls, pick it up again on your very next move. If you reach the exit, you must be carrying the box.",
+      "goal": false,
+      "template": "ChainResponse",
+      "status": "draft",
+      "expect": [
+        ["ChainResponse", ["box_fell", "holding_box"], "hard"],
+        ["Response", ["at_exit", "holding_box"], "hard"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0, 1],
+            "why": "Does not react to the fall and reaches the exit without the box.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [1],
+            "why": "Walks straight to the exit and never touches the box.",
+            "steps": [{"do": "goto", "obj": "exit"}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [
+        "Should the box fall, make your very next move the one that picks it back up. If you get to the exit, you must have the box in your hands.",
+        "Every time the box falls, your very next move must pick it up again; and if you reach the exit, you must be carrying the box.",
+        "After the box falls, the move right after it has to pick it up again. Do not reach the exit without the box in your hands."
+      ],
+      "notes": "Changed in card fix 2: the exit is not required, but a run that reaches it must carry the box at that step (Response(at_exit, holding_box)), so a direct exit no longer passes; the solving policy was fixed for wall-side falls. Staying put still satisfies both clauses. S2 2026-11-19: generation-only: unfair in training, use the box-carry copy (a fall here does not turn the agent, see service_room.py face_fallen = carry); train false."
+    },
+    {
+      "id": "tpl-chain-response-2-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": true, "box": true, "require": ["holding_box"], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Carry the box to the exit. Each time the box falls, your very next move must pick it up again.",
+      "goal": true,
+      "template": "ChainResponse",
+      "status": "draft",
+      "expect": [
+        ["ChainResponse", ["box_fell", "holding_box"], "hard"],
+        ["Existence", ["at_exit"], "hard"],
+        ["Response", ["at_exit", "holding_box"], "hard"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": ["siren"]}],
+        "wrong": [
+          {
+            "breaks": [0, 2],
+            "why": "Does not react to the fall and reaches the exit without the box.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [2],
+            "why": "Walks straight to the exit and never touches the box.",
+            "steps": [{"do": "goto", "obj": "exit"}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "The siren rings too; the task ignores it on purpose (distractor), and the solving policy ignores it. The env require holding_box is deliberate: a fall only starts after a pickup. Changed in card fix 2: the task asks to carry the box to the exit, checked at the exit step (Response(at_exit, holding_box)), so a direct exit no longer passes; the solving policy was fixed for wall-side falls and the siren detour. S2 2026-11-19: generation-only: unfair in training, use the box-carry copy (a fall here does not turn the agent, see service_room.py face_fallen = carry); train false."
+    },
+    {
+      "id": "tpl-chain-response-2-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": true, "box": true, "require": ["holding_box"], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Each time the box falls, pick it up again on your very next move. If you reach the exit, you must be carrying the box.",
+      "goal": false,
+      "template": "ChainResponse",
+      "status": "draft",
+      "expect": [
+        ["ChainResponse", ["box_fell", "holding_box"], "hard"],
+        ["Response", ["at_exit", "holding_box"], "hard"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": ["siren"]}],
+        "wrong": [
+          {
+            "breaks": [0, 1],
+            "why": "Does not react to the fall and reaches the exit without the box.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [1],
+            "why": "Walks straight to the exit and never touches the box.",
+            "steps": [{"do": "goto", "obj": "exit"}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "The siren rings too; the task ignores it on purpose (distractor), and the solving policy ignores it. Changed in card fix 2: the exit is not required, but a run that reaches it must carry the box at that step (Response(at_exit, holding_box)), so a direct exit no longer passes; the solving policy was fixed for wall-side falls and the siren detour. Staying put still satisfies both clauses. S2 2026-11-19: generation-only: unfair in training, use the box-carry copy (a fall here does not turn the agent, see service_room.py face_fallen = carry); train false."
+    },
+    {
+      "id": "tpl-chain-response-3-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": false, "box": true, "require": ["holding_box"], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Carry the box to the exit. If the box falls, pick it up again on your very next move.",
+      "goal": true,
+      "template": "ChainResponse",
+      "status": "draft",
+      "expect": [
+        ["ChainResponse", ["box_fell", "holding_box"], "hard"],
+        ["Existence", ["at_exit"], "hard"],
+        ["Response", ["at_exit", "holding_box"], "hard"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0, 2],
+            "why": "Does not react to the fall and reaches the exit without the box.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [2],
+            "why": "Walks straight to the exit and never touches the box.",
+            "steps": [{"do": "goto", "obj": "exit"}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "The env require holding_box is deliberate: a fall only starts after a pickup. Changed in card fix 2: the task asks to carry the box to the exit, checked at the exit step (Response(at_exit, holding_box)), so a direct exit no longer passes; the solving policy was fixed for wall-side falls. S2 2026-11-19: generation-only: unfair in training, use the box-carry copy (a fall here does not turn the agent, see service_room.py face_fallen = carry); train false."
+    },
+    {
+      "id": "tpl-chain-response-3-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": false, "box": true, "require": ["holding_box"], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "If the box falls, the very next move must pick it up again. If you reach the exit, you must be carrying the box.",
+      "goal": false,
+      "template": "ChainResponse",
+      "status": "draft",
+      "expect": [
+        ["ChainResponse", ["box_fell", "holding_box"], "hard"],
+        ["Response", ["at_exit", "holding_box"], "hard"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0, 1],
+            "why": "Does not react to the fall and reaches the exit without the box.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [1],
+            "why": "Walks straight to the exit and never touches the box.",
+            "steps": [{"do": "goto", "obj": "exit"}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "Changed in card fix 2: the exit is not required, but a run that reaches it must carry the box at that step (Response(at_exit, holding_box)), so a direct exit no longer passes; the solving policy was fixed for wall-side falls. Staying put still satisfies both clauses. S2 2026-11-19: generation-only: unfair in training, use the box-carry copy (a fall here does not turn the agent, see service_room.py face_fallen = carry); train false."
+    },
+    {
+      "id": "tpl-responded-existence-1-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-key-corridor/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-KeyCorridorS6R3-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "If you find the key, you must also open the locked door. Then pick up the ball.",
+      "goal": true,
+      "template": "RespondedExistence",
+      "status": "draft",
+      "expect": [
+        ["RespondedExistence", ["key_found", "target_door_open"], "hard"],
+        ["Existence", ["target_picked_up"], "hard"]
+      ],
+      "also_ok": [
+        [
+          ["Existence", ["target_picked_up"], "hard"]
+        ],
+        [
+          ["RespondedExistence", ["key_found", "target_door_open"], "hard"],
+          ["Precedence", ["target_door_open", "target_picked_up"], "hard"],
+          ["Existence", ["target_picked_up"], "hard"]
+        ]
+      ],
+      "env_reward_matches": true,
+      "train": true,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door:locked"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "ball"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0, 1],
+            "why": "Takes the key, then waits: the locked door is never opened.",
+            "steps": [{"do": "pickup", "obj": "key"}, {"do": "wait", "n": 1000}]
+          },
+          {
+            "breaks": [1],
+            "why": "Takes the key and opens the locked door, then waits and never picks up the ball.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door:locked"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [
+        "Should you find the key, you are also required to open the locked door. After that, get the ball.",
+        "Finding the key means you must open the locked door too; finally, pick up the ball.",
+        "Pick up the ball. If you find the key, you need to open the locked door as well."
+      ],
+      "notes": "Order is free. The other clause is implied by the finish, so the env reward pays exactly when it is done. Changed in card fix 2: `key_found` needs a clear view of the key (no credit through a wall); the task text is unchanged. Card fixes 2026-11-18: Existence(target_picked_up) alone is also a correct output (`also_ok`), because the ball already needs finding the key and opening the door."
+    },
+    {
+      "id": "tpl-responded-existence-1-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-UnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "If you pick up the key, you must also open the door.",
+      "goal": false,
+      "template": "RespondedExistence",
+      "status": "draft",
+      "expect": [["RespondedExistence", ["has_door_key", "door_open"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "pickup", "obj": "key"}, {"do": "toggle", "obj": "door"}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Takes the key, then waits: the door is never opened.",
+            "steps": [{"do": "pickup", "obj": "key"}, {"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [
+        "If you take the key, you also have to open the door.",
+        "Taking the key means you must open the door too.",
+        "You must open the door if you pick up the key."
+      ],
+      "notes": ""
+    },
+    {
+      "id": "tpl-responded-existence-2-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-blocked-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-BlockedUnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "If you move the ball, you must also take the key. Then pick up the box in the other room.",
+      "goal": true,
+      "template": "RespondedExistence",
+      "status": "draft",
+      "expect": [
+        ["RespondedExistence", ["blocker_moved", "has_door_key"], "hard"],
+        ["Existence", ["target_picked_up"], "hard"],
+        ["Precedence", ["has_door_key", "target_picked_up"], "hard"],
+        ["Precedence", ["blocker_moved", "target_picked_up"], "hard"]
+      ],
+      "forced": [2, 3],
+      "also_ok": [
+        [
+          ["Existence", ["target_picked_up"], "hard"]
+        ],
+        [
+          ["Precedence", ["has_door_key", "target_picked_up"], "hard"],
+          ["Existence", ["target_picked_up"], "hard"]
+        ]
+      ],
+      "env_reward_matches": true,
+      "train": false,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "ball"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "box"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0, 1],
+            "why": "Moves the ball, then waits: the key is never taken.",
+            "steps": [{"do": "pickup", "obj": "ball"}, {"do": "drop"}, {"do": "wait", "n": 1000}]
+          },
+          {
+            "breaks": [1],
+            "why": "Moves the ball and takes the key, then waits and never picks up the box.",
+            "steps": [
+              {"do": "pickup", "obj": "ball"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Card fixes 2026-11-18: Existence(target_picked_up) alone is also a correct output (`also_ok`), because every successful box run moves the ball and takes the key; the no-goal counterpart tests the conditional. Card fix 2026-11-20: the level forces both box orders (`forced`: the door opens only from the ball's cell and with the key, and the box room has no other entrance), so key-before-box and ball-before-box are optional extras of `expect`; the old `also_ok` answer with the key order is now `exact`. `Precedence(has_door_key, target_picked_up)` with `Existence(target_picked_up)` is `also_ok`: its compiled DFAs accept exactly the traces of that answer, because the order and the goal already force the key."
+    },
+    {
+      "id": "tpl-responded-existence-2-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": true, "box": false, "require": [], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "If the siren rings at any point in the run, you must flip the switch at least once somewhere in the run, before or after the ring.",
+      "goal": false,
+      "template": "RespondedExistence",
+      "status": "draft",
+      "expect": [["RespondedExistence", ["siren_ringing", "switch_toggled"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Ignores the siren, so the switch is never toggled.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["siren"]}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "Changed in card fix 2: the wording says one toggle anywhere in the run is enough when the siren rings, not one toggle after every ring (that is Response)."
+    },
+    {
+      "id": "tpl-responded-existence-3-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-UnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "If you take the key, you must also open the door. Then pick up the box in the other room.",
+      "goal": true,
+      "template": "RespondedExistence",
+      "status": "draft",
+      "expect": [
+        ["RespondedExistence", ["has_door_key", "door_open"], "hard"],
+        ["Existence", ["target_picked_up"], "hard"]
+      ],
+      "also_ok": [
+        [
+          ["Existence", ["target_picked_up"], "hard"]
+        ],
+        [
+          ["RespondedExistence", ["has_door_key", "door_open"], "hard"],
+          ["Precedence", ["door_open", "target_picked_up"], "hard"],
+          ["Existence", ["target_picked_up"], "hard"]
+        ]
+      ],
+      "env_reward_matches": true,
+      "train": false,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "box"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0, 1],
+            "why": "Takes the key, then waits: the door is never opened.",
+            "steps": [{"do": "pickup", "obj": "key"}, {"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Card fixes 2026-11-18: Existence(target_picked_up) alone is also a correct output (`also_ok`), because picking up the box already needs the key and the open door."
+    },
+    {
+      "id": "tpl-responded-existence-3-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-doorkey/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-DoorKey-8x8-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "If you pick up the key, you must also open the door.",
+      "goal": false,
+      "template": "RespondedExistence",
+      "status": "draft",
+      "expect": [["RespondedExistence", ["has_key", "door_open"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "pickup", "obj": "key"}, {"do": "toggle", "obj": "door"}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Takes the key, then waits: the door is never opened.",
+            "steps": [{"do": "pickup", "obj": "key"}, {"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Card fixes 2026-11-18: a wait plan passes it on seeds 1-3 (the key is never taken); never trained (train false), a generation and plan-check card. The same obligation with the key given at reset, where waiting fails, is tpl-responded-existence-1-nogoal-forced (trained); with a goal, tpl-responded-existence-1-goal (trained)."
+    },
+    {
+      "id": "tpl-not-co-existence-1-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-blocked-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-BlockedUnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Pick up the box in the other room, but never both drop the key while the door is still closed and open the door.",
+      "goal": true,
+      "template": "NotCoExistence",
+      "status": "draft",
+      "expect": [
+        ["NotCoExistence", ["key_lost", "door_open"], "hard"],
+        ["Existence", ["target_picked_up"], "hard"]
+      ],
+      "also_ok": [
+        [
+          ["Absence", ["key_lost"], "hard"],
+          ["Existence", ["target_picked_up"], "hard"]
+        ]
+      ],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "ball"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "box"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Takes the key before the ball, drops it with the door closed, then finishes.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "ball"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "box"}
+            ]
+          },
+          {
+            "breaks": [1],
+            "why": "Moves the ball, takes the key and opens the door, then waits and never picks up the box.",
+            "steps": [
+              {"do": "pickup", "obj": "ball"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [
+        "Get the box from the other room, while never letting both of these happen: you drop the key while the door is still closed, you open the door.",
+        "Pick up the box in the other room. You must not drop the key while the door is still closed and open the door in the same run.",
+        "Take the box from the other room; dropping the key while the door is still closed and opening the door must never both happen."
+      ],
+      "notes": "S2 2026-11-19: Absence(key_lost) is an `also_ok` answer: the goal forces the door open, so it accepts and rejects the same runs. Precedence(door_open, key_lost) is not one: it is weaker, it accepts opening the door, shutting it again and dropping the key, which the wording forbids."
+    },
+    {
+      "id": "tpl-not-co-existence-1-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-blocked-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-BlockedUnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Never both take the key and move the ball away from the door.",
+      "goal": false,
+      "template": "NotCoExistence",
+      "status": "draft",
+      "expect": [["NotCoExistence", ["blocker_moved", "has_door_key"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "pickup", "obj": "key"}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Moves the ball and then takes the key, so both happen.",
+            "steps": [{"do": "pickup", "obj": "ball"}, {"do": "drop"}, {"do": "pickup", "obj": "key"}]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [
+        "Taking the key and moving the ball away from the door must never both happen.",
+        "Do not both pick up the key and move the ball away from the door.",
+        "Make sure you never do both: pick up the key and clear the ball from the door."
+      ],
+      "notes": "The key can be reached without moving the ball. Doing neither also satisfies the clause. Card fixes 2026-11-18: a wait plan passes it on seeds 1-3 (an intended idle pass: no goal fits beside it, since the box needs both), so it no longer trains (train false); the NotCoExistence rule is tested where waiting fails by tpl-not-co-existence-1-goal. Kept for generation and plan checks."
+    },
+    {
+      "id": "tpl-not-co-existence-2-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-UnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Pick up the box in the other room, but never both drop the key while the door is still closed and open the door.",
+      "goal": true,
+      "template": "NotCoExistence",
+      "status": "draft",
+      "expect": [
+        ["NotCoExistence", ["key_lost", "door_open"], "hard"],
+        ["Existence", ["target_picked_up"], "hard"]
+      ],
+      "also_ok": [
+        [
+          ["Absence", ["key_lost"], "hard"],
+          ["Existence", ["target_picked_up"], "hard"]
+        ]
+      ],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "box"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Drops the key, picks it up again, then opens the door and finishes.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "box"}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "S2 2026-11-19: Absence(key_lost) is an `also_ok` answer: the goal forces the door open, so it accepts and rejects the same runs. Precedence(door_open, key_lost) is not one: it is weaker, it accepts opening the door, shutting it again and dropping the key, which the wording forbids."
+    },
+    {
+      "id": "tpl-not-co-existence-2-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-doorkey/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-DoorKey-8x8-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Never both drop the key while the door is still closed and open the door.",
+      "goal": false,
+      "template": "NotCoExistence",
+      "status": "draft",
+      "expect": [["NotCoExistence", ["key_lost", "door_open"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "pickup", "obj": "key"}, {"do": "toggle", "obj": "door"}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Drops the key, picks it up again, then opens the door.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Card fixes 2026-11-18: doing nothing passes (idle success is rule compliance, not task completion). Never trained (train false), a generation and plan-check card; where waiting fails, the same clause is tested by tpl-not-co-existence-1-goal (trained; on BlockedUnlockPickup a key-first run breaks it)."
+    },
+    {
+      "id": "tpl-not-co-existence-3-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-doorkey/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-DoorKey-8x8-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Reach the goal, but never both drop the key while the door is still closed and open the door.",
+      "goal": true,
+      "template": "NotCoExistence",
+      "status": "draft",
+      "expect": [
+        ["NotCoExistence", ["key_lost", "door_open"], "hard"],
+        ["Existence", ["at_goal"], "hard"]
+      ],
+      "also_ok": [
+        [
+          ["Absence", ["key_lost"], "hard"],
+          ["Existence", ["at_goal"], "hard"]
+        ]
+      ],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "goto", "obj": "goal"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Drops the key, picks it up again, then opens the door and finishes.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "goto", "obj": "goal"}
+            ]
+          },
+          {
+            "breaks": [1],
+            "why": "Takes the key and opens the door, then waits and never reaches the goal.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "S2 2026-11-19: Absence(key_lost) is an `also_ok` answer: the goal forces the door open, so it accepts and rejects the same runs. Precedence(door_open, key_lost) is not one: it is weaker, it accepts opening the door, shutting it again and dropping the key, which the wording forbids."
+    },
+    {
+      "id": "tpl-not-co-existence-3-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-key-corridor/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-KeyCorridorS6R3-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Never both take the matching key and get into the locked room.",
+      "goal": false,
+      "template": "NotCoExistence",
+      "status": "draft",
+      "expect": [["NotCoExistence", ["has_matching_key", "target_room_entered"], "hard"]],
+      "also_ok": [
+        [
+          ["Absence", ["target_room_entered"], "hard"]
+        ]
+      ],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "pickup", "obj": "key"}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Takes the key, opens the locked door and goes in.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door:locked"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "ball"}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Entering the room needs the key, so the only way to obey is to stay out. Card fixes 2026-11-18: a declared implication control. Absence(target_room_entered) is also a correct output (`also_ok`): entering needs the key first, so the two clauses judge every run alike. A wait plan passes it on seeds 1-3 and the env's goal (the ball) sits inside the room it bans; never trained (train false), so it stays a generation and plan-check control. NotCoExistence is tested where waiting fails by tpl-not-co-existence-1-goal (trained), a ban on an own action by tpl-absence-1-goal (trained)."
+    },
+    {
+      "id": "tpl-existence-soft-1-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": true, "box": false, "require": [], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Go to the exit, and try to flip the switch on the wall at some point.",
+      "goal": true,
+      "template": "Existence",
+      "status": "draft",
+      "expect": [["Existence", ["switch_toggled"], "soft"], ["Existence", ["at_exit"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Walks straight to the exit and never touches the switch: the goal is reached, the soft rule is not kept.",
+            "steps": [{"do": "goto", "obj": "exit"}]
+          },
+          {
+            "breaks": [0, 1],
+            "why": "Does nothing for the whole episode.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [
+        "Reach the exit, and if you can, flip the wall switch at least once.",
+        "Walk to the exit; try to toggle the switch on the wall at some point.",
+        "Get to the exit, and preferably flip the switch on the wall at some time."
+      ],
+      "notes": "Soft coverage card (2026-11-19). The switch is a detour on the way to the exit, so skipping it is the shortcut; the hard goal makes an idle agent fail, and the idle plan leaves the soft rule open too. No `also_ok`: the other forms of the rule differ on runs that never reach the exit."
+    },
+    {
+      "id": "tpl-existence-soft-2-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": false, "box": true, "require": [], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Go to the exit, and try to pick up the box at some point.",
+      "goal": true,
+      "template": "Existence",
+      "status": "draft",
+      "expect": [["Existence", ["holding_box"], "soft"], ["Existence", ["at_exit"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "box"},
+          {"do": "wait", "n": 8},
+          {"do": "goto", "obj": "exit"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Walks straight to the exit and never picks up the box.",
+            "steps": [{"do": "goto", "obj": "exit"}]
+          },
+          {
+            "breaks": [0, 1],
+            "why": "Does nothing for the whole episode.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "Soft coverage card (2026-11-19). The box lies off the straight walk to the exit, so skipping it is the shortcut. The solving plan waits 8 steps after the pickup so the fall (2 to 6 steps after it) is over and does not block the walk."
+    },
+    {
+      "id": "tpl-existence-soft-3-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": true, "box": true, "require": [], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Go to the exit, and try to flip the switch on the wall and to pick up the box at some point.",
+      "goal": true,
+      "template": "Existence",
+      "status": "draft",
+      "expect": [
+        ["Existence", ["switch_toggled"], "soft"],
+        ["Existence", ["holding_box"], "soft"],
+        ["Existence", ["at_exit"], "hard"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "box"},
+          {"do": "wait", "n": 8},
+          {"do": "policy", "name": "service_room", "ignore": []}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Picks up the box, then walks to the exit without touching the switch.",
+            "steps": [
+              {"do": "pickup", "obj": "box"},
+              {"do": "wait", "n": 8},
+              {"do": "goto", "obj": "exit"}
+            ]
+          },
+          {
+            "breaks": [1],
+            "why": "Flips the switch and goes to the exit, never picking up the box.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": []}]
+          },
+          {
+            "breaks": [0, 1],
+            "why": "Walks straight to the exit.",
+            "steps": [{"do": "goto", "obj": "exit"}]
+          },
+          {
+            "breaks": [0, 1, 2],
+            "why": "Does nothing for the whole episode.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "Soft coverage card (2026-11-19): two soft Existence rules and a hard goal. Each skipped rule is a shortcut; the plans break them one at a time and together."
+    },
+    {
+      "id": "tpl-existence-soft-1-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": true, "box": false, "require": [], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Try to flip the switch on the wall at some point.",
+      "goal": false,
+      "template": "Existence",
+      "status": "draft",
+      "expect": [["Existence", ["switch_toggled"], "soft"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Does nothing for the whole episode: the switch is never touched.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [
+        "If you can, flip the wall switch at least once.",
+        "At some point, try to toggle the switch on the wall.",
+        "Preferably flip the switch fixed to the wall at some time."
+      ],
+      "notes": "Soft-only card (2026-11-19, rule D3: soft breaks per episode, no pass or fail). The siren rings by itself from step 1 to 4 and only the switch silences it, so the world gives a reason to act; the idle plan leaves the rule open, so doing nothing shows as a soft break in every episode."
+    },
+    {
+      "id": "tpl-existence-two-soft-1-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": false, "box": true, "require": [], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Go to the exit, and try to be holding the box on at least two different moves.",
+      "goal": true,
+      "template": "ExistenceTwo",
+      "status": "draft",
+      "expect": [["ExistenceTwo", ["holding_box"], "soft"], ["Existence", ["at_exit"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "box"},
+          {"do": "wait", "n": 8},
+          {"do": "goto", "obj": "exit"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Walks straight to the exit and never holds the box.",
+            "steps": [{"do": "goto", "obj": "exit"}]
+          },
+          {
+            "breaks": [0],
+            "why": "Picks the box up and puts it straight down: it is held on one move only.",
+            "steps": [
+              {"do": "pickup", "obj": "box"},
+              {"do": "drop"},
+              {"do": "goto", "obj": "exit"}
+            ]
+          },
+          {
+            "breaks": [0, 1],
+            "why": "Does nothing for the whole episode.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [
+        "Reach the exit, and if you can, carry the box on at least two different moves.",
+        "Walk to the exit; try to have the box in your hands on two different moves or more.",
+        "Get to the exit, and preferably hold the box on at least two different moves."
+      ],
+      "notes": "Soft coverage card (2026-11-19). The box is off the straight walk to the exit, so never holding it is the shortcut. A pickup dropped at once holds it on one move only, so it breaks the rule too: ExistenceTwo is not Existence. A held box falls 2 to 6 steps after the pickup, so a kept hold is always two moves or more. No `also_ok`: Existence of the same proposition is weaker."
+    },
+    {
+      "id": "tpl-existence-two-soft-2-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": true, "box": true, "require": [], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Reach the exit. Preferably be holding the box on at least two different moves.",
+      "goal": true,
+      "template": "ExistenceTwo",
+      "status": "draft",
+      "expect": [["ExistenceTwo", ["holding_box"], "soft"], ["Existence", ["at_exit"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "box"},
+          {"do": "wait", "n": 8},
+          {"do": "goto", "obj": "exit"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Walks straight to the exit and never holds the box.",
+            "steps": [{"do": "goto", "obj": "exit"}]
+          },
+          {
+            "breaks": [0, 1],
+            "why": "Does nothing for the whole episode.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "Soft coverage card (2026-11-19). Same rule as `tpl-existence-two-soft-1-goal` in the room where the siren also rings (nothing in the task asks for the switch)."
+    },
+    {
+      "id": "tpl-existence-two-soft-3-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": false, "box": true, "require": ["holding_box"], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Go to the exit and, if you can, be holding the box on at least two different moves.",
+      "goal": true,
+      "template": "ExistenceTwo",
+      "status": "draft",
+      "expect": [["ExistenceTwo", ["holding_box"], "soft"], ["Existence", ["at_exit"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Walks straight to the exit and never holds the box.",
+            "steps": [{"do": "goto", "obj": "exit"}]
+          },
+          {
+            "breaks": [0],
+            "why": "Picks the box up and puts it straight down: it is held on one move only.",
+            "steps": [
+              {"do": "pickup", "obj": "box"},
+              {"do": "drop"},
+              {"do": "goto", "obj": "exit"}
+            ]
+          },
+          {
+            "breaks": [0, 1],
+            "why": "Does nothing for the whole episode.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "Soft coverage card (2026-11-19). The room pays at the exit only for an agent holding the box (`require`), which pushes the same way as the soft rule, but the judged success is the hard exit clause alone and `env_reward_matches` is false; the solving policy carries the box and picks it up after each fall."
+    },
+    {
+      "id": "tpl-existence-two-soft-1-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-lanes/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-Lanes-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Try to kill at least two zombies.",
+      "goal": false,
+      "template": "ExistenceTwo",
+      "status": "draft",
+      "expect": [["ExistenceTwo", ["zombie_killed"], "soft"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "policy", "name": "guard", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Does nothing for the whole episode: no zombie is killed.",
+            "steps": [{"do": "wait", "n": 300}]
+          }
+        ]
+      },
+      "event_seeds": [1, 3, 4],
+      "paraphrases": [
+        "If you can, kill two zombies or more.",
+        "Preferably kill at least two zombies.",
+        "Try to stop at least two zombies by walking onto them."
+      ],
+      "notes": "Soft-only card (2026-11-19, rule D3). Zombies enter the lanes by themselves, so the world offers kills in every episode; the idle plan kills none and shows as a soft break. The Lanes level has no goal and never ends before the 300-step limit."
+    },
+    {
+      "id": "tpl-absence-soft-1-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-blocked-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-BlockedUnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Pick up the box in the other room, and try not to drop the key while the door is still closed.",
+      "goal": true,
+      "template": "Absence",
+      "status": "draft",
+      "expect": [["Absence", ["key_lost"], "soft"], ["Existence", ["target_picked_up"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": true,
+      "train": true,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "ball"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "box"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Takes the key first and has to drop it with the door closed to move the ball, then finishes.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "ball"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "box"}
+            ]
+          },
+          {
+            "breaks": [1],
+            "why": "Moves the ball, takes the key and opens the door, then waits and never picks up the box.",
+            "steps": [
+              {"do": "pickup", "obj": "ball"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [
+        "Take the box from the other room, and try not to put the key down while the door is still closed.",
+        "Try not to drop the key while the door is still closed. Pick up the box in the other room.",
+        "Get the box in the other room, and preferably never drop the key before the door is open."
+      ],
+      "notes": "Soft coverage card (2026-11-19), the soft twin of `tpl-absence-1-goal`. The key is in reach without moving the ball, so taking it first is the natural order and forces a drop with the door closed; it is the same level as `cx-goal-one-rule` and `cx-goal-many-rules`, which stand for the other two soft Absence goal cards of the matrix. No `also_ok`: Precedence(door_open, key_lost) is weaker (S2 rule)."
+    },
+    {
+      "id": "tpl-absence-soft-1-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-lanes/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-Lanes-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Try not to let zombies through the side lanes.",
+      "goal": false,
+      "template": "Absence",
+      "status": "draft",
+      "expect": [["Absence", ["side_breach"], "soft"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "policy", "name": "guard", "ignore": ["top"]}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Holds the top lane first and loses side-lane zombies when they come in a pack (2 to 8 side breaches on seeds 1 to 6).",
+            "steps": [{"do": "policy", "name": "guard", "ignore": []}]
+          },
+          {
+            "breaks": [0],
+            "why": "Does nothing for the whole episode: every zombie of the side lanes gets through.",
+            "steps": [{"do": "wait", "n": 300}]
+          }
+        ]
+      },
+      "event_seeds": [1, 3, 4],
+      "paraphrases": [
+        "If you can, stop every zombie that walks down the middle or bottom lane.",
+        "Preferably keep zombies from getting through the two lower lanes.",
+        "Do your best not to let any zombie through the lanes below the top one."
+      ],
+      "notes": "Soft-only card (2026-11-19, rule D3). Zombies come by themselves and every one nobody stops gets through 27 steps later, so the idle plan breaks the rule in every episode. The rule can be kept: the guard that ignores the top lane keeps every side lane on seeds 1, 3, 4 and 5 and 6 (0 side breaches) and loses one zombie on seed 2; the guard that also holds the top lane loses 2 to 8. The card names no top-lane rule, so a top breach is allowed and does not end the episode."
+    },
+    {
+      "id": "tpl-response-soft-1-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": true, "box": false, "require": [], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Go to the exit, and whenever the siren rings, try to turn it off.",
+      "goal": true,
+      "template": "Response",
+      "status": "draft",
+      "expect": [["Response", ["siren_ringing", "switch_toggled"], "soft"], ["Existence", ["at_exit"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Ignores the siren and walks straight to the exit: the goal is reached, the siren keeps ringing.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["siren"]}]
+          },
+          {
+            "breaks": [0, 1],
+            "why": "Does nothing for the whole episode.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [
+        "Reach the exit, and each time the siren rings, try to switch it off.",
+        "Walk to the exit; if the siren goes off, try to silence it with the switch.",
+        "Get to the exit, and whenever the siren sounds, preferably turn it off."
+      ],
+      "notes": "Soft coverage card (2026-11-19), the soft twin of the hard `cx-siren` in a room that does not require a silent siren at the exit (`require` empty), so the environment reward does not pay for the rule. The siren rings by itself from step 1 to 4; answering it is a detour to the switch, so ignoring it is the shortcut."
+    },
+    {
+      "id": "tpl-response-soft-2-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room-carry/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": false, "box": true, "carry": true, "require": ["holding_box"], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Go to the exit, and whenever the box falls, try to pick it up again.",
+      "goal": true,
+      "template": "Response",
+      "status": "draft",
+      "expect": [["Response", ["box_fell", "holding_box"], "soft"], ["Existence", ["at_exit"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Does not react to the fall and reaches the exit without the box.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [0, 1],
+            "why": "Does nothing for the whole episode: the box falls and stays on the floor.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "Soft coverage card (2026-11-19). The agent starts holding the box and the first fall is forced (box-carry level, `../envs/service-room-carry/environment.md`), so the trigger comes in every episode; picking the box up again is a stop on the way to the exit, so leaving it is the shortcut."
+    },
+    {
+      "id": "tpl-precedence-soft-1-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-blocked-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-BlockedUnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Pick up the box in the other room, and try to move the ball away from the door before you take the key.",
+      "goal": true,
+      "template": "Precedence",
+      "status": "draft",
+      "expect": [["Precedence", ["blocker_moved", "has_door_key"], "soft"], ["Existence", ["target_picked_up"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": true,
+      "train": true,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "ball"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "box"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Takes the key before the ball is moved, drops it to move the ball, takes it again and finishes.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "ball"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "box"}
+            ]
+          },
+          {
+            "breaks": [1],
+            "why": "Moves the ball, takes the key and opens the door, then waits and never picks up the box.",
+            "steps": [
+              {"do": "pickup", "obj": "ball"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [
+        "Take the box from the other room, and try to clear the ball from the door before taking the key.",
+        "Try to move the ball off the door first, then take the key. Pick up the box in the other room.",
+        "Get the box in the other room; preferably the ball is out of the way of the door before you take the key."
+      ],
+      "notes": "Soft coverage card (2026-11-19), the soft twin of `tpl-precedence-1-goal`. The key lies in reach, so taking it first is the natural order; the ball has to move anyway for the door to open, so the order is the only thing the rule decides."
+    },
+    {
+      "id": "tpl-precedence-soft-2-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": true, "box": false, "require": [], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Go to the exit, and try to have flipped the switch on the wall before you get there.",
+      "goal": true,
+      "template": "Precedence",
+      "status": "draft",
+      "expect": [["Precedence", ["switch_toggled", "at_exit"], "soft"], ["Existence", ["at_exit"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Walks straight to the exit without flipping the switch.",
+            "steps": [{"do": "goto", "obj": "exit"}]
+          },
+          {
+            "breaks": [1],
+            "why": "Does nothing for the whole episode: the exit is never reached, so the rule has nothing to guard.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "Soft coverage card (2026-11-19), the soft twin of `tpl-precedence-4-goal`. The switch is a detour, so going to the exit first is the shortcut. The idle plan reaches no exit, so it breaks the goal only."
+    },
+    {
+      "id": "tpl-precedence-soft-3-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": false, "box": true, "require": [], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Go to the exit, and try to have picked up the box before you get there.",
+      "goal": true,
+      "template": "Precedence",
+      "status": "draft",
+      "expect": [["Precedence", ["holding_box", "at_exit"], "soft"], ["Existence", ["at_exit"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "box"},
+          {"do": "wait", "n": 8},
+          {"do": "goto", "obj": "exit"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Walks straight to the exit without picking up the box.",
+            "steps": [{"do": "goto", "obj": "exit"}]
+          },
+          {
+            "breaks": [1],
+            "why": "Does nothing for the whole episode: the exit is never reached, so the rule has nothing to guard.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "Soft coverage card (2026-11-19). The box is off the straight walk to the exit, so skipping it is the shortcut. The idle plan reaches no exit, so it breaks the goal only."
+    },
+    {
+      "id": "tpl-precedence-soft-1-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-lanes/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-Lanes-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Try not to let a zombie through a side lane before you have killed one.",
+      "goal": false,
+      "template": "Precedence",
+      "status": "draft",
+      "expect": [["Precedence", ["zombie_killed", "side_breach"], "soft"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "policy", "name": "guard", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Does nothing for the whole episode: a zombie gets through a side lane at step 28 or later with no kill before it.",
+            "steps": [{"do": "wait", "n": 300}]
+          }
+        ]
+      },
+      "event_seeds": [1, 3, 4],
+      "paraphrases": [
+        "If you can, kill a zombie before any zombie gets through the middle or bottom lane.",
+        "Preferably the first zombie you kill comes before the first side-lane breach.",
+        "Try to have killed a zombie by the time one gets through a side lane."
+      ],
+      "notes": "Soft-only card (2026-11-19, rule D3). Zombies come by themselves and a side-lane zombie nobody stops gets through at step 28 or later, so the idle plan breaks the rule in every episode; the guard kills its first zombie long before its first side breach (first kill at step 15 to 60, first side breach at 57 or later on seeds 1 to 6)."
+    },
+    {
+      "id": "tpl-chain-response-soft-1-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room-carry/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": false, "box": true, "carry": true, "require": ["holding_box"], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Go to the exit, and whenever the box falls, try to pick it up again on your very next move.",
+      "goal": true,
+      "template": "ChainResponse",
+      "status": "draft",
+      "expect": [["ChainResponse", ["box_fell", "holding_box"], "soft"], ["Existence", ["at_exit"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Does not react to the fall and reaches the exit without the box.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [0],
+            "why": "Waits until the box has fallen and picks it up late, not on the very next move, then waits out any second fall and walks to the exit.",
+            "steps": [
+              {"do": "wait", "n": 12},
+              {"do": "pickup", "obj": "box"},
+              {"do": "wait", "n": 8},
+              {"do": "goto", "obj": "exit"}
+            ]
+          },
+          {
+            "breaks": [0, 1],
+            "why": "Does nothing for the whole episode: the box falls and stays on the floor.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [
+        "Reach the exit, and each time the box falls, try to pick it up again on the next move.",
+        "Walk to the exit; if the box falls, try to make your very next move a pickup of it.",
+        "Get to the exit, and if the box falls, preferably pick it up again on your very next move."
+      ],
+      "notes": "Soft coverage card (2026-11-19), the soft counterpart of the `ChainResponse` clause of `tpl-chain-response-1-goal-carry` alone (the hard card also has `Response(at_exit, holding_box)`, which only `tpl-chain-response-soft-3-goal` mirrors). The agent starts holding the box and the first fall is forced (box-carry level), and the fall turns the agent to face the box, so a pickup on the next move is always possible. Picking it up is a stop on the way to the exit, so leaving it is the shortcut. No `also_ok`: Response(box_fell, holding_box) is weaker."
+    },
+    {
+      "id": "tpl-chain-response-soft-2-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": false, "box": true, "require": ["holding_box"], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Go to the exit. Each time the box falls, try to make your very next move pick it up again.",
+      "goal": true,
+      "template": "ChainResponse",
+      "status": "draft",
+      "expect": [["ChainResponse", ["box_fell", "holding_box"], "soft"], ["Existence", ["at_exit"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Picks the box up, then does not react to the fall and reaches the exit without it.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [1],
+            "why": "Does nothing for the whole episode: the box is never picked up, so it never falls and the rule has nothing to guard, but the exit is never reached.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "Soft coverage card (2026-11-19), the plain room (the agent picks the box up itself) with the same rule as `tpl-chain-response-soft-1-goal`. Untrained, like the other plain-room ChainResponse cards: a fall there does not turn the agent, so the rule is only fair to a policy that waits in place for the fall, as the scripted one does. The siren is left out: the scripted policy answers a ringing siren before a fall, which breaks the next-move rule."
+    },
+    {
+      "id": "tpl-chain-response-soft-3-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room-carry/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": false, "box": true, "carry": true, "require": ["holding_box"], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Go to the exit, and try to be carrying the box when you get there. If the box falls, try to pick it up again on your very next move.",
+      "goal": true,
+      "template": "ChainResponse",
+      "status": "draft",
+      "expect": [
+        ["ChainResponse", ["box_fell", "holding_box"], "soft"],
+        ["Response", ["at_exit", "holding_box"], "soft"],
+        ["Existence", ["at_exit"], "hard"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0, 1],
+            "why": "Does not react to the fall and reaches the exit without the box.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [0, 2],
+            "why": "Does nothing for the whole episode: the box falls and stays on the floor.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "Soft coverage card (2026-11-19), the soft twin of `tpl-chain-response-1-goal-carry`: both of its rules are soft, only the exit is hard. Response(at_exit, holding_box) breaks whenever the agent reaches the exit with empty hands."
+    },
+    {
+      "id": "tpl-chain-response-soft-1-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room-carry/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": false, "box": true, "carry": true, "require": ["holding_box"], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Whenever the box falls, try to pick it up again on your very next move.",
+      "goal": false,
+      "template": "ChainResponse",
+      "status": "draft",
+      "expect": [["ChainResponse", ["box_fell", "holding_box"], "soft"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Does not react to the fall and walks to the exit without the box.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [0],
+            "why": "Does nothing for the whole episode: the box falls and stays on the floor.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [
+        "If the box falls, try to make your very next move a pickup of it.",
+        "Each time the box slips out of your hands, preferably pick it up again on the next move.",
+        "When the box falls, try to pick it up again on your very next move."
+      ],
+      "notes": "Soft-only card (2026-11-19, rule D3). The agent starts holding the box and the first fall is forced at a seeded step from 2 to 8 (box-carry level), so the trigger comes in every episode and the idle plan breaks the rule in every episode. The fall turns the agent to face the box, so keeping the rule is always possible."
+    },
+    {
+      "id": "tpl-responded-existence-soft-1-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": true, "box": false, "require": [], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Go to the exit, and if the siren rings at any point, try to flip the switch at least once.",
+      "goal": true,
+      "template": "RespondedExistence",
+      "status": "draft",
+      "expect": [["RespondedExistence", ["siren_ringing", "switch_toggled"], "soft"], ["Existence", ["at_exit"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Ignores the siren and walks straight to the exit: the goal is reached, the switch is never flipped.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["siren"]}]
+          },
+          {
+            "breaks": [0, 1],
+            "why": "Does nothing for the whole episode.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [
+        "Reach the exit, and if the siren rings during the run, try to toggle the switch at least once.",
+        "Walk to the exit; should the siren ever ring, try to flip the wall switch once or more, before or after.",
+        "Get to the exit, and if the siren sounds at any time, preferably flip the switch at least once."
+      ],
+      "notes": "Soft coverage card (2026-11-19), the soft twin of `tpl-responded-existence-2-nogoal` with a goal. The siren rings by itself from step 1 to 4, so the trigger always comes; the switch is a detour, so skipping it is the shortcut."
+    },
+    {
+      "id": "tpl-responded-existence-soft-2-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": true, "box": true, "require": [], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Go to the exit, and if the siren rings at any point, try to pick up the box at least once.",
+      "goal": true,
+      "template": "RespondedExistence",
+      "status": "draft",
+      "expect": [["RespondedExistence", ["siren_ringing", "holding_box"], "soft"], ["Existence", ["at_exit"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "box"},
+          {"do": "wait", "n": 8},
+          {"do": "goto", "obj": "exit"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Walks straight to the exit and never picks up the box.",
+            "steps": [{"do": "goto", "obj": "exit"}]
+          },
+          {
+            "breaks": [0, 1],
+            "why": "Does nothing for the whole episode.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "Soft coverage card (2026-11-19). The siren (forced, step 1 to 4) is the trigger and the box pickup is the answer; the box is off the straight walk to the exit, so skipping it is the shortcut."
+    },
+    {
+      "id": "tpl-responded-existence-soft-3-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room-carry/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": true, "box": true, "carry": true, "require": ["holding_box"], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Go to the exit, and if the box falls at any point, try to flip the switch at least once.",
+      "goal": true,
+      "template": "RespondedExistence",
+      "status": "draft",
+      "expect": [["RespondedExistence", ["box_fell", "switch_toggled"], "soft"], ["Existence", ["at_exit"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Ignores the siren: the box falls (forced) and the switch is never flipped, the exit is reached.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["siren"]}]
+          },
+          {
+            "breaks": [0, 1],
+            "why": "Does nothing for the whole episode.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "Soft coverage card (2026-11-19). The agent starts holding the box and the first fall is forced (box-carry level), so the trigger always comes; the siren also rings from step 1 to 4 and the switch silences it. The solving policy answers both."
+    },
+    {
+      "id": "tpl-responded-existence-soft-1-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": true, "box": false, "require": [], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "If the siren rings at any point, try to flip the switch at least once.",
+      "goal": false,
+      "template": "RespondedExistence",
+      "status": "draft",
+      "expect": [["RespondedExistence", ["siren_ringing", "switch_toggled"], "soft"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Ignores the siren and walks to the exit, which ends the episode with the switch untouched.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["siren"]}]
+          },
+          {
+            "breaks": [0],
+            "why": "Does nothing for the whole episode: the siren rings and the switch is never flipped.",
+            "steps": [{"do": "wait", "n": 1000}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [
+        "Should the siren ring during the run, try to toggle the wall switch at least once.",
+        "If the siren goes off at some point, try to flip the switch once or more, before or after.",
+        "If the siren sounds at any time, preferably flip the switch at least once."
+      ],
+      "notes": "Soft-only card (2026-11-19, rule D3). The siren rings by itself from step 1 to 4, so the trigger comes in every episode and the idle plan breaks the rule in every episode; the room pays nothing for answering it."
+    },
+    {
+      "id": "tpl-not-co-existence-soft-1-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-blocked-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-BlockedUnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Pick up the box in the other room, but try not to both drop the key while the door is still closed and open the door.",
+      "goal": true,
+      "template": "NotCoExistence",
+      "status": "draft",
+      "expect": [["NotCoExistence", ["key_lost", "door_open"], "soft"], ["Existence", ["target_picked_up"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": true,
+      "train": true,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "ball"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "box"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Takes the key first and has to drop it with the door closed to move the ball, then opens the door and finishes: both happen.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "ball"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "box"}
+            ]
+          },
+          {
+            "breaks": [1],
+            "why": "Moves the ball, takes the key and opens the door, then waits and never picks up the box.",
+            "steps": [
+              {"do": "pickup", "obj": "ball"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [
+        "Take the box from the other room, and try never to both drop the key before the door is open and open the door.",
+        "Try not to do both of these: drop the key while the door is still closed, and open the door. Pick up the box in the other room.",
+        "Get the box in the other room; preferably do not both drop the key with the door closed and open the door."
+      ],
+      "notes": "Soft coverage card (2026-11-19), the soft twin of `tpl-not-co-existence-1-goal`. The key is in reach without moving the ball, so taking it first is the natural order and forces a drop with the door closed; the door has to open anyway, so both events happen on that order. No `also_ok`: a soft `Absence(key_lost)` is stronger than this card, but doors can be shut again, so the two are not worth equating here."
+    },
+    {
+      "id": "tpl-not-co-existence-soft-2-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-UnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Pick up the box in the other room, but try not to both drop the key while the door is still closed and open the door.",
+      "goal": true,
+      "template": "NotCoExistence",
+      "status": "draft",
+      "expect": [["NotCoExistence", ["key_lost", "door_open"], "soft"], ["Existence", ["target_picked_up"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": true,
+      "train": false,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "box"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Drops the key once with the door closed, picks it up again and opens the door: both happen.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "box"}
+            ]
+          },
+          {
+            "breaks": [1],
+            "why": "Takes the key and opens the door, then waits and never picks up the box.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Soft coverage card (2026-11-19), the soft twin of `tpl-not-co-existence-2-goal`. Nothing in the level makes the agent drop the key, so the break is a deliberate detour: the card checks the soft reading of the template, not a shortcut."
+    },
+    {
+      "id": "tpl-not-co-existence-soft-3-goal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-doorkey/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-DoorKey-8x8-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Reach the goal, but try not to both drop the key while the door is still closed and open the door.",
+      "goal": true,
+      "template": "NotCoExistence",
+      "status": "draft",
+      "expect": [["NotCoExistence", ["key_lost", "door_open"], "soft"], ["Existence", ["at_goal"], "hard"]],
+      "also_ok": [],
+      "env_reward_matches": true,
+      "train": false,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "goto", "obj": "goal"}
+        ],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Drops the key once with the door closed, picks it up again, opens the door and reaches the goal: both happen.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "goto", "obj": "goal"}
+            ]
+          },
+          {
+            "breaks": [1],
+            "why": "Takes the key and opens the door, then waits and never reaches the goal.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Soft coverage card (2026-11-19), the soft twin of `tpl-not-co-existence-3-goal`. Nothing in the level makes the agent drop the key, so the break is a deliberate detour: the card checks the soft reading of the template, not a shortcut."
+    },
+    {
+      "id": "tpl-not-co-existence-soft-1-nogoal",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-lanes/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-Lanes-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Try not to let zombies through both the top lane and the side lanes.",
+      "goal": false,
+      "template": "NotCoExistence",
+      "status": "draft",
+      "expect": [["NotCoExistence", ["top_breach", "side_breach"], "soft"]],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "policy", "name": "guard", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0],
+            "why": "Does nothing for the whole episode: zombies get through the top lane and the side lanes.",
+            "steps": [{"do": "wait", "n": 300}]
+          }
+        ]
+      },
+      "event_seeds": [1, 3, 4],
+      "paraphrases": [
+        "If you can, do not let both the top lane and a side lane be breached.",
+        "Preferably zombies get through either the top lane or the side lanes, never both.",
+        "Try to keep at least one of the two groups of lanes, the top one or the side ones, free of breaches."
+      ],
+      "notes": "Soft-only card (2026-11-19, rule D3). Zombies come by themselves and every one nobody stops gets through, so the idle plan breaches the top lane and the side lanes in every episode. The guard keeps the top lane clean on every seed it was run on (1 to 6), which is enough; the guard that ignores the top lane keeps the side lanes clean on seeds 1, 3, 4, 5 and 6 and also passes there."
+    }
+  ]
+}

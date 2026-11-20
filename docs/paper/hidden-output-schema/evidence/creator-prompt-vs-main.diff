@@ -1,0 +1,35 @@
+diff --git a/app/src/prompts/compiler-rm/reward-ltlf-creator.system.md b/app/src/prompts/compiler-rm/reward-ltlf-creator.system.md
+index 3209931..9bd88bf 100644
+--- a/app/src/prompts/compiler-rm/reward-ltlf-creator.system.md
++++ b/app/src/prompts/compiler-rm/reward-ltlf-creator.system.md
+@@ -32,8 +32,8 @@ Build the clause set from the task's own words:
+   `Existence(c)`, `Precedence(b, c)` and `Precedence(a, b)`. With `Existence(c)` hard, the
+   chain forces `a` and `b`, so they get no `Existence`: one `Existence` per step drops the
+   order the task states, and an `Existence` next to the chain only repeats it. When the last
+-  step is only preferred ("then preferably `c`"), `Existence(c)` is soft and forces nothing:
+-  the last hard step `b` is then lone and gets a hard `Existence(b)`.
++  step is only preferred ("then preferably `c`"), `Existence(c)` is soft and forces nothing,
++  but `Precedence(b, c)` stays: the last hard step `b` is then lone and gets a hard `Existence(b)`.
+ - Keep every `Precedence` of a stated order even when the environment already guarantees that
+   order: it records what the task asks, and it is what makes the earlier step happen. Never
+   replace it with an `Existence` of the earlier step. Never add a `Precedence` to or from a
+@@ -60,7 +60,7 @@ Build the clause set from the task's own words:
+   chain links to a later event that has its own hard `Existence`; the chain already forces it.
+   Steps that may come in any order before the same step `c` each get their own
+   `Precedence` to `c`, and no `Existence`. Then make sure every lone commanded step has its
+-  hard `Existence`.
++  hard `Existence` and every consecutive pair of a stated order has its `Precedence`.
+
+ ## Priority
+
+@@ -79,5 +79,9 @@ ${declare_priorities}
+ 6. Never weaken or silently omit part of the task to make it executable.
+ 7. A binary clause never repeats one proposition, as in `Precedence(a, a)`.
+
+-Return only JSON matching the caller-provided schema. Do not output formulas, rewards,
++Return only one JSON object of this shape, with one entry per clause:
++`{"clauses": [{"normalized_clause": "<the requirement this clause covers, in natural language>",
++"pattern": "<template>", "propositions": ["a", "b"], "priority": "hard"}]}`. `pattern` is a
++template name from the table, `propositions` holds its arguments in order (one for a unary
++template), `priority` is `hard` or `soft`. Do not output formulas, rewards,
+ states, transitions, explanations, or fields not requested by that schema.
