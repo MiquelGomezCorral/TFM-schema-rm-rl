@@ -335,3 +335,14 @@ through their inputs and prompts, while both challenge the same generator.
   after 10 reruns in a row. This replaces FARM's free reruns of invalid candidates from 2026-10-14
   (up to 110 candidates per task at the limit of 10) and stops `arm-fm` from spending attempts on
   outages (user, card fix round 2).
+- 2026-11-17, user decision: pay in whole units, ten times the earlier numbers (`PROGRESS_REWARD` 1,
+  finish 10, well -10; in the code since 2026-11-18, commit `deff802`); older entries keep the numbers
+  of their date (see [RM execution](rm-execution.md)).
+- 2026-11-19 (user): a machine whose text exceeds the prompt bound (200,000 characters) reaches the
+  critic, the labeling and the description prompts as a state list: each state's role, the stages it
+  still owes and its shortest event path from the start, at most 300 states, then a "more not listed"
+  line. Descriptions and tags go in batches of 20, so every state is described and embedded. A warning
+  goes to the run log, the CLI and the manifest (`generation.state_list_view`). Under the bound nothing
+  changes. The embedding context refuses a machine above the bound. Why: the shop machine of 6 rules
+  reaches 2.4M characters and the one of 7 rules 7.1M; the size is a known limit, and machine
+  minimization once verified, or LTLf written directly instead of templates, is future work.
