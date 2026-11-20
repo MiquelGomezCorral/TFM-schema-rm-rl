@@ -82,6 +82,14 @@ open when the key was last held or later, as in `tpl-response-2-goal` and `-3-go
 replaces the ball. `tpl-response-3-nogoal` stays on KeyCorridorS6R3 as a generation and plan-check card.
 The bundles and traces of the old card are those of the old task until `generate-suite` is rerun.
 
+RespondedExistence goal card fixed (2026-11-20): on BlockedUnlockPickup the box comes after the ball move
+and after the key (the door opens only from the ball's cell and with the key; the box room has no other
+entrance), so `tpl-responded-existence-2-goal` lists both orders in `forced`, and its old `also_ok` answer
+with the key order is now `exact`. `Precedence(has_door_key, target_picked_up)` plus
+`Existence(target_picked_up)`, without the `RespondedExistence`, is `also_ok`: the order and the goal force
+the key, so it accepts the same traces (checked on the compiled DFAs, every reachable product state of the
+two sets agrees). Strong models gave this answer in the model comparison and the scorer marked it wrong.
+
 ## Soft cards (2026-11-19)
 
 28 cards word a rule as a wish ("try to ...", "preferably ...") and mark it soft in `expect`, so every
