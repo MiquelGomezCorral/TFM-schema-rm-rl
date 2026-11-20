@@ -1,0 +1,296 @@
+{
+ "title": "Response goal card on UnlockPickup: 9 of 9 learned",
+ "eyebrow": "response goal card · MiniGrid-UnlockPickup-v0 · 2026-11-20",
+ "subtitle": "The Response goal card (`tpl-response-1-goal`) moved from KeyCorridorS6R3, where no method solved it, to UnlockPickup. Its three accepted machines trained on 3 seeds each and all 9 runs learned.",
+ "sections": [
+  {
+   "id": "result",
+   "title": "What it shows",
+   "blocks": [
+    {
+     "type": "callout",
+     "tone": "ok",
+     "title": "In plain words",
+     "text": "The card says: whenever you hold the key, the door must be open then or later; pick up the key, open the door, then pick up the box in the other room. On UnlockPickup, every machine the card accepts (the expected answer and its two accepted alternatives) trained to a policy that passes the judge on every seed: 100 of 100 greedy test episodes hold every hard rule and reach the goal. The three machines pay 13, 12 and 12 for the finish, and finish in 17 to 18 steps."
+    },
+    {
+     "type": "stats",
+     "items": [
+      {
+       "value": "9 of 9",
+       "label": "trainings learned (3 machines x 3 seeds), judged success 1.00 on 100 greedy episodes each",
+       "tone": "ok"
+      },
+      {
+       "value": "221k to 324k",
+       "label": "steps to 0.9 eval success, range over the 9 runs (1.5M steps allowed)",
+       "tone": "info"
+      },
+      {
+       "value": "0 of 3",
+       "label": "on the old environment (KeyCorridorS6R3) with the card's old machine; none of 71 runs on that level learned",
+       "tone": "bad"
+      },
+      {
+       "value": "17 to 18",
+       "label": "steps per greedy episode; the scripted solving plan takes 19",
+       "tone": "info"
+      }
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**Setup.** One-hot machine state, PPO setting s07 (16 envs x 256 steps, lr 1e-3), 1.5M steps, procedural layouts, seeds 1 to 3 per machine. Judge: 100 greedy test episodes per run (test seeds from 2000000); a seed learned when the hard rules held in at least 0.8 of them.",
+      "**Gate before training.** Each machine passed the pay-order check, the bundle review, a plan-trace check (75 traces, 0 mismatches) and the labeling check against the reference (5,047 compared, 0 differ). No model call, no change to the compiler.",
+      "**Scripted baselines on the same seeds.** Idle: hard rules held 0.00, length 288. The solving plan: 1.00, length 19."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "why",
+   "title": "Why the card moved",
+   "blocks": [
+    {
+     "type": "text",
+     "text": "On the old environment, `MiniGrid-KeyCorridorS6R3-v0`, no method solved this card. The card's old machine (solve pay 21:1, 43:1, 51:11) trained 0 of 3. A sweep of every run folder in the main checkout and 24 worktrees found 0 of 71 KeyCorridorS6R3 runs that learned, and no run on a smaller KeyCorridor size. The project rule is that an unsolved card moves to a level that is learnable, instead of retrying the same one."
+    },
+    {
+     "type": "text",
+     "text": "UnlockPickup has the same chain (key, locked door, box in another room), is the easier version, and had learned runs: ARM-FM 3 of 3 and FARM 1 of 3 (below), and 4 of 27 runs in the whole sweep (DoorKey-8x8: 45 of 72; BlockedUnlockPickup: 22 of 178). It was also the one level with a learned run and no Response goal card, so the three Response goal cards now sit on three levels (DoorKey, BlockedUnlockPickup, UnlockPickup). The new wording keeps the Response sentence of the other two cards and adds the chain. Card change: commit `0e821b8`, merged as `54f2c71`."
+    }
+   ]
+  },
+  {
+   "id": "machines",
+   "title": "The three machines",
+   "intro": "Each graph is the live RM component (drag a state, click an edge for its cases, Ctrl + scroll to zoom). The fold-out under it has the NL task, the clauses, the LTLf and the RM text. The expected answer holds all four clauses. Accepted answers 1 and 2 drop the key-before-door precedence the level already forces (answer 1 also the door-before-box one), so they accept the same runs.",
+   "blocks": [
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/expect.html",
+       "height": 520,
+       "alt": "Reward Machine of the expected answer",
+       "caption": "**Expected answer (`response-card-expect`)** · 7 states · final u4 · rejecting u1\nTask: *Whenever you are holding the key, the door must be open at that moment or opened afterwards. Pick up the key, open the door with it, then pick up the box in the other room.*",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Machine as built for the training runs (`evidence/response-card-expect.reward_machine.txt`).",
+        "code": "# Task (NL)\nWhenever you are holding the key, the door must be open at that moment or opened afterwards. Pick up the key, open the door with it, then pick up the box in the other room.\n\n# Clauses (all hard, card tpl-response-1-goal, evidence/tpl-response-1-goal.json)\nResponse(has_door_key, door_open)            hard\nPrecedence(has_door_key, door_open)          hard\nPrecedence(door_open, target_picked_up)      hard\nExistence(target_picked_up)                  hard\n\n# LTLf, one per clause\nResponse(has_door_key, door_open): (G(has_door_key->(Fdoor_open)))\nPrecedence(has_door_key, door_open): (((~door_open)Uhas_door_key)|(G(~door_open)))\nPrecedence(door_open, target_picked_up): (((~target_picked_up)Udoor_open)|(G(~target_picked_up)))\nExistence(target_picked_up): (Ftarget_picked_up)\n\n# RM text (graphs/expect.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6\nINITIAL_STATE: u0\nFINAL_STATES: u4\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&!has_door_key&target_picked_up) -> u1\n(u0, !door_open&has_door_key&!target_picked_up) -> u2\n(u0, !door_open&has_door_key&target_picked_up) -> u1\n(u0, door_open&!has_door_key&!target_picked_up) -> u1\n(u0, door_open&!has_door_key&target_picked_up) -> u1\n(u0, door_open&has_door_key&!target_picked_up) -> u3\n(u0, door_open&has_door_key&target_picked_up) -> u4\n(u2, !door_open&target_picked_up) -> u1\n(u2, door_open&!target_picked_up) -> u3\n(u2, door_open&target_picked_up) -> u4\n(u3, !door_open&!has_door_key&target_picked_up) -> u4\n(u3, !door_open&has_door_key&!target_picked_up) -> u5\n(u3, !door_open&has_door_key&target_picked_up) -> u6\n(u3, door_open&target_picked_up) -> u4\n(u5, !door_open&target_picked_up) -> u6\n(u5, door_open&!target_picked_up) -> u3\n(u5, door_open&target_picked_up) -> u4\n(u6, door_open) -> u4\nREWARD_FUNCTION:\n(u0, !door_open&!has_door_key&target_picked_up, u1) -> -10\n(u0, !door_open&has_door_key&!target_picked_up, u2) -> 1\n(u0, !door_open&has_door_key&target_picked_up, u1) -> -10\n(u0, door_open&!has_door_key&!target_picked_up, u1) -> -10\n(u0, door_open&!has_door_key&target_picked_up, u1) -> -10\n(u0, door_open&has_door_key&!target_picked_up, u3) -> 2\n(u0, door_open&has_door_key&target_picked_up, u4) -> 13\n(u2, !door_open&target_picked_up, u1) -> -11\n(u2, door_open&!target_picked_up, u3) -> 1\n(u2, door_open&target_picked_up, u4) -> 12\n(u3, !door_open&!has_door_key&target_picked_up, u4) -> 11\n(u3, !door_open&has_door_key&!target_picked_up, u5) -> -1\n(u3, door_open&target_picked_up, u4) -> 11\n(u5, !door_open&target_picked_up, u6) -> 1\n(u5, door_open&!target_picked_up, u3) -> 1\n(u5, door_open&target_picked_up, u4) -> 12\n(u6, door_open, u4) -> 11"
+       }
+      },
+      {
+       "src": "graphs/ok1.html",
+       "height": 520,
+       "alt": "Reward Machine of the accepted answer 1",
+       "caption": "**Accepted answer 1 (`response-card-ok1`)** · 8 states · final u5 · no rejecting state\nTask: *Whenever you are holding the key, the door must be open at that moment or opened afterwards. Pick up the key, open the door with it, then pick up the box in the other room.*",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Machine as built for the training runs (`evidence/response-card-ok1.reward_machine.txt`).",
+        "code": "# Task (NL)\nWhenever you are holding the key, the door must be open at that moment or opened afterwards. Pick up the key, open the door with it, then pick up the box in the other room.\n\n# Clauses (all hard, card tpl-response-1-goal, evidence/tpl-response-1-goal.json)\nResponse(has_door_key, door_open)            hard\nExistence(door_open)                         hard\nExistence(target_picked_up)                  hard\n\n# LTLf, one per clause\nResponse(has_door_key, door_open): (G(has_door_key->(Fdoor_open)))\nExistence(door_open): (Fdoor_open)\nExistence(target_picked_up): (Ftarget_picked_up)\n\n# RM text (graphs/ok1.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6, u7\nINITIAL_STATE: u0\nFINAL_STATES: u5\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&!has_door_key&target_picked_up) -> u1\n(u0, !door_open&has_door_key&!target_picked_up) -> u2\n(u0, !door_open&has_door_key&target_picked_up) -> u3\n(u0, door_open&!target_picked_up) -> u4\n(u0, door_open&target_picked_up) -> u5\n(u1, !door_open&has_door_key) -> u3\n(u1, door_open) -> u5\n(u2, !door_open&target_picked_up) -> u3\n(u2, door_open&!target_picked_up) -> u4\n(u2, door_open&target_picked_up) -> u5\n(u3, door_open) -> u5\n(u4, !door_open&!has_door_key&target_picked_up) -> u5\n(u4, !door_open&has_door_key&!target_picked_up) -> u6\n(u4, !door_open&has_door_key&target_picked_up) -> u7\n(u4, door_open&target_picked_up) -> u5\n(u6, !door_open&target_picked_up) -> u7\n(u6, door_open&!target_picked_up) -> u4\n(u6, door_open&target_picked_up) -> u5\n(u7, door_open) -> u5\nREWARD_FUNCTION:\n(u0, !door_open&!has_door_key&target_picked_up, u1) -> 1\n(u0, !door_open&has_door_key&target_picked_up, u3) -> 1\n(u0, door_open&!target_picked_up, u4) -> 1\n(u0, door_open&target_picked_up, u5) -> 12\n(u1, door_open, u5) -> 11\n(u2, !door_open&target_picked_up, u3) -> 1\n(u2, door_open&!target_picked_up, u4) -> 1\n(u2, door_open&target_picked_up, u5) -> 12\n(u3, door_open, u5) -> 11\n(u4, !door_open&!has_door_key&target_picked_up, u5) -> 11\n(u4, !door_open&has_door_key&!target_picked_up, u6) -> -1\n(u4, door_open&target_picked_up, u5) -> 11\n(u6, !door_open&target_picked_up, u7) -> 1\n(u6, door_open&!target_picked_up, u4) -> 1\n(u6, door_open&target_picked_up, u5) -> 12\n(u7, door_open, u5) -> 11"
+       }
+      },
+      {
+       "src": "graphs/ok2.html",
+       "height": 520,
+       "alt": "Reward Machine of the accepted answer 2",
+       "caption": "**Accepted answer 2 (`response-card-ok2`)** · 7 states · final u4 · rejecting u1\nTask: *Whenever you are holding the key, the door must be open at that moment or opened afterwards. Pick up the key, open the door with it, then pick up the box in the other room.*",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Machine as built for the training runs (`evidence/response-card-ok2.reward_machine.txt`).",
+        "code": "# Task (NL)\nWhenever you are holding the key, the door must be open at that moment or opened afterwards. Pick up the key, open the door with it, then pick up the box in the other room.\n\n# Clauses (all hard, card tpl-response-1-goal, evidence/tpl-response-1-goal.json)\nResponse(has_door_key, door_open)            hard\nPrecedence(door_open, target_picked_up)      hard\nExistence(target_picked_up)                  hard\n\n# LTLf, one per clause\nResponse(has_door_key, door_open): (G(has_door_key->(Fdoor_open)))\nPrecedence(door_open, target_picked_up): (((~target_picked_up)Udoor_open)|(G(~target_picked_up)))\nExistence(target_picked_up): (Ftarget_picked_up)\n\n# RM text (graphs/ok2.rm)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6\nINITIAL_STATE: u0\nFINAL_STATES: u4\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&!has_door_key&target_picked_up) -> u1\n(u0, !door_open&has_door_key&!target_picked_up) -> u2\n(u0, !door_open&has_door_key&target_picked_up) -> u1\n(u0, door_open&!target_picked_up) -> u3\n(u0, door_open&target_picked_up) -> u4\n(u2, !door_open&target_picked_up) -> u1\n(u2, door_open&!target_picked_up) -> u3\n(u2, door_open&target_picked_up) -> u4\n(u3, !door_open&!has_door_key&target_picked_up) -> u4\n(u3, !door_open&has_door_key&!target_picked_up) -> u5\n(u3, !door_open&has_door_key&target_picked_up) -> u6\n(u3, door_open&target_picked_up) -> u4\n(u5, !door_open&target_picked_up) -> u6\n(u5, door_open&!target_picked_up) -> u3\n(u5, door_open&target_picked_up) -> u4\n(u6, door_open) -> u4\nREWARD_FUNCTION:\n(u0, !door_open&!has_door_key&target_picked_up, u1) -> -10\n(u0, !door_open&has_door_key&target_picked_up, u1) -> -10\n(u0, door_open&!target_picked_up, u3) -> 1\n(u0, door_open&target_picked_up, u4) -> 12\n(u2, !door_open&target_picked_up, u1) -> -10\n(u2, door_open&!target_picked_up, u3) -> 1\n(u2, door_open&target_picked_up, u4) -> 12\n(u3, !door_open&!has_door_key&target_picked_up, u4) -> 11\n(u3, !door_open&has_door_key&!target_picked_up, u5) -> -1\n(u3, door_open&target_picked_up, u4) -> 11\n(u5, !door_open&target_picked_up, u6) -> 1\n(u5, door_open&!target_picked_up, u3) -> 1\n(u5, door_open&target_picked_up, u4) -> 12\n(u6, door_open, u4) -> 11"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "table",
+   "title": "Per-seed results",
+   "blocks": [
+    {
+     "type": "text",
+     "text": "Source: `evidence/judge.out` (chain-regression judge, 2026-11-20 09:47, 100 greedy episodes per run). \"Hard rules held\" is the judge's success: every hard clause of the card's expected answer holds in the episode. \"Goal\" is the environment's own success flag. RM return is the mean machine return of the greedy episode."
+    },
+    {
+     "type": "table",
+     "columns": [
+      "Machine",
+      "Seed",
+      "Hard rules held",
+      "Goal",
+      "Hard breaks a game",
+      "RM return",
+      "Episode length",
+      "Steps to 0.9 eval success",
+      "Wall"
+     ],
+     "rows": [
+      [
+       "response-card-expect",
+       "1",
+       "1.00",
+       "1.00",
+       "0.00",
+       "13.00",
+       "18",
+       "241,664",
+       "18 min"
+      ],
+      [
+       "response-card-expect",
+       "2",
+       "1.00",
+       "1.00",
+       "0.00",
+       "13.00",
+       "17",
+       "221,184",
+       "19 min"
+      ],
+      [
+       "response-card-expect",
+       "3",
+       "1.00",
+       "1.00",
+       "0.00",
+       "13.00",
+       "17",
+       "262,144",
+       "20 min"
+      ],
+      [
+       "response-card-ok1",
+       "1",
+       "1.00",
+       "1.00",
+       "0.00",
+       "12.00",
+       "17",
+       "303,104",
+       "21 min"
+      ],
+      [
+       "response-card-ok1",
+       "2",
+       "1.00",
+       "1.00",
+       "0.00",
+       "12.00",
+       "18",
+       "282,624",
+       "21 min"
+      ],
+      [
+       "response-card-ok1",
+       "3",
+       "1.00",
+       "1.00",
+       "0.00",
+       "12.00",
+       "18",
+       "303,104",
+       "21 min"
+      ],
+      [
+       "response-card-ok2",
+       "1",
+       "1.00",
+       "1.00",
+       "0.00",
+       "12.00",
+       "18",
+       "282,624",
+       "21 min"
+      ],
+      [
+       "response-card-ok2",
+       "2",
+       "1.00",
+       "1.00",
+       "0.00",
+       "12.00",
+       "18",
+       "323,584",
+       "21 min"
+      ],
+      [
+       "response-card-ok2",
+       "3",
+       "1.00",
+       "1.00",
+       "0.00",
+       "12.00",
+       "18",
+       "262,144",
+       "20 min"
+      ]
+     ]
+    },
+    {
+     "type": "text",
+     "text": "Per machine: steps to 0.9 eval success `[221184, 241664, 262144]` (expect), `[282624, 303104, 303104]` (ok1), `[262144, 282624, 323584]` (ok2); none \"never\". The expected machine reaches 0.9 first, the two machines that name no key step (ok1, ok2) take 40k to 60k steps longer; the key alone earns nothing on them, so the start is slower, not blocked."
+    }
+   ]
+  },
+  {
+   "id": "earlier",
+   "title": "Earlier numbers on this level",
+   "blocks": [
+    {
+     "type": "callout",
+     "tone": "warn",
+     "title": "Not like for like",
+     "text": "These are different machines (the Base unlock-pickup task of the ARM-FM and FARM generators, not this card) and the old pay. They show only that the level was learnable. Do not compare them with the table above."
+    },
+    {
+     "type": "table",
+     "columns": [
+      "Run (old pay, 1.5M steps, PPO s07)",
+      "Seeds learned",
+      "Steps to 0.9, per seed"
+     ],
+     "rows": [
+      [
+       "ARM-FM `base-unlock-pickup`",
+       "3 of 3",
+       "393,216 / 262,144 / 282,624 (final exit rate 0.99 / 1.00 / 0.98)"
+      ],
+      [
+       "FARM `base-unlock-pickup`",
+       "1 of 3",
+       "never / 684,032 / never (seeds 1 and 3 ended at exit rate 0.00)"
+      ],
+      [
+       "No machine",
+       "0 of 3",
+       "never (exit rate 0.00)"
+      ]
+     ]
+    },
+    {
+     "type": "text",
+     "text": "Source: the move report's learning evidence (run folders `bench__ta1-base-fast__base-unlock-pickup__arm-fm__ppo`, `bench__fa1-base-fast__base-unlock-pickup__farm__ppo`, `bench__ta1-base-fast__base-unlock-pickup__no-rm__ppo`; each `seed*/summary.json`). The risk it named, FARM 1 of 3, did not repeat: the new card's machines are different machines."
+    }
+   ]
+  },
+  {
+   "id": "files",
+   "title": "Files and rerun",
+   "blocks": [
+    {
+     "type": "list",
+     "items": [
+      "`evidence/judge.out`: the judge output. `evidence/response-card-{expect,ok1,ok2}.reward_machine.txt`: the machines. `evidence/tpl-response-1-goal.json`: the card as on main (task, expected answer, accepted answers, plans, notes). `graphs/`: each machine as live HTML, SVG and RM text.",
+      "**Rerun the judge** (needs the 9 run folders, which are not copied): `PYTHONPATH=app python outputs/chain-reg/chain_judge.py --queue outputs/chain-reg/queue.json --episodes 100 --out outputs/chain-reg/judge.out`, from the `tp-response-card` worktree. The graphs: `PYTHONPATH=app python app/main.py render-rm --rm-file <machine>.reward_machine.txt --svg-dir <out>.svg --html`.",
+      "**Code.** Card move `0e821b8` (`MiquelGomezCorral/tp-response-card`), merged into main as `54f2c71`."
+     ]
+    }
+   ]
+  }
+ ]
+}
