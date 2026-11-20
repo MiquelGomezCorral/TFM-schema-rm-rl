@@ -1,0 +1,25 @@
+diff --git a/app/src/arm_fm/ppo.py b/app/src/arm_fm/ppo.py
+index 60150b9..9962d51 100644
+--- a/app/src/arm_fm/ppo.py
++++ b/app/src/arm_fm/ppo.py
+@@ -505,6 +505,7 @@ class RolloutCollector:
+             )
+             done = np.logical_or(terminated, truncated)
+             reward = torch.as_tensor(rewards, dtype=torch.float32, device=self.device)
++            reward = reward * CONFIG.ppo_reward_scale
+             timed_out = np.nonzero(truncated & ~terminated)[0]
+             rollout.rewards[step] = self._bootstrap_timeouts(
+                 CONFIG, agent, reward, timed_out, infos
+diff --git a/app/src/config/config.py b/app/src/config/config.py
+index 8f2ffdb..8954afe 100644
+--- a/app/src/config/config.py
++++ b/app/src/config/config.py
+@@ -398,6 +398,8 @@ class Configuration:
+     ppo_norm_adv: bool = True
+     ppo_ent_coef: float = 0.01
+     ppo_vf_coef: float = 0.5
++    # Multiplies the reward PPO trains on (logged returns stay unscaled); 1.0 keeps it as it is.
++    ppo_reward_scale: float = 1.0
+     # PPO exploration variants; each default leaves training unchanged.
+     # Entropy bonus falls linearly from ppo_ent_coef_start (None: ppo_ent_coef) to ppo_ent_coef
+     # over ppo_ent_decay_steps env steps (0: no schedule).

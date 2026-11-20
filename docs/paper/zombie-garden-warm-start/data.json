@@ -427,6 +427,127 @@
    ]
   },
   {
+   "id": "rerun",
+   "title": "Rerun on main, 3 seeds and a plain control (2026-11-20)",
+   "intro": "The same two arms rerun on main, to check that the result survives main's current pay. Nothing here changes a number above.",
+   "blocks": [
+    {
+     "type": "callout",
+     "tone": "warn",
+     "title": "Label: warm start (hack)",
+     "text": "warm start (hack): the agent just gets that as the best policy. The warm-start rows below are a diagnostic, not a training result."
+    },
+    {
+     "type": "list",
+     "items": [
+      "**What ran.** Two arms, 3 seeds each, 3M steps, on main `9bd6aeb` (the chain-step pay and the hard-break take-back) plus the uncommitted `ppo_reward_scale` (`evidence/rerun-main-ppo_reward_scale.diff`). Warm start (hack): the 12-round clone `bc-gp8-12` with the settings of the loop's best arm (R5d). Plain control: the same settings with no warm start (the loop's R3 `rs01ed`). Settings: PPO, `ppo_reward_scale` 0.1, entropy 0.01 to 0 over 2.5M steps, lr 1e-3 annealed, clip 0.1 (value too), 16 envs x 256 steps, one-hot machine state, `reward_source: rm`. Judge: 100 greedy test episodes per run, seeds 2000000 and up.",
+      "**Gate before training, all passed** (`evidence/rerun-main-gate.json`, no LLM call). check-pay-order: `not started 0 > soft break -95.0959 > hard break -96.0959; ok`. Clause review: the stored clauses equal the card's three (`Absence(top_breach)` hard, `Absence(side_breach)` soft, `Absence(plant_trampled)` soft), one per sentence, nothing missing or extra. Plan-trace: 25 traces (the card's solve, 3 wrong plans and an idle plan on seeds 1 to 5), 0 mismatches; the solve plan beats every other plan on every seed.",
+      "**The machine does not change under main's pay.** Rebuilding the rewards under main gives a `reward_machine.txt` byte-identical to the loop's: an Absence-only machine has no ordered steps to pay or take back. The clone and the judge's constants (-96.0959, -1) therefore stay valid. The rerun reproduces the loop's per-run judge lines for both arms to the printed digits (R5d and R3 in `evidence/judge-R5d.out` and `evidence/judge-R3.out`)."
+     ]
+    },
+    {
+     "type": "table",
+     "columns": [
+      "Run",
+      "Arm",
+      "Top held",
+      "Side breaches a game",
+      "Plants trampled a game",
+      "Kills a game",
+      "RM"
+     ],
+     "rows": [
+      [
+       "lt-WS-warm-s1",
+       "warm start (hack), seed 1",
+       "1.00",
+       "9.83",
+       "0.44",
+       "18.4",
+       "-10.27"
+      ],
+      [
+       "lt-WS-warm-s2",
+       "warm start (hack), seed 2",
+       "0.99",
+       "9.86",
+       "0.52",
+       "18.3",
+       "-11.34"
+      ],
+      [
+       "lt-WS-warm-s3",
+       "warm start (hack), seed 3",
+       "1.00",
+       "9.87",
+       "0.53",
+       "18.4",
+       "-10.40"
+      ],
+      [
+       "lt-WS-plain-s1",
+       "plain control, seed 1",
+       "0.98",
+       "17.30",
+       "0.12",
+       "9.7",
+       "-19.34"
+      ],
+      [
+       "lt-WS-plain-s2",
+       "plain control, seed 2",
+       "0.97",
+       "16.62",
+       "0.16",
+       "10.1",
+       "-19.66"
+      ],
+      [
+       "lt-WS-plain-s3",
+       "plain control, seed 3",
+       "1.00",
+       "17.52",
+       "0.15",
+       "9.5",
+       "-17.67"
+      ],
+      [
+       {
+        "text": "Mean, warm start (hack), n=3",
+        "tone": "warn"
+       },
+       "warm start (hack)",
+       "1.00",
+       "9.85",
+       {
+        "text": "0.50",
+        "tone": "bad"
+       },
+       "18.3",
+       {
+        "text": "-10.67",
+        "tone": "ok"
+       }
+      ],
+      [
+       "Mean, plain control, n=3",
+       "plain control",
+       "0.98",
+       "17.15",
+       "0.14",
+       "9.7",
+       "-18.89"
+      ]
+     ]
+    },
+    {
+     "type": "text",
+     "heading": "Against the loop's bar",
+     "text": "The bar, on 3 of 3 seeds: top held at least 0.88, side breaches at most 5.5 a game (or near the better scripted policy, `gp8m` at 10.0), plants trampled at most 0.2, RM at least -17.06 (the scripted guard). The warm start (hack) keeps the top lane, halves side breaches (17.15 to 9.85) and doubles kills (9.7 to 18.3), but tramples 0.50 plants a game against 0.14 for the plain run, so it still fails the plants bar on every seed. The plain run passes the plants bar and never finds the side-lane policy: 17.15 side breaches, RM -18.89, below the guard's -17.06. Neither arm passes."
+    }
+   ]
+  },
+  {
    "id": "evidence",
    "title": "Evidence, rerun and code",
    "blocks": [
@@ -438,6 +559,7 @@
       "**Settings.** `evidence/configs/`: the seed-1 config of each key line (plain R3 `rs01ed`, R2 `rs01`, R5b `n64`; hack lines R5, R5c, R5d, R6, R4 `both`). The seeds 2 and 3 differ only in the seed and the run name. `evidence/ppo_reward_scale.diff` is the code change.",
       "**Clones.** The scripts that built the behaviour clone, priced the critic and replayed the episodes were written for the `tp-lanes-tune` layout (they read run folders and configs that are not copied), so they are not kept. `evidence/bc-gp8.out` and `evidence/bc-gp8-12.out` are the DAgger logs (4 and 12 rounds). Training scripts need the PPO trainer and take hours, so they were not rerun for this page; the clone weights (8 MB each) are not copied.",
       "**Graph and card.** `graphs/lanes-rules.html`, `.svg` and `.rm`; `evidence/card/lanes-rules.json`. `check/lanes_ltlf.py` prints the LTLf.",
+      "**Rerun on main.** `evidence/rerun-main-judge.out` (per run and per arm), `evidence/rerun-main-gate.json` (the gate before training) and `evidence/rerun-main-ppo_reward_scale.diff` (the code change the arms need). The configs are the seed-1 configs of R5d and R3 above, with the bundle, `init_from` and run name changed.",
       "**Source reports.** The numbers on this page come from `evidence/judge-R*.out` and `evidence/noise_check.out`. One sentence of the loop's report (\"top-only is the best choice at PPO's noise\") is stricter than its own table, which has `gp8m` ahead of top-only at eps 0.10 and 0.20; the page follows the table.",
       "**Code.** `ppo_reward_scale`: uncommitted diff in worktree `tp-lanes-tune` (branch `MiquelGomezCorral/tp-lanes-tune`, base `0389b0b`). commit: pending, not merged."
      ]
