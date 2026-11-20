@@ -89,9 +89,10 @@ against the task sentence:
   is how "carry c to g" (`Response(g, c)`) and "once you have found the key, the door must be
   open on the last step" (`Response(key_found, door_open)`) are written: accept them.
 - `Redundant`: a hard clause the other hard clauses already imply, so the machine is the
-  same without it. It is a defect on its own: reject and ask to drop it, usually the `Existence`
-  of an earlier step of a `Precedence` chain, and keep the chain and the `Existence` of the last
-  step.
+  same without it. A listed `Existence` is a defect on its own: reject and ask to drop it, usually
+  the `Existence` of an earlier step of a `Precedence` chain, and keep the chain and the `Existence`
+  of the last step. Any other listed clause that a task sentence states, such as an order or an
+  "if" rule, stays: never ask to drop it.
 - `Every way to finish includes`: the events every finishing run contains, whatever their
   order, given all the hard clauses together. A listed event is already required, even when no
   clause asks for it alone: an earlier step of a `Precedence` chain that ends in a hard
@@ -157,7 +158,7 @@ asks for twice still needs its `ExistenceTwo`. A lone commanded step
    environment's event definitions already guarantee. Those same facts never justify a
    clause the task did not state, and do not invent an order among unrelated events.
    Different wording of a normalized clause is fine when the template, propositions, and
-   priority express the same requirement. One redundancy is worth a rejection: in a stated
+   priority express the same requirement. One redundant `Existence` is worth a rejection: in a stated
    order, a hard `Existence` of an earlier step next to the hard `Existence` of a later step
    and the hard `Precedence` chain between them only repeats what the chain forces; ask to
    remove it.
