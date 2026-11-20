@@ -85,8 +85,10 @@ tasks, while keeping the generator and critic responsibilities stable.
 - A correct candidate is accepted without optional changes. Rejection identifies a
   necessary defect in an actual clause, header, or transition; an RM semantic defect
   includes a feasible event sequence following the candidate's rows. Critics do not
-  demand redundant existence clauses, environment-guaranteed prerequisites, optional
+  demand environment-only prerequisites (an order the task does not state), optional
   guard merging, different reward magnitudes, or penalties on valid rejecting sinks.
+  The only redundancy defect on its own is a listed hard `Existence` that the other hard
+  clauses imply; an order or an "if" rule the task states is never redundant.
 - Critic responses remain JSON with boolean `accepted` and nonempty `feedback`.
   Prompt feedback begins with `NO CHANGES NEEDED` or `CHANGES REQUIRED`. These are
   prompt instructions, not an additional execution-evidence gate or automated override
@@ -107,8 +109,10 @@ tasks, while keeping the generator and critic responsibilities stable.
 - The creator assumes the task is feasible in its environment; there is no refusal field.
   Whether a task can be done at all is the environment author's and the user's responsibility.
 - The environment's `## Constraints` are declared facts that the generator and the critic read. The
-  compiler never applies them; the critic rejects a clause that restates one or that rests on an
-  event the environment cannot produce, and keeps any clause it doubts.
+  compiler never applies them; the critic rejects a clause that rests on an event the environment
+  cannot produce, and keeps any clause it doubts. A task-stated order stays and is required even
+  when the environment guarantees it, and a missing stated order is a defect; environment facts
+  never justify a clause the task did not state.
 - The generator and the critic run at one shared reasoning level (`--reasoning`: `none`, `low`,
   `medium`, `high`, `max`; default `none`), sent on every provider request of the run. On the
   OpenCode provider, a model that refuses `none` (HTTP 400: it cannot turn thinking off) gets `low`
@@ -346,3 +350,8 @@ through their inputs and prompts, while both challenge the same generator.
   changes. The embedding context refuses a machine above the bound. Why: the shop machine of 6 rules
   reaches 2.4M characters and the one of 7 rules 7.1M; the size is a known limit, and machine
   minimization once verified, or LTLf written directly instead of templates, is future work.
+- 2026-11-20 (user): a task-stated order stays in the machine and its absence is a defect, even when
+  the environment already guarantees it; an order the task does not state is still never added from
+  environment facts. Only a listed hard `Existence` that the other hard clauses imply is a redundancy
+  defect; a stated order or "if" rule is never redundant (critic prompt commit `d5ec36e`). This
+  reverses the rule that the critic rejects a clause restating an environment-guaranteed order.
