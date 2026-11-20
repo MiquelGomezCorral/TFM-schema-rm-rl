@@ -31,6 +31,9 @@ PLAIN = {
     "NotCoExistence": "{0} and {1} never both happen in one episode",
 }
 
+# The patterns the critic rejects when the other hard clauses imply them.
+GOAL_PATTERNS = ("Existence", "ExistenceTwo")
+
 # A machine has up to 2^n transitions per state over n propositions: above this there is no block.
 MAX_PROPOSITIONS = 12
 
@@ -113,6 +116,14 @@ class _Dfa:
         )
         if quiet is None:
             raise ValueError("incomplete DFA")
+        # The start's label stands for the empty trace, so no step may enter the start again,
+        # unless the start is the quiet state and so carries its label anyway.
+        if any(
+            end == self.initial and not (source == self.initial == quiet)
+            for source, edges in self.edges.items()
+            for *_, end in edges
+        ):
+            raise ValueError("a DFA whose start state is entered again")
         self.quiet = quiet
         self.start_label = self.labels[quiet]
 
@@ -197,8 +208,11 @@ def _plain_line(number: int, clause: ClauseProposal, dfa: _Dfa, alphabet: Sequen
         owed = reach(dfa.quiet, ClauseState.PENDING)
         how = f"owed after: {_path_text(owed, alphabet)}" if owed else "never owed"
 
-    if clause.priority is not PriorityLevel.HARD:
+    soft = clause.priority is not PriorityLevel.HARD
+    if soft and broken:
         cost = "soft: a break costs a penalty and the episode goes on"
+    elif soft:
+        cost = "soft: still owed when the episode ends costs a penalty"
     elif broken:
         cost = "a hard break fails the episode"
     else:
@@ -278,17 +292,19 @@ def _groups(clauses: Sequence[ClauseProposal], hard: Sequence[int]) -> list[list
     return [members for _, members in groups]
 
 
-def _implied(unmet_sets: Sequence[set[int]], groups: Sequence[Sequence[int]]) -> list[int]:
-    """The positions of the hard clauses the others imply, going from the last to the first.
+def _implied(
+    unmet_sets: Sequence[set[int]], groups: Sequence[Sequence[int]], order: Iterable[int]
+) -> list[int]:
+    """The positions of the hard clauses the others imply, trying them in ``order``.
 
     A kept clause is needed when some state has it unsatisfied alone: its own group reaches such a
     state, and every other group reaches one with all its kept clauses satisfied. A clause that is
-    not needed leaves the kept set, so two copies of a rule flag only the later one.
+    not needed leaves the kept set, so of two copies of a rule only the one tried first is flagged.
     """
     group_of = {position: number for number, group in enumerate(groups) for position in group}
     kept = (1 << len(group_of)) - 1
     implied = []
-    for position in reversed(range(len(group_of))):
+    for position in order:
         bit = 1 << position
         alone = any(unmet & kept == bit for unmet in unmet_sets[group_of[position]])
         others_met = all(
@@ -302,10 +318,15 @@ def _implied(unmet_sets: Sequence[set[int]], groups: Sequence[Sequence[int]]) ->
     return implied
 
 
-def _stays(dfa: _Dfa) -> bool:
-    """Whether every state a step can lead to has a step that keeps it there."""
-    ends = {end for edges in dfa.edges.values() for _, _, end in edges}
-    return all(any(end == state for _, _, end in dfa.edges[state]) for state in ends)
+def _waits(dfa: _Dfa) -> bool:
+    """Whether empty steps at the start only delay the DFA: what it reaches, it reaches later too.
+
+    True when the quiet state keeps itself on an empty step and the start is that state or has
+    its edges.
+    """
+    loops = any(not needed and end == dfa.quiet for needed, _, end in dfa.edges[dfa.quiet])
+    same = dfa.initial == dfa.quiet or set(dfa.edges[dfa.initial]) == set(dfa.edges[dfa.quiet])
+    return loops and same
 
 
 def _redundant_lines(
@@ -316,23 +337,31 @@ def _redundant_lines(
     A clause is implied when no state of the hard clauses' product, reached after at least one
     step, has every other kept hard clause satisfied and this one not. Hard clauses that share no
     proposition (directly or through others) are searched as separate smaller products. That is
-    exact when each DFA can stay in any state it reaches, since then every group can wait in its
-    state until the others get where they are; if one cannot, all the clauses form one group.
+    exact when every DFA ``_waits``: a group then reaches each of its states on every later step
+    too, so the states of any two groups meet on one step. If one does not, all the hard clauses
+    form one group.
+
+    The critic rejects only a listed goal (``GOAL_PATTERNS``), so goals are tried before the
+    other clauses, each kind from the last to the first: when either a goal or a rule could go,
+    the goal is flagged.
     """
-    stays = all(_stays(automata[i]) for i in hard)
-    groups = _groups(clauses, hard) if stays else [list(range(len(hard)))]
+    waits = all(_waits(automata[i]) for i in hard)
+    groups = _groups(clauses, hard) if waits else [list(range(len(hard)))]
     unmet_sets = [
         _unmet_sets([automata[hard[p]] for p in group], [1 << p for p in group], len(groups) > 1)
         for group in groups
     ]
 
-    implied = [hard[position] for position in _implied(unmet_sets, groups)]
+    backwards = range(len(hard) - 1, -1, -1)
+    goals = [p for p in backwards if clauses[hard[p]].pattern in GOAL_PATTERNS]
+    order = goals + [p for p in backwards if p not in goals]
+    implied = sorted(hard[position] for position in _implied(unmet_sets, groups, order))
     if not implied:
         return ["Redundant: none."]
     return [
         f"Redundant: R{i + 1} {_name(clauses[i])} is already implied by the other hard rules: "
         "every run they accept keeps it, so the machine accepts the same runs without it."
-        for i in reversed(implied)
+        for i in implied
     ]
 
 

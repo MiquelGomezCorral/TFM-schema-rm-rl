@@ -36,16 +36,38 @@ def precedence(first, second):
     }
 
 
+def responded_existence(first, second):
+    """If `first` happens, `second` happens too, before or after."""
+    return {
+        "alphabet": {first, second},
+        "states": {"R0", "R1", "R2"},
+        "initial_state": "R0",
+        "accepting_states": {"R0", "R2"},
+        "transitions": {
+            ("R0", f"!{first}&!{second}"): "R0",
+            ("R0", f"{first}&!{second}"): "R1",
+            ("R0", second): "R2",
+            ("R1", f"!{second}"): "R1",
+            ("R1", second): "R2",
+            ("R2", ""): "R2",
+        },
+    }
+
+
+DFAS = {
+    "Existence": existence,
+    "Precedence": precedence,
+    "RespondedExistence": responded_existence,
+}
+
+
 def clue_lines(*clauses):
     """The clue block's lines for these hard (pattern, events) clauses."""
     proposals = [
         ClauseProposal(f"{pattern} {events}", pattern, events, PriorityLevel.HARD, "")
         for pattern, *events in clauses
     ]
-    dfas = [
-        existence(*events) if pattern == "Existence" else precedence(*events)
-        for pattern, *events in clauses
-    ]
+    dfas = [DFAS[pattern](*events) for pattern, *events in clauses]
     machine = build_reward_machine(dfas, [False] * len(dfas)).reward_machine
     return critic_clues(proposals, dfas, machine).splitlines()
 
@@ -85,6 +107,18 @@ class RedundantClueTests(unittest.TestCase):
 
         self.assertEqual(len(lines), 1)
         self.assertTrue(lines[0].startswith("Redundant: R2 Existence(at_goal) "))
+
+    def test_flags_the_implied_existence_not_a_later_rule(self) -> None:
+        # The critic rejects only a listed Existence: flagging the stated "if" rule instead,
+        # which the two goals also imply, would let an added goal through.
+        lines = redundant_lines(
+            ("Existence", "at_goal"),
+            ("Existence", "has_key"),
+            ("RespondedExistence", "at_goal", "has_key"),
+        )
+
+        self.assertEqual(len(lines), 1)
+        self.assertTrue(lines[0].startswith("Redundant: R2 Existence(has_key) "))
 
 
 if __name__ == "__main__":
