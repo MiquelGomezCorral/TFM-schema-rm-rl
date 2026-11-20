@@ -71,7 +71,8 @@ def add_pricing_arguments(
     )
     parser.add_argument(
         "--gym-id",
-        help=f"{scope}The level's gym id; its step limit is what the hard ceiling prices",
+        help=f"{scope}The level's gym id; its step limit is what the hard ceiling and the "
+        "promise cost price",
     )
     parser.add_argument(
         "--step-limit",
@@ -89,14 +90,16 @@ def add_pricing_arguments(
 def has_pricing_level(CONFIG: Configuration) -> bool:
     """Set ``CONFIG.step_limit`` from the level named; False after a message when none is named.
 
-    The hard ceiling prices over the step limit, so a build with the ceiling on needs it.
+    The hard ceiling and the promise cost price over the step limit, so a build with either on
+    needs it.
     """
     CONFIG.step_limit = configured_step_limit(CONFIG)
-    if CONFIG.hard_ceiling and CONFIG.step_limit is None:
+    if (CONFIG.hard_ceiling or CONFIG.reward_promise_cost) and CONFIG.step_limit is None:
         print_warning(
-            "the hard ceiling prices soft breaks over the level's step limit; name the level "
-            "with --gym-id <id> [--env-kwargs '{\"max_steps\": 200}'] or --step-limit <steps>, "
-            "or pass --no-hard-ceiling for the flat hard break, which needs none"
+            "the hard ceiling and the promise cost price the hard break over the level's step "
+            "limit; name the level with --gym-id <id> [--env-kwargs '{\"max_steps\": 200}'] or "
+            "--step-limit <steps>, or pass --no-hard-ceiling without --promise-cost for the flat "
+            "hard break, which needs none"
         )
         return False
     return True

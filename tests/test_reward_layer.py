@@ -274,10 +274,12 @@ class RewardLayerTests(unittest.TestCase):
         self.assertIsNone(build_reward_machine(*lava[:2]).reward_machine.judgment)
         self.assertIsNotNone(judgment_on.reward_machine.judgment)
 
-    def test_the_promise_cost_adds_one_charge_to_each_step_that_leaves_an_open_hard_promise(self):
+    def test_the_promise_cost_charges_each_step_left_with_a_hard_promise_open(self):
         def added(clauses, soft, propositions, steps):
             off = rewards_of(clauses, soft, propositions, steps)
-            on = rewards_of(clauses, soft, propositions, steps, reward_promise_cost=True)
+            on = rewards_of(
+                clauses, soft, propositions, steps, reward_promise_cost=True, step_limit=50
+            )
             return [round(after - before, 9) for after, before in zip(on, off, strict=True)]
 
         # Nothing owed pays nothing; an idle step and the closing step with a promise open pay it.
@@ -288,10 +290,11 @@ class RewardLayerTests(unittest.TestCase):
         two = ((response("a", "b", "A"), response("c", "d", "B")), (False, False), "abcd")
         self.assertEqual(added(*two, [{"a", "c"}, set(), {"b"}, set(), {"d"}]), [0, *[-0.1] * 4])
 
-        # The finishing step and the step into the well pay it on top of their own reward.
+        # The finishing step pays it on top of its own reward. The step into the well ends the
+        # episode, so it pays it for the whole step limit: a hard break never costs less.
         open_goal = ((GOAL, NO_LAVA), (False, False), ("goal", "lava"))
         self.assertEqual(added(*open_goal, [set(), {"goal"}]), [-0.1, -0.1])
-        self.assertEqual(added(*open_goal, [{"lava"}]), [-0.1])
+        self.assertEqual(added(*open_goal, [{"lava"}]), [-5.0])
 
     def test_a_soft_rule_pays_every_new_break_with_the_recurrent_penalty_and_once_without(self):
         never_lava = ((NO_LAVA,), (True,), ("lava",))

@@ -319,19 +319,28 @@ class RewardMachineObservation(gym.Wrapper):
 def _check_pay_assumptions(bundle: ArtifactBundle, env: gym.Env, CONFIG: Configuration) -> None:
     """Refuse a bundle whose hard break charge was priced for another gamma, step limit or breaks.
 
-    Only a bundle whose charge is the ceiling depends on them (``ceiling_priced``; its manifest
-    records the values it assumed); the charge is the discounted soft ceiling of that gamma and
-    step limit, for that many soft breaks per step.
+    A bundle with the promise cost on charges a hard break the promise cost of every step of the
+    step limit its manifest records, so that limit must be the run's level's (gamma plays no
+    part). A bundle whose charge is the ceiling (``ceiling_priced``) depends on all three: the
+    charge is the discounted soft ceiling of that gamma and step limit, for that many soft breaks
+    per step.
     """
+    recorded = bundle.manifest.effective_settings
+    step_limit = level_step_limit(env)
+    if recorded.get("reward_promise_cost") and recorded.get("step_limit") != step_limit:
+        raise ValueError(
+            f"{CONFIG.bundle} charges the promise cost over step limit "
+            f"{recorded.get('step_limit')}, but this run's level has step limit {step_limit}; "
+            "run rebuild-rewards with the run's step limit"
+        )
     if not ceiling_priced(bundle):
         return
-    recorded = bundle.manifest.effective_settings
     priced = (
         recorded.get("gamma"),
         recorded.get("step_limit"),
         recorded.get("soft_breaks_per_step"),
     )
-    run = (CONFIG.gamma, level_step_limit(env), CONFIG.soft_breaks_per_step)
+    run = (CONFIG.gamma, step_limit, CONFIG.soft_breaks_per_step)
     if priced != run:
         breaks = (
             f"{priced[2]} soft breaks per step"

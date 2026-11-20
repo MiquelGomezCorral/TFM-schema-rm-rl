@@ -216,7 +216,8 @@ the rest.
   -95.0959), so breaking the hard rule beat the soft stream. The check missed it: it reads the
   mildest well edge, not path totals. Now the edge into the well also pays
   `PROGRESS_REWARD * min(0, Phi(source) - Phi(start))`, added to the well charge, the finite end
-  charge of the leaving state and the promise cost. `Phi` is the potential `_progress` already
+  charge of the leaving state and the promise cost (the step limit's worth since 2026-11-20, see
+  the promise cost decision). `Phi` is the potential `_progress` already
   uses and `start` the machine's real start (after `_drop_pre_step_start`), so a hard break totals
   the well charge plus the end charge of the state it leaves whatever came before (doorkey with lava
   after one and two steps: -10 and -10; `~p3` from the progress state: -98.0959 after +2). The clamp
@@ -670,9 +671,13 @@ having conflicting clauses.
 - **[decision] An optional promise cost, off by default (user, picked 2026-11-15, go
   2026-11-16).** With `--promise-cost` (`reward_promise_cost`), every step taken while a hard
   promise is open pays an extra -0.01 (`PROMISE_COST_REWARD`, `_price_edges`), once however many
-  are open and nothing when none is; the end charge and the well's -1 stay. `rebuild-rewards
+  are open and nothing when none is; the end charge and the well's -1 stay (since the x10 pay
+  change: -0.1 per step and a well charge of -10). `rebuild-rewards
   --promise-cost` turns it on in a saved bundle. The reason is in
-  [rm-execution](decisions/arm-fm/rm-execution.md).
+  [rm-execution](decisions/arm-fm/rm-execution.md). Since 2026-11-20 (user decision) the step into
+  the well pays it once per step of the level's step limit, so a hard break never pays more than
+  keeping the promise open to the end; the build needs a step limit, and `train-rl` refuses a level
+  whose step limit differs from the one the bundle records.
 
 ### FL-AT change
 

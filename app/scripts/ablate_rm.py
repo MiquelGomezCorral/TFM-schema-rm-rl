@@ -83,8 +83,9 @@ def ablate_rm(CONFIG: Configuration, off: str, destination: Path) -> bool:
     """
     try:
         summary = _ablate(CONFIG, off, destination)
-    # RuntimeError: the engine, the state tagging or the embedding server failed.
-    except (AblationError, RuntimeError) as error:
+    # RuntimeError: the engine, the state tagging or the embedding server failed. ValueError: the
+    # reward layer refused the build (for example a promise cost without a step limit).
+    except (AblationError, RuntimeError, ValueError) as error:
         print_warning(f"ablate-rm: {error}")
         return False
     print(summary)
