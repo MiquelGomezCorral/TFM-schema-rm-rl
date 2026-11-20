@@ -28,7 +28,7 @@ import json
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from src.benchmark.traces import read_json
+from src.benchmark.traces import DEFAULT_TIME_OUT, read_json
 from src.compiler.rm_format import RuntimeValidationError, parse_paper_reward_machine
 from src.config import Configuration
 
@@ -50,10 +50,6 @@ from .run_suite import (
 NOT_CHARGED = "not charged when time runs out (end judgment off, time-limit penalty 0)"
 END_JUDGMENT_ON = "charged for the stages still owed at any episode end (end judgment on)"
 NO_MACHINE = "has no readable reward machine yet"
-DEFAULT_TIME_OUT = (
-    "With default settings neither method is charged when time runs out "
-    "(end judgment off, time-limit penalty 0)."
-)
 NOT_EVALUATED = "not evaluated"
 SOFT_ONLY = "soft-only"  # shown instead of a success figure: a card of only soft clauses has none
 SEED_TARGET = 3

@@ -13,12 +13,12 @@ cards), plus 28 soft cards (80 cards in all, see "Soft cards" below). Card ids r
 `tpl-<template>-<k>-<goal|nogoal>`, with `k` from 1 to 3 (4 for those three, 5 for the Lanes one).
 
 The cards with `k = 1` are trained, plus the three `k = 4` cards, `tpl-existence-two-5-nogoal` and
-`tpl-responded-existence-2-nogoal`, minus the cards that stopped training (12 per arm of the hard
+`tpl-responded-existence-2-nogoal`, minus the cards that stopped training (11 per arm of the hard
 cards). `tpl-precedence-1-nogoal` and
 `tpl-not-co-existence-1-nogoal` stopped training on 2026-11-18, since a wait plan passes them and the
 goal cards of their templates test the rule; `tpl-chain-response-1-goal` and `-1-nogoal` stopped on
 2026-11-19: a fall in the plain service room does not turn the agent, so the next-move rule is unfair
-there, and the box-carry copies in `box-carry/` train instead. Five more stopped on 2026-11-20 (see
+there, and the box-carry copies in `box-carry/` train instead. Six more stopped on 2026-11-20 (see
 "Card fixes" below). The other cards are generated and checked but not trained. The 16 `k = 1` cards also carry three extra wordings of the
 task, to see whether different phrasings give the same machine. The cards stay `draft` until the
 author approves them.
@@ -86,7 +86,8 @@ there tested nothing; UnlockPickup is the closest learned level (same key, locke
 room; ARM-FM 3 of 3 and FARM 1 of 3 on `base-unlock-pickup`). The trigger is `has_door_key` (the door
 open when the key was last held or later, as in `tpl-response-2-goal` and `-3-goal`), and the box
 replaces the ball. `tpl-response-3-nogoal` stays on KeyCorridorS6R3 as a generation and plan-check card.
-The bundles and traces of the old card are those of the old task until `generate-suite` is rerun.
+The FARM bundles (the card and its three paraphrases) and the traces were made again for UnlockPickup on
+2026-11-20; the old KeyCorridorS6R3 FARM bundles are kept in `kc-page-s6r3/farm/`.
 
 RespondedExistence goal card fixed (2026-11-20): on BlockedUnlockPickup the box comes after the ball move
 and after the key (the door opens only from the ball's cell and with the key; the box room has no other
@@ -133,7 +134,8 @@ facts (user rules).
   (an idle agent passes them; `lanes-guard`, `keygift-hard`, `tpl-response-1-nogoal-forced` and
   `tpl-responded-existence-2-nogoal` test those rules where the trigger comes); `tpl-existence-two-1-goal`
   (the goal forces the count); `tpl-responded-existence-1-goal` (KeyCorridorS6R3 was never learned, and
-  the goal forces the rule).
+  the goal forces the rule); later the same day `tpl-existence-two-1-nogoal` (user): `has_key` is held,
+  so one pickup kept for a second move pays the count, while `tpl-existence-two-5-nogoal` needs two kills.
 - Started training: `tpl-responded-existence-2-nogoal` (the siren rings by itself, so an idle agent leaves
   the rule open on seeds 1 to 3), and two new hard cards on the service room, copies of the soft
   `-soft-1-goal` cards with the same plans and seeds: `tpl-existence-two-4-goal` ("Go to the exit, and be
@@ -144,11 +146,20 @@ facts (user rules).
   the next move, so its second count comes free once picked up, while two kills take two catches.
 - Every training test runs seeds 1 to 3 (`runs.yaml`).
 
+Stated-order rule (2026-11-20, user): only order words ("then", "after", "before") give an order;
+"and" and commas do not. The "Then" of `tpl-responded-existence-2-goal` is an order word, so both box
+orders are required and its `forced` is gone (this replaces the "Kept" reading of the order audit
+above). No templates card uses `forced` any more. Whether "Then" after an if-rule also puts the box
+after the ball (which makes moving the ball mandatory) waits for the user. Its FARM bundle, generated
+again (production pair, `--reasoning max`), keeps the key before the box but not the ball before the
+box: `mismatch` under the card's reading, possibly right under the other. The old bundle, with neither
+box order, is kept in `order-rule-r0/farm/`.
+
 ## Soft cards (2026-11-19)
 
 28 cards word a rule as a wish ("try to ...", "preferably ...") and mark it soft in `expect`, so every
 template has soft coverage next to its hard cards. Ids read `tpl-<template>-soft-<k>-<goal|nogoal>`,
-`k` from 1 to 3 as for the hard cards; `k = 1` is trained (15 per arm, 27 with the hard ones) and
+`k` from 1 to 3 as for the hard cards; `k = 1` is trained (15 per arm, 26 with the hard ones) and
 carries three extra wordings; the rest are generated and checked only.
 
 - Goal cards (21): the soft rule plus a hard goal. The agent must act, and the soft rule is the

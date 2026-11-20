@@ -33,16 +33,20 @@ from .reference_labels import NoReferenceLabelerError, labeler_for
 
 SERIES = ("#2f5bd3", "#d96f00", "#1f7a4d", "#b3261e", "#b03a9a", "#1b7f8c", "#6b52c0", "#8a6d3b")
 SOLVE, HARD_BREAK, SOFT_BREAK = "solve", "hard-break", "soft-break"
-# Shown on every replay page: the two arms end an episode differently (R47).
-ASYMMETRY_NOTE = (
-    "Time-limit asymmetry: FARM machines charge open items at any episode end; "
-    "ARM-FM machines get 0 at the time limit."
+# How a time-out is paid with default settings (R47): on every replay page, and aggregate-suite's
+# results line when no run differs.
+DEFAULT_TIME_OUT = (
+    "With default settings neither method is charged when time runs out "
+    "(end judgment off, time-limit penalty 0)."
 )
 PAGE_STYLE = (
     "body{font:15px/1.5 system-ui,sans-serif;max-width:1100px;margin:1rem auto;padding:0 16px}"
     "pre{overflow-x:auto;background:#f4f4f4;padding:8px}li{margin:.2rem 0}"
 )
-PENALTY_NOTE = "Benchmark runs set `time_limit_penalty` to 0; -5 is the reproduction default."
+PENALTY_NOTE = (
+    "The 0 is what `run-suite` sets for benchmark runs; a plain `train-rl` run keeps its own "
+    "`time_limit_penalty` default of -5."
+)
 # The one text that says what judge.json's ``rm_return`` sums (the replay page shows it too).
 RM_RETURN_DEFINITION = (
     "rm_return sums the wrapper's info['rm_reward'] over the episode: the RM transition rewards "
@@ -663,7 +667,7 @@ def _write_plot(
 ) -> str:
     """One self-contained page of a card, named ``<card-id>.html``.
 
-    It shows the task, each clause with its LTLf, the time-limit asymmetry, the cumulative RM
+    It shows the task, each clause with its LTLf, how a time-out is paid, the cumulative RM
     reward per bundle (a plot row per trace) and the RM text of every bundle in ``curves``.
     """
     trace_keys = sorted({key for bundle in curves.values() for key in bundle})
@@ -710,7 +714,7 @@ def _write_plot(
         f"<meta name='viewport' content='width=device-width, initial-scale=1'>"
         f"<title>{html.escape(card.id)}</title><style>{PAGE_STYLE}</style></head><body>"
         f"<h1>{html.escape(card.id)}</h1><p>{html.escape(card.task)}</p><ul>{clauses}</ul>"
-        f"<p><b>{html.escape(ASYMMETRY_NOTE)}</b> {html.escape(PENALTY_NOTE)}</p>"
+        f"<p><b>{html.escape(DEFAULT_TIME_OUT)}</b> {html.escape(PENALTY_NOTE)}</p>"
         f"<p>{html.escape(CURVE_NOTE)}</p>"
         f"{figure.to_html(full_html=False, include_plotlyjs=True)}"
         f"<h2>Reward Machines</h2>{machines}</body></html>",

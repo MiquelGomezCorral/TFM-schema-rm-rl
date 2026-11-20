@@ -417,3 +417,9 @@ and a restart is easier to trust.
   (user: "Yes, okay, change the wording"). `aggregate-suite` prints that sentence from each run's
   machine and the suite's time-limit penalty; the results column `time_limit_asymmetry` and the
   JSON key `asymmetry` became `time_out`.
+- 2026-11-20: What states an order (user): only order words ("then", "after", "before") give an
+  order, and "and" and commas do not, except a compound whose second verb needs the first ("find
+  and acquire the key"). A plain list of facts is one `Existence` per fact, and the ordered chain is
+  also accepted (`also_ok`). `base-unlock-pickup` (with its pilot and smoke copies) and
+  `base-key-corridor` follow it, `tpl-responded-existence-2-goal` requires its "Then" orders, and no
+  card uses `forced` any more; the scorer keeps the field.

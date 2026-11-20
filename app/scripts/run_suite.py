@@ -306,10 +306,11 @@ def bundle_problem(run: Run) -> tuple[str, str] | None:
     page its manifest stored names gym ids, and the card's is not among them. ``pending``: that
     status is ``provider-error`` or ``incomplete``, which bundle generation retries.
     """
+    bundles = [bundle for bundle in run.bundles or (run.bundle,) if bundle]
+    if not bundles:  # no-RM: nothing to check, and held_claim's stand-in card holds only the id
+        return None
     gym_id = run.card["env"]["gym_id"]  # a mix's cards share it (mix_runs)
-    problems = (
-        _bundle_problem(bundle, gym_id) for bundle in run.bundles or (run.bundle,) if bundle
-    )
+    problems = (_bundle_problem(bundle, gym_id) for bundle in bundles)
     return next((problem for problem in problems if problem), None)
 
 

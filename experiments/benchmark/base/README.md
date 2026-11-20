@@ -35,6 +35,15 @@ states no order. "Find and acquire the key" is the key step, which `expect` name
 (`has_matching_key`); `key_found` adds nothing, since the key is never held before it is seen, and
 "explore the side rooms" and "return to the corridor" have no label. Training runs seeds 1 to 3.
 
+Stated-order rule (2026-11-20, user): only order words ("then", "after", "before") give an order;
+"and" and commas do not. `base-unlock-pickup` (and its pilot and smoke copies) and
+`base-key-corridor` list facts, so `expect` is one `Existence` per fact, the ordered chain is the
+`also_ok` answer, and no card here uses `forced` any more. The Response chain left
+`base-unlock-pickup`'s `also_ok`, as it did `base-doorkey`'s. One compound states an order: "find and
+acquire the key", since taking the key needs finding it first, so `base-key-corridor` requires
+`Precedence(key_found, has_matching_key)` in both answers. Its S4R3 FARM bundle gives that answer and
+counts: FARM learned 2 of 3 seeds (judged success 0.85, 0.82, 0.00), no-RM none.
+
 Layouts: training resets draw new procedural layouts (`layout: procedural`). Evaluation keeps the fixed
 seeds `eval_seed_base + i`, the same for every run and arm. `layout_seed: 1` stays on the card only for
 the scripted plans, the trace records and the card checks; the trainer ignores it.
