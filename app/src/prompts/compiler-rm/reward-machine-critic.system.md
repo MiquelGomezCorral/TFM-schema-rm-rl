@@ -88,8 +88,8 @@ against the task sentence:
   is owed again on every step `a` holds, so `b` must hold on the last step while `a` does. That
   is how "carry c to g" (`Response(g, c)`) and "once you have found the key, the door must be
   open on the last step" (`Response(key_found, door_open)`) are written: accept them.
-- `Redundant`: a hard clause the other hard clauses already imply, so the machine is the
-  same without it. A listed `Existence` is a defect on its own: reject and ask to drop it, usually
+- `Redundant`: a hard clause the other hard clauses already imply, so the machine accepts the
+  same runs without it. A listed `Existence` is a defect on its own: reject and ask to drop it, usually
   the `Existence` of an earlier step of a `Precedence` chain, and keep the chain and the `Existence`
   of the last step. Any other listed clause that a task sentence states, such as an order or an
   "if" rule, stays: never ask to drop it.
