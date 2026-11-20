@@ -66,6 +66,14 @@ Cards with also_ok from this rule: `tpl-existence-1/2/3-goal`, `tpl-existence-tw
 `tpl-responded-existence-1/2/3-goal`, `cx-sequence`, `cx-goal-one-rule`, `cx-goal-many-rules`.
 The Absence, NotCoExistence and `tpl-precedence-2/3` goal cards have one step and no second form.
 
+Chain reword (2026-11-19): the compiler's progress pay now reads the distance from the machine to its
+final state, so a chain written as form B pays at every step. A needed step with no rule of its own
+would pay nothing, so `tpl-precedence-1-goal`, `tpl-response-1-goal` and `cx-goal-many-rules` name
+every step ("open the door with the key", "pick up the key, open the locked door with it") and
+`expect` is the chain (`Existence(last)` plus the `Precedence` pairs) plus the card's own rule.
+The orders the level forces (key before door before box or ball) are in `forced`. The older, shorter
+answers stay in `also_ok`, except the full chain of `tpl-precedence-1-goal`, which is now `expect`.
+
 ## Soft cards (2026-11-19)
 
 28 cards word a rule as a wish ("try to ...", "preferably ...") and mark it soft in `expect`, so every

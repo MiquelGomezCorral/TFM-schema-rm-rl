@@ -64,7 +64,7 @@ class _Product:
     alphabet: set[str]
     edges: list[_Edge]
     labels: dict[str, tuple[ClauseState, ...]]  # per product state, one label per clause
-    # per product state, the chain-weighted stages each clause still owes (the one owed measure)
+    # per product state, the chain-weighted stages each clause still owes (what the end judgment counts)
     open_steps: dict[str, tuple[int, ...]]
     # per edge, the soft clauses it breaks that no label shows: their violated state was folded
     # into a twin (see ``_violated_twins``), so the destination reads as kept
@@ -172,6 +172,7 @@ def build_reward_machine(
     product = _clause_product(dfas, rearm, switches.fold_soft_absence)
     edges, finals = _prune_by_hard_clauses(product, hard_clauses, hard_goal)
     initial, edges = _drop_pre_step_start(edges, product, finals)
+    product = replace(product, initial=initial)  # the progress refund reads the real start
     priced, paying = _price_edges(edges, product, finals, soft_clauses, switches)
     if switches.minimize_machine:
         initial, priced = _merge_equivalent(initial, priced, product, finals, soft_clauses)
@@ -591,8 +592,9 @@ def _price_edges(
 ) -> tuple[list[tuple[_Edge, float]], set[int]]:
     """Reward each edge from its destination's clause labels; also return the soft clauses paid.
 
-    An edge into the well pays the well reward plus the end charge of the state it leaves (the
-    stages it still owes, ``_owed``), so a break always costs more than timing out there.
+    An edge into the well pays the well reward, the end charge of the state it leaves (the
+    stages it still owes, ``_owed``) and the progress taken back (see ``_progress``), so a break
+    always costs more than timing out there.
     Progress pays a soft clause where the clause starts or stops waiting. That is a proxy,
     approximate both ways: it can call a clause paid
     that changes nothing, or inert when it changes rewards. It follows the ``switches``: a part
@@ -602,7 +604,9 @@ def _price_edges(
     """
     labels = product.labels
     progress = (
-        _progress(edges, product, finals) if switches.reward_progress else dict.fromkeys(edges, 0.0)
+        _progress(edges, product, finals, soft_clauses)
+        if switches.reward_progress
+        else dict.fromkeys(edges, 0.0)
     )
     paying: set[int] = set()
     priced = []
@@ -618,7 +622,7 @@ def _price_edges(
                 else 0.0
             )
             well = _well_charge(soft_clauses, switches) if switches.reward_well else 0.0
-            priced.append((edge, round(well + charge + promise_cost, 9)))
+            priced.append((edge, round(progress[edge] + well + charge + promise_cost, 9)))
             continue
 
         finishing = edge.destination in finals
@@ -701,17 +705,43 @@ def _well_charge(soft_clauses: Sequence[int], switches: RewardSwitches) -> float
     )
 
 
-def _progress(edges: Sequence[_Edge], product: _Product, finals: set[str]) -> dict[_Edge, float]:
-    """Potential-based shaping: pay per step a clause gets closer to done, charge per step back.
+def _events_to_final(edges: Iterable[_Edge], finals: set[str]) -> dict[str, int]:
+    """The fewest events that take each state to a final one; states that reach none are left out.
 
-    Each clause counts the longest path its own DFA still has to an accepting state (see
+    A step costs the propositions its guard needs true, and at least 1: the product keeps the
+    shortcut edges where the next events happen on one step, so plain hops would put the start
+    one step from done. A product guard is a conjunction of literals (``a&!b``), so its positive
+    literals are its events.
+    """
+    towards = nx.MultiDiGraph()
+    towards.add_nodes_from(finals)
+    for source, guard, destination in edges:
+        if source != destination:
+            events = sum(1 for literal in guard.split("&") if literal and literal[0] != "!")
+            towards.add_edge(destination, source, events=max(1, events))
+    return nx.multi_source_dijkstra_path_length(towards, finals, weight="events")
+
+
+def _progress(
+    edges: Sequence[_Edge], product: _Product, finals: set[str], soft_clauses: Sequence[int]
+) -> dict[_Edge, float]:
+    """Potential-based shaping: pay per step closer to done, charge per step back.
+
+    With a final, the hard stages are read from the machine: a state owes the events it still
+    needs to reach a final (``_events_to_final``), so a chain written as ``Existence(last)`` plus
+    ``Precedence`` pairs pays at every step although no clause alone owes an event. A task without
+    a final counts every clause alone and aims at the states where no clause is pending. A clause
+    counted alone owes the longest path its own DFA still has to an accepting state (see
     ``_steps_to_accept``), times its chain weight (see ``_chain_weights``): a rule that hands off
-    to another is worth the chain behind it, so the middle steps of a chain pay too. A state owes
-    the sum over its clauses, and finals owe nothing. A soft clause that a step breaks pays
-    nothing on that step, so the break is never refunded by the stages the clause owed; the
-    loops that remain sum to 0 or less, so nothing can be farmed. Edges into the well, and into
-    a state that reaches no target, pay no progress. The targets are the finals; a task without
-    one aims at the states where no clause is pending.
+    to another is worth the chain behind it. Soft clauses are always counted that way, on top of
+    the hard stages. A state owes the sum, and finals owe nothing. A soft clause that a step
+    breaks pays nothing on that step, so the break is never refunded by the stages the clause
+    owed; the loops that remain sum to 0 or less, so nothing can be farmed. An edge into a state
+    that reaches no target pays no progress. An edge into the well takes back the net progress
+    since the start, never more (the potential of its source minus the start's, at most 0): a
+    charge already paid is never paid back as a reward, and one paid after some progress (a
+    ``Response`` trigger) cancels that progress. So a hard break totals the same whatever was
+    collected before it.
     """
     inner = [edge for edge in edges if edge.destination != _WELL]
     labels = product.labels
@@ -723,25 +753,39 @@ def _progress(edges: Sequence[_Edge], product: _Product, finals: set[str]) -> di
         state: (0,) * len(steps) if state in finals else steps
         for state, steps in product.open_steps.items()
     }
+    events = _events_to_final(inner, finals) if finals else {}
+    counted = soft_clauses if finals else range(len(owed[product.initial]))
 
     def paid_stages(edge: _Edge) -> int:
         broken = product.breaks.get(edge, ())
-        return sum(
+        clause_stages = sum(
             before - after
             for clause, (before, after, label) in enumerate(
                 zip(
                     owed[edge.source], owed[edge.destination], labels[edge.destination], strict=True
                 )
             )
-            if label is not ClauseState.VIOLATED and clause not in broken
+            if clause in counted and label is not ClauseState.VIOLATED and clause not in broken
         )
+        return clause_stages + events.get(edge.source, 0) - events.get(edge.destination, 0)
 
-    return {
+    potential = {
+        state: events.get(state, 0) + sum(steps[clause] for clause in counted)
+        for state, steps in owed.items()
+    }
+    pays = {
         edge: Configuration.PROGRESS_REWARD * paid_stages(edge)
         if edge.destination in reachable
         else 0.0
         for edge in inner
     }
+    for edge in edges:
+        if edge.destination == _WELL:
+            # A hard break takes back the net progress since the start, never more.
+            pays[edge] = Configuration.PROGRESS_REWARD * min(
+                0, potential[edge.source] - potential[product.initial]
+            )
+    return pays
 
 
 def _has_positive_cycle(machine: RewardMachineStructure) -> bool:
@@ -916,10 +960,12 @@ def _structure(
 
 
 def _owed(steps: tuple[int, ...], soft_clauses: Sequence[int]) -> tuple[int, int]:
-    """The hard and soft stages a state still owes: the stages the progress pay counts.
+    """The hard and soft stages a state still owes, two totals summed over the clauses.
 
     ``steps`` is one product state's ``open_steps``. The end judgment and the end charge on the
-    edges into the well both charge by this count, not by the clauses still open.
+    edges into the well both charge by this count, not by the clauses still open. The progress pay
+    counts the soft stages of it, and every clause when the machine has no final; with a final, the
+    hard stages are paid through events (``_events_to_final``), not through ``_owed``.
     """
     soft = sum(steps[clause] for clause in soft_clauses)
     return sum(steps) - soft, soft

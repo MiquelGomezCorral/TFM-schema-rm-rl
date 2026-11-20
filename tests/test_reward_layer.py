@@ -93,20 +93,29 @@ RESPONSE = {
         ("Q", "!y"): "Q",
     },
 }
-# Precedence(a, b): `b` before any `a` breaks it for good; once `a` is seen the rule is met.
-PRECEDENCE = {
-    "alphabet": {"a", "b"},
-    "states": {"W", "S", "V"},
-    "initial_state": "W",
-    "accepting_states": {"W", "S"},
-    "transitions": {
-        ("W", "a"): "S",
-        ("W", "!a&!b"): "W",
-        ("W", "!a&b"): "V",
-        ("S", ""): "S",
-        ("V", ""): "V",
-    },
-}
+
+
+def precedence(first, second, name):
+    """Precedence(first, second): `second` before any `first` breaks it for good; once `first`
+    is seen the rule is met. The states are ``<name>W``, ``<name>S`` and ``<name>V``.
+    """
+    waiting, seen, broken = f"{name}W", f"{name}S", f"{name}V"
+    return {
+        "alphabet": {first, second},
+        "states": {waiting, seen, broken},
+        "initial_state": waiting,
+        "accepting_states": {waiting, seen},
+        "transitions": {
+            (waiting, first): seen,
+            (waiting, f"!{first}&!{second}"): waiting,
+            (waiting, f"!{first}&{second}"): broken,
+            (seen, ""): seen,
+            (broken, ""): broken,
+        },
+    }
+
+
+PRECEDENCE = precedence("a", "b", "")
 
 
 def never(name):
@@ -123,6 +132,17 @@ def never(name):
             ("R1", name): "R2",
             ("R2", ""): "R2",
         },
+    }
+
+
+def eventually(name):
+    """F name, the shape of GOAL on another proposition."""
+    return {
+        "alphabet": {name},
+        "states": {"E0", "E1"},
+        "initial_state": "E0",
+        "accepting_states": {"E1"},
+        "transitions": {("E0", f"!{name}"): "E0", ("E0", name): "E1", ("E1", ""): "E1"},
     }
 
 
@@ -147,11 +167,15 @@ def response(trigger, answer, name):
     }
 
 
+def compiled(clauses, soft, propositions, **switches):
+    """The machine the runtime reads: compiled, serialized and parsed back."""
+    machine = build_reward_machine(clauses, soft, RewardSwitches(**switches)).reward_machine
+    return parse_paper_reward_machine(serialize_reward_machine(machine), propositions=propositions)
+
+
 def rewards_of(clauses, soft, propositions, steps, **switches):
     """Run one episode of true-proposition sets through the compiled, serialized machine."""
-    machine = build_reward_machine(clauses, soft, RewardSwitches(**switches)).reward_machine
-    text = serialize_reward_machine(machine)
-    runtime = RewardMachineRuntime(parse_paper_reward_machine(text, propositions=propositions))
+    runtime = RewardMachineRuntime(compiled(clauses, soft, propositions, **switches))
     return [runtime.step({name: name in step for name in propositions}).reward for step in steps]
 
 
@@ -385,6 +409,11 @@ class RewardLayerTests(unittest.TestCase):
                 self.assertIsNone(result.reward_machine.final_state)
                 self.assertEqual(result.inert_soft_clauses, ())
 
+        # A soft goal with no final pays its own progress: the pay-order check no longer sees it.
+        self.assertEqual(
+            rewards_of((KEY,), (True,), ("key",), [set(), {"key"}, set()]), [0.0, 1.0, 0.0]
+        )
+
     def test_a_rule_is_weighted_by_the_chain_it_hands_off_to(self):
         names = ("a", "b", "c", "d")
 
@@ -401,6 +430,22 @@ class RewardLayerTests(unittest.TestCase):
             rewards_of(fork, (False,) * 3, names, [{"a"}, {"b"}, {"c"}, {"d"}]),
             [-3.0, 1.0, 1.0, 1.0],
         )
+
+    def test_a_chain_of_precedences_pays_each_step_and_a_shortcut_pays_its_events(self):
+        names = ("key", "door", "goal")
+        # No clause owes an event but the goal, yet every step of key, door, goal pays 1.
+        chain = (GOAL, precedence("door", "goal", "B"), precedence("key", "door", "A"))
+        rewards = [
+            rewards_of(chain, (False,) * 3, names, steps)
+            for steps in (
+                [{"key"}, {"door"}, {"goal"}],
+                [{"key", "door"}, {"goal"}],
+                [{"key", "door", "goal"}],
+            )
+        ]
+
+        # The shortcuts pay one unit per event they skip, so the total is 13 whatever the grouping.
+        self.assertEqual(rewards, [[1.0, 1.0, 11.0], [2.0, 11.0], [13.0]])
 
     def test_the_end_charge_and_the_well_charge_count_the_stages_still_owed(self):
         names = ("a", "b", "c", "d", "lava")
@@ -432,6 +477,64 @@ class RewardLayerTests(unittest.TestCase):
         well = play([{"a"}, {"lava"}])[-1]
         self.assertEqual((well.destination, well.reward), (paper.rejecting_states[0], -40.0))
 
+    def hard_break(self, paper, names, steps):
+        """What ``steps`` then a ``lava`` step pay in all, and the end charge of the state it leaves."""
+        runtime = RewardMachineRuntime(paper)
+        moves = [
+            runtime.step({name: name in step for name in names}) for step in [*steps, {"lava"}]
+        ]
+        self.assertIn(moves[-1].destination, paper.rejecting_states)
+        end = paper.judgment.end_charge(moves[-1].source) if paper.judgment else 0.0
+        return sum(move.reward for move in moves), end
+
+    def test_a_hard_break_takes_back_the_progress_of_a_chain_of_any_length(self):
+        # Existence(last) plus Precedence pairs pays at every step. Wherever the chain stops, the
+        # break totals the well's -10 plus the end charge of the state it leaves, not -10 + k.
+        for length in range(2, 9):
+            events = [f"e{index}" for index in range(length)]
+            chain = [precedence(events[i], events[i + 1], f"P{i}") for i in range(length - 1)]
+            rules, names = (eventually(events[-1]), *chain, NO_LAVA), (*events, "lava")
+            # Lengths 7 and 8 take seconds to build: the end judgment is checked up to 6.
+            for judged in (False, True) if length < 7 else (False,):
+                paper = compiled(rules, (False,) * len(rules), names, reward_end_judgment=judged)
+                for made in range(length):
+                    with self.subTest(length=length, judged=judged, made=made):
+                        total, end = self.hard_break(paper, names, [{e} for e in events[:made]])
+                        self.assertAlmostEqual(total, -10.0 + end, places=9)
+
+    def test_a_hard_break_after_a_trigger_takes_back_net_progress_and_no_charge_back(self):
+        # The take-back is net and never more: a charge already paid is not paid back as a reward.
+        # A Response opened after some progress cancels it, so the break totals the same as one at
+        # once. One opened before any progress leaves the machine further from done than the start:
+        # there is nothing to cancel, and its -1 stays.
+        for length in range(2, 5):
+            events = [f"e{index}" for index in range(length)]
+            chain = [precedence(events[i], events[i + 1], f"P{i}") for i in range(length - 1)]
+            names = (*events, "lava", "alarm", "calm")
+            forms = {
+                "Existence(last)": (eventually(events[-1]), *chain),
+                "Existence(each)": (*map(eventually, events), *chain),
+            }
+            for form, rules in forms.items():
+                rules = (*rules, NO_LAVA, response("alarm", "calm", "A"))
+                for judged in (False, True):
+                    paper = compiled(
+                        rules, (False,) * len(rules), names, reward_end_judgment=judged
+                    )
+                    for made in range(length):
+                        progress = [{e} for e in events[:made]]
+                        # What the break totals beyond the well and the end charge.
+                        cases = {
+                            "open": ([*progress, {"alarm"}], -1.0 if made == 0 else 0.0),
+                            "answered": ([*progress, {"alarm"}, {"calm"}], 0.0),
+                        }
+                        for debt, (steps, kept) in cases.items():
+                            with self.subTest(
+                                length=length, form=form, judged=judged, made=made, debt=debt
+                            ):
+                                total, end = self.hard_break(paper, names, steps)
+                                self.assertAlmostEqual(total, -10.0 + end + kept, places=9)
+
     def test_the_hard_break_costs_the_discounted_soft_ceiling_only_where_soft_rules_repeat(self):
         # k S (1 - g^T) / (1 - g) plus one progress unit, k soft breaks a step; k S T at g 1;
         # never under the flat 10 + 1. Rows: S, k, g, T, charge.
@@ -449,6 +552,8 @@ class RewardLayerTests(unittest.TestCase):
                 charge = hard_break_charge(cost, gamma, limit, breaks)
                 self.assertAlmostEqual(charge, expected, places=4)
 
+        # The start's well edge only: later ones also take progress back, and
+        # test_a_hard_break_takes_back_the_progress_of_a_chain_of_any_length checks their totals.
         def well_charges(soft, **switches):
             clauses = (GOAL, NO_LAVA, *soft)
             priorities = (False, False, *[True] * len(soft))
@@ -459,6 +564,7 @@ class RewardLayerTests(unittest.TestCase):
                 transition.reward
                 for transition in machine.transitions
                 if transition.destination in machine.rejecting_states
+                and transition.source == machine.initial_state
             }
 
         # The defaults price the ceiling at S 1, g 0.99, one break a step: only the level's step
@@ -492,6 +598,45 @@ class RewardLayerTests(unittest.TestCase):
                 text = serialize_reward_machine(layer.reward_machine)
                 machine = parse_paper_reward_machine(text, propositions=names)
                 self.assertEqual(pay_order(machine, 0.99, 300).broken is None, passes)
+
+    def test_a_machine_with_no_goal_skips_only_started_against_not_started(self):
+        # Precedence alone: idle keeps the rule, so seeing `a` pays 0 like idling, as it should.
+        order = pay_order(compiled((PRECEDENCE,), (False,), ("a", "b")), 0.99, 300)
+        self.assertIsNone(order.broken)
+        self.assertEqual(order.skipped, ("started", "not started"))
+        self.assertTrue(
+            order.summary().endswith(
+                "; skipped started > not started (no goal: idle keeps every rule)"
+            )
+        )
+
+        # With a goal the same tie still breaks the order: no progress pays 0 short of the end.
+        names = ("goal", "a", "b")
+        machine = compiled((GOAL, PRECEDENCE), (False, False), names, reward_progress=False)
+        order = pay_order(machine, 0.99, 300)
+        self.assertEqual((order.broken, order.skipped), (("started", "not started"), None))
+
+        # With no goal every other line still counts: a flat hard break under a soft stream.
+        machine = compiled(
+            (NO_LAVA, never("spill")),
+            (False, True),
+            ("lava", "spill"),
+            hard_ceiling=False,
+            soft_break_cost=5.0,
+        )
+        self.assertEqual(pay_order(machine, 0.99, 300).broken, ("soft break", "hard break"))
+
+        # Also with a started state: only the started pair is left unchecked, not the whole order.
+        machine = compiled(
+            (PRECEDENCE, NO_LAVA, never("spill")),
+            (False, False, True),
+            ("a", "b", "lava", "spill"),
+            hard_ceiling=False,
+            soft_break_cost=5.0,
+        )
+        order = pay_order(machine, 0.99, 300)
+        self.assertEqual(order.skipped, ("started", "not started"))
+        self.assertEqual(order.broken, ("soft break", "hard break"))
 
     def test_a_rebuild_keeps_the_pricing_the_bundle_records_unless_the_command_gives_another(self):
         config = Configuration(step_limit=300)

@@ -24,6 +24,9 @@ _EPSILON = 1e-9
 # "not started" only has to pay at least as much as a soft break.
 ENDINGS = ("finished", "started", "not started", "soft break", "hard break")
 _MAY_TIE = {("not started", "soft break")}
+# A task with no goal (no final state) has nothing to start: idle keeps every rule, so a correct
+# machine pays a started state and idling alike. Only this pair is skipped there.
+_NO_GOAL_SKIP = ("started", "not started")
 
 _Edge = tuple[str, str, float]  # source, destination, reward
 
@@ -35,11 +38,13 @@ class PayOrder(NamedTuple):
     ending. ``broken`` is the first pair of present endings, better first, that the machine does
     not pay in that order. ``stall`` is what the promise cost charges over the step limit while a
     hard promise stays open (None without it); it is no ending and takes no part in the order.
+    ``skipped`` is the pair left unchecked because the machine has no goal (None otherwise).
     """
 
     pay: dict[str, float | None]
     broken: tuple[str, str] | None
     stall: float | None = None
+    skipped: tuple[str, str] | None = None
 
     def summary(self) -> str:
         """The endings from the best pay to the worst, ``ok`` or the first broken pair, the stall."""
@@ -54,6 +59,8 @@ class PayOrder(NamedTuple):
             better, worse = self.broken
             need = "at least as much as" if self.broken in _MAY_TIE else "more than"
             text = f"{order}; broken: {better} must pay {need} {worse}"
+        if self.skipped is not None:
+            text += f"; skipped {' > '.join(self.skipped)} (no goal: idle keeps every rule)"
         return text if self.stall is None else f"{text}; stall, hard promise open {self.stall:g}"
 
 
@@ -212,7 +219,10 @@ def pay_order(
         "hard break": max(hard_breaks, default=None),
     }
     pay = {name: None if value is None else round(value, 9) + 0.0 for name, value in pay.items()}
-    return PayOrder(pay, _first_broken(pay), round(streamed, 9) + 0.0 if stalls(loop) else None)
+    no_goal = not machine.final_states and pay["started"] is not None
+    skipped = _NO_GOAL_SKIP if no_goal else None
+    stall = round(streamed, 9) + 0.0 if stalls(loop) else None
+    return PayOrder(pay, _first_broken(pay, skipped), stall, skipped)
 
 
 def _best_returns(edges: Sequence[_Edge], source: str) -> dict[str, float]:
@@ -278,10 +288,14 @@ def _worst_cycle_mean(states: Sequence[str], edges: Sequence[_Edge]) -> float | 
     return min(means, default=None)
 
 
-def _first_broken(pay: dict[str, float | None]) -> tuple[str, str] | None:
+def _first_broken(
+    pay: dict[str, float | None], skipped: tuple[str, str] | None = None
+) -> tuple[str, str] | None:
     """The first pair of present endings, better first, that the machine does not pay in order."""
     present = [name for name in ENDINGS if pay[name] is not None]
     for better, worse in itertools.pairwise(present):
+        if (better, worse) == skipped:
+            continue
         gap = pay[better] - pay[worse]
         if gap < -_EPSILON or (gap < _EPSILON and (better, worse) not in _MAY_TIE):
             return better, worse

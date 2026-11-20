@@ -165,13 +165,15 @@ the rest.
     laps of a 640-step episode are worth about +0.25 in discounted return, against 0 for idling.
     Each lap is small, but the laps repeat until the time limit.
 - **[decision] Longest path, not shortest, and per clause,** for the shortcut reason above, and
-  because the environment may never produce the shortcut. Each clause is measured on the DFA the
+  because the environment may never produce the shortcut. Since 2026-11-19 this per-clause measure
+  pays the soft clauses, and every clause when the machine has no final; the hard stages of a
+  machine with a final read the machine's own distance (next entries). Each clause is measured on the DFA the
   product uses (for a soft rule, the re-armed one). Its accepting states absorb: their outgoing
   edges are left out, so a rule that is satisfied again and then opens again does not push the
   score away from it, and a rule that waits for an answer (`Response`) still has a distance. Each
   cycle of that DFA is collapsed to one node, so its states score alike. A violated clause counts
-  0: a broken soft rule was already paid by its -0.5, and a broken hard rule is the well. A
-  clause's own break-and-repair loop passes through its accepting state, so the collapse does not
+  0: a broken soft rule was already charged its break cost (`soft_break_cost`, 1), and a broken
+  hard rule is the well. A clause's own break-and-repair loop passes through its accepting state, so the collapse does not
   touch it. The product is never collapsed, so a loop between two states that both owe something
   pays -x one way and +x the other; the old longest path of the whole product paid such a loop 0,
   and priced the same event differently depending on what else was pending. The sum around any
@@ -181,12 +183,61 @@ the rest.
   `Precedence` is satisfied from the start, so it owes 0 and its first proposition pays nothing
   (`_steps_to_accept`, `_open_steps`); 6 of the 71 FARM main machines that store their clauses
   have such a step (user, 2026-11-15; list in the [RM execution record](decisions/arm-fm/rm-execution.md)).
+  Lifted for a machine with a final state on 2026-11-19: its hard stages are read from the machine
+  (next entry).
+- **[decision] Hard progress reads the machine (2026-11-19).** With a final state, the pay for a
+  hard stage is `Phi(source) - Phi(destination)` with `Phi(u)` the fewest events that take the
+  product from `u` to a final state, one unit per event (`_events_to_final`). An edge costs the
+  positive propositions its guard needs, at least 1, and self-loops and edges into the well are
+  left out of that graph (the well edge is priced apart: next entry). Why: a chain "a, then b,
+  then c" is `Existence(c)` + `Precedence(b, c)` + `Precedence(a, b)`, and only `Existence` owed a step, so the chain paid 0, 0, 0 and everything at
+  the goal (doorkey 0, 0, +11). The machine already has the chain; the measure read the rules
+  instead. A plain hop count is wrong: `Precedence` lets two events share a step, so the product
+  keeps a direct start-to-final edge and the start looks one step from done; counting the events
+  an edge needs fixes that (a prototype with plain hops fixed 0 and broke 15 to 26 passing sets).
+  The per-clause soft stages and the no-final measure above stay as they were. No scaling: a chain
+  of `n` events now pays `n` on the way and 10 at the end, so doorkey written as `Precedence` and
+  as `Response` both pay 1, 1, +11 (13 in all, 11 before for both). Measured (MONA, no model
+  calls): 87 of the 168 card sets pass the pay-order check before, 126 after on the same cards
+  (127 of 167 once three cards were reworded to name every step); 39 failing sets were fixed and
+  none newly failed. Of the 108 stored sets, 73 pass before and 80 after, 9 fixed and 2 newly
+  flagged by the check's "started must pay more than not started" (a hard `Response` or
+  `RespondedExistence` that opened for -1 now opens for 0, a tie with idling; a known false alarm
+  of the check, postponed). The 40 card sets that still fail it all have that one reason: 26 with a
+  final whose started state ties idling, and 14 rule-only, which the check now skips (see "What it
+  does not fix"). With the refund and the skip below: 141 of 167 card sets and 91 of 108 stored.
+- **[decision] A hard break takes back the progress made since the start (2026-11-19).** A chain
+  pays on the way, and the edge into the well paid no progress, so a break after `k` events totalled
+  `-H + k`: doorkey (form B) with lava after one key step paid -9 and after two steps -8, against -10
+  for lava at once; with soft rules re-arming (the ceiling charge, -96.0959) 6 stored sets, all
+  `cx-goal-many-rules`, had a break path that paid at least the soft ending (`~p3`: -94.0959 against
+  -95.0959), so breaking the hard rule beat the soft stream. The check missed it: it reads the
+  mildest well edge, not path totals. Now the edge into the well also pays
+  `PROGRESS_REWARD * min(0, Phi(source) - Phi(start))`, added to the well charge, the finite end
+  charge of the leaving state and the promise cost. `Phi` is the potential `_progress` already
+  uses and `start` the machine's real start (after `_drop_pre_step_start`), so a hard break totals
+  the well charge plus the end charge of the state it leaves whatever came before (doorkey with lava
+  after one and two steps: -10 and -10; `~p3` from the progress state: -98.0959 after +2). The clamp
+  `min(0, ...)` takes back the progress since the start (the potential difference) and never pays a charge back: a hard `Response` trigger that
+  leaves the machine further from done than the start charged -1, and the literal refund
+  (`Phi(source) - Phi(start)`) pays that +1 back, which breaks the pay order in 3 stored sets
+  (`shop-serve~p3`, no goal, pays +3 on a hard break; `cx-rules-only`, 2 sets, ties the soft and the
+  hard break) and in every ceiling machine with a hard `Response` and a soft rule. The refund is the
+  user's decision, and so is the clamp (approved 2026-11-19 23:57; dropping `min(0, ...)` in
+  `_progress` gives the literal form). Measured on the 275 sets (MONA, no model calls): the break
+  paths above `-H` fall from 51 to 0, those at or above the soft ending from 6 to 0, no set that
+  passed the pay-order check fails now, and no card plan pay changes. Limits, both harsher and never milder: a
+  soft break on the way withholds that clause's stages from the progress paid but not from the
+  take-back, so the break then totals a little below `-H`. The learner discounts: the refund comes
+  later than the progress it takes back, so a small share of the progress stays (a break episode
+  still never beats the safe one in any real set).
 - **[decision] With no final state, progress needs no other target.** A rule-only task has no
   final. A product state where each clause is satisfied (accepting) or violated, and none is
   waiting for something to happen, owes 0 in every clause, so it sits at `Phi = 0` without a
   special case. A state from which no such state (a final, in a goal task) can be reached, and
-  the edge into it, pay no progress, like an edge into a well: otherwise a step into a dead end
-  would pay for getting nowhere. Wells still pay no progress. A machine with a final pays the same
+  the edge into it, pay no progress: otherwise a step into a dead end would pay for getting
+  nowhere. An edge into a well is not paid progress either: it takes the progress made back
+  (previous entry). A machine with a final pays the same
   per-clause progress (it used to be the longest path of the product to the final), and a soft
   clause that starts or stops waiting counts as paid there too. The simulation of the earlier
   rule, the numbers and the dead-end witness: [rule-only progress](paper/rule-only-progress/README.md);
@@ -201,10 +252,11 @@ the rest.
   19 of the 25 T2.1 RMs (every task with a rule clause) lost exactly that state, with every reward
   and walk total unchanged (`samples/start_merge_check.py`, 25/25). This replaced an earlier fix
   that only gave the start its successor's progress score.
-- **[decision] No infinities.** An edge into a well gets no progress score, only a finite charge:
-  the well's -1 plus the end charge of the state the edge leaves (user, 2026-11-11; see "The end
-  judgment"). Ng's theorem also needs a bounded score. Some papers use -infinity for rejecting
-  states; we do not need it.
+- **[decision] No infinities.** An edge into a well gets a finite charge: the well's -1 plus the end
+  charge of the state the edge leaves (user, 2026-11-11; see "The end judgment"), and since
+  2026-11-19 the progress made since the start taken back, at most that much ("A hard break takes
+  back the progress made"). Ng's theorem also needs a bounded score. Some papers use -infinity for
+  rejecting states; we do not need it.
 
 ### Why no loop gains reward, undiscounted, and how we check it
 
@@ -216,19 +268,18 @@ how the rewards are built, and one check on the finished RM.
   the differences cancel. A loop that goes up one way comes down the same amount the other way
   (the cycles inside one clause's DFA are collapsed, so those states share a score and pay 0
   between them). The other rewards cannot repeat
-  for gain: `+1` and the soft finish penalty are paid only on edges into the final, the well's
-  charge (-1 plus the open promises) only on edges into the well, and both are absorbing. A soft
-  break costs -0.5, and progress can pay part of it back: a broken soft rule owes 0, so its
-  weighted potential is refunded at the break. For a soft rule one step from closing, with chain
-  weight W (1 plus the weights of the rules it hands off to), the break step pays `0.1 W - 0.5`:
-  -0.4 at W = 1, free at W = 5, positive from W = 6 (probe `break_credit.py`: W = 2, 3, 4, 5, 6
-  pays -0.3, -0.2, -0.1, 0, +0.1). Accepted and recorded; no current soft clause has W above 1:
-  the 61 soft clauses of the 195 bundles that store their clauses (171 FARM bundles and 24
-  ablation bundles; ARM-FM bundles have no clauses, so no chain weights) all weigh 1, and the
-  largest weight anywhere is 4, on a hard rule (scan of 2026-11-16 with `_chain_weights`). See the
-  [RM execution record](decisions/arm-fm/rm-execution.md). The
-  trigger and the break together still cost exactly -0.5, so a loop through a re-armed soft rule
-  (see "Recurrent soft rules") loses reward on every lap. With the switch off a broken clause
+  for gain: the finish reward (10) and the soft finish penalty are paid only on edges into the final, the well's
+  charge (-10 plus the open promises, and the progress taken back) only on edges into the well,
+  and both are absorbing. A soft
+  break costs `soft_break_cost` (1) and is not refunded: the clause a step breaks pays no progress
+  on that step, so the break step pays -1 at any chain weight W (1 plus the weights of the rules it
+  hands off to). Until 2026-11-18 (commit `deff802`) a broken soft rule owed 0, so its weighted
+  potential was refunded at the break and a soft rule one step from closing paid `0.1 W - 0.5`:
+  -0.4 at W = 1, positive from W = 6 (probe `break_credit.py`); that refund is gone, and no
+  current soft clause has W above 1 (scan of 2026-11-16 with `_chain_weights`; see the
+  [RM execution record](decisions/arm-fm/rm-execution.md)). The trigger and the break together
+  cost `W + 1` (-2 at W = 1), so a loop through a re-armed soft rule (see "Recurrent soft rules")
+  loses reward on every lap. With the switch off a broken clause
   stays broken (its DFA cannot leave a violated state), so the break is paid once. Dropping the duplicate start removes a state and its edges
   and adds none, so it cannot open a loop.
 - **[code] Checked on every RM.** After the rewards are set, `_has_positive_cycle` in
@@ -456,7 +507,17 @@ well -10); the 0.1 and 0.5 figures in the sections above are from before that ch
   clause shape, not on price: a machine with no `Existence` per milestone (a `Precedence` chain,
   a rule-only task) has no step that pays progress before the end. 56 of the 111 expected clause
   sets fail it with the new defaults and with every soft break free of charge, so pricing
-  cannot cure it. The progress pay is unchanged and these cards are only reported.
+  cannot cure it. The progress pay was unchanged at that point and these cards were only reported.
+  Since 2026-11-19 a machine with a final pays the steps of a `Precedence` chain too (see "Hard
+  progress reads the machine"); a rule-only task of `Precedence` rules still pays no progress
+  before the end, because a machine with no final keeps the per-clause measure. The check no
+  longer asks that of a machine with no final: with nothing to start, idle keeps every rule and a
+  started state pays the same, so the "started must pay more than not started" line is skipped
+  there and the summary says so (`skipped started > not started (no goal: idle keeps every rule)`).
+  Every other line still counts. This clears the 14 rule-only card sets and the 11 stored ones that
+  failed it; the 26 card sets and 17 stored sets that still fail it all have a final. Two
+  soft-goal rule-only cards passed that line strictly and lose it: a soft goal with no final still
+  pays its own progress, which no check reads now, so a test pins it.
 
 ### Cleanup passes, in order
 
@@ -578,8 +639,9 @@ having conflicting clauses.
   soft x SOFT_FAILED_REWARD` with that state's `PENDING_PROMISES` counts (`_price_edges` in
   `reward_layer.py`). The user's words: the arrows into the wells "do get the today's point plus,
   or in this case minus, the same reward penalization that the agent would get by finishing the
-  environment time limit on that state." A source state with nothing open keeps -1. The edge still
-  pays no progress, and the episode ends in the well with no further charge, so the runtime needs
+  environment time limit on that state." A source state with nothing open keeps -1. The edge paid
+  no progress then (since 2026-11-19 it takes back the progress made: "A hard break takes back the
+  progress made"), and the episode ends in the well with no further charge, so the runtime needs
   no change: the number is in the edge's reward. Breaking a rule is now always strictly worse than
   timing out in the same state. With three hard items open, a break used to cost -1 against -3
   for idling to the time limit; now it costs -4. The check:
