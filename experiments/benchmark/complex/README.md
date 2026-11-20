@@ -32,6 +32,11 @@ the stored clauses are compared with the card. The soft door rule of `cx-rules-o
 later). `cx-box` asks to carry the box to the exit, checked at the exit step, so a direct exit
 fails. `key_found` in `cx-sequence` needs a clear view of the key.
 
+Chain reword (2026-11-19): `cx-goal-many-rules` now says "open the door with the key" and its
+`expect` is the chain (`Precedence(has_door_key, door_open)`, `Precedence(door_open, box)`,
+`Existence(box)`) plus its ball-first rule and two soft rules; both chain orders are in `forced`
+(see `templates/README.md`).
+
 ## Contents
 
 - `tasks.json`: the cards.

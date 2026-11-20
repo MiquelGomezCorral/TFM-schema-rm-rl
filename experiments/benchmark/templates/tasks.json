@@ -835,14 +835,17 @@
         "layout_seed": 1,
         "observation": "symbolic"
       },
-      "task": "Once you have found the key, the locked door must be open on the last step of the episode. Open it, then pick up the ball.",
+      "task": "Once you have found the key, the locked door must be open on the last step of the episode. Pick up the key, open the locked door with it, then pick up the ball.",
       "goal": true,
       "template": "Response",
       "status": "draft",
       "expect": [
         ["Response", ["key_found", "target_door_open"], "hard"],
+        ["Precedence", ["has_matching_key", "target_door_open"], "hard"],
+        ["Precedence", ["target_door_open", "target_picked_up"], "hard"],
         ["Existence", ["target_picked_up"], "hard"]
       ],
+      "forced": [1, 2],
       "also_ok": [
         [
           ["Response", ["key_found", "target_door_open"], "hard"],
@@ -866,12 +869,12 @@
         ],
         "wrong": [
           {
-            "breaks": [0, 1],
+            "breaks": [0, 3],
             "why": "Takes the key, then waits: the locked door is never opened.",
             "steps": [{"do": "pickup", "obj": "key"}, {"do": "wait", "n": 1000}]
           },
           {
-            "breaks": [1],
+            "breaks": [3],
             "why": "Takes the key and opens the locked door, then waits and never picks up the ball.",
             "steps": [
               {"do": "pickup", "obj": "key"},
@@ -883,11 +886,11 @@
       },
       "event_seeds": [],
       "paraphrases": [
-        "After you find the key, make sure the locked door is open when the episode ends. Open it and then take the ball.",
-        "From the moment you find the key, the locked door has to be open on the final step. Open it, and then pick up the ball.",
-        "When you find the key, the locked door must be open at the end of the episode; open it. Finally, pick up the ball."
+        "After you find the key, make sure the locked door is open when the episode ends. Take the key, open the locked door with it and then take the ball.",
+        "From the moment you find the key, the locked door has to be open on the final step. Pick up the key, use it to open the door, and then pick up the ball.",
+        "When you find the key, the locked door must be open at the end of the episode. Take the key and open the locked door with it. Finally, pick up the ball."
       ],
-      "notes": "The response is the door, checked on the last step (the key is dropped later). Changed in card fix 2: the trigger key_found stays true once set, so Response needs the door open on the final step of the trace, not all the way through. The task says exactly that and not 'keep it open': a run that shuts the door and opens it again satisfies the clause. `key_found` also needs a clear view of the key now."
+      "notes": "The response is the door, checked on the last step (the key is dropped later). Changed in card fix 2: the trigger key_found stays true once set, so Response needs the door open on the final step of the trace, not all the way through. The task says exactly that and not 'keep it open': a run that shuts the door and opens it again satisfies the clause. `key_found` also needs a clear view of the key now. Chain reword 2026-11-19: the task names every step, so the answer is the chain Existence(ball), Precedence(door_open, ball), Precedence(has_matching_key, door_open) plus the card's Response. The two orders are forced by the level (`forced`), and the progress pay reads the machine, so a step with no rule of its own would pay nothing."
     },
     {
       "id": "tpl-response-1-nogoal",
@@ -1109,14 +1112,17 @@
         "layout_seed": 1,
         "observation": "symbolic"
       },
-      "task": "Move the ball away from the door before you take the key, then open the door and pick up the box.",
+      "task": "Move the ball away from the door before you take the key. Then open the door with the key and pick up the box.",
       "goal": true,
       "template": "Precedence",
       "status": "draft",
       "expect": [
         ["Precedence", ["blocker_moved", "has_door_key"], "hard"],
+        ["Precedence", ["has_door_key", "door_open"], "hard"],
+        ["Precedence", ["door_open", "target_picked_up"], "hard"],
         ["Existence", ["target_picked_up"], "hard"]
       ],
+      "forced": [1, 2],
       "also_ok": [
         [
           ["Precedence", ["blocker_moved", "has_door_key"], "hard"],
@@ -1125,12 +1131,6 @@
         ],
         [
           ["Precedence", ["blocker_moved", "has_door_key"], "hard"],
-          ["Precedence", ["door_open", "target_picked_up"], "hard"],
-          ["Existence", ["target_picked_up"], "hard"]
-        ],
-        [
-          ["Precedence", ["blocker_moved", "has_door_key"], "hard"],
-          ["Precedence", ["has_door_key", "door_open"], "hard"],
           ["Precedence", ["door_open", "target_picked_up"], "hard"],
           ["Existence", ["target_picked_up"], "hard"]
         ]
@@ -1162,7 +1162,7 @@
             ]
           },
           {
-            "breaks": [1],
+            "breaks": [3],
             "why": "Does it in the right order but waits after opening the door.",
             "steps": [
               {"do": "pickup", "obj": "ball"},
@@ -1176,11 +1176,11 @@
       },
       "event_seeds": [],
       "paraphrases": [
-        "Before taking the key, move the ball away from the door. Then open the door and pick up the box.",
-        "Take the key only after the ball is out of the way, then open the door and pick up the box.",
-        "First move the ball off the door, then take the key, open the door and pick up the box."
+        "Before taking the key, move the ball away from the door. Then open the door with the key and pick up the box.",
+        "Take the key only after the ball is out of the way, then use it to open the door and pick up the box.",
+        "First move the ball off the door, then take the key, open the door with it and pick up the box."
       ],
-      "notes": "Not forced by the env: the key can be taken first (it is then dropped to free the hands)."
+      "notes": "Not forced by the env: the key can be taken first (it is then dropped to free the hands). Chain reword 2026-11-19: the task names every step, so the answer is the chain Existence(box), Precedence(door_open, box), Precedence(has_door_key, door_open) plus the card's own Precedence(blocker_moved, has_door_key). The key-before-door and door-before-box orders are forced by the level (`forced`); the progress pay reads the machine, so a step with no rule of its own would pay nothing."
     },
     {
       "id": "tpl-precedence-1-nogoal",
