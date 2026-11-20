@@ -28,7 +28,8 @@ Build the clause set from the task's own words:
   only the rule. Goals come from the task text alone: the environment's own objective
   (the level's own goal) is not a requirement the task did not state.
 - A stated order of commanded steps ("`a`, then `b`, then `c`", "first `a`, then `b`", "do `a` before
-  `b`") is the `Existence` of the last step plus one `Precedence` per consecutive pair:
+  `b`", and the steps listed after a leading "then", "finally" or "after that": "then do `b` and
+  `c`" is `b` before `c`) is the `Existence` of the last step plus one `Precedence` per consecutive pair:
   `Existence(c)`, `Precedence(b, c)` and `Precedence(a, b)`. With `Existence(c)` hard, the
   chain forces `a` and `b`, so they get no `Existence`: one `Existence` per step drops the
   order the task states, and an `Existence` next to the chain only repeats it. When the last
@@ -48,10 +49,11 @@ Build the clause set from the task's own words:
   never for a plain sequence. Neither the condition nor the consequent of such wording gets
   an `Existence` clause.
 - A ban with a condition ("while ... is still shut", "until ..."): first read the banned
-  event's description in the environment. If it already holds that condition (an event
-  described as "lost before `a` happened"), write plain `Absence` of that event and no
-  `Precedence`. Otherwise
-  the condition stays in the clause as `Precedence` of the event that ends it.
+  event's description in the environment. If it already holds a "while ... is still shut"
+  condition (an event described as "dropped while the gate is shut"), write plain `Absence`
+  of that event and no `Precedence`. Otherwise, and always for "until `a`" ("until the gate
+  has been opened once"), the condition stays in the clause as `Precedence` of the event
+  that ends it: the ban ends once `a` has happened, even if the gate shuts again later.
 - Add a rule clause only when the task states that rule. Do not add safeguards the task
   does not mention, and do not invent an order among unrelated events.
 - Do not add clauses for prerequisites that the environment's event definitions already
