@@ -10,7 +10,7 @@ Rule: `environment.md` holds facts; implementation is in `environment-code.md`.
 | `minigrid-doorkey` | `MiniGrid-DoorKey-8x8-v0` | |
 | `minigrid-unlock-pickup` | `MiniGrid-UnlockPickup-v0` | |
 | `minigrid-blocked-unlock-pickup` | `MiniGrid-BlockedUnlockPickup-v0` | |
-| `minigrid-key-corridor` | `MiniGrid-KeyCorridorS6R3-v0` | |
+| `minigrid-key-corridor` | `MiniGrid-KeyCorridorS6R3-v0`, `MiniGrid-KeyCorridorS4R3-v0` | |
 | `service-room` | `MiniGrid-ServiceRoom-v0` | `siren_ringing`, `switch_toggled`, `holding_box`, `box_fell`, `at_exit` |
 | `service-room-carry` | `MiniGrid-ServiceRoom-v0` with `carry=True` | the same five; the agent starts holding the box (cards in `../box-carry`) |
 | `shop` | `MiniGrid-Shop-v0` | `siren_ringing`, `holding_food`, `switch_toggled`, `client_arrived`, `order_taken`, `food_prepared`, `order_served`, `food_fell`, `served_while_ringing`; no goal, always busy (cards in `../shop`) |
@@ -24,6 +24,8 @@ Propositions of the four MiniGrid envs live in each env's `environment.md`, sect
 
 - The four MiniGrid folders are verbatim copies of the same-named folders in `examples/arm-fm/`
   at commit `42bc2f0`.
+- `minigrid-key-corridor` holds for any room size (the labeling reads `env.room_size`);
+  `cx-sequence` and `base-key-corridor` run on S4R3 since 2026-11-20.
 - The `service-room` folder is added by slice S3 (the event room). Until it is merged, the
   service-room cards point at a file that does not exist yet. Their plans are unverified until
   slice S3 merges and the trace bank runs.

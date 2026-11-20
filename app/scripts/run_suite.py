@@ -15,9 +15,11 @@ suite's ``card.json`` and ``run-config.yaml``. A rerun skips ``finished`` runs (
 present), leaves a run whose process is alive alone, renames an ``interrupted`` or ``timed-out``
 folder to ``<folder>.<status>`` and restarts it from zero (a ``timed-out`` run only with
 ``--retry-timed-out``), and never trains a run whose bundle lacks a file training needs, has
-status ``pipeline-failed`` or is an ablation no-op (``no-data``, with the reason). A bundle with
-status ``provider-error`` or ``incomplete`` is retried by bundle generation, not here: its runs
-stay ``pending``. The no-RM arm trains once per identical training config and seed, across
+status ``pipeline-failed``, was generated for another level than the card's ``gym_id`` (its
+stored environment page names other gym ids) or is an ablation no-op (``no-data``, with the
+reason). A bundle with status ``provider-error`` or ``incomplete`` is retried by bundle
+generation, not here: its runs stay ``pending``. The no-RM arm trains once per identical
+training config and seed, across
 suites: the owner is a finished run under the runs root whose saved config matches, else a run
 another driver claimed (``.share-claims/``), else the first open card here. The other cards
 (``share`` in the plan) get a run folder of symlinks to the owner's run once it is
@@ -34,6 +36,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -90,6 +93,8 @@ BUNDLE_FILES = (
 )
 # Bundle statuses (`<card-id>.status.json`): generation retries these, so their runs wait.
 BUNDLE_RETRIED = ("provider-error", "incomplete")
+# A gym id as an environment page names it, e.g. `MiniGrid-KeyCorridorS4R3-v0`.
+GYM_ID = re.compile(r"\b[A-Z][A-Za-z0-9]*-[A-Za-z0-9-]*?-v\d+\b")
 # A shared no-RM run is linked into each card's folder (see ``link_shared``); the card's own
 # test and judge results are written there as real files, so they are never linked.
 SHARED_FILE = "shared-run.json"
@@ -297,14 +302,18 @@ def bundle_problem(run: Run) -> tuple[str, str] | None:
     ``no-data``: the bundle folder or a file training needs is missing, or its
     ``<card-id>.status.json`` (beside the folder) says ``pipeline-failed``, or it is an ablation
     variant whose manifest marks it a no-op (the machine equals its source: not trained; the
-    ``none`` control stays eligible). ``pending``: that status is ``provider-error`` or
-    ``incomplete``, which bundle generation retries.
+    ``none`` control stays eligible), or it was generated for another level: the environment
+    page its manifest stored names gym ids, and the card's is not among them. ``pending``: that
+    status is ``provider-error`` or ``incomplete``, which bundle generation retries.
     """
-    problems = (_bundle_problem(bundle) for bundle in run.bundles or (run.bundle,) if bundle)
+    gym_id = run.card["env"]["gym_id"]  # a mix's cards share it (mix_runs)
+    problems = (
+        _bundle_problem(bundle, gym_id) for bundle in run.bundles or (run.bundle,) if bundle
+    )
     return next((problem for problem in problems if problem), None)
 
 
-def _bundle_problem(bundle: Path) -> tuple[str, str] | None:
+def _bundle_problem(bundle: Path, gym_id: str) -> tuple[str, str] | None:
     status_file = ROOT / bundle.parent / f"{bundle.name}.status.json"
     record = read_json(status_file)
     status = record.get("status")
@@ -318,6 +327,16 @@ def _bundle_problem(bundle: Path) -> tuple[str, str] | None:
     missing = [name for name in BUNDLE_FILES if not (ROOT / bundle / name).is_file()]
     if missing:
         return NO_DATA, f"bundle lacks {', '.join(missing)}"
+    # Manifests keep no level field; the stored page names the gym ids it was written for.
+    page = (
+        read_json(ROOT / bundle / "manifest.json").get("inputs", {}).get("environment_markdown", "")
+    )
+    named = sorted(set(GYM_ID.findall(str(page))))
+    if named and gym_id not in named:
+        return NO_DATA, (
+            f"bundle level mismatch: its stored environment page names {', '.join(named)}, "
+            f"the card runs {gym_id}; regenerate the bundle for the card's level"
+        )
 
     ablation = ablation_settings(ROOT / bundle)
     if ablation.get("no_op") and ablation.get("off") != NO_PART:

@@ -1,16 +1,16 @@
-# MiniGrid KeyCorridor S6R3
+# MiniGrid KeyCorridor
 
 ## Environment
 
 The agent begins in a central corridor connected to several rooms. The mission's target object is behind a locked door, while the matching key is hidden in another randomly selected room. The mission reveals the target object's color and type but not the key's location. The agent has seven actions: turn left, turn right, move forward, pick up, drop, toggle, and done. Done does nothing.
 
-Layout: 3x3 rooms of 6x6 cells (a 16x16 grid). The three rooms of the middle column form a hallway, where the agent starts. Unlocked doors of random color join neighbouring rooms (side room to hallway, or side room to the room above or below) until every room is reachable. A side room may open only onto another side room: most layouts have at least one unlocked side room without a door onto the hallway. Those doors start closed and unlocked, and toggle opens them without a key. One door is locked: it is on the left wall of one right-column room (random row), and the target lies in that room. The matching key lies in one of the three left-column rooms (random room and cell). The target is always a ball, so the mission reads "pick up the <color> ball". In most layouts another door has the locked door's color, so color alone does not identify the locked door; being the door that starts locked does. Rooms are opaque: the agent sees through no wall or closed door.
+Layout: 3x3 square rooms; neighbouring rooms share their wall. A room is 6x6 cells on S6R3 (a 16x16 grid) and 4x4 cells on S4R3 (a 10x10 grid), its wall ring included. The three rooms of the middle column form a hallway, where the agent starts. Unlocked doors of random color join neighbouring rooms (side room to hallway, or side room to the room above or below) until every room is reachable. A side room may open only onto another side room: most layouts have at least one unlocked side room without a door onto the hallway. Those doors start closed and unlocked, and toggle opens them without a key. One door is locked: it is on the left wall of one right-column room (random row), and the target lies in that room. The matching key lies in one of the three left-column rooms (random room and cell). The target is always a ball, so the mission reads "pick up the <color> ball". In most layouts another door has the locked door's color, so color alone does not identify the locked door; being the door that starts locked does. Rooms are opaque: the agent sees through no wall or closed door.
 
 ## Objective and episode boundary
 
 The mission is complete when the designated target object is picked up. The environment ends the episode on that pickup and cuts it at the step limit.
 
-The step limit is 30 times 6 squared, 1080 steps. Only picking up the mission's ball ends the episode.
+The step limit is 30 times the room side squared: 1080 steps on S6R3, 480 on S4R3. Only picking up the mission's ball ends the episode.
 
 ## Proposition semantics
 
@@ -21,7 +21,7 @@ The target and matching key are determined from the current randomized mission a
 | `key_found` | latch, reading | the agent sees the matching key now: the key lies in the 7x7 box in front of the agent (the agent's row or column and the 6 cells ahead, 3 cells to each side) and no wall or closed door hides it; or `key_found` was true at the previous step |
 | `has_matching_key` | condition | the agent carries a key of the locked door's color |
 | `target_door_open` | condition | the locked door is open; false again if toggled shut. "The locked door" is the door that starts locked, also after the key has unlocked it |
-| `target_room_entered` | latch, reading | the agent stands on the locked doorway or on a cell inside the target room now (the room's 6x6 block, door cell included); or `target_room_entered` was true at the previous step |
+| `target_room_entered` | latch, reading | the agent stands on the locked doorway or on a cell inside the target room now (the room's whole square block, door cell included); or `target_room_entered` was true at the previous step |
 | `target_picked_up` | condition, last step only | the agent carries the mission's ball |
 
 Readings:
@@ -52,7 +52,7 @@ Readings:
 
 ## Example trace
 
-A real episode, mission "pick up the yellow ball": 40 steps, reward 0.967.
+A real S6R3 episode, mission "pick up the yellow ball": 40 steps, reward 0.967.
 
 1. 3 turns and moves, no proposition changes
 2. `forward` (step 4): `key_found` true
