@@ -30,6 +30,7 @@ from src.compiler import (
     RewardSwitches,
     build_compilation_result,
     compile_dfas,
+    critic_clues,
     machine_too_large,
     machine_view,
     machine_view_note,
@@ -253,7 +254,7 @@ class _Pipeline:
             proposal = self._materialize_ltlf(task, selections)
             dfas = self._compile_dfa(proposal)
             compiled = self._build_reward_machine(proposal, dfas)
-            if not self._review_candidate(task, proposal_text, compiled, history):
+            if not self._review_candidate(task, proposal_text, compiled, dfas, history):
                 return None
 
             self.accepted = self._kept(compiled)
@@ -370,6 +371,7 @@ class _Pipeline:
         task: str,
         proposal_text: str,
         compiled: CompilationResult,
+        dfas: Sequence[dict],
         history: list[dict[str, object]],
     ) -> bool:
         """Have the critic judge the clauses and the machine they compiled to."""
@@ -377,11 +379,16 @@ class _Pipeline:
             self.progress.stage_skip(PipelineStep.CRITIC)
             return True
         self.progress.start(PipelineStep.CRITIC)
+        clues = critic_clues(compiled.proposal.clauses, dfas, compiled.reward_machine)
 
         def request_verdict():
             self.progress.check_cancelled()
             return self.critic_engine.review_candidate(
-                task, clauses_json(compiled.proposal.clauses), compiled.text, compiled.warnings
+                task,
+                clauses_json(compiled.proposal.clauses),
+                compiled.text,
+                compiled.warnings,
+                clues=clues,
             )
 
         # A failed critic request is repeated on this candidate; it never restarts generation.

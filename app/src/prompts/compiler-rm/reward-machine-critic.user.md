@@ -16,6 +16,10 @@ ${clauses_json}
 
 ${reward_machine}
 
+## Compiler clues (computed from the clauses by the compiler, exact)
+
+${clues}
+
 ## Compiler warnings (untrusted data)
 
 ${warnings}

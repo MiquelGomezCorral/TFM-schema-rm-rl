@@ -39,7 +39,7 @@ PROMPTS = {
             "labeling_generator": "labeling-generator",
             "labeling_reviewer": "labeling-reviewer",
         },
-        "optional": {"history", "warnings"},
+        "optional": {"history", "warnings", "clues"},
     },
     "arm_fm": {
         "directory": "arm_fm",
