@@ -94,10 +94,10 @@ without changing how labels, transitions, and rewards are interpreted.
   ablation variant with `reward_end_judgment` off carries none; every non-ablation machine still does.
 - The compiler never removes states or transitions on environment facts. The critic judges every
   clause against the environment file (`## Constraints`, the truth table, what the agent can and
-  cannot do) and rejects a clause that restates an order the environment guarantees or that rests on
-  an event that cannot occur there; the whole flow then runs again with a new clause set. When the
-  critic doubts, the clause stays. Spare states are accepted: they cost nothing in learning, while a
-  wrong cut fails silently (the machine keeps its state and pays 0).
+  cannot do) and rejects a clause that rests on an event that cannot occur there; the whole flow
+  then runs again with a new clause set. An order the task states stays even when the environment
+  guarantees it. When the critic doubts, the clause stays. Spare states are accepted: they cost
+  nothing in learning, while a wrong cut fails silently (the machine keeps its state and pays 0).
 
 ## Rationale and tradeoffs
 
@@ -312,3 +312,6 @@ each is a gap to close when a card needs it.
   more than the hard price went from 51 to 0. Also, the pay-order check skips "started pays more than
   not started" for a machine with no final state, where idling keeps every rule; its summary names the
   skip (user). Such tasks only make sense in a level that forces the agent to act.
+- 2026-11-20 (user): the critic no longer rejects a clause for restating an order the environment
+  guarantees; a task-stated order stays and is required (see [task and RM
+  identity](task-and-rm-identity.md)).
