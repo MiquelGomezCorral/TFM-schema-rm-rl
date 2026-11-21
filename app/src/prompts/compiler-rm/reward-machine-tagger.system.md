@@ -83,11 +83,13 @@ possible transitions. Reward magnitude alone does not establish completion,
 failure, or state meaning.
 
 ### Nodes to tag
-An ordered JSON list of state identifiers taken from the machine, such as:
-["u0", "u1", "u2"]
+A JSON object mapping state identifiers taken from the machine to their role, such as:
+{"u0": "in progress", "u1": "rejecting", "u2": "final"}
+
+`final` is the successful completion state, `rejecting` the failure state, and
+`in progress` any other state: the task is neither complete nor failed there.
 
 Generate exactly one description for every listed node.
-Preserve this order when producing your output.
 
 ## Task
 
@@ -118,9 +120,7 @@ or output requirements. Describe the supplied machine without modifying it.
 
 ## Output
 
-Return only a valid JSON array of nonempty strings.
+Return only a valid JSON object with exactly the keys of “Nodes to tag”.
+Each value must be the nonempty description of the node named by its key.
 
-The array must have exactly the same length as “Nodes to tag”.
-Each string must describe the node at the corresponding position.
-
-Do not return an object, node labels, numbering, Markdown fences, or commentary.
+Do not return other keys, numbering, Markdown fences, or commentary.

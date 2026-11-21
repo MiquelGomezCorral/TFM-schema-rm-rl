@@ -58,8 +58,10 @@ tasks, while keeping the generator and critic responsibilities stable.
   never corrected artifacts.
 - A separate compiler state-description request runs after the critic accepts the RM. Its system prompt defines the inputs and tagging rules; its user prompt supplies
   the environment, original task, all validated clauses, compiled RM (its `REJECTING_STATES:` line names the well),
-  and ordered node identifiers. It returns one JSON list of nonempty strings in node order,
-  with 1–4 sentences describing each state's progress and remaining objectives.
+  and each node identifier with its role (`final`, `rejecting` or `in progress`). It returns one
+  JSON object keyed by node identifier, one nonempty string per node with 1–4 sentences describing
+  that state's progress and remaining objectives; a missing, repeated or unknown key is refused as
+  a malformed description, never matched by position.
 - Description generation uses the configured provider and generator model. Malformed descriptions
   and transient provider failures permit at most three tagging requests against the same
   compiled candidate; exhaustion stops the run without regenerating that candidate.

@@ -549,23 +549,26 @@ class EngineTests(unittest.TestCase):
     def test_generic_engine_tags_states(self) -> None:
         requests = []
 
-        def request_text(model, system, user):
-            requests.append(user)
-            return '["first progress", "task satisfied"]'
+        def request(model, system, user, schema, name):
+            requests.append((user, schema))
+            return '{"u0": "first progress", "u1": "task satisfied"}'
 
-        engine = GenericEngine(ENVIRONMENT, "test-model", "Test", lambda *args: "", request_text)
+        engine = GenericEngine(ENVIRONMENT, "test-model", "Test", request)
 
         descriptions = engine.describe_states(
             "Finish",
             '[{"pattern": "Existence"}]',
             "REWARD_MACHINE:",
-            ("u0", "u1"),
+            {"u0": "in progress", "u1": "final"},
         )
 
         self.assertEqual(descriptions, ("first progress", "task satisfied"))
-        self.assertIn('["u0", "u1"]', requests[0])
-        self.assertIn("### Reward Machine", requests[0])
-        self.assertIn('"pattern": "Existence"', requests[0])
+        user, schema = requests[0]
+        self.assertIn('{"u0": "in progress", "u1": "final"}', user)
+        self.assertIn("### Reward Machine", user)
+        self.assertIn('"pattern": "Existence"', user)
+        self.assertEqual(schema["required"], ["u0", "u1"])
+        self.assertFalse(schema["additionalProperties"])
 
     @patch("src.engines.generic_engine.sleep")
     @patch.object(GenericEngine, "_renew_session")
@@ -657,7 +660,9 @@ class EngineTests(unittest.TestCase):
         # Every other stage stops the same way and names itself in the reason.
         stages = {
             "declare-proposal": lambda engine: engine.propose_task("Finish"),
-            "rm-tagger": lambda engine: engine.describe_states("Finish", "[]", "RM", ("u0",)),
+            "rm-tagger": lambda engine: engine.describe_states(
+                "Finish", "[]", "RM", {"u0": "final"}
+            ),
             "labeling-generator": lambda engine: engine.request_text(
                 "system", "user", stage="labeling_generator"
             ),
@@ -708,35 +713,33 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(attempts, [])
 
     def test_state_tagger_output_shapes_are_validated(self) -> None:
-        nodes = ("u0", "u1")
+        roles = {"u0": "in progress", "u1": "final"}
 
         def engine_for(response):
-            return GenericEngine(
-                ENVIRONMENT,
-                "test-model",
-                "Test",
-                lambda *args: "",
-                lambda *args: response,
-            )
+            return GenericEngine(ENVIRONMENT, "test-model", "Test", lambda *args: response)
 
         rejected = (
             "not json",
-            '{"u0": "a", "u1": "b"}',
-            '["only one"]',
-            '["ok", 3]',
-            '["ok", "   "]',
-            '```json\n["ok", "two"]\n```',
+            '["a", "b"]',  # positional: no text names its state
+            '{"u0": "a"}',  # u1 missing
+            '{"u0": "a", "u0": "b", "u1": "c"}',  # u0 repeated
+            '{"u0": "a", "u1": "b", "u2": "c"}',  # u2 unknown
+            '{"u0": "ok", "u1": 3}',
+            '{"u0": "ok", "u1": "   "}',
+            '```json\n{"u0": "ok", "u1": "two"}\n```',
+            '{"u0": "In progress", "u1": "final"}',  # the input roles copied back
         )
         for response in rejected:
             with (
                 self.subTest(response=response),
                 self.assertRaises(RetryableEngineError),
             ):
-                engine_for(response).describe_states("Finish", "[]", "m", nodes)
+                engine_for(response).describe_states("Finish", "[]", "m", roles)
 
-        accepted = engine_for('[" first ", "second"]')
+        # Each text goes to the state it names, whatever order the reply lists them in.
+        accepted = engine_for('{"u1": "second", "u0": " first "}')
         self.assertEqual(
-            accepted.describe_states("Finish", "[]", "m", nodes),
+            accepted.describe_states("Finish", "[]", "m", roles),
             ("first", "second"),
         )
 

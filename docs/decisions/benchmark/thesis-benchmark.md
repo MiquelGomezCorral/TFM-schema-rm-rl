@@ -167,7 +167,8 @@ thing whichever arm produced it.
   FARM's generator prompt may gain general, environment-agnostic rules and examples before the
   method freeze; each change and its date are recorded here (2026-11-16: one trigger followed by
   ordered steps becomes a chain of Responses; 2026-11-20: a stated order keeps its `Precedence`,
-  see Stated orders) (user, 2026-11-16).
+  see Stated orders; 2026-11-21: the state tagger reads each state's role beside it and answers
+  one text keyed by each state id, not a list in node order) (user, 2026-11-16).
 - **One-hot machine state.** `rm_state_encoding: one_hot` gives the learner the machine state as one
   slot per state instead of the text embedding. It is a diagnostic learner input, not an arm: its
   runs are labeled one-hot and never pooled with embedding runs (user, 2026-11-16).

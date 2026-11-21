@@ -1,7 +1,7 @@
 """Shared workflow for provider-backed structured-output engines."""
 
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from time import sleep
 
 from openai import BadRequestError
@@ -26,6 +26,7 @@ from .structured import (
     parse_proposal,
     parse_state_descriptions,
     proposal_schema,
+    state_descriptions_schema,
 )
 
 # ======================================================================================
@@ -113,10 +114,14 @@ class GenericEngine:
         task: str,
         clauses_json: str,
         candidate_rm: str,
-        nodes: Sequence[str],
+        roles: Mapping[str, str],
     ) -> tuple[str, ...]:
-        """Request one validated description per ordered node identifier."""
-        response_text = self.request_text(
+        """Request one validated description per node, in the order of ``roles``.
+
+        ``roles`` maps each node identifier to its role (``final``, ``rejecting`` or
+        ``in progress``); the prompt shows both and the reply is keyed by node.
+        """
+        response_text = self._request_structured(
             read_prompt("compiler", "rm_tagger"),
             render_prompt(
                 "compiler",
@@ -125,11 +130,12 @@ class GenericEngine:
                 task=task,
                 clauses_json=clauses_json,
                 reward_machine=candidate_rm,
-                nodes_json=json.dumps(list(nodes)),
+                nodes_json=json.dumps(dict(roles)),
             ),
-            stage="rm_tagger",
+            state_descriptions_schema(tuple(roles)),
+            "rm_tagger",
         )
-        return parse_state_descriptions(response_text, nodes)
+        return parse_state_descriptions(response_text, tuple(roles))
 
     def review_candidate(
         self,

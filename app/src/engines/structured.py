@@ -123,6 +123,16 @@ def critic_schema() -> dict:
     }
 
 
+def state_descriptions_schema(states: Sequence[str]) -> dict:
+    """One description per state, keyed by its identifier: no other key, none left out."""
+    return {
+        "type": "object",
+        "properties": {state: {"type": "string", "minLength": 1} for state in states},
+        "required": list(states),
+        "additionalProperties": False,
+    }
+
+
 # ======================================================================================
 #                                PARSING AND VALIDATION
 # ======================================================================================
@@ -166,28 +176,50 @@ def parse_proposal(
     return _validate_proposal(output, environment)
 
 
+# The roles the tagger reads beside each state (`tag_states`); a reply echoing one is no description.
+STATE_FINAL, STATE_REJECTING, STATE_IN_PROGRESS = "final", "rejecting", "in progress"
+_STATE_ROLES = frozenset({STATE_FINAL, STATE_REJECTING, STATE_IN_PROGRESS})
+
+
 def parse_state_descriptions(
     response_text: str,
     nodes: Sequence[str],
 ) -> tuple[str, ...]:
-    """Validate one nonempty description per node from a bare JSON array."""
+    """Validate one nonempty description per node from a JSON object keyed by node, in node order.
+
+    A text must name its state: a missing, repeated or unknown key is refused, never matched
+    by position.
+    """
     try:
-        output = json.loads(response_text)
+        output = json.loads(response_text, object_pairs_hook=_refuse_repeated_keys)
     except (TypeError, json.JSONDecodeError) as error:
         raise RetryableEngineError(f"State tagger returned malformed JSON: {error}") from error
-    if not isinstance(output, list):
-        raise RetryableEngineError("State tagger must return a JSON array of descriptions")
-    if len(output) != len(nodes):
+    if not isinstance(output, dict):
+        raise RetryableEngineError("State tagger must return a JSON object keyed by state")
+    missing = [node for node in nodes if node not in output]
+    unknown = sorted(set(output) - set(nodes))
+    if missing or unknown:
         raise RetryableEngineError(
-            f"State tagger returned {len(output)} description(s) for {len(nodes)} node(s)"
+            f"State tagger keys differ from the states: missing {missing}, unknown {unknown}"
         )
 
     descriptions = []
-    for item in output:
-        if not isinstance(item, str) or not item.strip():
+    for node in nodes:
+        text = output[node]
+        if not isinstance(text, str) or not text.strip():
             raise RetryableEngineError("State descriptions must be nonempty strings")
-        descriptions.append(item.strip())
+        if text.strip().lower() in _STATE_ROLES:
+            raise RetryableEngineError(f"State tagger copied a role as the description of {node}")
+        descriptions.append(text.strip())
     return tuple(descriptions)
+
+
+def _refuse_repeated_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    """Build a JSON object, refusing a key given twice (``json.loads`` keeps the last)."""
+    keys = [key for key, _ in pairs]
+    if repeated := sorted({key for key in keys if keys.count(key) > 1}):
+        raise RetryableEngineError(f"State tagger described a state twice: {repeated}")
+    return dict(pairs)
 
 
 def responses_text(response) -> str:
