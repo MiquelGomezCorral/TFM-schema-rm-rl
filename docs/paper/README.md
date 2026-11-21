@@ -1105,3 +1105,69 @@ reward_layer.py`), the step-limit checks in `app/main.py` and `app/src/arm_fm/en
 `tests/test_reward_layer.py` and `tests/test_plan_check.py`. Records, changed in the same commit:
 `docs/decisions/arm-fm/rm-execution.md`, `docs/COMPILER_REWARD_DESIGN.md` and
 `docs/decisions/generation/run-observability.md`.
+
+**Rebuilt on today's pipeline (2026-11-21).** shop-serve built with the code of main `56c4a1e` at the defaults
+(promise cost off, end judgment off, step limit 600), twice: the card's answer compiled with no model, and a
+generation from the task text with deepseek-v4.1-flash and the glm-5.3-flash critic at max thinking. The two
+machines are byte-identical (md5 `68f3adf9e6122eee683a0b93d2ac5c6e`, also `shop-serve-both-off`, the machine the
+probe trained to 0 served): scorer exact, 17 states, 406 transitions, well u14, pay order ok. Plan pay at the
+bundle's gamma 0.99, seeds 1-3: solve -1.506 / -1.399 / -1.391, idle and wrong-0 -2.633 / -2.824 / -2.713, wrong-2
+(one order, then nothing) -1.922 / -2.114 / -2.003, wrong-1 (a fall left for one step) -8.794 / -10.580 / -10.163.
+Serving wins on every seed, but only by 0.42 to 0.72 over wrong-2; undiscounted it earns 0. Parts 1 and 2 discount
+at 0.995, the shop runs' PPO gamma, so their numbers for the same machine differ. Limits: this build was not
+trained; the generated bundle stopped at the embedding step (the embedding server refused the connection), and its
+17 state texts come from the tagger before `6539207` (`keyed-state-texts/`). Files: `evidence/today-pipeline/`
+(both bundle copies, the two plan pay records, `pay.out`, the generation's status, plan check and log),
+`check/compile_card.py` and `check/card_plan_pay.py` (from the plan folder, where the second is `plan_pay.py`,
+renamed beside the entry's own; the hooks reformatted it and the copied `labeling.py` files, the same code, and the
+pay rerun after them gives the same records). The page shows it as Part 6 (version 2). Rerun (no model call, MONA on PATH):
+`PYTHONPATH=app python -W ignore docs/paper/shop-promise-cost/check/compile_card.py
+experiments/benchmark/shop/tasks.json shop-serve <labeling.py> OUT_DIR` gives the same machine text, and
+`check/card_plan_pay.py OUT.json experiments/benchmark/shop/tasks.json shop-serve <bundle>...` gives the same pay
+records, bundle paths aside. The page's last section has the generation command.
+
+### Keyed state texts: each state's text now sits on its own state (`keyed-state-texts/`), 2026-11-21
+
+**What it shows.** Every Reward Machine state carries a short text from the state tagger, and training builds the
+state embeddings from these texts. The tagger answered with a bare JSON list that the code matched to the states by
+position, so a text written for another state passed without an error. On three stored bundles, 13 of 37 texts
+describe another state or the wrong duties: on tpl-response-1-goal the texts of u4, u5 and u6 are rotated by one,
+so the final reads as pending and u6 claims success; on tpl-precedence-1-goal u1 holds u6's content, and u8 and u10
+claim completion without being final; on shop-serve seven texts drop or mix up a duty, most often the food still to
+prepare. Commit `6539207` (merge `ba918a9`) sends each state's role (final, rejecting, in progress) beside it and
+keys the reply by state id; parsing refuses a missing, repeated or unknown id. Re-tagged live three times with
+deepseek-v4.1-flash, every new text sits on its own state, 37 of 37 in each round; in round 1 two precedence texts
+(u1, u10) are half right, adding the false claim that picking up the box ends the episode. A negative result: a word
+search for completion and pending words over the 379 stored bundles finds 26 hits, 22 of them false alarms, and
+misses 9 of the 13 wrong texts above. The page shows each bundle's task, LTLf, live RM graph and RM text, and a
+per-state table of role, stored text, new text and verdict.
+
+**Evidence.** Copies of the three stored bundles (main `5284fff`); the three re-tag rounds, one JSON per bundle with
+each state's role, entry guards, new and stored text, the model's raw reply and its calls (9 calls in all, no
+warning, no refused reply); the verdict per text; the word-search hits. `check/state_texts.py` checks that each raw
+reply is keyed by exactly the machine's states and equals the recorded texts, and that the recorded stored texts are
+the bundle's and still the committed ones. Limits: three bundles, one model and one provider (OpenCode); round 1
+allowed 3 attempts per request, rounds 2 and 3 one; the verdicts are one reader's (the fix worker's, plus this
+entry's two half-right stored texts of tpl-precedence-1-goal, u5 and u6, which say that dropping the ball back
+before the key is taken breaks the order, though no edge from them reaches the failure state); the re-tag wrote no bundle, so the stored bundles keep their old texts; no training ran with
+the new texts.
+
+**Files.** `index.html` (built from `data.json`; open it from disk), `graphs/` (the three machines as live HTML, SVG
+and RM text), `check/` (`state_texts.py` and `build_page.py`, new; `retag.py`, `state_list.py` and
+`keyword_probe.py`, from the plan folder), `evidence/` (`bundles/`, `round-1/`, `round-2/`, `round-3/`,
+`verdicts.json`, `state-texts.out`, `keyword_probe.json`). The repository's hooks reformatted the copied
+`labeling.py` files and `retag.py` (ruff format, the same code); the machine, manifest, state text and round files
+are byte copies, and `state_texts.py` passes its checks after the hooks.
+
+**Rerun** (no model call, from the repository root in `RM_RL_env`): `PYTHONPATH=app python -W ignore
+docs/paper/keyed-state-texts/check/state_texts.py` prints every state's texts and verdicts, runs the checks and
+writes `graphs/<name>.rm`; `check/build_page.py` writes `data.json`. `check/retag.py` is the live tool: one
+deepseek-v4.1-flash call per bundle over OpenCode, under `dotenv -f .env run --no-override`. The page's last section
+lists every command.
+
+**Code.** Commit `6539207`, merged as `ba918a9`: the keyed reply schema and parser in `app/src/engines/structured.py`
+(`state_descriptions_schema`, `parse_state_descriptions`, `_refuse_repeated_keys`), the request in
+`app/src/engines/generic_engine.py` (`describe_states`), the roles in `app/scripts/generate_rm.py` (`_state_roles`)
+and the prompt `app/src/prompts/compiler-rm/reward-machine-tagger.system.md`, with `tests/test_engines.py`,
+`tests/test_pipeline_orchestration.py` and `tests/test_prompts.py`. Records: `docs/decisions/arm-fm/
+task-and-rm-identity.md` (reply shape) and `docs/decisions/benchmark/thesis-benchmark.md` (pre-freeze prompt log).

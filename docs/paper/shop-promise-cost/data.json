@@ -55,6 +55,7 @@
       "**The fix.** The step into the well now pays the promise cost of the whole step limit: -10 - 0.1 × 600 = -70 on the shop. After it the solve is the best plan on all eight level variants. With the promise cost off every machine is byte-identical: the two committed sweeps and the four levels.",
       "**No regression.** The round 7 level trains to 12.21 / 12.07 / 12.21 served with the fix, identical to round 7 B8b. Its level has no slip, so its machine has no well and its text did not change.",
       "**Open.** Today's shop-serve, promise cost on and the fix in, serves 0 on 3 of 3 seeds. Random play never prepares food in 1,000 episodes, and the trained agents never pick the food up. The options wait for the user (Part 4).",
+      "**Rebuilt on 2026-11-21.** With today's pipeline and the promise cost off, the model's shop-serve machine is the card's, byte for byte, and the same machine the probe could not learn. Serving pays the most on every seed, but only 0.42 to 0.72 above taking one order and stopping (Part 6).",
       "**The no-goal plan check.** With the end judgment off, the old rule failed 38 of 62 no-goal bundles by construction. The new rule passes 35 of them, leaves the 275 goal bundles unchanged, catches a shop-serve built without its fall rule on 3 of 3 seeds and finds a real defect in the committed forcing/lanes-rules."
      ]
     }
@@ -961,6 +962,100 @@
    ]
   },
   {
+   "id": "part6",
+   "title": "6. 2026-11-21: shop-serve rebuilt on today's pipeline",
+   "intro": "Rebuilt with the code of main `56c4a1e` at the default settings: promise cost off, end judgment off, step limit 600. Two builds of the card: its answer (`expect`) compiled with no model (`check/compile_card.py`), and a generation from the task text with deepseek-v4.1-flash and the glm-5.3-flash critic at max thinking. The plan pay is `check/card_plan_pay.py`; no training.",
+   "blocks": [
+    {
+     "type": "callout",
+     "tone": "info",
+     "title": "The model's machine is the card's machine",
+     "text": "The two builds give byte-identical machines (md5 `68f3adf9e6122eee683a0b93d2ac5c6e`): scorer exact, 17 states, 406 transitions, no final, well u14, pay order ok (not started 0 > hard break -10). It is also `shop-serve-both-off` of Part 1, the machine the probe trained to 0 served on 3 of 3 seeds. This build was not trained again."
+    },
+    {
+     "type": "table",
+     "heading": "Plan pay on both builds, seeds 1-3, discounted at gamma 0.99; plain pay in the last column (`evidence/today-pipeline/pay.out`)",
+     "columns": [
+      "plan",
+      "what it does",
+      "seed 1",
+      "seed 2",
+      "seed 3",
+      "plain, every seed"
+     ],
+     "rows": [
+      [
+       "solve",
+       "the scripted worker serves all shift",
+       {"text": "-1.506", "tone": "ok"},
+       {"text": "-1.399", "tone": "ok"},
+       {"text": "-1.391", "tone": "ok"},
+       "0, cut at step 600"
+      ],
+      [
+       "idle and wrong-0",
+       "does nothing for the whole episode",
+       "-2.633",
+       "-2.824",
+       "-2.713",
+       "-3"
+      ],
+      [
+       "wrong-2",
+       "takes the first client's order and then does nothing",
+       {"text": "-1.922", "tone": "warn"},
+       {"text": "-2.114", "tone": "warn"},
+       {"text": "-2.003", "tone": "warn"},
+       "-2"
+      ],
+      [
+       "wrong-1",
+       "serves, but leaves a fallen portion on the floor for one step",
+       "-8.794",
+       "-10.580",
+       "-10.163",
+       "-13, well at step 48 / 25 / 29"
+      ],
+      [
+       "solve minus wrong-2",
+       "",
+       "0.416",
+       "0.715",
+       "0.612",
+       "2"
+      ]
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**Serving wins on every seed, narrowly.** The solve beats every other plan, but only by 0.42 to 0.72 over taking one order and stopping. Undiscounted, a whole shift of serving pays 0, against -2 for wrong-2 and -3 for idle, and that gap does not grow with the clients served (Part 1).",
+      "**The judge agrees with the card.** On both builds each wrong plan fails exactly the rule it is meant to break, and the bundle's labeling matches the reference labels on every step of every plan.",
+      "**Gamma.** This table discounts at 0.99, the gamma the bundle records, as `card_plan_pay.py` does. Parts 1 and 2 discount at 0.995, the shop runs' PPO gamma (`check/plan_pay.py`), so the same machine shows other numbers there: solve -1.308 / -1.222 / -1.28 and wrong-1 -10.667 / -11.722 / -11.49 (`evidence/pay-table.out`, promise off). Both put the solve above wrong-1.",
+      "**The generated bundle is incomplete.** The embedding server refused the connection, so the run stopped at the embedding step (`evidence/today-pipeline/shop-serve.status.json`). The machine, the labeling and 17 state texts are saved; the embeddings are not. The critic accepted the first proposal (\"NO CHANGES NEEDED\", `evidence/today-pipeline/shop-serve.log`): 1 attempt, 0 critic interventions, 278 s.",
+      "**Its state texts predate the keyed fix.** `56c4a1e` comes before commit `6539207` (`docs/paper/keyed-state-texts/`), so the 17 texts come from the positional tagger. Plan pay reads no state text."
+     ]
+    },
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/shop-serve-both-off.html",
+       "height": 520,
+       "alt": "Reward Machine of today's shop-serve, compiled and generated: 17 states",
+       "caption": "**Today's shop-serve, compiled and generated** · Shop, today's shop-serve level (slip on, 600 steps) · 17 states, 406 transitions · no final, well u14\nTask: *Whenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move.* Promise cost off, end judgment off. Byte-identical to `graphs/shop-serve-both-off.rm` of Part 1, so the same graph is shown.",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "Bundle copies `evidence/today-pipeline/bundles/shop-serve-compiled` and `evidence/today-pipeline/bundles/shop-serve-generated`; both `reward_machine.txt` files have md5 `68f3adf9e6122eee683a0b93d2ac5c6e`, as `graphs/shop-serve-both-off.rm` does.",
+        "code": "# Task (NL)\nWhenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move.\n\n# Clauses and LTLf (the card's expect; both builds score exact against it)\nhard Response(client_arrived, order_taken): (G (client_arrived -> (F order_taken)))\nhard Response(order_taken, food_prepared): (G (order_taken -> (F food_prepared)))\nhard Response(food_prepared, order_served): (G (food_prepared -> (F order_served)))\nhard ChainResponse(food_fell, holding_food): (G (food_fell -> (X holding_food)))\n\n# RM text (graphs/shop-serve-both-off.rm, 798 lines: the header, the first 12 transitions and rewards, and the first 12 rewards into the well u14)\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15, u16\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u14\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !client_arrived&!food_fell&!food_prepared&order_taken) -> u1\n(u0, !client_arrived&!food_fell&food_prepared&!order_served) -> u2\n(u0, !client_arrived&food_fell&!food_prepared&!order_taken) -> u3\n(u0, !client_arrived&food_fell&!food_prepared&order_taken) -> u4\n(u0, !client_arrived&food_fell&food_prepared&!order_served) -> u5\n(u0, !client_arrived&food_fell&food_prepared&order_served) -> u3\n(u0, client_arrived&!food_fell&!food_prepared&!order_taken) -> u6\n(u0, client_arrived&!food_fell&!food_prepared&order_taken) -> u1\n(u0, client_arrived&!food_fell&food_prepared&!order_served&!order_taken) -> u7\n(u0, client_arrived&!food_fell&food_prepared&!order_served&order_taken) -> u2\n(u0, client_arrived&!food_fell&food_prepared&order_served&!order_taken) -> u6\n(u0, client_arrived&food_fell&!food_prepared&!order_taken) -> u8\n... 394 more transitions\nREWARD_FUNCTION:\n(u0, !client_arrived&!food_fell&!food_prepared&order_taken, u1) -> -2\n(u0, !client_arrived&!food_fell&food_prepared&!order_served, u2) -> -1\n(u0, !client_arrived&food_fell&!food_prepared&!order_taken, u3) -> -1\n(u0, !client_arrived&food_fell&!food_prepared&order_taken, u4) -> -3\n(u0, !client_arrived&food_fell&food_prepared&!order_served, u5) -> -2\n(u0, !client_arrived&food_fell&food_prepared&order_served, u3) -> -1\n(u0, client_arrived&!food_fell&!food_prepared&!order_taken, u6) -> -3\n(u0, client_arrived&!food_fell&!food_prepared&order_taken, u1) -> -2\n(u0, client_arrived&!food_fell&food_prepared&!order_served&!order_taken, u7) -> -4\n(u0, client_arrived&!food_fell&food_prepared&!order_served&order_taken, u2) -> -1\n(u0, client_arrived&!food_fell&food_prepared&order_served&!order_taken, u6) -> -3\n(u0, client_arrived&food_fell&!food_prepared&!order_taken, u8) -> -4\n... 372 more rewards\n# rewards into the well (146 edges)\n(u3, !client_arrived&!food_fell&!food_prepared&!holding_food&!order_taken, u14) -> -10\n(u3, !client_arrived&!food_fell&!food_prepared&!holding_food&order_taken, u14) -> -10\n(u3, !client_arrived&!food_fell&food_prepared&!holding_food&!order_served, u14) -> -10\n(u3, !client_arrived&!food_fell&food_prepared&!holding_food&order_served, u14) -> -10\n(u3, !client_arrived&food_fell&!food_prepared&!holding_food&!order_taken, u14) -> -10\n(u3, !client_arrived&food_fell&!food_prepared&!holding_food&order_taken, u14) -> -10\n(u3, !client_arrived&food_fell&food_prepared&!holding_food&!order_served, u14) -> -10\n(u3, !client_arrived&food_fell&food_prepared&!holding_food&order_served, u14) -> -10\n(u3, client_arrived&!food_fell&!food_prepared&!holding_food&!order_taken, u14) -> -10\n(u3, client_arrived&!food_fell&!food_prepared&!holding_food&order_taken, u14) -> -10\n(u3, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&!order_taken, u14) -> -10\n(u3, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&order_taken, u14) -> -10\n..."
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
    "id": "evidence",
    "title": "Evidence, rerun and code",
    "blocks": [
@@ -974,6 +1069,7 @@
       "**Runs:** `evidence/runs/<run>-s<seed>/seed*/` with `judge.json`, `test.json`, `summary.json`, `config.yaml` and `eval.csv` for the 30 runs of the page; `evidence/runs.out`; `evidence/configs/` and `evidence/logs/` for the six runs of 2026-11-20; `evidence/gate/`.",
       "**Diagnosis:** `evidence/diagnosis/` (random play, trained agents, scripted plans) and `evidence/fall-rate.out`.",
       "**Plan check:** `evidence/plan-check/` (before and after, stored and with the end judgment off), `evidence/plan-check-off.out`, `evidence/plan-check-stored.out`, `evidence/no-fall-rule.out`.",
+      "**Today's pipeline (Part 6):** `evidence/today-pipeline/`: the compiled and generated bundle copies (`bundles/`), `pay-shop-serve-compiled.json` and `pay-shop-serve-generated.json` from `check/card_plan_pay.py`, `pay.out` (the rerun's print, equal to both records), and the generation's `shop-serve.status.json`, `shop-serve.plan_check.json` and `shop-serve.log`.",
       "**Not copied:** the agent traces (14 MB) and `episodes.csv` (0.8 MB a seed) stay in the run folders of the `tp-shop-well` worktree (`outputs/runs/`); the sweep outputs (6 MB and 4.4 MB) and the eight level bundles (8 MB a side) stay in the plan folder's `shop-well/`; no model weights.",
       "**Limits:** the page quotes seed 1 of the card's event seeds; seeds 2 and 3 are in the records. The end-judgment-off plan check rebuilds each bundle with today's compiler, and the rebuild with the recorded switches does not give back the stored text of any no-goal bundle (\"rebuild control differs\" on every row). Rounds 6 and 7 trained with a -5 time-limit charge, today's runs with 0. The chain sweep also reads the main checkout's local `outputs/` bundles, which Git does not keep, and the trace bank the card sweep ran on was not recorded, so their md5 lines can be matched only on that checkout's state of 2026-11-20."
      ]
@@ -984,7 +1080,7 @@
     },
     {
      "type": "code",
-     "text": "E=docs/paper/shop-promise-cost\n# the machines: the no-fall-rule build first, then every machine's facts and graphs/<name>.rm\nPYTHONPATH=app python -W ignore $E/check/no_fall_rule.py\nPYTHONPATH=app python -W ignore $E/check/machines.py\nfor m in $E/graphs/*.rm; do PYTHONPATH=app python app/main.py render-rm --rm-file $m --svg-dir ${m%.rm}.svg --html; done\n# served per seed of every run\npython $E/check/runs_table.py\n# Part 1 and Part 2 plan pay (levels builds the eight level bundles into OUT_DIR, about 8 MB)\nPYTHONPATH=app python -W ignore $E/check/plan_pay.py rounds OUT.json\nPYTHONPATH=app python -W ignore $E/check/plan_pay.py levels OUT_DIR OUT.json\npython $E/check/pay_table.py $E/evidence/part2-before.json $E/evidence/part2-after.json\n# before the fix: the two plan_pay.py commands from a checkout of 78c666c\n# sweeps; compare md5sum of the outputs with evidence/sweeps.out\nPYTHONPATH=app OMP_NUM_THREADS=2 python $E/check/chain_sweep.py . OUT.jsonl\nPYTHONPATH=app OMP_NUM_THREADS=2 python $E/check/card_sweep.py TRACE_BANK OUT.jsonl\nPYTHONPATH=app python -W ignore $E/check/promise_sweep.py sweep . OUT.jsonl\nPYTHONPATH=app python -W ignore $E/check/promise_sweep.py compare BEFORE.jsonl AFTER.jsonl\n# Part 4 diagnosis (levels: today, today-noslip, today-nocut, today-fetch, r7)\nPYTHONPATH=app python -W ignore $E/check/diagnose.py random today 1000 OUT.json\nPYTHONPATH=app python -W ignore $E/check/diagnose.py plans today OUT.json\nPYTHONPATH=app python -W ignore $E/check/diagnose.py agent today RUN/agent-traces OUT.json\npython $E/check/fall_rate.py 1000000 RUN_S1/episodes.csv RUN_S2/episodes.csv RUN_S3/episodes.csv\nPYTHONPATH=app python -W ignore $E/check/fetch_variant.py OUT_DIR\n# Part 5 plan check of every committed bundle, stored and with the end judgment off\nPYTHONPATH=app python -W ignore $E/check/plan_check_all.py experiments/benchmark OUT.jsonl\nPYTHONPATH=app python -W ignore $E/check/plan_check_all.py experiments/benchmark OUT-off.jsonl off\npython $E/check/compare_checks.py $E/evidence/plan-check/plan-check-before-off.jsonl $E/evidence/plan-check/plan-check-review-off.jsonl\n# machines.out, runs.out and no-fall-rule.out are written by their scripts; the other .out files\n# were saved with: python $E/check/tee.py OUT.out SCRIPT.py ARGS"
+     "text": "E=docs/paper/shop-promise-cost\n# the machines: the no-fall-rule build first, then every machine's facts and graphs/<name>.rm\nPYTHONPATH=app python -W ignore $E/check/no_fall_rule.py\nPYTHONPATH=app python -W ignore $E/check/machines.py\nfor m in $E/graphs/*.rm; do PYTHONPATH=app python app/main.py render-rm --rm-file $m --svg-dir ${m%.rm}.svg --html; done\n# served per seed of every run\npython $E/check/runs_table.py\n# Part 1 and Part 2 plan pay (levels builds the eight level bundles into OUT_DIR, about 8 MB)\nPYTHONPATH=app python -W ignore $E/check/plan_pay.py rounds OUT.json\nPYTHONPATH=app python -W ignore $E/check/plan_pay.py levels OUT_DIR OUT.json\npython $E/check/pay_table.py $E/evidence/part2-before.json $E/evidence/part2-after.json\n# before the fix: the two plan_pay.py commands from a checkout of 78c666c\n# sweeps; compare md5sum of the outputs with evidence/sweeps.out\nPYTHONPATH=app OMP_NUM_THREADS=2 python $E/check/chain_sweep.py . OUT.jsonl\nPYTHONPATH=app OMP_NUM_THREADS=2 python $E/check/card_sweep.py TRACE_BANK OUT.jsonl\nPYTHONPATH=app python -W ignore $E/check/promise_sweep.py sweep . OUT.jsonl\nPYTHONPATH=app python -W ignore $E/check/promise_sweep.py compare BEFORE.jsonl AFTER.jsonl\n# Part 4 diagnosis (levels: today, today-noslip, today-nocut, today-fetch, r7)\nPYTHONPATH=app python -W ignore $E/check/diagnose.py random today 1000 OUT.json\nPYTHONPATH=app python -W ignore $E/check/diagnose.py plans today OUT.json\nPYTHONPATH=app python -W ignore $E/check/diagnose.py agent today RUN/agent-traces OUT.json\npython $E/check/fall_rate.py 1000000 RUN_S1/episodes.csv RUN_S2/episodes.csv RUN_S3/episodes.csv\nPYTHONPATH=app python -W ignore $E/check/fetch_variant.py OUT_DIR\n# Part 5 plan check of every committed bundle, stored and with the end judgment off\nPYTHONPATH=app python -W ignore $E/check/plan_check_all.py experiments/benchmark OUT.jsonl\nPYTHONPATH=app python -W ignore $E/check/plan_check_all.py experiments/benchmark OUT-off.jsonl off\npython $E/check/compare_checks.py $E/evidence/plan-check/plan-check-before-off.jsonl $E/evidence/plan-check/plan-check-review-off.jsonl\n# Part 6, today's pipeline (MONA on PATH): the card's answer compiled, then the plan pay of both builds\nPYTHONPATH=app python -W ignore $E/check/compile_card.py experiments/benchmark/shop/tasks.json shop-serve $E/evidence/today-pipeline/bundles/shop-serve-compiled/labeling.py OUT_DIR\nPYTHONPATH=app python -W ignore $E/check/card_plan_pay.py OUT.json experiments/benchmark/shop/tasks.json shop-serve $E/evidence/today-pipeline/bundles/shop-serve-compiled $E/evidence/today-pipeline/bundles/shop-serve-generated\n# Part 6 generation (model calls; on main 56c4a1e, key from .env, embedding server for the last step)\ndotenv -f .env run --no-override -- python -W ignore app/main.py generate-larm --mode compiler --attempts 10 --environment experiments/benchmark/envs/shop/environment.md --task \"Whenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move.\" --gym-id MiniGrid-Shop-v0 --env-kwargs '{\"max_steps\": 600}' --bundle OUT_DIR\n# machines.out, runs.out and no-fall-rule.out are written by their scripts; the other .out files\n# were saved with: python $E/check/tee.py OUT.out SCRIPT.py ARGS"
     },
     {
      "type": "text",
