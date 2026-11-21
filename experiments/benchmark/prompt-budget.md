@@ -3,7 +3,8 @@
 Counted from `app/src/prompts/**` after the S4 prompt loop of the FARM final plan (base commit
 `65b587b`, the generator prompt v5 plus the loop's edits). The first count was made at commit
 `42bc2f0` with 5 creator examples and 12 critic examples; v5 raised them to 8 and 15, and the loop
-added one critic example.
+added one critic example. The ordered-steps prompts (`6b28dd0`, 2026-11-19) added two creator
+examples; the line ranges below are those of 2026-11-21.
 
 A worked example is a task wording followed by the answer the model should give for it: a
 clause set, or a critic verdict. Output skeletons ("Return only: REWARD_MACHINE: ...") and
@@ -13,15 +14,15 @@ clause set, or a critic verdict. Output skeletons ("Return only: REWARD_MACHINE:
 
 | Prompt file | Lines | Role it reaches | Worked examples |
 | --- | --- | --- | --- |
-| `app/src/prompts/compiler-rm/declare-templates.md` | 49-73 | task-to-clause examples; inserted into the creator and critic system prompts | 8 |
-| `app/src/prompts/compiler-rm/reward-machine-critic.system.md` | 125-170 | critic system prompt, section "Worked example" | 8 (6 with a JSON verdict, 2 described in prose) |
+| `app/src/prompts/compiler-rm/declare-templates.md` | 84-117 | task-to-clause examples; inserted into the creator and critic system prompts | 10 |
+| `app/src/prompts/compiler-rm/reward-machine-critic.system.md` | 184-245 | critic system prompt, section "Worked example" | 8 (6 with a JSON verdict, 2 described in prose) |
 | `app/src/prompts/compiler-rm/reward-ltlf-creator.system.md` | none | clause creator | 0 |
 | `app/src/prompts/compiler-rm/reward-machine-tagger.system.md` | none | state description tagger | 0 |
 | `app/src/prompts/compiler-rm/labeling-generator.system.md` | none | labeling generator | 0 |
 | `app/src/prompts/compiler-rm/labeling-reviewer.system.md` | none | labeling critic | 0 |
 
-What each FARM model reads: the clause creator 8 examples, the reward-machine critic 16
-(8 from `declare-templates.md`, 8 of its own), the tagger and both labeling roles none.
+What each FARM model reads: the clause creator 10 examples, the reward-machine critic 18
+(10 from `declare-templates.md`, 8 of its own), the tagger and both labeling roles none.
 
 ## ARM-FM prompts
 

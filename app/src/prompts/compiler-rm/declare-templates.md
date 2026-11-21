@@ -24,14 +24,14 @@ Pick the template from the task's own wording:
 | a command: "eventually", "make sure `a` happens", "reach `a`", "do `a`" (never the condition of an "if") | `Existence(a)` when `a` is a lone step (defined below the table); otherwise a `Precedence` from `a` to the step ordered after it (rows below) |
 | "twice", "at two different moments" | `ExistenceTwo(a)`, also inside an order (a `Precedence` forces only one occurrence) |
 | "never", "do not ever" | `Absence(a)` |
-| "if `a` (ever) happens, `b` must also happen", "`a` means `b` too / as well", "... before or after `a`" (`b` may come first) | `RespondedExistence(a, b)` |
-| "whenever / every time / each time / if / when / should `a`, `b` must happen", "`b` afterwards / later / at that moment" | `Response(a, b)` |
+| a condition with a no-timing cue, such as "if `a` (ever) happens, `b` must also happen", "`a` means `b` too / as well", "... before or after `a`" (`b` may come first), in either clause order | `RespondedExistence(a, b)` |
+| a condition, such as "whenever / every time / each time / if / when / should `a`, `b` must happen", "`b` afterwards / later / at that moment", in either clause order | `Response(a, b)` |
 | "after", "only after", "not before", "never `b` before `a`", "first `a`, then `b` is allowed" | `Precedence(a, b)`, plus `Existence(b)` when `b` is required |
 | "do not `b` until / unless `a`", "do not `b` while `a` has not happened yet" (still closed, still off) | First read `b`'s description. When it already holds a "while ... still closed" condition (an event defined as "dropped while the gate is shut"), that ban is plain `Absence(b)`. Otherwise, and always for "until `a`", `Precedence(a, b)`: the ban ends once `a` has happened. A bare "never `b`" stays `Absence(b)` |
 | "carry / bring `c` to `a`", "reach `a` with / holding `c`" | `Existence(a)` + `Response(a, c)`; `Existence(c)` alone lets `c` be held anywhere. When reaching `a` is only the condition of an "if" ("if you reach `a`, you must hold `c`"), it is `Response(a, c)` alone: no `Existence(a)` |
 | "whenever `a`: do `b`, then `c`, then `d`" | `Response(a, b)`, `Response(b, c)`, `Response(c, d)`: each step follows the one before it, never all from `a`; a step that is only a lasting condition ("fetch the item", `holding_x`) gets no clause |
 | a command "do `a`, then `b`", "first `a`, then `b`", "do `a` before `b`" | `Existence(b)` + `Precedence(a, b)`. A hard `Existence(b)` forces `a`: no `Existence(a)`. When `b` is only preferred ("then preferably `b`": a soft `Existence(b)`) or never commanded ("move `a` before you ever take `b`": no `Existence(b)`), `a` is lone and gets a hard `Existence(a)` |
-| a listed sequence "`a`, `b`, `c`, and then `d`", also after a leading order word ("then / finally / after that, do `c` and `d`": `c` before `d`) | `Existence` of the last event and `Precedence` between each consecutive pair; no order between events the list does not relate. A hard last `Existence` forces the earlier events: no `Existence` for them. When the last event is only preferred, the last hard event is lone (below) |
+| steps in one sentence, each with its own verb ("take `a`, open `b` and pick up `c`", "do `a`, do `b`, and then do `c`"), also after a leading order word | `Existence` of the last event and `Precedence` between each consecutive pair; no order between events the list does not relate. A hard last `Existence` forces the earlier events: no `Existence` for them. When the last event is only preferred, the last hard event is lone (below) |
 | "right after", "immediately after", "in the very next step" | `ChainResponse(a, b)` |
 | "never both", "not both during the episode" | `NotCoExistence(a, b)` |
 
@@ -40,17 +40,46 @@ hard `Existence`. Every lone commanded step gets its own hard `Existence`, and n
 does. Lone steps are a single "do `a`", the last hard step of an order, and a step whose
 later step is only preferred (a soft `Existence` forces nothing).
 
-In an "if `a` ..." sentence, only "`b` also / too / as well" (with or without "must") or
-"before or after" means `RespondedExistence`; any other "`b` must" is `Response`. The event
-of an "if / whenever / each time" condition is not a goal: it gets no `Existence`. An
-unconditional "do `a` at some point" is `Existence(a)`. "Next step" always means
+Order. Each cue list here gives examples of a meaning, never a closed set: match the meaning,
+not the words.
+- Order words state a required order, such as then, after, before, until, once, only after,
+  first ... then, finish by. When the order word opens a condition or a ban instead ("once
+  you have found `a`, `b` must ...", "after `a` falls, ...", "do not `b` until `a`"), the
+  condition and ban rows apply.
+- Steps in one sentence keep their written order: commanded actions with their own verbs,
+  joined by commas or "and" ("take `a`, open `b` and pick up `c`"), are `a` before `b` before
+  `c`; under a condition they are the Response chain. The chain ends at a full stop or
+  semicolon and at a new condition (such as whenever, if, each time).
+- A rule is never a step of a chain: a ban, a preferred order ("try to do `a` before `b`"), or
+  a condition rule, also when the condition comes last ("pick `a` up every time it falls").
+- What has nothing to order gets one clause each and no order: several objects under one verb
+  ("pick up the key and the ball"), states and counts ("be holding `a` on two moves", "make
+  sure `b` is open"), and items under an unordered cue such as in any order, both, at some
+  point.
+- A new sentence, or a part after a semicolon, is an independent point unless an order word
+  links it to the one before, such as Then, After that, Finally.
+- A compound verb or tool phrase over one object whose second step needs the first, such as
+  "find and take `a`" or "open `b` with `a`", states that order.
+- Read a condition by meaning, on either side: "`b` must happen if `a`" is "if `a`, `b` must
+  happen": `Response(a, b)`. A no-timing cue, such as also, too, as well, at some point, at
+  least once, before or after, makes it `RespondedExistence(a, b)`; a timing word inside the
+  cue ("at some later point") keeps `Response`. "If you can" and "if possible" are
+  preferences, not conditions.
+- After "if / whenever `x`, (also) `y`", the next sentence (or the part after a semicolon),
+  when its command opens with an order word such as Then or Finally, makes its step `z`
+  required, after `y`, and after `x` when `x` happens: `Existence(z)`, `Precedence(y, z)`,
+  `Response(x, z)`; `x` stays optional. Leave out `Response(x, z)` when `z`'s own sentence
+  already puts `x` before `z`.
+
+The event of an "if / whenever / each time" condition is not a goal: it gets no `Existence`.
+An unconditional "do `a` at some point" is `Existence(a)`. "Next step" always means
 `ChainResponse`.
 
 `Response(a, b)` needs `b` at or after the last step `a` is true. When `a` is a condition that
 lasts (`holding_x`) and `b` a one-step event, it never closes if `b` happens while `a` still
-holds. In a chain, skip a step that is only such a condition and link the events around it:
-"whenever `a`: take `b`, fetch `x`, do `c`, then `d`" is `Response(a, b)`, `Response(b, c)`,
-`Response(c, d)`, with nothing for the fetch.
+holds, unless `b` is the episode's last step. In a chain, skip a step that is only such a
+condition and link the events around it: "whenever `a`: take `b`, fetch `x`, do `c`, then
+`d`" is `Response(a, b)`, `Response(b, c)`, `Response(c, d)`, with nothing for the fetch.
 
 Worked examples, with neutral identifiers:
 
@@ -77,7 +106,7 @@ Worked examples, with neutral identifiers:
 - "Do `c`, and preferably `b` right after `a`": `Existence(c)` hard and
   `ChainResponse(a, b)` soft. Do not add a `Precedence` or any other order rule the task
   never states.
-- "Do `a`, `b`, and then `c`": `Existence(c)` hard with `Precedence(a, b)` and
+- "Do `a`, do `b`, and then do `c`": `Existence(c)` hard with `Precedence(a, b)` and
   `Precedence(b, c)` hard; the chain forces `a` and `b`. Do not add `Precedence(a, c)`; the
   chain already implies it.
 - "Do `a` and `b` in any order, then `c`": `Existence(c)` hard with `Precedence(a, c)` and

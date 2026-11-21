@@ -59,9 +59,13 @@ never reject a candidate for them alone.
 - "Rule-only task": no hard goal clause, so the machine has no final state. This is
   valid when the task requires no goal unconditionally and as a hard requirement: it has
   only restrictions ("never do b before a"), only consequents of "whenever", "every time",
-  or "if ... then ..." wording, or only goals worded as preferences ("preferably reach
+  or "if `a`, `b`" wording, or only goals worded as preferences ("preferably reach
   the goal"). It is a defect only when the task requires something unconditionally and
   as a hard requirement, such as "Do b only after a", and no clause makes it happen.
+  Steps commanded after an order word such as Then, After that or Finally, at the start of a
+  later sentence or of a part after a semicolon, are goals, not consequents: they are required
+  like any stated order (the last step's `Existence` and the chain). Example: "If `a`, also
+  `b`. Then `c`." requires `c`.
   A sentence that starts with an imperative verb (move, open, pick up, reach) commands
   that event, unconditionally and without a preference cue, even when the rest of the
   sentence is an order ("before", "then", "after"). Rule-only fits restrictions,
@@ -127,23 +131,27 @@ a clue that matches the task is no reason to reject.
 asks for twice still needs its `ExistenceTwo`. A lone commanded step
    (defined above), such as the step before a soft last step, needs its own hard
    `Existence`: a soft `Existence` forces nothing. A consequent of "whenever", "every time", or
-   "if ... then ..." is a rule, not a goal, and a goal worded as a preference is soft; a
-   task made only of those is rule-only and valid with its warning. An event named only in
-   an "if", "when" or "whenever" condition ("if `a` happens, ...") is not commanded:
-   never demand an `Existence` for it.
+   "if `a`, `b`" is a rule, not a goal, and a goal worded as a preference is soft; a
+   task made only of those is rule-only and valid with its warning. Steps commanded after an
+   order word such as Then, After that or Finally, at the start of a later sentence or of a
+   part after a semicolon, are goals, not consequents: they are required like any stated
+   order (the last step's `Existence` and the chain). An event named only in an "if", "when"
+   or "whenever" condition ("if `a` happens, ...") is not commanded: never demand an
+   `Existence` for it.
    A rule such as `Precedence` or `Response` alone never makes its events happen, so an
    empty `FINAL_STATES` for a task that requires something unconditionally and as a hard
    requirement means a goal is missing.
    An event commanded unconditionally and without a preference cue is required even inside
-   ordered wording ("do a before b", "a, then b", a listed sequence). In such an order the
-   hard `Existence` of the last step with the hard `Precedence` chain forces every earlier
-   step, so the earlier steps need no `Existence` of their own. `Precedence` alone is a
-   missing goal.
+   ordered wording ("do a before b", "a, then b", or steps in one sentence, each with its own
+   verb). In such an order the hard `Existence` of the last step with the hard `Precedence`
+   chain forces every earlier step, so the earlier steps need no `Existence` of their own.
+   `Precedence` alone is a missing goal.
 3. Template and argument order: Is each template the right one, with its propositions
    in the order the definition above gives? `Precedence(a, b)` puts `a` first. "Very next
    step", "next move", "right after" is `ChainResponse`: a `Response` there drops the timing.
    A `Response(a, b)` whose `a` is a lasting condition (`holding_x`) and `b` a one-step
-   event never closes: reject it and name the clause.
+   event never closes, unless `b` is the episode's last step. When it never closes, reject
+   it and name the clause.
 4. Priority: Is each clause hard unless the task words it as a preference, with a
    preference cue such as those above? A clause scoped by such a cue is soft even when it
    contains "never" or "must". Without a cue, a categorical "never", "must", "before", or
