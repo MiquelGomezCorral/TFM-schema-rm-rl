@@ -2,22 +2,28 @@
 
 Read from the bundle files, plus the card file (``--tasks``) and a replay summary (``--replay``)
 when given. The FARM clause check compares the clauses the compiler stored
-(``manifest.generation["clauses"]``) with the card's ``expect`` and ``also_ok``; the generation
+(``manifest.generation["clauses"]``) with the card's ``expect`` and ``also_ok``, and, when the
+lists differ, asks MONA whether they still state the same task; the generation
 table sums the stamps (``manifest.provenance["stamp"]``); paraphrase agreement compares the
 bundles of one card across ``~p<k>`` (clauses, and the machine-check verdicts of the replay).
 """
 
 import json
 from collections import Counter, defaultdict
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
+from itertools import combinations
 from pathlib import Path
 from statistics import fmean
 from typing import Any
 
+from flat_tool import compile_dfa
+
 from src.arm_fm.artifacts import ArtifactBundle
+from src.config import Configuration
+from src.utils import ltlf_of
 
 from .cards import Card, card_header, load_cards
-from .declare_judge import ClauseError, as_clause
+from .declare_judge import HARD, SOFT, Clause, ClauseError, as_clause
 from .traces import BundleRef, as_object, find_bundles, load_machine_bundle, read_json, write_json
 
 STAMP_FIELDS = ("attempts", "critic_interventions", "retries", "wall_time_s")
@@ -125,12 +131,15 @@ def _normalized(raw: object) -> list[list[Any]] | None:
 
 
 def clause_status(stored: list[list[Any]] | None, card: Card) -> str:
-    """``exact``, ``also_ok``, ``mismatch`` or ``missing`` for the ``_normalized`` stored clauses.
+    """``exact``, ``also_ok``, ``equivalent``, ``mismatch`` or ``missing`` for stored clauses.
 
-    ``exact`` holds every clause of ``expect`` except the card's ``forced`` ones, which are optional
-    extras: neither keeping nor dropping them counts against the output. The current rule keeps a
-    stated order even when the world forces it and never adds an unstated one from environment
-    facts.
+    ``stored`` comes from ``_normalized``. ``exact`` holds every clause of ``expect`` except the
+    card's ``forced`` ones, which are optional extras: neither keeping nor dropping them counts
+    against the output. ``also_ok`` is one listed alternative. ``equivalent`` is another clause list
+    that states the same task as one of those answers (``_same_task``), such as an ``Existence`` the
+    other clauses already force: it counts as right like ``exact`` and ``also_ok``, and the status
+    shows which machines needed the check. The current rule keeps a stated order even when the world
+    forces it and never adds an unstated one from environment facts.
     """
     if stored is None:
         return "missing"
@@ -142,7 +151,85 @@ def clause_status(stored: list[list[Any]] | None, card: Card) -> str:
         return "exact"
     if any(clauses == Counter(option) for option in card.also_ok):
         return "also_ok"
+    CONFIG = Configuration()
+    if any(_same_task(clauses, Counter(answer), CONFIG) for answer in _accepted_answers(card)):
+        return "equivalent"
     return "mismatch"
+
+
+def _accepted_answers(card: Card) -> list[list[Clause]]:
+    """Every nonempty clause list ``exact`` or ``also_ok`` accepts.
+
+    That is ``expect`` with any subset of its ``forced`` clauses left out, and each ``also_ok``.
+    An empty answer is left out, so an unreadable stored list never matches an all-forced card.
+    """
+    required = [clause for i, clause in enumerate(card.expect) if i not in card.forced]
+    optional = [card.expect[i] for i in card.forced]
+    kept = [extra for size in range(len(optional) + 1) for extra in combinations(optional, size)]
+    answers = [*([*required, *extra] for extra in kept), *(list(option) for option in card.also_ok)]
+    return [answer for answer in answers if answer]
+
+
+def _same_task(first: Counter[Clause], second: Counter[Clause], CONFIG: Configuration) -> bool:
+    """True when the two clause lists state the same task, by MONA.
+
+    Both lists must name the same propositions. Hard clauses are compared with hard and soft with
+    soft, so a soft rule written as hard stays different. The hard clauses are compared as one
+    conjunction of their pipeline LTLf (``ltlf_of``). The soft ones are paired one to one, repeats
+    counted, because the compiler prices each soft clause on its own: an extra implied soft rule or
+    a repeated one changes the soft-break pay.
+    """
+    if _propositions(first) != _propositions(second):
+        return False
+    if not _equivalent(_conjunction(first, HARD), _conjunction(second, HARD), CONFIG):
+        return False
+    return _paired(_soft_formulas(first), _soft_formulas(second), CONFIG)
+
+
+def _equivalent(a: str, b: str, CONFIG: Configuration) -> bool:
+    """True when no finite trace satisfies one LTLf formula and not the other.
+
+    That is, MONA's DFA of their exclusive or accepts nothing.
+    """
+    if a == b:
+        return True
+    difference = compile_dfa(
+        f"(({a}) & ~({b})) | (~({a}) & ({b}))", mona_executable=CONFIG.mona_executable
+    )
+    return not difference["accepting_states"]
+
+
+def _paired(first: list[str], second: list[str], CONFIG: Configuration) -> bool:
+    """True when each formula of ``first`` has its own ``_equivalent`` formula in ``second``.
+
+    Equivalence is transitive, so taking the first unused match never blocks a full pairing.
+    """
+    if len(first) != len(second):
+        return False
+    unused = list(second)
+    for formula in first:
+        match = next((other for other in unused if _equivalent(formula, other, CONFIG)), None)
+        if match is None:
+            return False
+        unused.remove(match)
+    return True
+
+
+def _propositions(clauses: Collection[Clause]) -> set[str]:
+    return {name for _, names, _ in clauses for name in names}
+
+
+def _conjunction(clauses: Collection[Clause], priority: str) -> str:
+    """The LTLf of one priority's clauses, sorted and joined by ``&``; ``true`` when there are none."""
+    parts = {ltlf_of(template, names) for template, names, level in clauses if level == priority}
+    return " & ".join(sorted(parts)) or "true"
+
+
+def _soft_formulas(clauses: Counter[Clause]) -> list[str]:
+    """The pipeline LTLf of each soft clause, one per copy."""
+    return [
+        ltlf_of(template, names) for template, names, level in clauses.elements() if level == SOFT
+    ]
 
 
 def generation_table(suite: str, facts: Mapping[str, Mapping[str, Any]]) -> list[dict[str, Any]]:

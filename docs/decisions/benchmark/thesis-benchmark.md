@@ -126,6 +126,21 @@ thing whichever arm produced it.
   that leaves it out (prompts since `42003cf`). A card answer that drops a stated clause or order is
   no longer an `also_ok` answer (`ab27c07`). An order the task does not state is never added from
   environment facts.
+- **Card scoring.** `rm-facts` scores FARM's stored clauses against the card: `exact` (the `expect`
+  clauses, `forced` ones optional), `also_ok` (one listed alternative), `equivalent` or `mismatch`.
+  Since 2026-11-21 (user) a clause list that states the same task as one of those answers counts as
+  right like `exact` and `also_ok`, under its own status `equivalent`: over the same propositions,
+  MONA finds no finite trace that satisfies one side and not the other. Hard clauses are compared
+  with hard and soft with soft, so a soft rule written as hard stays a `mismatch`. The hard clauses
+  are compared as one conjunction; the soft ones are paired one to one, repeats counted, each
+  equivalent to its own clause on the other side, because the compiler prices each soft clause on
+  its own: an extra implied soft rule or a repeated one changes the soft-break pay and stays a
+  `mismatch`. Examples of `equivalent` are hard `Existence` clauses the goal and the chain already
+  force (`base-doorkey`) and `NotCoExistence` with its arguments swapped. A missing, wrongly
+  ordered or unimplied extra rule stays a `mismatch`. With the default settings (end judgment off)
+  the `base-doorkey` card machine and the stored one with the implied `Existence` clauses are
+  identical; only with the end judgment on do the well edges (-40 and -31 instead of -21 and -20)
+  and the end charge (up to -30 instead of -10) differ.
 - **Labeling repair.** Before any repair, `repair-labeling` gives each bundle one class from replays of
   its card's traces: `missing`, `load`, `crash`, `wrong` or `ok`. The traces are the card's plans
   and, for the four MiniGrid envs, seeded random walks on layouts the plans never use (user, 2026-11-16: "replay
@@ -444,3 +459,9 @@ and a restart is easier to trust.
   also accepted (`also_ok`). `base-unlock-pickup` (with its pilot and smoke copies) and
   `base-key-corridor` follow it, `tpl-responded-existence-2-goal` requires its "Then" orders, and no
   card uses `forced` any more; the scorer keeps the field.
+- 2026-11-21: Same-task machines count as right (user): the scorer's new `equivalent` status, by
+  MONA equivalence of the hard clauses and, one to one, of the soft ones, over the same propositions.
+  Of the 169 FARM bundles on main, 9 moved from `mismatch` to `equivalent` (implied `Existence`:
+  `base-doorkey`, `base-blocked-unlock-pickup`, `tpl-precedence-1-goal~p1` to `~p3`; swapped
+  `NotCoExistence`: `tpl-not-co-existence-1-nogoal` and its 3 wordings); no `exact` or `also_ok`
+  changed.
