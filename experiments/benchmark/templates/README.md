@@ -163,11 +163,24 @@ trace and still accepts key then box with no ball. Its FARM bundle, generated ag
 `--reasoning max`), lacks Response(blocker_moved, target_picked_up): `mismatch`. The old bundle, with
 neither box order, is kept in `order-rule-r0/farm/`.
 
+Order rule (2026-11-21, user): commanded steps in one sentence keep their written order, a full stop
+or a semicolon ends the chain, and a condition reads the same on either side. Card changes:
+- `tpl-response-2/3-goal` and `tpl-responded-existence-1/3-goal` read their "Then" like the Q4 card:
+  the last step is required, after the rule's step, and after the trigger when it happens (a
+  `Precedence` and a `Response` at the end of `expect`; the old `also_ok` answers left). The third
+  wording of `tpl-responded-existence-1-goal` is dropped: with no order word it stated a different task.
+- `tpl-existence-two-3-goal` gains Precedence(door_open, at_goal); the count is a state, not a step.
+- `tpl-existence-2/3-goal` give each action its own sentence, so they still test one `Existence` each.
+- `tpl-absence-1/2/3-goal` lose the `NotCoExistence` answer: it is weaker than the ban as clauses.
+- The third wording of `tpl-responded-existence-1-nogoal` says "also"; the second of
+  `tpl-precedence-soft-1-goal` no longer commands taking the key.
+- Started training: `tpl-responded-existence-2-goal` (user).
+
 ## Soft cards (2026-11-19)
 
 28 cards word a rule as a wish ("try to ...", "preferably ...") and mark it soft in `expect`, so every
 template has soft coverage next to its hard cards. Ids read `tpl-<template>-soft-<k>-<goal|nogoal>`,
-`k` from 1 to 3 as for the hard cards; `k = 1` is trained (15 per arm, 26 with the hard ones) and
+`k` from 1 to 3 as for the hard cards; `k = 1` is trained (15 per arm, 27 with the hard ones) and
 carries three extra wordings; the rest are generated and checked only.
 
 - Goal cards (21): the soft rule plus a hard goal. The agent must act, and the soft rule is the
