@@ -149,11 +149,19 @@ facts (user rules).
 Stated-order rule (2026-11-20, user): only order words ("then", "after", "before") give an order;
 "and" and commas do not. The "Then" of `tpl-responded-existence-2-goal` is an order word, so both box
 orders are required and its `forced` is gone (this replaces the "Kept" reading of the order audit
-above). No templates card uses `forced` any more. Whether "Then" after an if-rule also puts the box
-after the ball (which makes moving the ball mandatory) waits for the user. Its FARM bundle, generated
-again (production pair, `--reasoning max`), keeps the key before the box but not the ball before the
-box: `mismatch` under the card's reading, possibly right under the other. The old bundle, with neither
-box order, is kept in `order-rule-r0/farm/`.
+above). No templates card uses `forced` any more.
+
+Q4 ruling (2026-11-21, user): in `tpl-responded-existence-2-goal` the box is required and the key comes
+before it; the ball is optional; if the ball moves, the key must be taken too, and both the key and
+the box come after the ball move; no Precedence from the ball. The card's clauses are
+Existence(target_picked_up), Precedence(has_door_key, target_picked_up),
+RespondedExistence(blocker_moved, has_door_key) and Response(blocker_moved, target_picked_up), all
+hard (Response(blocker_moved, has_door_key) would stay open on the solving plan, since the key is
+dropped before the box). Known limit: these clauses also accept key, then ball, then box with no key
+taken after the ball, which the level cannot produce; no answer from the 8 templates rejects that
+trace and still accepts key then box with no ball. Its FARM bundle, generated again (production pair,
+`--reasoning max`), lacks Response(blocker_moved, target_picked_up): `mismatch`. The old bundle, with
+neither box order, is kept in `order-rule-r0/farm/`.
 
 ## Soft cards (2026-11-19)
 

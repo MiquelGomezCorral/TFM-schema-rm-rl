@@ -10,7 +10,7 @@ killed by a step), the key gift (only with empty hands and a shut door, never in
 steps, not droppable, used up by the door, relocked 10 steps later), that the door is at most 10
 actions away and that the labels obey the constraints. ``--bundles`` also plays an idle agent, a
 random agent and a scripted guard through every card of ``experiments/benchmark/forcing`` with its
-FARM bundle, and prints the Reward Machine return, the ending and the env result of each. Exits
+reference bundle (``reference/``, the right answer), and prints the Reward Machine return, the ending and the env result of each. Exits
 non-zero when a check fails.
 """
 
@@ -24,7 +24,7 @@ from minigrid.core.actions import Actions
 
 from scripts.run_suite import RM_TIME_LIMIT_PENALTY
 from src.arm_fm import forcing_envs as forcing
-from src.arm_fm.artifacts import ArtifactBundle
+from src.arm_fm.artifacts import ArtifactBundle, BundleValidationError
 from src.arm_fm.environments import make_environment
 from src.arm_fm.forcing_envs import KEY_GIFT_ID, LANES_ID, scripted_policy
 from src.arm_fm.runtime import RewardMachineEnvironment, RewardMachineRuntime
@@ -32,6 +32,7 @@ from src.arm_fm.service_room import _faces, _plan
 from src.benchmark.cards import load_cards
 
 SUITE = Path("experiments/benchmark/forcing")
+REFERENCE = SUITE / "reference"  # the hand-built right-answer machines (not an arm)
 CARD_LEVEL = {
     "lanes-guard": LANES_ID,
     "lanes-rules": LANES_ID,
@@ -426,7 +427,7 @@ def policy_of(agent: str, seed: int) -> Callable[[object], int]:
 
 
 def machine_env(card: str) -> tuple[RewardMachineEnvironment, ArtifactBundle]:
-    bundle = ArtifactBundle.load(SUITE / "bundles" / "farm" / card)
+    bundle = ArtifactBundle.load(REFERENCE / card)
     runtime = RewardMachineRuntime(bundle.reward_machine, propositions=bundle.labeling_propositions)
     env = RewardMachineEnvironment(
         make_environment(CARD_LEVEL[card]), runtime, bundle.labeling_source
@@ -466,13 +467,23 @@ def check_bundles(checks: Checks, seeds: range) -> None:
         1,
         str(loaded.problems),
     )
+    playable = []
     for card in CARD_LEVEL:
-        bundle = ArtifactBundle.load(SUITE / "bundles" / "farm" / card)
-        problems = bundle.validate(require_complete=True)
+        try:
+            bundle = ArtifactBundle.load(REFERENCE / card)
+            playable.append(card)
+            problems = bundle.validate(require_complete=True)
+        except BundleValidationError as error:  # a failed load or an incomplete bundle
+            problems = [str(error)]
         checks.report(
             f"{card}: bundle validates complete", int(not problems), 1, "; ".join(problems)
         )
         checks.report(f"{card}: the card is in tasks.json", int(card in cards), 1)
+    if missing := [card for card in CARD_LEVEL if card not in playable]:
+        print(
+            f"\nnot played (the agents play every card's machine): {', '.join(missing)} do not load"
+        )
+        return
     print()
     print(
         f"{'card':13} {'agent':10} {'RM return':>10} {'well':>5} {'steps':>6} {'env ok':>7} {'side':>5} {'plants':>7} {'kills':>6}"

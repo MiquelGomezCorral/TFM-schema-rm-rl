@@ -24,7 +24,7 @@ PYTHON=${PYTHON:-python}
 BENCH=experiments/benchmark
 BUDGET=$BENCH/prompt-budget.md
 ARMS="farm arm-fm"
-ABLATION_SWITCHES="progress well soft_break soft_pending end_judgment recurrent_soft_penalty"
+ABLATION_SWITCHES="none progress well soft_break soft_pending end_judgment recurrent_soft_penalty"
 ALL_PASSES="closed smoke base templates complex pilot ablation"
 
 DRY_RUN=0
@@ -150,8 +150,10 @@ pass_ablation() {
   local card switch cards source
   cards=$(card_ids "$BENCH/complex/ablation.json") || exit 1
   for card in $cards; do
-    # The card's FARM bundle is in the suite that holds the card (complex, or forcing for lanes-rules).
-    source=$(compgen -G "$BENCH/*/bundles/farm/$card" | head -n 1 || true)
+    # The right-answer machine: the suite's reference bundle when it keeps one (forcing, for
+    # lanes-rules), else the FARM bundle of the suite that holds the card (complex).
+    source=$(compgen -G "$BENCH/*/reference/$card" | head -n 1 || true)
+    [ -n "$source" ] || source=$(compgen -G "$BENCH/*/bundles/farm/$card" | head -n 1 || true)
     for switch in $ABLATION_SWITCHES; do
       run ablation "$PYTHON" app/main.py ablate-rm \
         --bundle "${source:-$BENCH/complex/bundles/farm/$card}" --off "$switch" \
