@@ -847,7 +847,7 @@ class OrchestrationTests(unittest.TestCase):
                     "reward_promise_cost": False,
                     "recurrent_soft_penalty": True,
                     "fold_soft_absence": True,
-                    "minimize_machine": False,
+                    "minimize_machine": True,
                     "soft_break_cost": 1.0,
                     "soft_breaks_per_step": 1,
                     "hard_ceiling": True,

@@ -311,10 +311,11 @@ class RewardLayerTests(unittest.TestCase):
         never_lava = ((NO_LAVA,), (True,), ("lava",))
         steps = [{"lava"}, {"lava"}, set(), {"lava"}]
 
+        # Minimization off: it would merge the broken state too and hide what the fold does.
         def states(**switches):
             return len(
                 build_reward_machine(
-                    *never_lava[:2], RewardSwitches(**switches)
+                    *never_lava[:2], RewardSwitches(minimize_machine=False, **switches)
                 ).reward_machine.states
             )
 

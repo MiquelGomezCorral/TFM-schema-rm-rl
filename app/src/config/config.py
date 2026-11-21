@@ -240,10 +240,10 @@ class Configuration:
     # A soft Absence's broken state folds into the satisfied state it equals: fewer states, the same
     # pay. It needs ``recurrent_soft_penalty`` on, and a bundle records it.
     fold_soft_absence: bool = True
-    # Off by default: after pricing, states that pay the same and lead to the same states on every
-    # step, and carry the same end facts, are merged into one (fewer states, the same pay). A
-    # bundle records it.
-    minimize_machine: bool = False
+    # On by default since 2026-11-21: after pricing, states that pay the same and lead to the same
+    # states on every step, and carry the same end facts, are merged into one (fewer states, the
+    # same pay). A bundle records it; one that records none was made with it off.
+    minimize_machine: bool = True
     # What one soft break costs, in pay units (paid as a negative reward). 1: at 2.5 and above the
     # agents learned to idle (E2), and a stream of soft breaks is priced by the hard ceiling below.
     soft_break_cost: float = 1 * PROGRESS_REWARD

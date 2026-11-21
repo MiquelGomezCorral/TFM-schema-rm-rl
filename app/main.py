@@ -352,7 +352,7 @@ if __name__ == "__main__":
         action=argparse.BooleanOptionalAction,
         default=Configuration.minimize_machine,
         help="Merge the states that pay the same and lead to the same states on every step, and "
-        "carry the same end facts: fewer states, the same pay (default: disabled)",
+        "carry the same end facts: fewer states, the same pay (default: enabled)",
     )
     generate_parser.add_argument(
         "--soft-break-cost",
@@ -513,7 +513,7 @@ if __name__ == "__main__":
         default=Configuration.minimize_machine,
         help="compiler mode only: merge the states that pay the same and lead to the same states "
         "on every step, and carry the same end facts (fewer states, the same pay) "
-        "(default: disabled)",
+        "(default: enabled)",
     )
     larm_parser.add_argument(
         "--soft-break-cost",

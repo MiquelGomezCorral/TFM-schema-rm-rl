@@ -92,7 +92,7 @@ class RewardSwitches:
     are off by default. ``soft_break_cost`` is what one soft break costs, in pay units. The
     recurrent soft penalty and ``fold_soft_absence`` (on by default; it needs the penalty on)
     change the machine's structure (see ``_rearm_violated`` and ``_violated_twins``), and so does
-    ``minimize_machine`` (off by default; see ``_merge_equivalent``); the other switches only
+    ``minimize_machine`` (on by default; see ``_merge_equivalent``); the other switches only
     change the rewards (and, for the end judgment, the machine's end lines).
 
     ``hard_ceiling`` is on by default. Where soft rules repeat it needs ``step_limit``, the

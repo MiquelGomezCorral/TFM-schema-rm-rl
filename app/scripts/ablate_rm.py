@@ -208,7 +208,8 @@ def _recorded_switches(source: ArtifactBundle) -> RewardSwitches:
 
     The end judgment was on by default before it became off by default, so a bundle that does
     not record it had it when its machine carries one. The hard ceiling was off by default before
-    it became on, so a bundle that does not record it paid the flat hard break.
+    it became on, so a bundle that does not record it paid the flat hard break. Minimization was
+    off by default before it became on, so a bundle that does not record it was not minimized.
     """
     settings = source.manifest.effective_settings
     recorded = {
@@ -218,6 +219,7 @@ def _recorded_switches(source: ArtifactBundle) -> RewardSwitches:
         **{
             "reward_end_judgment": source.reward_machine.judgment is not None,
             "hard_ceiling": False,
+            "minimize_machine": False,
             **recorded,
         }
     )

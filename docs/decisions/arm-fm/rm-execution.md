@@ -41,6 +41,9 @@ without changing how labels, transitions, and rewards are interpreted.
   start state's edges, so the rule watches for the next break. That break was already paid, and
   recorded goal progress is kept; only the progress reward is re-scored. A folded soft `Absence`
   (`fold_soft_absence`, on by default) never leaves its state; its break is only charged.
+  With `minimize_machine` (on by default since 2026-11-21), after pricing, the states that pay the
+  same, step to the same states and owe the same end facts merge into one; no reward, end or end
+  judgment changes. A bundle records the switch, and one that records none was built with it off.
 - Entering a final or rejecting state ends the episode, as do the environment's own termination
   and its time limit, for every RM-wrapped run. When the environment ends the episode and the RM
   text has a `PENDING_PROMISES` section, that step adds the end judgment: `HARD_FAILED_REWARD`
@@ -360,3 +363,22 @@ each is a gap to close when a card needs it.
   check does not change for it. Resolved 2026-11-20 by the well price of the promise cost entry: a
   hard break on `shop-serve` now costs -70, below the -19.0 stall (`check-pay-order`: "hard break
   -70; ok; stall, hard promise open -19.0117").
+- 2026-11-21, user-approved ("okey for the minimization to add it now, It can improve some machines
+  by making them smaller so yeah include it if nothing alarming"): `minimize_machine`, added
+  2026-11-19 and off by default until now, is on by default. `ablate-rm`, `rebuild-rewards` and
+  `restore_farm` read a bundle that records no `minimize_machine` as built with it off, so an older
+  machine keeps its states. Evidence: on 2026-11-19, 2,272 compiles with 0 errors, off
+  byte-identical, and 488,000 random traces per pricing family plus an exhaustive valuation walk
+  with 0 differences in reward, end and end judgment; `pay_order` identical. On 2026-11-21's cards
+  10 of 131 answers shrink (6 of them trained), all soft `Precedence`, `ChainResponse` or
+  `NotCoExistence` sets whose kept and broken states merge, and every equivalence check is equal.
+  With `fold_soft_absence` on as well, all 131 answers compile and pay as with both off (400
+  random traces each), and the fold changes no machine once minimization is on: it is redundant
+  and stays a switch. Live FARM check of the 8 soft cards with their wordings: 26 bundles
+  complete, each on its first attempt (24 with 5 calls, 2 with one labeling retry), the critic
+  accepting every minimized machine, every plan check passed, one description and one embedding
+  per state, every state count as predicted. Costs: a merged state's description loses the
+  "broken" wording; compiling 12 propositions takes about twice as long (22.6 s to 45.7 s); and an
+  ablation that removes the only pay difference between two states now also merges them
+  (`tpl-precedence-soft-1-nogoal` with the soft break off: 2 states to 1, its description made
+  again).

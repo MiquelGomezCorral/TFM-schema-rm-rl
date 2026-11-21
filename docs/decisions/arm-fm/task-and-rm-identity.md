@@ -35,7 +35,9 @@ tasks, while keeping the generator and critic responsibilities stable.
   and, with recurrent soft rules on (the default), re-arms a broken soft rule so its next
   break pays again: the broken DFA state gets the start state's edges, never a new state. With
   `fold_soft_absence` on (the default), a soft `Absence` adds no state at all: its break is
-  charged on the edge and the machine stays where it was. Hard
+  charged on the edge and the machine stays where it was. With `minimize_machine` on (the
+  default since 2026-11-21), the priced states that pay the same and step alike then merge, so a
+  soft rule's broken state can merge with its kept one ([RM execution](rm-execution.md)). Hard
   changes the RM structure (a hard violation leads to the rejecting state and a pending hard
   obligation blocks finishing). The reward layer is described in
   `docs/COMPILER_REWARD_DESIGN.md`.
@@ -362,3 +364,8 @@ through their inputs and prompts, while both challenge the same generator.
   keep one shared level ("max is still cheap enough to use it. dont care about the speed. users wont
   run this as much as we do"). It was `none`; that default is superseded. A run that sets
   `--reasoning none` still gets the OpenCode `low` fallback.
+- 2026-11-21 (user): the general machine minimization (`minimize_machine`) is on by default (see
+  [RM execution](rm-execution.md)). On today's cards it shrinks 10 of 131 answers, all soft
+  `Precedence`, `ChainResponse` or `NotCoExistence` sets; the shop cards keep their 17 to 65
+  states, so the size limit of the 2026-11-19 prompt-bound entry stands, and LTLf written directly
+  instead of templates is still future work.
