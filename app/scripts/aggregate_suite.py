@@ -87,7 +87,7 @@ METRICS = (
     ("untested rules", "untested_rules"),
     ("hard breaks", "hard_breaks"),
     ("soft breaks", "soft_breaks"),
-    ("separate soft breaks", "soft_break_count"),
+    ("soft-broken steps", "soft_break_count"),
     ("episodes with a soft break", "any_soft_break"),
     ("idle plan soft breaks (soft-only card)", "idle_soft_breaks"),
     ("open at end", "open_at_end"),

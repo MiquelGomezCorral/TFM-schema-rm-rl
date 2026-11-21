@@ -488,6 +488,15 @@ well -10); the 0.1 and 0.5 figures in the sections above are from before that ch
   -100.694; at `T` 5 and `g` 0.9 the flat -10 is the larger and stays. A machine with no soft rule,
   or with `--charge-once`, keeps the flat -10: no stream to outweigh. `S` is 1 because at 2.5 and
   above the agents learned to idle (E2), and the ceiling already makes the stream safe.
+- **[decision] `N` stays 1, also where two soft rules can break on one step** (user, 2026-11-21).
+  Each broken soft rule still charges, so two on one step cost 2 (`lanes-rules`: a side breach and a
+  trampled plant). The ceiling then covers one break per step only: a stream of double breaks on
+  every step could, in theory, cost more than the hard break (-190.192 against -96.0959 at `g` 0.99,
+  `T` 300), and the pay-order check run with `--soft-breaks-per-step 2` fails such a machine. No run
+  comes near that stream (the `lanes-rules` guard loses 4.5 side-lane zombies in 300 steps), while
+  doubling the hard price widens early returns, when most episodes end in the hard break, from about
+  -97 to about -192, with no reward rescaling in training. Raising stays available:
+  `--soft-breaks-per-step N` prices the ceiling for `N` breaks per step and the manifest records it.
 - **[code] Where `g` and `T` come from.** `g` is `Configuration.gamma`, the discount the trainers
   use. `T` is the level's step limit, read from the environment (`gym_step_limit`, through
   `configured_step_limit`): `--gym-id` with `--env-kwargs`, or `--step-limit`. `generate-suite`

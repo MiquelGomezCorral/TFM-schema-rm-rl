@@ -940,6 +940,19 @@ fields in `app/src/benchmark/declare_judge.py`, their means in `app/scripts/test
 `app/scripts/aggregate_suite.py`, tests in `tests/test_declare_judge.py`. Record:
 `docs/decisions/benchmark/thesis-benchmark.md`, entry of 2026-11-20.
 
+**Update 2026-11-21: the judge counts what the machine charges.** The user chose to count every broken step, as the
+machine charges, instead of merging back-to-back breaks into one. The new count equals the machine's soft-break
+charges on every trace: 300 random traces per template against a one-clause soft machine (MONA, today's reward
+layer), where the count above disagreed on 150 Absence, 24 Precedence, 18 ChainResponse and 42 NotCoExistence traces;
+the other four templates never charge (`check/judge_vs_machine.py`, output `check/judge_vs_machine.out`). Recounted
+from the same traces (`evidence/soft-quality-every-step.jsonl`, 63 rows: the 59 above plus 4 one-seed live re-judge
+runs), the share of episodes with a break is unchanged in every row and the counts grow by up to 10%: warm-started
+lanes-rules 10.35 and plain PPO 17.29 (were 10.25 and 16.66), ARM-FM's key drops on cx-goal-one-rule stay 221.26. The
+ranking holds. The page and its two live tables still show the earlier count. Rerun:
+`env -C <repo> PYTHONPATH=app python docs/paper/soft-break-quality/check/judge_vs_machine.py 300 7`, and
+`recompute_soft.py` as above. Code: the `tp-judge-graphs` commit (`_break_count` in
+`app/src/benchmark/declare_judge.py`).
+
 ### Pay order: "started" now means closer to the goal (`pay-order-started/`), 2026-11-20
 
 **What it shows.** Before training, `check-pay-order` checks that a machine pays finished > started > not

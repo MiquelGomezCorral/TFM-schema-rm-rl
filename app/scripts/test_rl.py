@@ -153,9 +153,9 @@ SOFT_ONLY_DEFINITION = (
 # Cards with a soft clause also judge how well the agent kept the soft rules; pass/fail is unchanged.
 SOFT_QUALITY_MEANS = ("soft_break_count", "any_soft_break")
 SOFT_QUALITY_DEFINITION = (
-    "soft_break_count: how many separate times the episode broke a soft rule; a break lasts while "
-    "the rule's labels stay as on its step and the rule starts again once they change, so a soft "
-    "Absence counts each time its event turns true (soft_breaks counts each broken clause once). "
+    "soft_break_count: how many times the episode broke a soft rule, counted as the machine "
+    "charges them: the rule starts again on the step after a break, so a soft Absence counts "
+    "every step its event is true (soft_breaks counts each broken clause once). "
     "any_soft_break: the episode broke a soft rule at least once, so "
     "mean_any_soft_break is the share of such episodes. Existence, ExistenceTwo, Response and "
     "RespondedExistence never break, they only stay open (soft_open). judged_success is unchanged."
