@@ -137,8 +137,11 @@ def _load_jobs(options: SuiteOptions) -> list[Job]:
     data = json.loads(options.tasks.read_text(encoding="utf-8"))
     if data.get("schema") != 1 or not isinstance(data.get("cards"), list):
         raise ValueError(f"{options.tasks}: expected a task card file with schema 1 and cards")
-    jobs = []
+    jobs, shared = [], {}
     for card in data["cards"]:
+        if card.get("bundle_of"):  # it trains on that card's bundle, so it has none of its own
+            shared[card["id"]] = card["bundle_of"]
+            continue
         card_id, task = card.get("id"), card.get("task")
         env = card.get("env") or {}
         environment, gym_id = env.get("description"), env.get("gym_id")
@@ -155,6 +158,12 @@ def _load_jobs(options: SuiteOptions) -> list[Job]:
             for number, paraphrase in enumerate(card.get("paraphrases", []), start=1):
                 jobs.append(Job(f"{card_id}~p{number}", environment, paraphrase, *level))
     if options.only:
+        borrowed = sorted(set(options.only) & shared.keys())
+        if borrowed:
+            raise ValueError(
+                "--only names card(s) with no bundle of their own: "
+                + ", ".join(f"{c} (uses {shared[c]})" for c in borrowed)
+            )
         known = {job.id for job in jobs} | {job.id.split("~")[0] for job in jobs}
         unknown = set(options.only) - known
         if unknown:

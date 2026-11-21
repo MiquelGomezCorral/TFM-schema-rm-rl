@@ -5,6 +5,21 @@ The reset seed sets only the event schedule, so one seed always plays the same e
 With ``carry`` the agent starts holding the box, which falls at a step drawn from the seed. It
 cannot put the box down before that fall, and the fall turns the agent to face the fallen box.
 
+``fall_turn`` (with ``carry`` only) sets where a fallen box lands and how the agent turns:
+
+- ``"face"`` (default): the box lands in the first free cell among front, right, back, left of the
+  agent, and the agent turns to face it, so the very next move can always pick it up.
+- ``"none"``: the side is drawn from the reset seed, uniformly among front, right, back, left (a
+  blocked side takes the next free one clockwise). The agent keeps its direction, so a next-move
+  pickup is possible only when the box lands in front.
+- ``"side"``: the same draw. A box in front stays in front, a box to the right or left turns the
+  agent to face it, and a box behind turns the agent to its right or left (also drawn), so one more
+  turn comes before the pickup.
+
+These draws come after every other draw of the seed, and only off ``"face"``, so the three values
+play the same schedule, ``"none"`` and ``"side"`` the same landing sides, and ``"face"`` the episodes
+it always played.
+
 The rules (schedule, step order, reward) are in ``environment.md`` and the code-side facts in
 ``environment-code.md``, both in ``experiments/benchmark/envs/service-room/``
 (carry: ``experiments/benchmark/envs/service-room-carry/``).
@@ -39,6 +54,7 @@ EXIT_POS = (6, 6)
 SILENT_COLOR, RINGING_COLOR, BOX_COLOR = "blue", "red", "purple"
 REQUIREMENTS = ("siren_silent", "holding_box")
 IGNORABLE = ("siren", "box_fall")
+FALL_TURNS = ("face", "none", "side")
 DIRECTIONS = ((1, 0), (0, 1), (-1, 0), (0, -1))  # right, down, left, up
 
 
@@ -80,7 +96,8 @@ class ServiceRoomEnv(MiniGridEnv):
 
     Raises:
         ValueError: If ``require`` names an unknown condition, or asks for the box without it,
-            or ``carry`` is set without ``box``.
+            or ``carry`` is set without ``box``, or ``fall_turn`` is unknown or set off
+            ``"face"`` without ``carry``.
     """
 
     size = SIZE
@@ -102,6 +119,12 @@ class ServiceRoomEnv(MiniGridEnv):
             raise ValueError("require 'holding_box' needs box=True")
         if carry and not box:
             raise ValueError("carry=True needs box=True")
+        # fall_turn rides in kwargs: the signature is at the argument limit
+        self.fall_turn = kwargs.pop("fall_turn", "face")
+        if self.fall_turn not in FALL_TURNS:
+            raise ValueError(f"unknown fall_turn {self.fall_turn!r}; choose from {FALL_TURNS}")
+        if self.fall_turn != "face" and not carry:
+            raise ValueError(f"fall_turn {self.fall_turn!r} needs carry=True")
         super().__init__(
             mission_space=MissionSpace(mission_func=self._gen_mission),
             width=self.size,
@@ -117,6 +140,7 @@ class ServiceRoomEnv(MiniGridEnv):
         self._ring_steps: list[int] = []
         self._fall_delays: list[int] = []
         self._fall_steps: list[int] = []  # absolute steps, set by pickups
+        self._fall_draws: list[tuple[int, int]] = []  # per fall: first side, turn if behind
 
     @staticmethod
     def _gen_mission() -> str:
@@ -163,6 +187,9 @@ class ServiceRoomEnv(MiniGridEnv):
         carry_fall = int(rng.integers(CARRY_FALL_FIRST, CARRY_FALL_LAST + 1))
         if self.carry:
             fall_delays[0] = carry_fall  # delay after the start, which counts as the first pickup
+        # After every other draw and only off "face", so the default stream never moves.
+        if self.fall_turn != "face":
+            self._fall_draws = [(int(rng.integers(4)), int(rng.integers(2))) for _ in fall_delays]
 
         rings = [first_ring, second_ring] if has_second_ring else [first_ring]
         falls = fall_delays[: 2 if has_second_fall else 1]
@@ -227,22 +254,28 @@ class ServiceRoomEnv(MiniGridEnv):
 
     def _fall(self) -> None:
         counts = self.event_counts["fall"]
-        landing = self._landing_cell() if self.carrying is not None else None
+        first_side, back_turn = 0, 0  # "face": front first, never behind
+        if self.fall_turn != "face":
+            first_side, back_turn = self._fall_draws[counts["fired"] + counts["skipped"]]
+        landing = self._landing_cell(first_side) if self.carrying is not None else None
         if landing is None:
             counts["skipped"] += 1
             return
         self.grid.set(*landing, self.carrying)
         self.carrying.cur_pos = np.array(landing)
-        if self.face_fallen:  # face the item, so the very next move can pick it up
-            offset = (landing[0] - self.agent_pos[0], landing[1] - self.agent_pos[1])
-            self.agent_dir = DIRECTIONS.index(offset)
+        offset = (landing[0] - self.agent_pos[0], landing[1] - self.agent_pos[1])
+        box_dir = DIRECTIONS.index(offset)
+        if self.fall_turn == "side" and (box_dir - self.agent_dir) % 4 == 2:
+            self.agent_dir = (self.agent_dir + (1, 3)[back_turn]) % 4  # behind: right or left
+        elif self.fall_turn == "side" or (self.fall_turn == "face" and self.face_fallen):
+            self.agent_dir = box_dir  # face the item, so the very next move can pick it up
         self.carrying = None
         counts["fired"] += 1
         self.events_this_step.append("fall")
 
-    def _landing_cell(self) -> tuple[int, int] | None:
-        """First free cell among front, right, back, left of the agent."""
-        for turn in range(4):
+    def _landing_cell(self, first_side: int) -> tuple[int, int] | None:
+        """First free cell among front, right, back, left of the agent, from ``first_side`` on."""
+        for turn in range(first_side, first_side + 4):
             dx, dy = DIRECTIONS[(self.agent_dir + turn) % 4]
             cell = (self.agent_pos[0] + dx, self.agent_pos[1] + dy)
             if self.grid.get(*cell) is None:
@@ -277,8 +310,9 @@ def scripted_policy(env, ignore: Iterable[str] = ()) -> int:
 
     It replans on the live grid each call. In order: when the siren rings go toggle the switch;
     when the box is required and lies on the floor pick it up; while it holds the box with a
-    fall still to come it waits in place (the box then lands in the free cell in front and the
-    next move picks it up, which a walk past a wall could not guarantee); then go to the exit. A
+    fall still to come it waits in place (with the default ``fall_turn`` the box then lands in the
+    free cell in front and the next move picks it up, which a walk past a wall could not
+    guarantee; otherwise it turns to the box first); then go to the exit. A
     step is skipped when its target cannot be faced (a fallen box may block the cell in front of
     the switch, the access cell (1, 5): picking the box up clears it).
 

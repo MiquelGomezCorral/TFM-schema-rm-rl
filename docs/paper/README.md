@@ -815,7 +815,10 @@ after (both RespondedExistence hard cells). Left: 8 soft-goal cells the result t
 rule beside a goal passes on the goal alone), 2 gaps (hard Precedence and NotCoExistence without a goal),
 3 weak cells (the level forces the rule or the count comes free) and 1 Absence cell counted once per
 episode. The page has the matrix, the verdict counts, the gaps in plain words, and the 10 card groups,
-each with 2 or 3 sample cards (task, clauses, LTLf, live RM graph and RM text).
+each with 2 or 3 sample cards (task, clauses, LTLf, live RM graph and RM text). The rule-only cards an
+idle agent passes (17 cards with hard rules and no goal) are scored on reading only and never trained,
+since a run would show nothing an idle agent does not already get; two of them have forced-start
+copies, and one of those copies (`tpl-response-1-nogoal-forced`) trains.
 
 **Evidence.** The baseline review (111 cards, 660 plan traces, 165 answers swept; verdicts: OK 46, OK
 generation only 14, pay-order flag only 18, soft rule not judged 10, card issue 23) and the delta review,

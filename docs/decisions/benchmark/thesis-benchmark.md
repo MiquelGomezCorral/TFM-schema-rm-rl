@@ -239,6 +239,16 @@ thing whichever arm produced it.
   originals `tpl-chain-response-1-goal` and `-1-nogoal` stopped training on 2026-11-19 (a fall in the
   plain service room does not turn the agent, so the next-move rule is unfair there); `cx-box` still
   trains. Until 2026-11-19 (superseded): the carry cards keep the `train` flags of their originals.
+  Since 2026-11-21 (user) the env setting `fall_turn` (with `carry` only) changes where the box
+  lands and how the agent turns: `face` (default, every card above) turns the agent to face it;
+  `none` draws the landing side from the seed and keeps the agent's direction; `side` makes the same
+  draw, turns the agent to face a box at its right or left, and to its right or left for a box
+  behind it. Two copies of `tpl-chain-response-1-goal-carry` with only that setting changed,
+  `-noturn` (`none`) and `-backturn` (`side`), test training when the world can force a missed
+  next-move pickup. They have no paraphrases and no bundle of their own: `bundle_of` makes
+  `run-suite` train them on that card's FARM machine (FARM only, 3 seeds, 1.5M steps,
+  `box-carry/runs-fall-turn.yaml`), and `generate-suite` skips them. A box-rule break after the box
+  landed aside or behind is the world's, not the machine's.
 - **Forced cards.** Seed-1 judging with the empty-pass check showed two trained cards whose rule never
   triggered, so doing nothing passed: `tpl-response-1-nogoal` (`Response(blocker_moved, has_door_key)`,
   no-RM judged 1.00, non-empty 0.00) and `tpl-responded-existence-1-nogoal`
@@ -527,3 +537,11 @@ and a restart is easier to trust.
   task; the third wording of `tpl-responded-existence-1-goal` was dropped;
   `tpl-responded-existence-2-goal` trains. FARM's generator and critic prompts gained the order
   rules.
+- 2026-11-21: Any-lane Lanes cards and the box-fall setting (user). `tpl-absence-soft-1-nogoal` and
+  `tpl-precedence-soft-1-nogoal` now speak of zombies through any lane, not the side lanes; the
+  world keeps `top_breach` and `side_breach` and gains no any-lane proposition, so each answer has
+  one soft rule per proposition (`Absence` of both, `Precedence` of `zombie_killed` over both), and
+  a top breach now breaks the rule too. Their trace bank was rebuilt. `MiniGrid-ServiceRoom-v0`
+  gained `fall_turn` (default `face`, the world every stored trace and card already used), and the
+  box-carry suite two copies of `tpl-chain-response-1-goal-carry` that train on its FARM machine
+  under `none` and `side` (see Box-carry cards).
