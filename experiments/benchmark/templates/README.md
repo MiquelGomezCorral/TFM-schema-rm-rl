@@ -199,11 +199,13 @@ carries three extra wordings; the rest are generated and checked only.
   is not trained since 2026-11-20). All seven
   are trained (idle shows as a soft break).
 - Every card has a plan that keeps the rule and a plan that breaks it (`breaks` lists the clauses it
-  breaks), and an idle plan breaks something on every card. The judge checks `breaks` on each card's
-  `event_seeds` (1, 2, 3 for the ServiceRoom cards, 1, 3, 4 for the Lanes cards, the layout seed 1 for
-  the key-level cards); a wider check on seeds 1 to 5 found one keep plan that is not seed-proof:
-  the side-lane guard of `tpl-absence-soft-1-nogoal` loses one zombie on seed 2. The machine of the
-  expected clauses pays keep > soft break > idle on those plans.
+  breaks), and an idle plan breaks something on every card. One exception since the any-lane wording
+  of 2026-11-21: no plan of `tpl-absence-soft-1-nogoal` keeps every lane; its best plan, the guard
+  that holds the top lane first, loses 2 to 4 side-lane zombies. The judge checks `breaks` on each
+  card's `event_seeds` (1, 2, 3 for the ServiceRoom cards, 1, 3, 4 for the Lanes cards, the layout
+  seed 1 for the key-level cards); a wider check on seeds 1 to 5, before that change, found one keep
+  plan that is not seed-proof: the side-lane guard of `tpl-absence-soft-1-nogoal` lost one zombie on
+  seed 2. The machine of the expected clauses pays keep (or best) > soft break > idle on those plans.
 - No soft card carries `also_ok` (S2 rule: a stricter reading is only safe where the level forces the
   order, and none of these soft readings is). The ServiceRoom and Lanes soft cards use
   `env_reward_matches: false`, like the hard ones: the environment pays at the exit only when its own
