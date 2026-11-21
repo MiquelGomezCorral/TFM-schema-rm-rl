@@ -1,0 +1,91 @@
+{
+  "bundle": "experiments/benchmark/templates/bundles/farm/tpl-response-1-goal",
+  "task": "Whenever you are holding the key, the door must be open at that moment or opened afterwards. Pick up the key, open the door with it, then pick up the box in the other room.",
+  "model": "deepseek-v4.1-flash",
+  "model_calls": 1,
+  "calls": [
+    {
+      "stage": "rm_tagger",
+      "role": "generator",
+      "model_requested": "deepseek-v4.1-flash",
+      "model_reported": "deepseek-v4.1-flash"
+    }
+  ],
+  "warnings": [],
+  "last_reply": "{\"u0\": \"This is the start of the task: the agent has not yet picked up the matching key, the locked door is still closed, and the mission box is not held. The agent must first acquire the key, then open the door with it, and finally pick up the designated box in the second room. Opening the door without ever having held the key, or picking up the box before the door has been opened, would fail the task. Simply moving around the starting room changes nothing.\", \"u1\": \"A mandatory ordering requirement has been broken: either the door was opened without the agent ever having picked up the matching key, or the mission box was picked up before the door had been opened. Successful completion is no longer possible, and this failure is permanent.\", \"u2\": \"The agent has picked up the matching key while the door was still closed, so the key-before-door ordering is established and the door must be opened afterwards. The door remains shut and the mission box has not yet been picked up. The next objectives are to open the door with the key and then pick up the designated box in the far room; picking up the box before the door is open would fail the task.\", \"u3\": \"The door has been opened, and the matching key was already in the agent's hand when that happened, so the key-before-door ordering is satisfied. The mission box is still not picked up, and the open door gives access to the far room. The agent should go through and pick up the designated box, first putting the key down if its hands are still full. If the door is toggled shut while the key is still held, progress falls back to a stage where the door must be reopened.\", \"u4\": \"The mission box has been picked up after the door was opened, and the matching key had been acquired no later than that opening, so every required ordering and the eventual pickup goal are satisfied. The task is complete. The door does not need to still be open at this point, only to have been opened before the box was picked up.\", \"u5\": \"The door, which had already been opened, has been toggled shut while the matching key was still in the agent's hand, so the required orderings remain satisfied. The mission box has not yet been picked up. The agent must reopen the door and then pick up the designated box in the other room; reopening the door restores the usual door-open progress.\", \"u6\": \"The mission box has been picked up, but the door is currently closed, so the task has not reached its completed stage. The door had been opened earlier, so the required ordering is satisfied, and the box is already in the agent's hands. Opening the door now would complete the task.\"}",
+  "states": [
+    {
+      "state": "u0",
+      "role": "in progress",
+      "entered_on": [],
+      "new": "This is the start of the task: the agent has not yet picked up the matching key, the locked door is still closed, and the mission box is not held. The agent must first acquire the key, then open the door with it, and finally pick up the designated box in the second room. Opening the door without ever having held the key, or picking up the box before the door has been opened, would fail the task. Simply moving around the starting room changes nothing.",
+      "old": "At the start, none of the milestone events has occurred: the matching key has not been acquired, the locked door has not been opened, and the target box has not been picked up. The agent must first take the key, then open the door with it, and only afterward collect the designated box in the second room. Opening the door before the key has ever been held, or picking up the box before the door has been opened, is a fatal ordering violation. Waiting or taking unrelated actions does not advance the task."
+    },
+    {
+      "state": "u1",
+      "role": "rejecting",
+      "entered_on": [
+        "u0: !door_open&!has_door_key&target_picked_up",
+        "u0: !door_open&has_door_key&target_picked_up",
+        "u0: door_open&!has_door_key&!target_picked_up",
+        "u0: door_open&!has_door_key&target_picked_up",
+        "u2: !door_open&target_picked_up"
+      ],
+      "new": "A mandatory ordering requirement has been broken: either the door was opened without the agent ever having picked up the matching key, or the mission box was picked up before the door had been opened. Successful completion is no longer possible, and this failure is permanent.",
+      "old": "This is the failure state: a mandatory ordering requirement has been violated, such as opening the door before acquiring the matching key or picking up the target box before the door was opened. Successful completion is no longer possible."
+    },
+    {
+      "state": "u2",
+      "role": "in progress",
+      "entered_on": [
+        "u0: !door_open&has_door_key&!target_picked_up"
+      ],
+      "new": "The agent has picked up the matching key while the door was still closed, so the key-before-door ordering is established and the door must be opened afterwards. The door remains shut and the mission box has not yet been picked up. The next objectives are to open the door with the key and then pick up the designated box in the far room; picking up the box before the door is open would fail the task.",
+      "old": "The matching key has already been picked up, while the door remains closed and the target box is still uncollected. The next required milestone is to open the door with the key; if the key has been set down since, it must be picked up again. Picking up the target box before the door has been opened would fail the task, and the key-holding obligation means the door must still be opened afterward."
+    },
+    {
+      "state": "u3",
+      "role": "in progress",
+      "entered_on": [
+        "u0: door_open&has_door_key&!target_picked_up",
+        "u2: door_open&!target_picked_up",
+        "u5: door_open&!target_picked_up"
+      ],
+      "new": "The door has been opened, and the matching key was already in the agent's hand when that happened, so the key-before-door ordering is satisfied. The mission box is still not picked up, and the open door gives access to the far room. The agent should go through and pick up the designated box, first putting the key down if its hands are still full. If the door is toggled shut while the key is still held, progress falls back to a stage where the door must be reopened.",
+      "old": "The matching key has been acquired and the door has been opened at least once, so the required key-before-door ordering is satisfied. The target box has not yet been picked up, and the remaining goal is to collect it; if the door is currently open, or if it was opened and is now shut while the key is not held, picking the box completes the task. If the door is shut while the key is held, however, this creates a new obligation to reopen the door before finishing."
+    },
+    {
+      "state": "u4",
+      "role": "final",
+      "entered_on": [
+        "u0: door_open&has_door_key&target_picked_up",
+        "u2: door_open&target_picked_up",
+        "u3: !door_open&!has_door_key&target_picked_up",
+        "u3: door_open&target_picked_up",
+        "u5: door_open&target_picked_up",
+        "u6: door_open"
+      ],
+      "new": "The mission box has been picked up after the door was opened, and the matching key had been acquired no later than that opening, so every required ordering and the eventual pickup goal are satisfied. The task is complete. The door does not need to still be open at this point, only to have been opened before the box was picked up.",
+      "old": "The door, which had already been opened, was subsequently closed while the matching key was in hand, and the target box is still uncollected. This creates a pending requirement to open the door again; reopening it restores normal progress toward the box. If the box is picked while the door remains shut, completion is still pending and the door must be opened afterward."
+    },
+    {
+      "state": "u5",
+      "role": "in progress",
+      "entered_on": [
+        "u3: !door_open&has_door_key&!target_picked_up"
+      ],
+      "new": "The door, which had already been opened, has been toggled shut while the matching key was still in the agent's hand, so the required orderings remain satisfied. The mission box has not yet been picked up. The agent must reopen the door and then pick up the designated box in the other room; reopening the door restores the usual door-open progress.",
+      "old": "The target box has been picked up, but the door is closed and a key-held moment with the door closed has not yet been followed by reopening it. That outstanding key and door requirement must still be satisfied, so the door has to be opened before successful completion. Opening the door finishes the task, since the box has already been collected."
+    },
+    {
+      "state": "u6",
+      "role": "in progress",
+      "entered_on": [
+        "u3: !door_open&has_door_key&target_picked_up",
+        "u5: !door_open&target_picked_up"
+      ],
+      "new": "The mission box has been picked up, but the door is currently closed, so the task has not reached its completed stage. The door had been opened earlier, so the required ordering is satisfied, and the box is already in the agent's hands. Opening the door now would complete the task.",
+      "old": "This is successful completion: the target box has been picked up after the matching key was acquired and the door had been opened. The required ordering and the key-holding obligation have been satisfied, including any need to reopen the door. No further action is needed."
+    }
+  ]
+}

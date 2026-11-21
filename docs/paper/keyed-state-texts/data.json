@@ -1,0 +1,1968 @@
+{
+ "title": "Keyed state texts: each state's text now sits on its own state",
+ "eyebrow": "state tagger · state embeddings · 3 bundles, 3 rounds · 2026-11-21",
+ "subtitle": "Every Reward Machine state carries a short text, and training builds the state embeddings from it. The state tagger answered with a bare list that the code matched to the states by position, so a text written for another state passed without an error: on three bundles, 13 of the 37 stored texts describe another state or the wrong duties. Commit `6539207` sends the tagger each state's role and keys the reply by state id; a missing, repeated or unknown id is refused. Re-tagged live three times with deepseek-v4.1-flash, every new text sits on its own state; 2 texts of round 1 add a claim the machine does not support. A word search over the 379 stored bundles finds 26 hits, 22 of them false alarms.",
+ "sections": [
+  {
+   "id": "claim",
+   "title": "What it shows",
+   "blocks": [
+    {
+     "type": "callout",
+     "tone": "info",
+     "title": "In plain words",
+     "text": "A Reward Machine tracks where the agent is in a task: each state is a stage, such as \"key taken, door still closed\". A model, the state tagger, writes one short text per state, and training turns each text into the state embedding the agent reads. A state that carries another state's text tells the agent the wrong stage. The tagger used to answer with a plain list of texts, and the code gave the first text to the first state, the second to the second, and so on. Nothing checked that a text was about its state, and the list of states to describe carried no role."
+    },
+    {
+     "type": "stats",
+     "items": [
+      {
+       "value": "13 of 37",
+       "label": "stored texts on three bundles that describe another state or the wrong duties",
+       "tone": "bad"
+      },
+      {
+       "value": "37 of 37",
+       "label": "new texts on their own state, in each of 3 rounds",
+       "tone": "ok"
+      },
+      {
+       "value": "2",
+       "label": "new texts of round 1 that add a claim the machine does not support; 0 in rounds 2 and 3",
+       "tone": "warn"
+      },
+      {
+       "value": "9",
+       "label": "model calls: one per bundle and round, none refused"
+      },
+      {
+       "value": "22 of 26",
+       "label": "word-search hits over 379 stored bundles that are false alarms",
+       "tone": "warn"
+      }
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**The defect.** The tagger's texts reached their states by position. On tpl-response-1-goal three texts sit one state off; on tpl-precedence-1-goal two states that are not final say the task is done; on shop-serve seven texts drop or mix up a duty.",
+      "**The fix.** Commit `6539207` (merge `ba918a9`) sends each state's role beside it and keys the reply by state id. A missing, repeated or unknown id is refused and asked again.",
+      "**Live result.** Three rounds of the three bundles with deepseek-v4.1-flash: every new text sits on its own state. In round 1, tpl-precedence-1-goal has 11 right and 2 half right; the two add a wrong claim about the level.",
+      "**Negative result.** A word search for completion and pending words finds 26 hits over 379 stored bundles, 22 of them false alarms, and misses 9 of the 13 wrong stored texts here.",
+      "**Not done.** The stored bundles keep their old texts, and no training ran with the new ones, so the effect on learning is not measured."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "fix",
+   "title": "1. The defect and the fix",
+   "blocks": [
+    {
+     "type": "callout",
+     "tone": "bad",
+     "title": "The defect",
+     "text": "A reply with one text per state always passed, whatever state each text was written for. On tpl-response-1-goal the texts of u4, u5 and u6 are rotated by one, so each sits on another of the three states. Nothing failed, since the count matched."
+    },
+    {
+     "type": "table",
+     "heading": "The tagger request and reply, before and after commit `6539207`",
+     "columns": [
+      "",
+      "before",
+      "after"
+     ],
+     "rows": [
+      [
+       "the states to describe",
+       "an ordered list of ids: `[\"u0\", \"u1\", ...]`",
+       "each id with its role: `final`, `rejecting` or `in progress`"
+      ],
+      [
+       "the reply",
+       "a JSON list of texts, in the list's order",
+       "a JSON object keyed by state id"
+      ],
+      [
+       "how a text reaches its state",
+       "by its place in the list",
+       "by its key"
+      ],
+      [
+       "what is refused",
+       "a list of the wrong length",
+       "a missing, repeated or unknown id, and a text that only repeats a role word; the reply schema allows no other key"
+      ]
+     ]
+    },
+    {
+     "type": "code",
+     "heading": "The keyed request and reply, as recorded",
+     "text": "# Nodes to tag: the request for tpl-response-1-goal (one request for all 7 states)\n{\"u0\": \"in progress\", \"u1\": \"rejecting\", \"u2\": \"in progress\", \"u3\": \"in progress\", \"u4\": \"final\", \"u5\": \"in progress\", \"u6\": \"in progress\"}\n\n# The reply, round 1 (each text cut to its first 90 characters on this page)\n{\n \"u0\": \"This is the start of the task: the agent has not yet picked up the matching key, the locke ...\",\n \"u1\": \"A mandatory ordering requirement has been broken: either the door was opened without the a ...\",\n \"u2\": \"The agent has picked up the matching key while the door was still closed, so the key-befor ...\",\n \"u3\": \"The door has been opened, and the matching key was already in the agent's hand when that h ...\",\n \"u4\": \"The mission box has been picked up after the door was opened, and the matching key had bee ...\",\n \"u5\": \"The door, which had already been opened, has been toggled shut while the matching key was  ...\",\n \"u6\": \"The mission box has been picked up, but the door is currently closed, so the task has not  ...\"\n}"
+    },
+    {
+     "type": "text",
+     "text": "Code (commit `6539207`, merge `ba918a9`): the reply schema `state_descriptions_schema` (`app/src/engines/structured.py:126`), the parser `parse_state_descriptions` and `_refuse_repeated_keys` (`app/src/engines/structured.py:184`), the request `describe_states` (`app/src/engines/generic_engine.py:112`), the roles `_state_roles` (`app/scripts/generate_rm.py:552`), and the prompt's \"Nodes to tag\" and \"Output\" (`app/src/prompts/compiler-rm/reward-machine-tagger.system.md:85` and `:123`). The role words `STATE_FINAL`, `STATE_REJECTING` and `STATE_IN_PROGRESS` have one owner in `src.engines`."
+    }
+   ]
+  },
+  {
+   "id": "tpl-response-1-goal",
+   "title": "2. tpl-response-1-goal: three stored texts sit one state off",
+   "intro": "The stored texts of u4, u5 and u6 are rotated by one: u4 holds u5's text, u5 holds u6's and u6 holds u4's. So the final state u4 reads as a duty still pending, and u6, where the door must still be opened, claims success. The keyed tagger puts every text on its own state in all three rounds.",
+   "blocks": [
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/tpl-response-1-goal.html",
+       "height": 520,
+       "alt": "Reward Machine tpl-response-1-goal: 7 states",
+       "caption": "**`tpl-response-1-goal`** · MiniGrid UnlockPickup, templates benchmark · 7 states, 18 transitions · final u4, well u1\nTask: *Whenever you are holding the key, the door must be open at that moment or opened afterwards. Pick up the key, open the door with it, then pick up the box in the other room.*",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "**Task:** Whenever you are holding the key, the door must be open at that moment or opened afterwards. Pick up the key, open the door with it, then pick up the box in the other room.",
+        "code": "# IBM clauses in the proposal\nResponse(has_door_key, door_open)  [hard]\nPrecedence(has_door_key, door_open)  [hard]\nPrecedence(door_open, target_picked_up)  [hard]\nExistence(target_picked_up)  [hard]\n\n# LTLf, one per clause\nResponse(has_door_key, door_open):\n - (G (has_door_key -> (F door_open)))\nPrecedence(has_door_key, door_open):\n - (((~door_open) U has_door_key) | (G (~door_open)))\nPrecedence(door_open, target_picked_up):\n - (((~target_picked_up) U door_open) | (G (~target_picked_up)))\nExistence(target_picked_up):\n - (F target_picked_up)\n\n# Raw LTLf, as IBM writes it and MONA reads it\n - (G(has_door_key->(Fdoor_open)))\n - (((~door_open)Uhas_door_key)|(G(~door_open)))\n - (((~target_picked_up)Udoor_open)|(G(~target_picked_up)))\n - (Ftarget_picked_up)\n\n# RM text, as the compiler writes it\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6\nINITIAL_STATE: u0\nFINAL_STATES: u4\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&!has_door_key&target_picked_up) -> u1\n(u0, !door_open&has_door_key&!target_picked_up) -> u2\n(u0, !door_open&has_door_key&target_picked_up) -> u1\n(u0, door_open&!has_door_key&!target_picked_up) -> u1\n(u0, door_open&!has_door_key&target_picked_up) -> u1\n(u0, door_open&has_door_key&!target_picked_up) -> u3\n(u0, door_open&has_door_key&target_picked_up) -> u4\n(u2, !door_open&target_picked_up) -> u1\n(u2, door_open&!target_picked_up) -> u3\n(u2, door_open&target_picked_up) -> u4\n(u3, !door_open&!has_door_key&target_picked_up) -> u4\n(u3, !door_open&has_door_key&!target_picked_up) -> u5\n(u3, !door_open&has_door_key&target_picked_up) -> u6\n(u3, door_open&target_picked_up) -> u4\n(u5, !door_open&target_picked_up) -> u6\n(u5, door_open&!target_picked_up) -> u3\n(u5, door_open&target_picked_up) -> u4\n(u6, door_open) -> u4\nREWARD_FUNCTION:\n(u0, !door_open&!has_door_key&target_picked_up, u1) -> -10\n(u0, !door_open&has_door_key&!target_picked_up, u2) -> 1\n(u0, !door_open&has_door_key&target_picked_up, u1) -> -10\n(u0, door_open&!has_door_key&!target_picked_up, u1) -> -10\n(u0, door_open&!has_door_key&target_picked_up, u1) -> -10\n(u0, door_open&has_door_key&!target_picked_up, u3) -> 2\n(u0, door_open&has_door_key&target_picked_up, u4) -> 13\n(u2, !door_open&target_picked_up, u1) -> -11\n(u2, door_open&!target_picked_up, u3) -> 1\n(u2, door_open&target_picked_up, u4) -> 12\n(u3, !door_open&!has_door_key&target_picked_up, u4) -> 11\n(u3, !door_open&has_door_key&!target_picked_up, u5) -> -1\n(u3, door_open&target_picked_up, u4) -> 11\n(u5, !door_open&target_picked_up, u6) -> 1\n(u5, door_open&!target_picked_up, u3) -> 1\n(u5, door_open&target_picked_up, u4) -> 12\n(u6, door_open, u4) -> 11"
+       }
+      }
+     ]
+    },
+    {
+     "type": "table",
+     "heading": "Each state's text: stored (old tagger, as committed) and new (keyed tagger, round 1)",
+     "columns": [
+      "state",
+      "role, owed stages, a shortest way in (`state_list.py`)",
+      "stored text",
+      "verdict",
+      "new text, round 1",
+      "verdict"
+     ],
+     "rows": [
+      [
+       "u0",
+       "start",
+       "At the start, none of the milestone events has occurred: the matching key has not been acquired, the locked door has not been opened, and the target box has not been picked up. The agent must first take the key, then open the door with it, and only afterward collect the designated box in the second room. Opening the door before the key has ever been held, or picking up the box before the door has been opened, is a fatal ordering violation. Waiting or taking unrelated actions does not advance the task.",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "This is the start of the task: the agent has not yet picked up the matching key, the locked door is still closed, and the mission box is not held. The agent must first acquire the key, then open the door with it, and finally pick up the designated box in the second room. Opening the door without ever having held the key, or picking up the box before the door has been opened, would fail the task. Simply moving around the starting room changes nothing.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u1",
+       "well: a hard rule is broken for good; shortest path from the start: target_picked_up",
+       "This is the failure state: a mandatory ordering requirement has been violated, such as opening the door before acquiring the matching key or picking up the target box before the door was opened. Successful completion is no longer possible.",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "A mandatory ordering requirement has been broken: either the door was opened without the agent ever having picked up the matching key, or the mission box was picked up before the door had been opened. Successful completion is no longer possible, and this failure is permanent.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u2",
+       "in progress; shortest path from the start: has_door_key",
+       "The matching key has already been picked up, while the door remains closed and the target box is still uncollected. The next required milestone is to open the door with the key; if the key has been set down since, it must be picked up again. Picking up the target box before the door has been opened would fail the task, and the key-holding obligation means the door must still be opened afterward.",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "The agent has picked up the matching key while the door was still closed, so the key-before-door ordering is established and the door must be opened afterwards. The door remains shut and the mission box has not yet been picked up. The next objectives are to open the door with the key and then pick up the designated box in the far room; picking up the box before the door is open would fail the task.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u3",
+       "in progress; shortest path from the start: door_open + has_door_key",
+       "The matching key has been acquired and the door has been opened at least once, so the required key-before-door ordering is satisfied. The target box has not yet been picked up, and the remaining goal is to collect it; if the door is currently open, or if it was opened and is now shut while the key is not held, picking the box completes the task. If the door is shut while the key is held, however, this creates a new obligation to reopen the door before finishing.",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "The door has been opened, and the matching key was already in the agent's hand when that happened, so the key-before-door ordering is satisfied. The mission box is still not picked up, and the open door gives access to the far room. The agent should go through and pick up the designated box, first putting the key down if its hands are still full. If the door is toggled shut while the key is still held, progress falls back to a stage where the door must be reopened.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u4",
+       "final: every hard goal is reached; shortest path from the start: door_open + has_door_key + target_picked_up",
+       "The door, which had already been opened, was subsequently closed while the matching key was in hand, and the target box is still uncollected. This creates a pending requirement to open the door again; reopening it restores normal progress toward the box. If the box is picked while the door remains shut, completion is still pending and the door must be opened afterward.",
+       {
+        "text": "wrong",
+        "tone": "bad",
+        "title": "Holds u5's text: the door was shut with the key in hand and the box is still to get, so it reads as pending. u4 is the final state."
+       },
+       "The mission box has been picked up after the door was opened, and the matching key had been acquired no later than that opening, so every required ordering and the eventual pickup goal are satisfied. The task is complete. The door does not need to still be open at this point, only to have been opened before the box was picked up.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u5",
+       "in progress; shortest path from the start: door_open + has_door_key then has_door_key",
+       "The target box has been picked up, but the door is closed and a key-held moment with the door closed has not yet been followed by reopening it. That outstanding key and door requirement must still be satisfied, so the door has to be opened before successful completion. Opening the door finishes the task, since the box has already been collected.",
+       {
+        "text": "wrong",
+        "tone": "bad",
+        "title": "Holds u6's text: the box is picked up and only the door is left. In u5 the box is not picked up yet."
+       },
+       "The door, which had already been opened, has been toggled shut while the matching key was still in the agent's hand, so the required orderings remain satisfied. The mission box has not yet been picked up. The agent must reopen the door and then pick up the designated box in the other room; reopening the door restores the usual door-open progress.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u6",
+       "in progress; shortest path from the start: door_open + has_door_key then has_door_key + target_picked_up",
+       "This is successful completion: the target box has been picked up after the matching key was acquired and the door had been opened. The required ordering and the key-holding obligation have been satisfied, including any need to reopen the door. No further action is needed.",
+       {
+        "text": "wrong",
+        "tone": "bad",
+        "title": "Holds u4's text: it claims successful completion. u6 is not final; the door must still be opened."
+       },
+       "The mission box has been picked up, but the door is currently closed, so the task has not reached its completed stage. The door had been opened earlier, so the required ordering is satisfied, and the box is already in the agent's hands. Opening the door now would complete the task.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ]
+     ]
+    },
+    {
+     "type": "list",
+     "heading": "Why each text that is not right",
+     "items": [
+      "**u4, stored: wrong.** Holds u5's text: the door was shut with the key in hand and the box is still to get, so it reads as pending. u4 is the final state.",
+      "**u5, stored: wrong.** Holds u6's text: the box is picked up and only the door is left. In u5 the box is not picked up yet.",
+      "**u6, stored: wrong.** Holds u4's text: it claims successful completion. u6 is not final; the door must still be opened."
+     ]
+    },
+    {
+     "type": "details",
+     "heading": "The texts of rounds 2 and 3",
+     "items": [
+      {
+       "title": "Round 2: 7 right",
+       "text": "`evidence/round-2/bundles-tpl-response-1-goal.json`",
+       "blocks": [
+        {
+         "type": "table",
+         "columns": [
+          "state",
+          "new text",
+          "verdict"
+         ],
+         "rows": [
+          [
+           "u0",
+           "The task is at its start: the matching key has not been taken, the locked door has not been opened, and the designated box has not been collected. The agent must first get the key, use it to open the door, and only then go through and pick up the box. Opening the door before the key has been acquired, or picking up the box before the door has been opened, would break the required order and fail the task.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u1",
+           "A mandatory ordering requirement has been broken, so successful completion is no longer possible. This happens if the door was opened before the matching key had ever been acquired, or if the target box was collected before the door had been opened. The task is failed even if further actions are possible.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u2",
+           "The matching key has already been taken while the door was still closed, and the target box has not yet been collected. The next objective is to use the key to open the door; after that, the box can be fetched once the key is out of hand. Picking up the box before the door has opened would fail the task, and any period of holding the key with the door shut must eventually be followed by opening the door.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u3",
+           "The locked door has been opened at least once, and the target box is still uncollected. The remaining objective is to reach the box and pick it up. If the door has been shut while the key is still in hand, the door must be reopened to clear that key-holding obligation; otherwise, collecting the box with the door shut is acceptable when the key is no longer held.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u4",
+           "All task requirements are satisfied: the matching key was obtained before the door was opened, the door was opened before the target box was collected, and the box has been picked up. Any key-holding while the door was shut was followed by the door being opened, so no obligation remains. The episode is successfully complete.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u5",
+           "A pending key-holding obligation has arisen: the matching key was held while the door was shut, after the door had been opened earlier, and the target box is still uncollected. The agent must reopen the door to clear that obligation and restore normal progress. If the box is picked up while the door remains shut, the pending obligation remains and the door must still be opened before the task can count as complete.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u6",
+           "The target box has already been picked up, but the door is still shut and an earlier key-holding obligation remains unresolved. The only remaining step is to open the door; once it is open, all requirements are satisfied and the task is complete. No further box pickup is needed.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "title": "Round 3: 7 right",
+       "text": "`evidence/round-3/bundles-tpl-response-1-goal.json`",
+       "blocks": [
+        {
+         "type": "table",
+         "columns": [
+          "state",
+          "new text",
+          "verdict"
+         ],
+         "rows": [
+          [
+           "u0",
+           "Nothing required has been accomplished yet: the matching key has not been taken, the locked door is closed, and the target box is still in the other room. The first required step is to pick up the key, after which the door must be opened and the designated box collected. Opening the door before taking the key, or collecting the box before the door has been opened, would violate the required order and fail the task.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u1",
+           "A mandatory ordering requirement has been broken: either the door was opened before the matching key was ever obtained, or the target box was picked up before the door had been opened. This is an irreversible failure, and successful completion is no longer possible.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u2",
+           "The matching key has been picked up at least once, before any door opening, and the door is still shut with the target box not yet collected. The next objective is to open the door with the key and then collect the designated box in the far room. If the key is no longer being carried, it must be retrieved before the door can be unlocked. Picking up the target while the door remains shut would break the required ordering and fail the task.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u3",
+           "The door has already been opened at least once, and the target box has not yet been picked up. The remaining objective is to reach the designated box in the second room and collect it, first dropping the key if it is still being carried. If the door has been closed again, reopening it may be necessary to get through; closing it while still holding the key is a recoverable setback that must be undone by opening it again before finishing.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u4",
+           "All requirements are satisfied: the key was obtained before the door was opened, the door was opened before the target box was collected, and any period of holding the key while the door was shut was followed by opening the door. The designated box has been picked up, so the mission is complete and no further objective remains.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u5",
+           "The door was opened at least once but has been closed again while the matching key was in hand, before the box was collected. This is a recoverable setback: the door must be reopened to satisfy the requirement tied to holding the key while the door was shut. If the key is still held, it must be dropped before the target box can be picked up; otherwise the door can simply be reopened and progress continues toward the box.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u6",
+           "The target box has already been picked up, but the door is still shut and an earlier period of holding the key while the door was closed has not yet been followed by opening it. The outstanding key-and-door requirement must be cleared before the task counts as complete. Opening the door now, which no longer requires the key because the door has already been unlocked, completes the task. If the door remains shut, the requirement stays pending.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ]
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "tpl-precedence-1-goal",
+   "title": "3. tpl-precedence-1-goal: two states claim the task is done",
+   "intro": "Stored u1 holds the content of u6 (ball moved, box held), and u8 and u10 say every requirement is met although neither is final. The keyed tagger's texts sit on their own state in all three rounds. In round 1, u1 and u10 add that picking up the box ends the episode, a claim about the level the machine does not make (half right); rounds 2 and 3 do not repeat it.",
+   "blocks": [
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/tpl-precedence-1-goal.html",
+       "height": 520,
+       "alt": "Reward Machine tpl-precedence-1-goal: 13 states",
+       "caption": "**`tpl-precedence-1-goal`** · MiniGrid BlockedUnlockPickup, templates benchmark · 13 states, 51 transitions · final u12, well u2\nTask: *Move the ball away from the door before you take the key, then open the door and pick up the box.*",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "**Task:** Move the ball away from the door before you take the key, then open the door and pick up the box.",
+        "code": "# IBM clauses in the proposal\nPrecedence(blocker_moved, has_door_key)  [hard]\nExistence(has_door_key)  [hard]\nExistence(door_open)  [hard]\nExistence(target_picked_up)  [hard]\n\n# LTLf, one per clause\nPrecedence(blocker_moved, has_door_key):\n - (((~has_door_key) U blocker_moved) | (G (~has_door_key)))\nExistence(has_door_key):\n - (F has_door_key)\nExistence(door_open):\n - (F door_open)\nExistence(target_picked_up):\n - (F target_picked_up)\n\n# Raw LTLf, as IBM writes it and MONA reads it\n - (((~has_door_key)Ublocker_moved)|(G(~has_door_key)))\n - (Fhas_door_key)\n - (Fdoor_open)\n - (Ftarget_picked_up)\n\n# RM text, as the compiler writes it\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12\nINITIAL_STATE: u0\nFINAL_STATES: u12\nREJECTING_STATES: u2\nACCEPTING_STATES:\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, !blocker_moved&!door_open&!has_door_key&target_picked_up) -> u1\n(u0, !blocker_moved&!door_open&has_door_key&!target_picked_up) -> u2\n(u0, !blocker_moved&!door_open&has_door_key&target_picked_up) -> u2\n(u0, !blocker_moved&door_open&!has_door_key&!target_picked_up) -> u3\n(u0, !blocker_moved&door_open&!has_door_key&target_picked_up) -> u4\n(u0, !blocker_moved&door_open&has_door_key&!target_picked_up) -> u2\n(u0, !blocker_moved&door_open&has_door_key&target_picked_up) -> u2\n(u0, blocker_moved&!door_open&!has_door_key&!target_picked_up) -> u5\n(u0, blocker_moved&!door_open&!has_door_key&target_picked_up) -> u6\n(u0, blocker_moved&!door_open&has_door_key&!target_picked_up) -> u7\n(u0, blocker_moved&!door_open&has_door_key&target_picked_up) -> u8\n(u0, blocker_moved&door_open&!has_door_key&!target_picked_up) -> u9\n(u0, blocker_moved&door_open&!has_door_key&target_picked_up) -> u10\n(u0, blocker_moved&door_open&has_door_key&!target_picked_up) -> u11\n(u0, blocker_moved&door_open&has_door_key&target_picked_up) -> u12\n(u1, !blocker_moved&!door_open&has_door_key) -> u2\n(u1, !blocker_moved&door_open&!has_door_key) -> u4\n(u1, !blocker_moved&door_open&has_door_key) -> u2\n(u1, blocker_moved&!door_open&!has_door_key) -> u6\n(u1, blocker_moved&!door_open&has_door_key) -> u8\n(u1, blocker_moved&door_open&!has_door_key) -> u10\n(u1, blocker_moved&door_open&has_door_key) -> u12\n(u3, !blocker_moved&!has_door_key&target_picked_up) -> u4\n(u3, !blocker_moved&has_door_key&!target_picked_up) -> u2\n(u3, !blocker_moved&has_door_key&target_picked_up) -> u2\n(u3, blocker_moved&!has_door_key&!target_picked_up) -> u9\n(u3, blocker_moved&!has_door_key&target_picked_up) -> u10\n(u3, blocker_moved&has_door_key&!target_picked_up) -> u11\n(u3, blocker_moved&has_door_key&target_picked_up) -> u12\n(u4, !blocker_moved&has_door_key) -> u2\n(u4, blocker_moved&!has_door_key) -> u10\n(u4, blocker_moved&has_door_key) -> u12\n(u5, !door_open&!has_door_key&target_picked_up) -> u6\n(u5, !door_open&has_door_key&!target_picked_up) -> u7\n(u5, !door_open&has_door_key&target_picked_up) -> u8\n(u5, door_open&!has_door_key&!target_picked_up) -> u9\n(u5, door_open&!has_door_key&target_picked_up) -> u10\n(u5, door_open&has_door_key&!target_picked_up) -> u11\n(u5, door_open&has_door_key&target_picked_up) -> u12\n(u6, !door_open&has_door_key) -> u8\n(u6, door_open&!has_door_key) -> u10\n(u6, door_open&has_door_key) -> u12\n(u7, !door_open&target_picked_up) -> u8\n(u7, door_open&!target_picked_up) -> u11\n(u7, door_open&target_picked_up) -> u12\n(u8, door_open) -> u12\n(u9, !has_door_key&target_picked_up) -> u10\n(u9, has_door_key&!target_picked_up) -> u11\n(u9, has_door_key&target_picked_up) -> u12\n(u10, has_door_key) -> u12\n(u11, target_picked_up) -> u12\nREWARD_FUNCTION:\n(u0, !blocker_moved&!door_open&!has_door_key&target_picked_up, u1) -> 0.1\n(u0, !blocker_moved&!door_open&has_door_key&!target_picked_up, u2) -> -4\n(u0, !blocker_moved&!door_open&has_door_key&target_picked_up, u2) -> -4\n(u0, !blocker_moved&door_open&!has_door_key&!target_picked_up, u3) -> 0.1\n(u0, !blocker_moved&door_open&!has_door_key&target_picked_up, u4) -> 0.2\n(u0, !blocker_moved&door_open&has_door_key&!target_picked_up, u2) -> -4\n(u0, !blocker_moved&door_open&has_door_key&target_picked_up, u2) -> -4\n(u0, blocker_moved&!door_open&!has_door_key&target_picked_up, u6) -> 0.1\n(u0, blocker_moved&!door_open&has_door_key&!target_picked_up, u7) -> 0.1\n(u0, blocker_moved&!door_open&has_door_key&target_picked_up, u8) -> 0.2\n(u0, blocker_moved&door_open&!has_door_key&!target_picked_up, u9) -> 0.1\n(u0, blocker_moved&door_open&!has_door_key&target_picked_up, u10) -> 0.2\n(u0, blocker_moved&door_open&has_door_key&!target_picked_up, u11) -> 0.2\n(u0, blocker_moved&door_open&has_door_key&target_picked_up, u12) -> 1.3\n(u1, !blocker_moved&!door_open&has_door_key, u2) -> -3\n(u1, !blocker_moved&door_open&!has_door_key, u4) -> 0.1\n(u1, !blocker_moved&door_open&has_door_key, u2) -> -3\n(u1, blocker_moved&!door_open&has_door_key, u8) -> 0.1\n(u1, blocker_moved&door_open&!has_door_key, u10) -> 0.1\n(u1, blocker_moved&door_open&has_door_key, u12) -> 1.2\n(u3, !blocker_moved&!has_door_key&target_picked_up, u4) -> 0.1\n(u3, !blocker_moved&has_door_key&!target_picked_up, u2) -> -3\n(u3, !blocker_moved&has_door_key&target_picked_up, u2) -> -3\n(u3, blocker_moved&!has_door_key&target_picked_up, u10) -> 0.1\n(u3, blocker_moved&has_door_key&!target_picked_up, u11) -> 0.1\n(u3, blocker_moved&has_door_key&target_picked_up, u12) -> 1.2\n(u4, !blocker_moved&has_door_key, u2) -> -2\n(u4, blocker_moved&has_door_key, u12) -> 1.1\n(u5, !door_open&!has_door_key&target_picked_up, u6) -> 0.1\n(u5, !door_open&has_door_key&!target_picked_up, u7) -> 0.1\n(u5, !door_open&has_door_key&target_picked_up, u8) -> 0.2\n(u5, door_open&!has_door_key&!target_picked_up, u9) -> 0.1\n(u5, door_open&!has_door_key&target_picked_up, u10) -> 0.2\n(u5, door_open&has_door_key&!target_picked_up, u11) -> 0.2\n(u5, door_open&has_door_key&target_picked_up, u12) -> 1.3\n(u6, !door_open&has_door_key, u8) -> 0.1\n(u6, door_open&!has_door_key, u10) -> 0.1\n(u6, door_open&has_door_key, u12) -> 1.2\n(u7, !door_open&target_picked_up, u8) -> 0.1\n(u7, door_open&!target_picked_up, u11) -> 0.1\n(u7, door_open&target_picked_up, u12) -> 1.2\n(u8, door_open, u12) -> 1.1\n(u9, !has_door_key&target_picked_up, u10) -> 0.1\n(u9, has_door_key&!target_picked_up, u11) -> 0.1\n(u9, has_door_key&target_picked_up, u12) -> 1.2\n(u10, has_door_key, u12) -> 1.1\n(u11, target_picked_up, u12) -> 1.1\nPENDING_PROMISES:\nu0: hard 3, soft 0\nu1: hard 2, soft 0\nu3: hard 2, soft 0\nu4: hard 1, soft 0\nu5: hard 3, soft 0\nu6: hard 2, soft 0\nu7: hard 2, soft 0\nu8: hard 1, soft 0\nu9: hard 2, soft 0\nu10: hard 1, soft 0\nu11: hard 1, soft 0"
+       }
+      }
+     ]
+    },
+    {
+     "type": "table",
+     "heading": "Each state's text: stored (old tagger, as committed) and new (keyed tagger, round 1)",
+     "columns": [
+      "state",
+      "role, owed stages, a shortest way in (`state_list.py`)",
+      "stored text",
+      "verdict",
+      "new text, round 1",
+      "verdict"
+     ],
+     "rows": [
+      [
+       "u0",
+       "start; owes 3 hard and 0 soft stages",
+       "The agent has not yet moved the ball away from the door and has not taken the matching key, so no progress toward opening the door has been made. It must first move the ball away from the door, then take the key, next open the door, and finally pick up the mission's target box. Taking the key before the ball is moved would violate the required order and end the task in failure.",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "The episode starts with the ball still in front of the locked door, the matching key not carried, the door not yet opened, and the designated target box uncollected. The required order is to move the ball away first, then obtain the matching key, open the door, and finally pick up the target box. Taking the key before the ball has been moved would irreversibly fail the task.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u1",
+       "in progress; owes 2 hard and 0 soft stages; shortest path from the start: target_picked_up",
+       "The ball has been moved away from the door and the target box is being carried, but the key has not been taken and the door is not open. The agent must still obtain the matching key, open the door, and end with the box picked up. Taking the key while the door remains unopened from here is acceptable, but losing the ball from in front of the door before the key is taken would break the required ordering.",
+       {
+        "text": "wrong",
+        "tone": "bad",
+        "title": "Holds u6's content: it says the ball has been moved. In u1 only the box has been picked up; the ball, the key and the door are all still owed."
+       },
+       "The target box has already been picked up, but the ball has not been moved away, the door has never been opened, and the matching key has not been acquired. Because the target pickup normally ends the episode, this cannot lead to an ordinary successful finish; the ball, key, and door requirements remain unsatisfied.",
+       {
+        "text": "half right",
+        "tone": "warn",
+        "title": "Role and owed steps are right, but it adds that the run cannot finish because picking up the box ends the episode. That is a claim about the level; the machine can still finish from u1."
+       }
+      ],
+      [
+       "u2",
+       "well: a hard rule is broken for good; shortest path from the start: has_door_key",
+       "A mandatory requirement has been violated: the key was taken before the ball was moved away from the door, breaking the required order. Successful completion is no longer possible, and the task cannot be finished.",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "The matching key has been picked up even though the ball has not been moved away from the doorway, so the required ball-before-key order has been broken. This is an irreversible failure; the task can no longer be completed successfully.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u3",
+       "in progress; owes 2 hard and 0 soft stages; shortest path from the start: door_open",
+       "The ball has not been moved away from the door, the key is not held, but the door has somehow been opened. The ball must still be moved away and the key must still be taken before the box can be picked up. However, opening the door without prior ball movement is inconsistent with the environment, so this state reflects an unusual history. The remaining goals are moving the ball, taking the key, and picking up the box.",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "The door has already been opened, but the ball is still in front of it, the matching key has not been acquired, and the target box is not collected. The ball must be moved away before the key is taken, and both the key acquisition and target-box pickup remain outstanding. The door-opening requirement itself is already satisfied.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u4",
+       "in progress; owes 1 hard and 0 soft stages; shortest path from the start: door_open + target_picked_up",
+       "The door is open and the box is being carried, but the ball has not been moved away from the door and the key is not held. The ball must still be moved away and the key must still be taken. Opening the door without the ball moved is inconsistent with the environment's constraints, but the remaining objectives nonetheless are moving the ball and taking the key.",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "The door has already been opened and the target box has been picked up, but the ball has never been moved away and the matching key has not been acquired. This combination cannot occur in an ordinary episode because opening the door requires the key and the target pickup ends the episode; the key requirement would still be unmet.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u5",
+       "in progress; owes 3 hard and 0 soft stages; shortest path from the start: blocker_moved",
+       "The ball has been moved away from the door, but the key has not been taken and the door is not open. The agent must now take the matching key and open the door before picking up the box. The ball can still be dropped back in front of the door, which would undo this progress and, if done before taking the key, break the required order.",
+       {
+        "text": "half right",
+        "tone": "warn",
+        "title": "The owed steps are right, but it says that dropping the ball back before taking the key breaks the order. Once the ball has moved the order holds: only u0, u1, u3 and u4 have edges into the failure state u2, and none of them is reachable from u5."
+       },
+       "The ball has been moved away from the doorway at least once, so the ball-before-key condition is satisfied, but the matching key has not been acquired, the door has not been opened, and the target box is uncollected. If the ball is still in hand, it must be put down before taking the key, and if it was dropped back in front of the door, it must be moved away again before the door can be opened. The remaining objectives are to obtain the key, open the door, and pick up the designated box.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u6",
+       "in progress; owes 2 hard and 0 soft stages; shortest path from the start: blocker_moved + target_picked_up",
+       "The ball has been moved away from the door and the target box is being carried, but the key has not been taken and the door is not open. The agent must still take the matching key and open the door. If the ball is dropped back in front of the door before the key is taken, the required order is broken.",
+       {
+        "text": "half right",
+        "tone": "warn",
+        "title": "The owed steps are right, but it says that dropping the ball back before taking the key breaks the order. Once the ball has moved the order holds: only u0, u1, u3 and u4 have edges into the failure state u2, and none of them is reachable from u6."
+       },
+       "The ball has been moved and the target box has already been picked up, but the door has never been opened and the matching key has not been acquired. Because the target pickup normally ends the episode, this is not a successful completion; the key and door requirements remain unfulfilled.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u7",
+       "in progress; owes 2 hard and 0 soft stages; shortest path from the start: blocker_moved + has_door_key",
+       "The ball has been moved away from the door and the matching key has been taken, so the ordering requirement is satisfied. The agent must now open the door and then pick up the mission's target box. The key cannot be carried together with the box, so it will need to be released before the box is picked up.",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "The ball has been moved away at least once and the matching key has been acquired, but the door has not been opened and the target box remains uncollected. The remaining work is to open the door and then collect the designated box. If the key was dropped before opening, it must be picked up again after freeing the hands, and if the ball was returned to the doorway it must be moved away again before the door can be opened.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u8",
+       "in progress; owes 1 hard and 0 soft stages; shortest path from the start: blocker_moved + has_door_key + target_picked_up",
+       "The ball has been moved away, the key is held, the door is open, and the box is being carried. All requirements are satisfied and the task is complete.",
+       {
+        "text": "wrong",
+        "tone": "bad",
+        "title": "Says every requirement is met and the task is complete. u8 is not final: the door has not been opened."
+       },
+       "The ball has been moved, the matching key is held, and the target box has already been picked up, but the door has never been opened. This combination is not possible in a real episode, since the agent cannot carry both the key and the box and the box cannot be reached before the door is opened; the only remaining requirement would be opening the door if play could continue.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u9",
+       "in progress; owes 2 hard and 0 soft stages; shortest path from the start: blocker_moved + door_open",
+       "The ball has been moved away and the door is open, but the key is not currently held and the box has not been picked up. Taking the key again would finish the objectives, and the box must still be picked up afterward. The key must be released before the box can be taken.",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "The ball has been moved and the door has already been opened, but the matching key has not been acquired and the target box is not collected. To complete the task, obtain the matching key at least once and then pick up the designated box; the key need not remain in hand afterward. If the door was shut again or the ball was returned to the opening, clear the way before entering the target room.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u10",
+       "in progress; owes 1 hard and 0 soft stages; shortest path from the start: blocker_moved + door_open + target_picked_up",
+       "The ball has been moved away, the door is open, the key is not held, and the box is being carried. All requirements are satisfied and the task is complete.",
+       {
+        "text": "wrong",
+        "tone": "bad",
+        "title": "Says every requirement is met and the task is complete. u10 is not final: the key has never been taken."
+       },
+       "The ball has been moved, the door has been opened, and the target box has already been picked up, but the matching key has never been acquired. Because the target pickup normally ends the episode and an agent carrying the box cannot pick up the key, the missing key requirement cannot be completed; this is not a successful finish.",
+       {
+        "text": "half right",
+        "tone": "warn",
+        "title": "Role and owed step are right, but it adds that the key can no longer be taken because picking up the box ends the episode. That is a claim about the level; the machine can still finish from u10."
+       }
+      ],
+      [
+       "u11",
+       "in progress; owes 1 hard and 0 soft stages; shortest path from the start: blocker_moved + door_open + has_door_key",
+       "The ball has been moved away, the key is held, and the door is open, but the box has not yet been picked up. The agent only needs to pick up the mission's target box, though it must first free its hands since it cannot carry both the key and the box. Picking up the box completes the task.",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "The ball has been moved, the matching key has been acquired, and the door has been opened; only the target box remains to be picked up. The hands must be empty before collecting the box, so put down the key or any other carried object; dropping the key now does not undo the completed key requirement. If the door was closed again or the ball was returned to block the entrance, clear the way before reaching the target.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u12",
+       "final: every hard goal is reached; shortest path from the start: blocker_moved + door_open + has_door_key + target_picked_up",
+       "The ball has been moved away from the door, the key was taken and released, the door is open, and the mission's target box is carried. All requirements are satisfied and the task is complete.",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "The ball was moved before the key was acquired, the matching key was obtained, the door was opened, and the designated target box has been picked up. All requirements are satisfied, so the task is complete.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ]
+     ]
+    },
+    {
+     "type": "list",
+     "heading": "Why each text that is not right",
+     "items": [
+      "**u1, stored: wrong.** Holds u6's content: it says the ball has been moved. In u1 only the box has been picked up; the ball, the key and the door are all still owed.",
+      "**u1, new (round 1): half right.** Role and owed steps are right, but it adds that the run cannot finish because picking up the box ends the episode. That is a claim about the level; the machine can still finish from u1.",
+      "**u5, stored: half right.** The owed steps are right, but it says that dropping the ball back before taking the key breaks the order. Once the ball has moved the order holds: only u0, u1, u3 and u4 have edges into the failure state u2, and none of them is reachable from u5.",
+      "**u6, stored: half right.** The owed steps are right, but it says that dropping the ball back before taking the key breaks the order. Once the ball has moved the order holds: only u0, u1, u3 and u4 have edges into the failure state u2, and none of them is reachable from u6.",
+      "**u8, stored: wrong.** Says every requirement is met and the task is complete. u8 is not final: the door has not been opened.",
+      "**u10, stored: wrong.** Says every requirement is met and the task is complete. u10 is not final: the key has never been taken.",
+      "**u10, new (round 1): half right.** Role and owed step are right, but it adds that the key can no longer be taken because picking up the box ends the episode. That is a claim about the level; the machine can still finish from u10."
+     ]
+    },
+    {
+     "type": "details",
+     "heading": "The texts of rounds 2 and 3",
+     "items": [
+      {
+       "title": "Round 2: 13 right",
+       "text": "`evidence/round-2/bundles-tpl-precedence-1-goal.json`",
+       "blocks": [
+        {
+         "type": "table",
+         "columns": [
+          "state",
+          "new text",
+          "verdict"
+         ],
+         "rows": [
+          [
+           "u0",
+           "The episode starts with the ball still blocking access to the closed door, no matching key held, and the designated box not picked up. The required sequence is to move the ball away from the door, take the matching key, open the door, and finally collect the box. No required progress has been made yet, so all objectives remain.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u1",
+           "The target box has been picked up at least once, but the ball has not yet been moved away from the door, the door has not been opened, and no matching key is held. The key and door requirements are still outstanding, and the ball must be moved before the key is taken to avoid breaking the required order. This combination is not normally reachable because the box cannot be reached until the door has been opened.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u2",
+           "The matching key was taken before the ball had been moved away from the door, violating the mandatory ordering requirement. This is an irreversible failure: successful completion is no longer possible, regardless of any later key, door, or box progress.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u3",
+           "The door has been opened at least once, but the ball has not yet been moved away from the door, the matching key has not been acquired, and the target box has not been picked up. The remaining goals are to move the ball, take the key only after that move, and collect the box. If the door has since closed, it may need to be reopened to reach the box.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u4",
+           "The door has been opened at least once and the target box has been picked up at least once, but the ball has not yet been moved away from the door and no matching key is currently held. The only outstanding requirements are to move the ball and then acquire the key; taking the key before moving the ball would still fail the task.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u5",
+           "The ball has been moved away from the door at least once, so the ordering prerequisite for taking the key is satisfied. The matching key is not held, the door is still closed, and the target box has not been picked up; the remaining goals are to take the key, open the door, and collect the box. If the ball is put back in front of the door, it must be moved again before the door can be opened, although the key may already be taken safely.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u6",
+           "The ball has been moved away from the door at least once and the target box has been picked up at least once, but the matching key has not yet been acquired and the door has not yet been opened. With the ordering prerequisite already met, the remaining goals are to take the key and open the door. If the ball has since been returned to the doorway, it must be moved again before the door can be opened.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u7",
+           "The ball has been moved away from the door at least once and the matching key has been acquired at least once, but the door has not yet been opened and the target box has not yet been picked up. The remaining goals are to open the door and then collect the box. If the key was dropped while the door was still closed, it must be picked up again to unlock the door, though the key-acquisition requirement remains satisfied.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u8",
+           "The ball has been moved away from the door at least once, the matching key has been acquired at least once, and the target box has been picked up at least once, but the door has not yet been opened. Opening the door is the only remaining requirement. If the key is no longer held, it must be picked up again to unlock the door; this is an unusual out-of-order history, since the box is normally reachable only after the door has been opened.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u9",
+           "The ball has been moved away from the door at least once and the door has been opened at least once, but the matching key has not yet been acquired and the target box has not yet been picked up. Both the key pickup and the box pickup remain outstanding; the key can now be taken safely because the ball was moved earlier. If the door has since closed, it may need to be reopened to reach the box.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u10",
+           "The ball has been moved away from the door at least once, the door has been opened at least once, and the target box has been picked up at least once, but the matching key has not yet been acquired. Acquiring the key is the only remaining requirement for completion. This is an unusual out-of-order history, since the box pickup normally occurs after the door and key requirements have been met.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u11",
+           "The ball has been moved away from the door at least once, the matching key has been acquired at least once, and the door has been opened at least once, but the target box has not yet been picked up. Picking up the designated box is the only remaining requirement for completion. If the door has since closed, it may need to be reopened to reach the box, but it has already been unlocked.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u12",
+           "All required progress has been made: the ball was moved away from the door, the matching key was acquired, the door was opened, and the designated target box has been picked up. The required ordering of moving the ball before taking the key was respected, so the task is successfully complete. No further objectives remain.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "title": "Round 3: 13 right",
+       "text": "`evidence/round-3/bundles-tpl-precedence-1-goal.json`",
+       "blocks": [
+        {
+         "type": "table",
+         "columns": [
+          "state",
+          "new text",
+          "verdict"
+         ],
+         "rows": [
+          [
+           "u0",
+           "This is the starting stage: the ball still blocks the locked door, the agent has no matching key, the door is closed, and the mission box has not been picked up. The agent must first move the ball away, then obtain the matching key, open the door, and finally pick up the designated box. Taking the key before moving the ball would violate the required order and fail the task.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u1",
+           "The mission box has been picked up, but the ball has not been moved away, the door is still closed, and no matching key has been obtained. To complete the task, the ball must still be moved, the matching key acquired, and the door opened. This is not the successful final stage because those requirements remain outstanding.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u2",
+           "The matching key was taken before the ball was moved away from the door, breaking the mandatory ordering requirement. This violation is irreversible, so successful completion is no longer possible even if the ball is later moved or the door is opened.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u3",
+           "The door has already been opened at least once, but the ball has not been moved away, the matching key has not been obtained, and the mission box has not been picked up. Moving the ball clear, acquiring the key, and picking up the designated box remain outstanding.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u4",
+           "The door has already been opened and the mission box has been picked up, but the ball has not been moved away and the matching key has not been obtained. Moving the ball clear and acquiring the key remain necessary for the task to count as complete.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u5",
+           "The ball has been moved away from the door at least once, so the required ordering condition for taking the key has been satisfied. The matching key has not yet been obtained, the door is still closed, and the mission box has not been picked up. The agent should now get the key, open the door, and pick up the designated box.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u6",
+           "The ball has been moved away and the mission box has been picked up, but the door is still closed and the matching key has not been obtained. The key must be acquired and the door opened for all requirements to be met.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u7",
+           "The ball has been moved away and the matching key has been obtained, but the door has not yet been opened and the mission box has not been picked up. The next requirements are to open the door with the key and then pick up the designated box. If the key is dropped before the door is opened, it must be picked up again to open the door.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u8",
+           "The ball has been moved away, the matching key has been acquired at some point, and the mission box has been picked up, but the door has not yet been opened. Opening the door is the only recorded requirement still outstanding, after which the task would be complete.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u9",
+           "The ball has been moved away and the door has already been opened, but the matching key is not currently held and the mission box has not been picked up. The key requirement still needs to be satisfied and the designated box picked up; acquiring the key now does not violate the ball-before-key order because the ball was moved first.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u10",
+           "The ball has been moved away, the door has already been opened, and the mission box has been picked up, but the matching key has not been obtained. The key requirement is still outstanding, so this is not the successful final stage.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u11",
+           "The ball has been moved away, the matching key has been obtained, and the door has been opened. The only remaining objective is to pick up the mission's designated box. If the key is still in hand, it must be put down first to free the agent's hands for the box.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u12",
+           "The blocking ball had been moved away before the key was acquired, the matching key had been obtained, the door had been opened, and the mission's designated box has been picked up. All hard requirements are satisfied, so the task is complete.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ]
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "shop-serve",
+   "title": "4. shop-serve: seven stored texts drop or mix up a duty",
+   "intro": "The machine has no final state and one well, u14: a fallen portion not picked up on the next move. Seven stored texts drop or mix up a duty, most often the food still to prepare. The keyed tagger's 17 texts name the duties of their own state in all three rounds. This is the stored build of main `5284fff` (hard charge -1, promise rows), not today's shop-serve machine; the re-tag described this stored machine.",
+   "blocks": [
+    {
+     "type": "gallery",
+     "width": 490,
+     "items": [
+      {
+       "src": "graphs/shop-serve.html",
+       "height": 520,
+       "alt": "Reward Machine shop-serve: 17 states",
+       "caption": "**`shop-serve`** · Shop, shop-serve level, stored build · 17 states, 406 transitions · no final, well u14\nTask: *Whenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move.*",
+       "details": {
+        "title": "Task, clauses, LTLf and RM text",
+        "text": "**Task:** Whenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move.",
+        "code": "# IBM clauses in the proposal\nResponse(client_arrived, order_taken)  [hard]\nResponse(order_taken, food_prepared)  [hard]\nResponse(food_prepared, order_served)  [hard]\nChainResponse(food_fell, holding_food)  [hard]\n\n# LTLf, one per clause\nResponse(client_arrived, order_taken):\n - (G (client_arrived -> (F order_taken)))\nResponse(order_taken, food_prepared):\n - (G (order_taken -> (F food_prepared)))\nResponse(food_prepared, order_served):\n - (G (food_prepared -> (F order_served)))\nChainResponse(food_fell, holding_food):\n - (G (food_fell -> (X holding_food)))\n\n# Raw LTLf, as IBM writes it and MONA reads it\n - (G(client_arrived->(Forder_taken)))\n - (G(order_taken->(Ffood_prepared)))\n - (G(food_prepared->(Forder_served)))\n - (G(food_fell->(Xholding_food)))\n\n# RM text, as the compiler writes it\nREWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15, u16\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u14\nACCEPTING_STATES: u0\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, !client_arrived&!food_fell&!food_prepared&order_taken) -> u1\n(u0, !client_arrived&!food_fell&food_prepared&!order_served) -> u2\n(u0, !client_arrived&food_fell&!food_prepared&!order_taken) -> u3\n(u0, !client_arrived&food_fell&!food_prepared&order_taken) -> u4\n(u0, !client_arrived&food_fell&food_prepared&!order_served) -> u5\n(u0, !client_arrived&food_fell&food_prepared&order_served) -> u3\n(u0, client_arrived&!food_fell&!food_prepared&!order_taken) -> u6\n(u0, client_arrived&!food_fell&!food_prepared&order_taken) -> u1\n(u0, client_arrived&!food_fell&food_prepared&!order_served&!order_taken) -> u7\n(u0, client_arrived&!food_fell&food_prepared&!order_served&order_taken) -> u2\n(u0, client_arrived&!food_fell&food_prepared&order_served&!order_taken) -> u6\n(u0, client_arrived&food_fell&!food_prepared&!order_taken) -> u8\n(u0, client_arrived&food_fell&!food_prepared&order_taken) -> u4\n(u0, client_arrived&food_fell&food_prepared&!order_served&!order_taken) -> u9\n(u0, client_arrived&food_fell&food_prepared&!order_served&order_taken) -> u5\n(u0, client_arrived&food_fell&food_prepared&order_served&!order_taken) -> u8\n(u0, client_arrived&food_fell&food_prepared&order_served&order_taken) -> u3\n(u1, !client_arrived&!food_fell&food_prepared&!order_served) -> u2\n(u1, !client_arrived&!food_fell&food_prepared&order_served) -> u0\n(u1, !client_arrived&food_fell&!food_prepared) -> u4\n(u1, !client_arrived&food_fell&food_prepared&!order_served) -> u5\n(u1, !client_arrived&food_fell&food_prepared&order_served) -> u3\n(u1, client_arrived&!food_fell&!food_prepared&!order_taken) -> u10\n(u1, client_arrived&!food_fell&food_prepared&!order_served&!order_taken) -> u7\n(u1, client_arrived&!food_fell&food_prepared&!order_served&order_taken) -> u2\n(u1, client_arrived&!food_fell&food_prepared&order_served&!order_taken) -> u6\n(u1, client_arrived&!food_fell&food_prepared&order_served&order_taken) -> u0\n(u1, client_arrived&food_fell&!food_prepared&!order_taken) -> u11\n(u1, client_arrived&food_fell&!food_prepared&order_taken) -> u4\n(u1, client_arrived&food_fell&food_prepared&!order_served&!order_taken) -> u9\n(u1, client_arrived&food_fell&food_prepared&!order_served&order_taken) -> u5\n(u1, client_arrived&food_fell&food_prepared&order_served&!order_taken) -> u8\n(u1, client_arrived&food_fell&food_prepared&order_served&order_taken) -> u3\n(u2, !client_arrived&!food_fell&!food_prepared&!order_served&order_taken) -> u12\n(u2, !client_arrived&!food_fell&!food_prepared&order_served&!order_taken) -> u0\n(u2, !client_arrived&!food_fell&!food_prepared&order_served&order_taken) -> u1\n(u2, !client_arrived&!food_fell&food_prepared&order_served) -> u0\n(u2, !client_arrived&food_fell&!food_prepared&!order_served&!order_taken) -> u5\n(u2, !client_arrived&food_fell&!food_prepared&!order_served&order_taken) -> u13\n(u2, !client_arrived&food_fell&!food_prepared&order_served&!order_taken) -> u3\n(u2, !client_arrived&food_fell&!food_prepared&order_served&order_taken) -> u4\n(u2, !client_arrived&food_fell&food_prepared&!order_served) -> u5\n(u2, !client_arrived&food_fell&food_prepared&order_served) -> u3\n(u2, client_arrived&!food_fell&!food_prepared&!order_served&!order_taken) -> u7\n(u2, client_arrived&!food_fell&!food_prepared&!order_served&order_taken) -> u12\n(u2, client_arrived&!food_fell&!food_prepared&order_served&!order_taken) -> u6\n(u2, client_arrived&!food_fell&!food_prepared&order_served&order_taken) -> u1\n(u2, client_arrived&!food_fell&food_prepared&!order_served&!order_taken) -> u7\n(u2, client_arrived&!food_fell&food_prepared&order_served&!order_taken) -> u6\n(u2, client_arrived&!food_fell&food_prepared&order_served&order_taken) -> u0\n(u2, client_arrived&food_fell&!food_prepared&!order_served&!order_taken) -> u9\n(u2, client_arrived&food_fell&!food_prepared&!order_served&order_taken) -> u13\n(u2, client_arrived&food_fell&!food_prepared&order_served&!order_taken) -> u8\n(u2, client_arrived&food_fell&!food_prepared&order_served&order_taken) -> u4\n(u2, client_arrived&food_fell&food_prepared&!order_served&!order_taken) -> u9\n(u2, client_arrived&food_fell&food_prepared&!order_served&order_taken) -> u5\n(u2, client_arrived&food_fell&food_prepared&order_served&!order_taken) -> u8\n(u2, client_arrived&food_fell&food_prepared&order_served&order_taken) -> u3\n(u3, !client_arrived&!food_fell&!food_prepared&!holding_food&!order_taken) -> u14\n(u3, !client_arrived&!food_fell&!food_prepared&!holding_food&order_taken) -> u14\n(u3, !client_arrived&!food_fell&!food_prepared&holding_food&!order_taken) -> u0\n(u3, !client_arrived&!food_fell&!food_prepared&holding_food&order_taken) -> u1\n(u3, !client_arrived&!food_fell&food_prepared&!holding_food&!order_served) -> u14\n(u3, !client_arrived&!food_fell&food_prepared&!holding_food&order_served) -> u14\n(u3, !client_arrived&!food_fell&food_prepared&holding_food&!order_served) -> u2\n(u3, !client_arrived&!food_fell&food_prepared&holding_food&order_served) -> u0\n(u3, !client_arrived&food_fell&!food_prepared&!holding_food&!order_taken) -> u14\n(u3, !client_arrived&food_fell&!food_prepared&!holding_food&order_taken) -> u14\n(u3, !client_arrived&food_fell&!food_prepared&holding_food&order_taken) -> u4\n(u3, !client_arrived&food_fell&food_prepared&!holding_food&!order_served) -> u14\n(u3, !client_arrived&food_fell&food_prepared&!holding_food&order_served) -> u14\n(u3, !client_arrived&food_fell&food_prepared&holding_food&!order_served) -> u5\n(u3, client_arrived&!food_fell&!food_prepared&!holding_food&!order_taken) -> u14\n(u3, client_arrived&!food_fell&!food_prepared&!holding_food&order_taken) -> u14\n(u3, client_arrived&!food_fell&!food_prepared&holding_food&!order_taken) -> u6\n(u3, client_arrived&!food_fell&!food_prepared&holding_food&order_taken) -> u1\n(u3, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u3, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u3, client_arrived&!food_fell&food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u3, client_arrived&!food_fell&food_prepared&!holding_food&order_served&order_taken) -> u14\n(u3, client_arrived&!food_fell&food_prepared&holding_food&!order_served&!order_taken) -> u7\n(u3, client_arrived&!food_fell&food_prepared&holding_food&!order_served&order_taken) -> u2\n(u3, client_arrived&!food_fell&food_prepared&holding_food&order_served&!order_taken) -> u6\n(u3, client_arrived&!food_fell&food_prepared&holding_food&order_served&order_taken) -> u0\n(u3, client_arrived&food_fell&!food_prepared&!holding_food&!order_taken) -> u14\n(u3, client_arrived&food_fell&!food_prepared&!holding_food&order_taken) -> u14\n(u3, client_arrived&food_fell&!food_prepared&holding_food&!order_taken) -> u8\n(u3, client_arrived&food_fell&!food_prepared&holding_food&order_taken) -> u4\n(u3, client_arrived&food_fell&food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u3, client_arrived&food_fell&food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u3, client_arrived&food_fell&food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u3, client_arrived&food_fell&food_prepared&!holding_food&order_served&order_taken) -> u14\n(u3, client_arrived&food_fell&food_prepared&holding_food&!order_served&!order_taken) -> u9\n(u3, client_arrived&food_fell&food_prepared&holding_food&!order_served&order_taken) -> u5\n(u3, client_arrived&food_fell&food_prepared&holding_food&order_served&!order_taken) -> u8\n(u4, !client_arrived&!food_fell&!food_prepared&!holding_food) -> u14\n(u4, !client_arrived&!food_fell&!food_prepared&holding_food) -> u1\n(u4, !client_arrived&!food_fell&food_prepared&!holding_food&!order_served) -> u14\n(u4, !client_arrived&!food_fell&food_prepared&!holding_food&order_served) -> u14\n(u4, !client_arrived&!food_fell&food_prepared&holding_food&!order_served) -> u2\n(u4, !client_arrived&!food_fell&food_prepared&holding_food&order_served) -> u0\n(u4, !client_arrived&food_fell&!food_prepared&!holding_food) -> u14\n(u4, !client_arrived&food_fell&food_prepared&!holding_food&!order_served) -> u14\n(u4, !client_arrived&food_fell&food_prepared&!holding_food&order_served) -> u14\n(u4, !client_arrived&food_fell&food_prepared&holding_food&!order_served) -> u5\n(u4, !client_arrived&food_fell&food_prepared&holding_food&order_served) -> u3\n(u4, client_arrived&!food_fell&!food_prepared&!holding_food&!order_taken) -> u14\n(u4, client_arrived&!food_fell&!food_prepared&!holding_food&order_taken) -> u14\n(u4, client_arrived&!food_fell&!food_prepared&holding_food&!order_taken) -> u10\n(u4, client_arrived&!food_fell&!food_prepared&holding_food&order_taken) -> u1\n(u4, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u4, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u4, client_arrived&!food_fell&food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u4, client_arrived&!food_fell&food_prepared&!holding_food&order_served&order_taken) -> u14\n(u4, client_arrived&!food_fell&food_prepared&holding_food&!order_served&!order_taken) -> u7\n(u4, client_arrived&!food_fell&food_prepared&holding_food&!order_served&order_taken) -> u2\n(u4, client_arrived&!food_fell&food_prepared&holding_food&order_served&!order_taken) -> u6\n(u4, client_arrived&!food_fell&food_prepared&holding_food&order_served&order_taken) -> u0\n(u4, client_arrived&food_fell&!food_prepared&!holding_food&!order_taken) -> u14\n(u4, client_arrived&food_fell&!food_prepared&!holding_food&order_taken) -> u14\n(u4, client_arrived&food_fell&!food_prepared&holding_food&!order_taken) -> u11\n(u4, client_arrived&food_fell&food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u4, client_arrived&food_fell&food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u4, client_arrived&food_fell&food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u4, client_arrived&food_fell&food_prepared&!holding_food&order_served&order_taken) -> u14\n(u4, client_arrived&food_fell&food_prepared&holding_food&!order_served&!order_taken) -> u9\n(u4, client_arrived&food_fell&food_prepared&holding_food&!order_served&order_taken) -> u5\n(u4, client_arrived&food_fell&food_prepared&holding_food&order_served&!order_taken) -> u8\n(u4, client_arrived&food_fell&food_prepared&holding_food&order_served&order_taken) -> u3\n(u5, !client_arrived&!food_fell&!food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u5, !client_arrived&!food_fell&!food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u5, !client_arrived&!food_fell&!food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u5, !client_arrived&!food_fell&!food_prepared&!holding_food&order_served&order_taken) -> u14\n(u5, !client_arrived&!food_fell&!food_prepared&holding_food&!order_served&!order_taken) -> u2\n(u5, !client_arrived&!food_fell&!food_prepared&holding_food&!order_served&order_taken) -> u12\n(u5, !client_arrived&!food_fell&!food_prepared&holding_food&order_served&!order_taken) -> u0\n(u5, !client_arrived&!food_fell&!food_prepared&holding_food&order_served&order_taken) -> u1\n(u5, !client_arrived&!food_fell&food_prepared&!holding_food&!order_served) -> u14\n(u5, !client_arrived&!food_fell&food_prepared&!holding_food&order_served) -> u14\n(u5, !client_arrived&!food_fell&food_prepared&holding_food&!order_served) -> u2\n(u5, !client_arrived&!food_fell&food_prepared&holding_food&order_served) -> u0\n(u5, !client_arrived&food_fell&!food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u5, !client_arrived&food_fell&!food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u5, !client_arrived&food_fell&!food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u5, !client_arrived&food_fell&!food_prepared&!holding_food&order_served&order_taken) -> u14\n(u5, !client_arrived&food_fell&!food_prepared&holding_food&!order_served&order_taken) -> u13\n(u5, !client_arrived&food_fell&!food_prepared&holding_food&order_served&!order_taken) -> u3\n(u5, !client_arrived&food_fell&!food_prepared&holding_food&order_served&order_taken) -> u4\n(u5, !client_arrived&food_fell&food_prepared&!holding_food&!order_served) -> u14\n(u5, !client_arrived&food_fell&food_prepared&!holding_food&order_served) -> u14\n(u5, !client_arrived&food_fell&food_prepared&holding_food&order_served) -> u3\n(u5, client_arrived&!food_fell&!food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u5, client_arrived&!food_fell&!food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u5, client_arrived&!food_fell&!food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u5, client_arrived&!food_fell&!food_prepared&!holding_food&order_served&order_taken) -> u14\n(u5, client_arrived&!food_fell&!food_prepared&holding_food&!order_served&!order_taken) -> u7\n(u5, client_arrived&!food_fell&!food_prepared&holding_food&!order_served&order_taken) -> u12\n(u5, client_arrived&!food_fell&!food_prepared&holding_food&order_served&!order_taken) -> u6\n(u5, client_arrived&!food_fell&!food_prepared&holding_food&order_served&order_taken) -> u1\n(u5, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u5, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u5, client_arrived&!food_fell&food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u5, client_arrived&!food_fell&food_prepared&!holding_food&order_served&order_taken) -> u14\n(u5, client_arrived&!food_fell&food_prepared&holding_food&!order_served&!order_taken) -> u7\n(u5, client_arrived&!food_fell&food_prepared&holding_food&!order_served&order_taken) -> u2\n(u5, client_arrived&!food_fell&food_prepared&holding_food&order_served&!order_taken) -> u6\n(u5, client_arrived&!food_fell&food_prepared&holding_food&order_served&order_taken) -> u0\n(u5, client_arrived&food_fell&!food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u5, client_arrived&food_fell&!food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u5, client_arrived&food_fell&!food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u5, client_arrived&food_fell&!food_prepared&!holding_food&order_served&order_taken) -> u14\n(u5, client_arrived&food_fell&!food_prepared&holding_food&!order_served&!order_taken) -> u9\n(u5, client_arrived&food_fell&!food_prepared&holding_food&!order_served&order_taken) -> u13\n(u5, client_arrived&food_fell&!food_prepared&holding_food&order_served&!order_taken) -> u8\n(u5, client_arrived&food_fell&!food_prepared&holding_food&order_served&order_taken) -> u4\n(u5, client_arrived&food_fell&food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u5, client_arrived&food_fell&food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u5, client_arrived&food_fell&food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u5, client_arrived&food_fell&food_prepared&!holding_food&order_served&order_taken) -> u14\n(u5, client_arrived&food_fell&food_prepared&holding_food&!order_served&!order_taken) -> u9\n(u5, client_arrived&food_fell&food_prepared&holding_food&order_served&!order_taken) -> u8\n(u5, client_arrived&food_fell&food_prepared&holding_food&order_served&order_taken) -> u3\n(u6, !food_fell&!food_prepared&order_taken) -> u1\n(u6, !food_fell&food_prepared&!order_served&!order_taken) -> u7\n(u6, !food_fell&food_prepared&!order_served&order_taken) -> u2\n(u6, !food_fell&food_prepared&order_served&order_taken) -> u0\n(u6, food_fell&!food_prepared&!order_taken) -> u8\n(u6, food_fell&!food_prepared&order_taken) -> u4\n(u6, food_fell&food_prepared&!order_served&!order_taken) -> u9\n(u6, food_fell&food_prepared&!order_served&order_taken) -> u5\n(u6, food_fell&food_prepared&order_served&!order_taken) -> u8\n(u6, food_fell&food_prepared&order_served&order_taken) -> u3\n(u7, !food_fell&!food_prepared&!order_served&order_taken) -> u12\n(u7, !food_fell&!food_prepared&order_served&!order_taken) -> u6\n(u7, !food_fell&!food_prepared&order_served&order_taken) -> u1\n(u7, !food_fell&food_prepared&!order_served&order_taken) -> u2\n(u7, !food_fell&food_prepared&order_served&!order_taken) -> u6\n(u7, !food_fell&food_prepared&order_served&order_taken) -> u0\n(u7, food_fell&!food_prepared&!order_served&!order_taken) -> u9\n(u7, food_fell&!food_prepared&!order_served&order_taken) -> u13\n(u7, food_fell&!food_prepared&order_served&!order_taken) -> u8\n(u7, food_fell&!food_prepared&order_served&order_taken) -> u4\n(u7, food_fell&food_prepared&!order_served&!order_taken) -> u9\n(u7, food_fell&food_prepared&!order_served&order_taken) -> u5\n(u7, food_fell&food_prepared&order_served&!order_taken) -> u8\n(u7, food_fell&food_prepared&order_served&order_taken) -> u3\n(u8, !food_fell&!food_prepared&!holding_food&!order_taken) -> u14\n(u8, !food_fell&!food_prepared&!holding_food&order_taken) -> u14\n(u8, !food_fell&!food_prepared&holding_food&!order_taken) -> u6\n(u8, !food_fell&!food_prepared&holding_food&order_taken) -> u1\n(u8, !food_fell&food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u8, !food_fell&food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u8, !food_fell&food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u8, !food_fell&food_prepared&!holding_food&order_served&order_taken) -> u14\n(u8, !food_fell&food_prepared&holding_food&!order_served&!order_taken) -> u7\n(u8, !food_fell&food_prepared&holding_food&!order_served&order_taken) -> u2\n(u8, !food_fell&food_prepared&holding_food&order_served&!order_taken) -> u6\n(u8, !food_fell&food_prepared&holding_food&order_served&order_taken) -> u0\n(u8, food_fell&!food_prepared&!holding_food&!order_taken) -> u14\n(u8, food_fell&!food_prepared&!holding_food&order_taken) -> u14\n(u8, food_fell&!food_prepared&holding_food&order_taken) -> u4\n(u8, food_fell&food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u8, food_fell&food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u8, food_fell&food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u8, food_fell&food_prepared&!holding_food&order_served&order_taken) -> u14\n(u8, food_fell&food_prepared&holding_food&!order_served&!order_taken) -> u9\n(u8, food_fell&food_prepared&holding_food&!order_served&order_taken) -> u5\n(u8, food_fell&food_prepared&holding_food&order_served&order_taken) -> u3\n(u9, !food_fell&!food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u9, !food_fell&!food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u9, !food_fell&!food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u9, !food_fell&!food_prepared&!holding_food&order_served&order_taken) -> u14\n(u9, !food_fell&!food_prepared&holding_food&!order_served&!order_taken) -> u7\n(u9, !food_fell&!food_prepared&holding_food&!order_served&order_taken) -> u12\n(u9, !food_fell&!food_prepared&holding_food&order_served&!order_taken) -> u6\n(u9, !food_fell&!food_prepared&holding_food&order_served&order_taken) -> u1\n(u9, !food_fell&food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u9, !food_fell&food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u9, !food_fell&food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u9, !food_fell&food_prepared&!holding_food&order_served&order_taken) -> u14\n(u9, !food_fell&food_prepared&holding_food&!order_served&!order_taken) -> u7\n(u9, !food_fell&food_prepared&holding_food&!order_served&order_taken) -> u2\n(u9, !food_fell&food_prepared&holding_food&order_served&!order_taken) -> u6\n(u9, !food_fell&food_prepared&holding_food&order_served&order_taken) -> u0\n(u9, food_fell&!food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u9, food_fell&!food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u9, food_fell&!food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u9, food_fell&!food_prepared&!holding_food&order_served&order_taken) -> u14\n(u9, food_fell&!food_prepared&holding_food&!order_served&order_taken) -> u13\n(u9, food_fell&!food_prepared&holding_food&order_served&!order_taken) -> u8\n(u9, food_fell&!food_prepared&holding_food&order_served&order_taken) -> u4\n(u9, food_fell&food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u9, food_fell&food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u9, food_fell&food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u9, food_fell&food_prepared&!holding_food&order_served&order_taken) -> u14\n(u9, food_fell&food_prepared&holding_food&!order_served&order_taken) -> u5\n(u9, food_fell&food_prepared&holding_food&order_served&!order_taken) -> u8\n(u9, food_fell&food_prepared&holding_food&order_served&order_taken) -> u3\n(u10, !food_fell&!food_prepared&order_taken) -> u1\n(u10, !food_fell&food_prepared&!order_served&!order_taken) -> u7\n(u10, !food_fell&food_prepared&!order_served&order_taken) -> u2\n(u10, !food_fell&food_prepared&order_served&!order_taken) -> u6\n(u10, !food_fell&food_prepared&order_served&order_taken) -> u0\n(u10, food_fell&!food_prepared&!order_taken) -> u11\n(u10, food_fell&!food_prepared&order_taken) -> u4\n(u10, food_fell&food_prepared&!order_served&!order_taken) -> u9\n(u10, food_fell&food_prepared&!order_served&order_taken) -> u5\n(u10, food_fell&food_prepared&order_served&!order_taken) -> u8\n(u10, food_fell&food_prepared&order_served&order_taken) -> u3\n(u11, !food_fell&!food_prepared&!holding_food&!order_taken) -> u14\n(u11, !food_fell&!food_prepared&!holding_food&order_taken) -> u14\n(u11, !food_fell&!food_prepared&holding_food&!order_taken) -> u10\n(u11, !food_fell&!food_prepared&holding_food&order_taken) -> u1\n(u11, !food_fell&food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u11, !food_fell&food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u11, !food_fell&food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u11, !food_fell&food_prepared&!holding_food&order_served&order_taken) -> u14\n(u11, !food_fell&food_prepared&holding_food&!order_served&!order_taken) -> u7\n(u11, !food_fell&food_prepared&holding_food&!order_served&order_taken) -> u2\n(u11, !food_fell&food_prepared&holding_food&order_served&!order_taken) -> u6\n(u11, !food_fell&food_prepared&holding_food&order_served&order_taken) -> u0\n(u11, food_fell&!food_prepared&!holding_food&!order_taken) -> u14\n(u11, food_fell&!food_prepared&!holding_food&order_taken) -> u14\n(u11, food_fell&!food_prepared&holding_food&order_taken) -> u4\n(u11, food_fell&food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u11, food_fell&food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u11, food_fell&food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u11, food_fell&food_prepared&!holding_food&order_served&order_taken) -> u14\n(u11, food_fell&food_prepared&holding_food&!order_served&!order_taken) -> u9\n(u11, food_fell&food_prepared&holding_food&!order_served&order_taken) -> u5\n(u11, food_fell&food_prepared&holding_food&order_served&!order_taken) -> u8\n(u11, food_fell&food_prepared&holding_food&order_served&order_taken) -> u3\n(u12, !client_arrived&!food_fell&!food_prepared&order_served) -> u1\n(u12, !client_arrived&!food_fell&food_prepared&!order_served) -> u2\n(u12, !client_arrived&!food_fell&food_prepared&order_served) -> u0\n(u12, !client_arrived&food_fell&!food_prepared&!order_served) -> u13\n(u12, !client_arrived&food_fell&!food_prepared&order_served) -> u4\n(u12, !client_arrived&food_fell&food_prepared&!order_served) -> u5\n(u12, !client_arrived&food_fell&food_prepared&order_served) -> u3\n(u12, client_arrived&!food_fell&!food_prepared&!order_served&!order_taken) -> u15\n(u12, client_arrived&!food_fell&!food_prepared&order_served&!order_taken) -> u10\n(u12, client_arrived&!food_fell&!food_prepared&order_served&order_taken) -> u1\n(u12, client_arrived&!food_fell&food_prepared&!order_served&!order_taken) -> u7\n(u12, client_arrived&!food_fell&food_prepared&!order_served&order_taken) -> u2\n(u12, client_arrived&!food_fell&food_prepared&order_served&!order_taken) -> u6\n(u12, client_arrived&!food_fell&food_prepared&order_served&order_taken) -> u0\n(u12, client_arrived&food_fell&!food_prepared&!order_served&!order_taken) -> u16\n(u12, client_arrived&food_fell&!food_prepared&!order_served&order_taken) -> u13\n(u12, client_arrived&food_fell&!food_prepared&order_served&!order_taken) -> u11\n(u12, client_arrived&food_fell&!food_prepared&order_served&order_taken) -> u4\n(u12, client_arrived&food_fell&food_prepared&!order_served&!order_taken) -> u9\n(u12, client_arrived&food_fell&food_prepared&!order_served&order_taken) -> u5\n(u12, client_arrived&food_fell&food_prepared&order_served&!order_taken) -> u8\n(u12, client_arrived&food_fell&food_prepared&order_served&order_taken) -> u3\n(u13, !client_arrived&!food_fell&!food_prepared&!holding_food&!order_served) -> u14\n(u13, !client_arrived&!food_fell&!food_prepared&!holding_food&order_served) -> u14\n(u13, !client_arrived&!food_fell&!food_prepared&holding_food&!order_served) -> u12\n(u13, !client_arrived&!food_fell&!food_prepared&holding_food&order_served) -> u1\n(u13, !client_arrived&!food_fell&food_prepared&!holding_food&!order_served) -> u14\n(u13, !client_arrived&!food_fell&food_prepared&!holding_food&order_served) -> u14\n(u13, !client_arrived&!food_fell&food_prepared&holding_food&!order_served) -> u2\n(u13, !client_arrived&!food_fell&food_prepared&holding_food&order_served) -> u0\n(u13, !client_arrived&food_fell&!food_prepared&!holding_food&!order_served) -> u14\n(u13, !client_arrived&food_fell&!food_prepared&!holding_food&order_served) -> u14\n(u13, !client_arrived&food_fell&!food_prepared&holding_food&order_served) -> u4\n(u13, !client_arrived&food_fell&food_prepared&!holding_food&!order_served) -> u14\n(u13, !client_arrived&food_fell&food_prepared&!holding_food&order_served) -> u14\n(u13, !client_arrived&food_fell&food_prepared&holding_food&!order_served) -> u5\n(u13, !client_arrived&food_fell&food_prepared&holding_food&order_served) -> u3\n(u13, client_arrived&!food_fell&!food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u13, client_arrived&!food_fell&!food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u13, client_arrived&!food_fell&!food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u13, client_arrived&!food_fell&!food_prepared&!holding_food&order_served&order_taken) -> u14\n(u13, client_arrived&!food_fell&!food_prepared&holding_food&!order_served&!order_taken) -> u15\n(u13, client_arrived&!food_fell&!food_prepared&holding_food&!order_served&order_taken) -> u12\n(u13, client_arrived&!food_fell&!food_prepared&holding_food&order_served&!order_taken) -> u10\n(u13, client_arrived&!food_fell&!food_prepared&holding_food&order_served&order_taken) -> u1\n(u13, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u13, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u13, client_arrived&!food_fell&food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u13, client_arrived&!food_fell&food_prepared&!holding_food&order_served&order_taken) -> u14\n(u13, client_arrived&!food_fell&food_prepared&holding_food&!order_served&!order_taken) -> u7\n(u13, client_arrived&!food_fell&food_prepared&holding_food&!order_served&order_taken) -> u2\n(u13, client_arrived&!food_fell&food_prepared&holding_food&order_served&!order_taken) -> u6\n(u13, client_arrived&!food_fell&food_prepared&holding_food&order_served&order_taken) -> u0\n(u13, client_arrived&food_fell&!food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u13, client_arrived&food_fell&!food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u13, client_arrived&food_fell&!food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u13, client_arrived&food_fell&!food_prepared&!holding_food&order_served&order_taken) -> u14\n(u13, client_arrived&food_fell&!food_prepared&holding_food&!order_served&!order_taken) -> u16\n(u13, client_arrived&food_fell&!food_prepared&holding_food&order_served&!order_taken) -> u11\n(u13, client_arrived&food_fell&!food_prepared&holding_food&order_served&order_taken) -> u4\n(u13, client_arrived&food_fell&food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u13, client_arrived&food_fell&food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u13, client_arrived&food_fell&food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u13, client_arrived&food_fell&food_prepared&!holding_food&order_served&order_taken) -> u14\n(u13, client_arrived&food_fell&food_prepared&holding_food&!order_served&!order_taken) -> u9\n(u13, client_arrived&food_fell&food_prepared&holding_food&!order_served&order_taken) -> u5\n(u13, client_arrived&food_fell&food_prepared&holding_food&order_served&!order_taken) -> u8\n(u13, client_arrived&food_fell&food_prepared&holding_food&order_served&order_taken) -> u3\n(u15, !food_fell&!food_prepared&!order_served&order_taken) -> u12\n(u15, !food_fell&!food_prepared&order_served&!order_taken) -> u10\n(u15, !food_fell&!food_prepared&order_served&order_taken) -> u1\n(u15, !food_fell&food_prepared&!order_served&!order_taken) -> u7\n(u15, !food_fell&food_prepared&!order_served&order_taken) -> u2\n(u15, !food_fell&food_prepared&order_served&!order_taken) -> u6\n(u15, !food_fell&food_prepared&order_served&order_taken) -> u0\n(u15, food_fell&!food_prepared&!order_served&!order_taken) -> u16\n(u15, food_fell&!food_prepared&!order_served&order_taken) -> u13\n(u15, food_fell&!food_prepared&order_served&!order_taken) -> u11\n(u15, food_fell&!food_prepared&order_served&order_taken) -> u4\n(u15, food_fell&food_prepared&!order_served&!order_taken) -> u9\n(u15, food_fell&food_prepared&!order_served&order_taken) -> u5\n(u15, food_fell&food_prepared&order_served&!order_taken) -> u8\n(u15, food_fell&food_prepared&order_served&order_taken) -> u3\n(u16, !food_fell&!food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u16, !food_fell&!food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u16, !food_fell&!food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u16, !food_fell&!food_prepared&!holding_food&order_served&order_taken) -> u14\n(u16, !food_fell&!food_prepared&holding_food&!order_served&!order_taken) -> u15\n(u16, !food_fell&!food_prepared&holding_food&!order_served&order_taken) -> u12\n(u16, !food_fell&!food_prepared&holding_food&order_served&!order_taken) -> u10\n(u16, !food_fell&!food_prepared&holding_food&order_served&order_taken) -> u1\n(u16, !food_fell&food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u16, !food_fell&food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u16, !food_fell&food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u16, !food_fell&food_prepared&!holding_food&order_served&order_taken) -> u14\n(u16, !food_fell&food_prepared&holding_food&!order_served&!order_taken) -> u7\n(u16, !food_fell&food_prepared&holding_food&!order_served&order_taken) -> u2\n(u16, !food_fell&food_prepared&holding_food&order_served&!order_taken) -> u6\n(u16, !food_fell&food_prepared&holding_food&order_served&order_taken) -> u0\n(u16, food_fell&!food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u16, food_fell&!food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u16, food_fell&!food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u16, food_fell&!food_prepared&!holding_food&order_served&order_taken) -> u14\n(u16, food_fell&!food_prepared&holding_food&!order_served&order_taken) -> u13\n(u16, food_fell&!food_prepared&holding_food&order_served&!order_taken) -> u11\n(u16, food_fell&!food_prepared&holding_food&order_served&order_taken) -> u4\n(u16, food_fell&food_prepared&!holding_food&!order_served&!order_taken) -> u14\n(u16, food_fell&food_prepared&!holding_food&!order_served&order_taken) -> u14\n(u16, food_fell&food_prepared&!holding_food&order_served&!order_taken) -> u14\n(u16, food_fell&food_prepared&!holding_food&order_served&order_taken) -> u14\n(u16, food_fell&food_prepared&holding_food&!order_served&!order_taken) -> u9\n(u16, food_fell&food_prepared&holding_food&!order_served&order_taken) -> u5\n(u16, food_fell&food_prepared&holding_food&order_served&!order_taken) -> u8\n(u16, food_fell&food_prepared&holding_food&order_served&order_taken) -> u3\nREWARD_FUNCTION:\n(u0, !client_arrived&!food_fell&!food_prepared&order_taken, u1) -> -0.2\n(u0, !client_arrived&!food_fell&food_prepared&!order_served, u2) -> -0.1\n(u0, !client_arrived&food_fell&!food_prepared&!order_taken, u3) -> -0.1\n(u0, !client_arrived&food_fell&!food_prepared&order_taken, u4) -> -0.3\n(u0, !client_arrived&food_fell&food_prepared&!order_served, u5) -> -0.2\n(u0, !client_arrived&food_fell&food_prepared&order_served, u3) -> -0.1\n(u0, client_arrived&!food_fell&!food_prepared&!order_taken, u6) -> -0.3\n(u0, client_arrived&!food_fell&!food_prepared&order_taken, u1) -> -0.2\n(u0, client_arrived&!food_fell&food_prepared&!order_served&!order_taken, u7) -> -0.4\n(u0, client_arrived&!food_fell&food_prepared&!order_served&order_taken, u2) -> -0.1\n(u0, client_arrived&!food_fell&food_prepared&order_served&!order_taken, u6) -> -0.3\n(u0, client_arrived&food_fell&!food_prepared&!order_taken, u8) -> -0.4\n(u0, client_arrived&food_fell&!food_prepared&order_taken, u4) -> -0.3\n(u0, client_arrived&food_fell&food_prepared&!order_served&!order_taken, u9) -> -0.5\n(u0, client_arrived&food_fell&food_prepared&!order_served&order_taken, u5) -> -0.2\n(u0, client_arrived&food_fell&food_prepared&order_served&!order_taken, u8) -> -0.4\n(u0, client_arrived&food_fell&food_prepared&order_served&order_taken, u3) -> -0.1\n(u1, !client_arrived&!food_fell&food_prepared&!order_served, u2) -> 0.1\n(u1, !client_arrived&!food_fell&food_prepared&order_served, u0) -> 0.2\n(u1, !client_arrived&food_fell&!food_prepared, u4) -> -0.1\n(u1, !client_arrived&food_fell&food_prepared&order_served, u3) -> 0.1\n(u1, client_arrived&!food_fell&!food_prepared&!order_taken, u10) -> -0.3\n(u1, client_arrived&!food_fell&food_prepared&!order_served&!order_taken, u7) -> -0.2\n(u1, client_arrived&!food_fell&food_prepared&!order_served&order_taken, u2) -> 0.1\n(u1, client_arrived&!food_fell&food_prepared&order_served&!order_taken, u6) -> -0.1\n(u1, client_arrived&!food_fell&food_prepared&order_served&order_taken, u0) -> 0.2\n(u1, client_arrived&food_fell&!food_prepared&!order_taken, u11) -> -0.4\n(u1, client_arrived&food_fell&!food_prepared&order_taken, u4) -> -0.1\n(u1, client_arrived&food_fell&food_prepared&!order_served&!order_taken, u9) -> -0.3\n(u1, client_arrived&food_fell&food_prepared&order_served&!order_taken, u8) -> -0.2\n(u1, client_arrived&food_fell&food_prepared&order_served&order_taken, u3) -> 0.1\n(u2, !client_arrived&!food_fell&!food_prepared&!order_served&order_taken, u12) -> -0.2\n(u2, !client_arrived&!food_fell&!food_prepared&order_served&!order_taken, u0) -> 0.1\n(u2, !client_arrived&!food_fell&!food_prepared&order_served&order_taken, u1) -> -0.1\n(u2, !client_arrived&!food_fell&food_prepared&order_served, u0) -> 0.1\n(u2, !client_arrived&food_fell&!food_prepared&!order_served&!order_taken, u5) -> -0.1\n(u2, !client_arrived&food_fell&!food_prepared&!order_served&order_taken, u13) -> -0.3\n(u2, !client_arrived&food_fell&!food_prepared&order_served&order_taken, u4) -> -0.2\n(u2, !client_arrived&food_fell&food_prepared&!order_served, u5) -> -0.1\n(u2, client_arrived&!food_fell&!food_prepared&!order_served&!order_taken, u7) -> -0.3\n(u2, client_arrived&!food_fell&!food_prepared&!order_served&order_taken, u12) -> -0.2\n(u2, client_arrived&!food_fell&!food_prepared&order_served&!order_taken, u6) -> -0.2\n(u2, client_arrived&!food_fell&!food_prepared&order_served&order_taken, u1) -> -0.1\n(u2, client_arrived&!food_fell&food_prepared&!order_served&!order_taken, u7) -> -0.3\n(u2, client_arrived&!food_fell&food_prepared&order_served&!order_taken, u6) -> -0.2\n(u2, client_arrived&!food_fell&food_prepared&order_served&order_taken, u0) -> 0.1\n(u2, client_arrived&food_fell&!food_prepared&!order_served&!order_taken, u9) -> -0.4\n(u2, client_arrived&food_fell&!food_prepared&!order_served&order_taken, u13) -> -0.3\n(u2, client_arrived&food_fell&!food_prepared&order_served&!order_taken, u8) -> -0.3\n(u2, client_arrived&food_fell&!food_prepared&order_served&order_taken, u4) -> -0.2\n(u2, client_arrived&food_fell&food_prepared&!order_served&!order_taken, u9) -> -0.4\n(u2, client_arrived&food_fell&food_prepared&!order_served&order_taken, u5) -> -0.1\n(u2, client_arrived&food_fell&food_prepared&order_served&!order_taken, u8) -> -0.3\n(u3, !client_arrived&!food_fell&!food_prepared&!holding_food&!order_taken, u14) -> -2\n(u3, !client_arrived&!food_fell&!food_prepared&!holding_food&order_taken, u14) -> -2\n(u3, !client_arrived&!food_fell&!food_prepared&holding_food&!order_taken, u0) -> 0.1\n(u3, !client_arrived&!food_fell&!food_prepared&holding_food&order_taken, u1) -> -0.1\n(u3, !client_arrived&!food_fell&food_prepared&!holding_food&!order_served, u14) -> -2\n(u3, !client_arrived&!food_fell&food_prepared&!holding_food&order_served, u14) -> -2\n(u3, !client_arrived&!food_fell&food_prepared&holding_food&order_served, u0) -> 0.1\n(u3, !client_arrived&food_fell&!food_prepared&!holding_food&!order_taken, u14) -> -2\n(u3, !client_arrived&food_fell&!food_prepared&!holding_food&order_taken, u14) -> -2\n(u3, !client_arrived&food_fell&!food_prepared&holding_food&order_taken, u4) -> -0.2\n(u3, !client_arrived&food_fell&food_prepared&!holding_food&!order_served, u14) -> -2\n(u3, !client_arrived&food_fell&food_prepared&!holding_food&order_served, u14) -> -2\n(u3, !client_arrived&food_fell&food_prepared&holding_food&!order_served, u5) -> -0.1\n(u3, client_arrived&!food_fell&!food_prepared&!holding_food&!order_taken, u14) -> -2\n(u3, client_arrived&!food_fell&!food_prepared&!holding_food&order_taken, u14) -> -2\n(u3, client_arrived&!food_fell&!food_prepared&holding_food&!order_taken, u6) -> -0.2\n(u3, client_arrived&!food_fell&!food_prepared&holding_food&order_taken, u1) -> -0.1\n(u3, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&!order_taken, u14) -> -2\n(u3, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&order_taken, u14) -> -2\n(u3, client_arrived&!food_fell&food_prepared&!holding_food&order_served&!order_taken, u14) -> -2\n(u3, client_arrived&!food_fell&food_prepared&!holding_food&order_served&order_taken, u14) -> -2\n(u3, client_arrived&!food_fell&food_prepared&holding_food&!order_served&!order_taken, u7) -> -0.3\n(u3, client_arrived&!food_fell&food_prepared&holding_food&order_served&!order_taken, u6) -> -0.2\n(u3, client_arrived&!food_fell&food_prepared&holding_food&order_served&order_taken, u0) -> 0.1\n(u3, client_arrived&food_fell&!food_prepared&!holding_food&!order_taken, u14) -> -2\n(u3, client_arrived&food_fell&!food_prepared&!holding_food&order_taken, u14) -> -2\n(u3, client_arrived&food_fell&!food_prepared&holding_food&!order_taken, u8) -> -0.3\n(u3, client_arrived&food_fell&!food_prepared&holding_food&order_taken, u4) -> -0.2\n(u3, client_arrived&food_fell&food_prepared&!holding_food&!order_served&!order_taken, u14) -> -2\n(u3, client_arrived&food_fell&food_prepared&!holding_food&!order_served&order_taken, u14) -> -2\n(u3, client_arrived&food_fell&food_prepared&!holding_food&order_served&!order_taken, u14) -> -2\n(u3, client_arrived&food_fell&food_prepared&!holding_food&order_served&order_taken, u14) -> -2\n(u3, client_arrived&food_fell&food_prepared&holding_food&!order_served&!order_taken, u9) -> -0.4\n(u3, client_arrived&food_fell&food_prepared&holding_food&!order_served&order_taken, u5) -> -0.1\n(u3, client_arrived&food_fell&food_prepared&holding_food&order_served&!order_taken, u8) -> -0.3\n(u4, !client_arrived&!food_fell&!food_prepared&!holding_food, u14) -> -3\n(u4, !client_arrived&!food_fell&!food_prepared&holding_food, u1) -> 0.1\n(u4, !client_arrived&!food_fell&food_prepared&!holding_food&!order_served, u14) -> -3\n(u4, !client_arrived&!food_fell&food_prepared&!holding_food&order_served, u14) -> -3\n(u4, !client_arrived&!food_fell&food_prepared&holding_food&!order_served, u2) -> 0.2\n(u4, !client_arrived&!food_fell&food_prepared&holding_food&order_served, u0) -> 0.3\n(u4, !client_arrived&food_fell&!food_prepared&!holding_food, u14) -> -3\n(u4, !client_arrived&food_fell&food_prepared&!holding_food&!order_served, u14) -> -3\n(u4, !client_arrived&food_fell&food_prepared&!holding_food&order_served, u14) -> -3\n(u4, !client_arrived&food_fell&food_prepared&holding_food&!order_served, u5) -> 0.1\n(u4, !client_arrived&food_fell&food_prepared&holding_food&order_served, u3) -> 0.2\n(u4, client_arrived&!food_fell&!food_prepared&!holding_food&!order_taken, u14) -> -3\n(u4, client_arrived&!food_fell&!food_prepared&!holding_food&order_taken, u14) -> -3\n(u4, client_arrived&!food_fell&!food_prepared&holding_food&!order_taken, u10) -> -0.2\n(u4, client_arrived&!food_fell&!food_prepared&holding_food&order_taken, u1) -> 0.1\n(u4, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&!order_taken, u14) -> -3\n(u4, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&order_taken, u14) -> -3\n(u4, client_arrived&!food_fell&food_prepared&!holding_food&order_served&!order_taken, u14) -> -3\n(u4, client_arrived&!food_fell&food_prepared&!holding_food&order_served&order_taken, u14) -> -3\n(u4, client_arrived&!food_fell&food_prepared&holding_food&!order_served&!order_taken, u7) -> -0.1\n(u4, client_arrived&!food_fell&food_prepared&holding_food&!order_served&order_taken, u2) -> 0.2\n(u4, client_arrived&!food_fell&food_prepared&holding_food&order_served&order_taken, u0) -> 0.3\n(u4, client_arrived&food_fell&!food_prepared&!holding_food&!order_taken, u14) -> -3\n(u4, client_arrived&food_fell&!food_prepared&!holding_food&order_taken, u14) -> -3\n(u4, client_arrived&food_fell&!food_prepared&holding_food&!order_taken, u11) -> -0.3\n(u4, client_arrived&food_fell&food_prepared&!holding_food&!order_served&!order_taken, u14) -> -3\n(u4, client_arrived&food_fell&food_prepared&!holding_food&!order_served&order_taken, u14) -> -3\n(u4, client_arrived&food_fell&food_prepared&!holding_food&order_served&!order_taken, u14) -> -3\n(u4, client_arrived&food_fell&food_prepared&!holding_food&order_served&order_taken, u14) -> -3\n(u4, client_arrived&food_fell&food_prepared&holding_food&!order_served&!order_taken, u9) -> -0.2\n(u4, client_arrived&food_fell&food_prepared&holding_food&!order_served&order_taken, u5) -> 0.1\n(u4, client_arrived&food_fell&food_prepared&holding_food&order_served&!order_taken, u8) -> -0.1\n(u4, client_arrived&food_fell&food_prepared&holding_food&order_served&order_taken, u3) -> 0.2\n(u5, !client_arrived&!food_fell&!food_prepared&!holding_food&!order_served&!order_taken, u14) -> -3\n(u5, !client_arrived&!food_fell&!food_prepared&!holding_food&!order_served&order_taken, u14) -> -3\n(u5, !client_arrived&!food_fell&!food_prepared&!holding_food&order_served&!order_taken, u14) -> -3\n(u5, !client_arrived&!food_fell&!food_prepared&!holding_food&order_served&order_taken, u14) -> -3\n(u5, !client_arrived&!food_fell&!food_prepared&holding_food&!order_served&!order_taken, u2) -> 0.1\n(u5, !client_arrived&!food_fell&!food_prepared&holding_food&!order_served&order_taken, u12) -> -0.1\n(u5, !client_arrived&!food_fell&!food_prepared&holding_food&order_served&!order_taken, u0) -> 0.2\n(u5, !client_arrived&!food_fell&food_prepared&!holding_food&!order_served, u14) -> -3\n(u5, !client_arrived&!food_fell&food_prepared&!holding_food&order_served, u14) -> -3\n(u5, !client_arrived&!food_fell&food_prepared&holding_food&!order_served, u2) -> 0.1\n(u5, !client_arrived&!food_fell&food_prepared&holding_food&order_served, u0) -> 0.2\n(u5, !client_arrived&food_fell&!food_prepared&!holding_food&!order_served&!order_taken, u14) -> -3\n(u5, !client_arrived&food_fell&!food_prepared&!holding_food&!order_served&order_taken, u14) -> -3\n(u5, !client_arrived&food_fell&!food_prepared&!holding_food&order_served&!order_taken, u14) -> -3\n(u5, !client_arrived&food_fell&!food_prepared&!holding_food&order_served&order_taken, u14) -> -3\n(u5, !client_arrived&food_fell&!food_prepared&holding_food&!order_served&order_taken, u13) -> -0.2\n(u5, !client_arrived&food_fell&!food_prepared&holding_food&order_served&!order_taken, u3) -> 0.1\n(u5, !client_arrived&food_fell&!food_prepared&holding_food&order_served&order_taken, u4) -> -0.1\n(u5, !client_arrived&food_fell&food_prepared&!holding_food&!order_served, u14) -> -3\n(u5, !client_arrived&food_fell&food_prepared&!holding_food&order_served, u14) -> -3\n(u5, !client_arrived&food_fell&food_prepared&holding_food&order_served, u3) -> 0.1\n(u5, client_arrived&!food_fell&!food_prepared&!holding_food&!order_served&!order_taken, u14) -> -3\n(u5, client_arrived&!food_fell&!food_prepared&!holding_food&!order_served&order_taken, u14) -> -3\n(u5, client_arrived&!food_fell&!food_prepared&!holding_food&order_served&!order_taken, u14) -> -3\n(u5, client_arrived&!food_fell&!food_prepared&!holding_food&order_served&order_taken, u14) -> -3\n(u5, client_arrived&!food_fell&!food_prepared&holding_food&!order_served&!order_taken, u7) -> -0.2\n(u5, client_arrived&!food_fell&!food_prepared&holding_food&!order_served&order_taken, u12) -> -0.1\n(u5, client_arrived&!food_fell&!food_prepared&holding_food&order_served&!order_taken, u6) -> -0.1\n(u5, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&!order_taken, u14) -> -3\n(u5, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&order_taken, u14) -> -3\n(u5, client_arrived&!food_fell&food_prepared&!holding_food&order_served&!order_taken, u14) -> -3\n(u5, client_arrived&!food_fell&food_prepared&!holding_food&order_served&order_taken, u14) -> -3\n(u5, client_arrived&!food_fell&food_prepared&holding_food&!order_served&!order_taken, u7) -> -0.2\n(u5, client_arrived&!food_fell&food_prepared&holding_food&!order_served&order_taken, u2) -> 0.1\n(u5, client_arrived&!food_fell&food_prepared&holding_food&order_served&!order_taken, u6) -> -0.1\n(u5, client_arrived&!food_fell&food_prepared&holding_food&order_served&order_taken, u0) -> 0.2\n(u5, client_arrived&food_fell&!food_prepared&!holding_food&!order_served&!order_taken, u14) -> -3\n(u5, client_arrived&food_fell&!food_prepared&!holding_food&!order_served&order_taken, u14) -> -3\n(u5, client_arrived&food_fell&!food_prepared&!holding_food&order_served&!order_taken, u14) -> -3\n(u5, client_arrived&food_fell&!food_prepared&!holding_food&order_served&order_taken, u14) -> -3\n(u5, client_arrived&food_fell&!food_prepared&holding_food&!order_served&!order_taken, u9) -> -0.3\n(u5, client_arrived&food_fell&!food_prepared&holding_food&!order_served&order_taken, u13) -> -0.2\n(u5, client_arrived&food_fell&!food_prepared&holding_food&order_served&!order_taken, u8) -> -0.2\n(u5, client_arrived&food_fell&!food_prepared&holding_food&order_served&order_taken, u4) -> -0.1\n(u5, client_arrived&food_fell&food_prepared&!holding_food&!order_served&!order_taken, u14) -> -3\n(u5, client_arrived&food_fell&food_prepared&!holding_food&!order_served&order_taken, u14) -> -3\n(u5, client_arrived&food_fell&food_prepared&!holding_food&order_served&!order_taken, u14) -> -3\n(u5, client_arrived&food_fell&food_prepared&!holding_food&order_served&order_taken, u14) -> -3\n(u5, client_arrived&food_fell&food_prepared&holding_food&!order_served&!order_taken, u9) -> -0.3\n(u5, client_arrived&food_fell&food_prepared&holding_food&order_served&!order_taken, u8) -> -0.2\n(u5, client_arrived&food_fell&food_prepared&holding_food&order_served&order_taken, u3) -> 0.1\n(u6, !food_fell&!food_prepared&order_taken, u1) -> 0.1\n(u6, !food_fell&food_prepared&!order_served&!order_taken, u7) -> -0.1\n(u6, !food_fell&food_prepared&!order_served&order_taken, u2) -> 0.2\n(u6, !food_fell&food_prepared&order_served&order_taken, u0) -> 0.3\n(u6, food_fell&!food_prepared&!order_taken, u8) -> -0.1\n(u6, food_fell&food_prepared&!order_served&!order_taken, u9) -> -0.2\n(u6, food_fell&food_prepared&!order_served&order_taken, u5) -> 0.1\n(u6, food_fell&food_prepared&order_served&!order_taken, u8) -> -0.1\n(u6, food_fell&food_prepared&order_served&order_taken, u3) -> 0.2\n(u7, !food_fell&!food_prepared&!order_served&order_taken, u12) -> 0.1\n(u7, !food_fell&!food_prepared&order_served&!order_taken, u6) -> 0.1\n(u7, !food_fell&!food_prepared&order_served&order_taken, u1) -> 0.2\n(u7, !food_fell&food_prepared&!order_served&order_taken, u2) -> 0.3\n(u7, !food_fell&food_prepared&order_served&!order_taken, u6) -> 0.1\n(u7, !food_fell&food_prepared&order_served&order_taken, u0) -> 0.4\n(u7, food_fell&!food_prepared&!order_served&!order_taken, u9) -> -0.1\n(u7, food_fell&!food_prepared&order_served&order_taken, u4) -> 0.1\n(u7, food_fell&food_prepared&!order_served&!order_taken, u9) -> -0.1\n(u7, food_fell&food_prepared&!order_served&order_taken, u5) -> 0.2\n(u7, food_fell&food_prepared&order_served&order_taken, u3) -> 0.3\n(u8, !food_fell&!food_prepared&!holding_food&!order_taken, u14) -> -3\n(u8, !food_fell&!food_prepared&!holding_food&order_taken, u14) -> -3\n(u8, !food_fell&!food_prepared&holding_food&!order_taken, u6) -> 0.1\n(u8, !food_fell&!food_prepared&holding_food&order_taken, u1) -> 0.2\n(u8, !food_fell&food_prepared&!holding_food&!order_served&!order_taken, u14) -> -3\n(u8, !food_fell&food_prepared&!holding_food&!order_served&order_taken, u14) -> -3\n(u8, !food_fell&food_prepared&!holding_food&order_served&!order_taken, u14) -> -3\n(u8, !food_fell&food_prepared&!holding_food&order_served&order_taken, u14) -> -3\n(u8, !food_fell&food_prepared&holding_food&!order_served&order_taken, u2) -> 0.3\n(u8, !food_fell&food_prepared&holding_food&order_served&!order_taken, u6) -> 0.1\n(u8, !food_fell&food_prepared&holding_food&order_served&order_taken, u0) -> 0.4\n(u8, food_fell&!food_prepared&!holding_food&!order_taken, u14) -> -3\n(u8, food_fell&!food_prepared&!holding_food&order_taken, u14) -> -3\n(u8, food_fell&!food_prepared&holding_food&order_taken, u4) -> 0.1\n(u8, food_fell&food_prepared&!holding_food&!order_served&!order_taken, u14) -> -3\n(u8, food_fell&food_prepared&!holding_food&!order_served&order_taken, u14) -> -3\n(u8, food_fell&food_prepared&!holding_food&order_served&!order_taken, u14) -> -3\n(u8, food_fell&food_prepared&!holding_food&order_served&order_taken, u14) -> -3\n(u8, food_fell&food_prepared&holding_food&!order_served&!order_taken, u9) -> -0.1\n(u8, food_fell&food_prepared&holding_food&!order_served&order_taken, u5) -> 0.2\n(u8, food_fell&food_prepared&holding_food&order_served&order_taken, u3) -> 0.3\n(u9, !food_fell&!food_prepared&!holding_food&!order_served&!order_taken, u14) -> -4\n(u9, !food_fell&!food_prepared&!holding_food&!order_served&order_taken, u14) -> -4\n(u9, !food_fell&!food_prepared&!holding_food&order_served&!order_taken, u14) -> -4\n(u9, !food_fell&!food_prepared&!holding_food&order_served&order_taken, u14) -> -4\n(u9, !food_fell&!food_prepared&holding_food&!order_served&!order_taken, u7) -> 0.1\n(u9, !food_fell&!food_prepared&holding_food&!order_served&order_taken, u12) -> 0.2\n(u9, !food_fell&!food_prepared&holding_food&order_served&!order_taken, u6) -> 0.2\n(u9, !food_fell&!food_prepared&holding_food&order_served&order_taken, u1) -> 0.3\n(u9, !food_fell&food_prepared&!holding_food&!order_served&!order_taken, u14) -> -4\n(u9, !food_fell&food_prepared&!holding_food&!order_served&order_taken, u14) -> -4\n(u9, !food_fell&food_prepared&!holding_food&order_served&!order_taken, u14) -> -4\n(u9, !food_fell&food_prepared&!holding_food&order_served&order_taken, u14) -> -4\n(u9, !food_fell&food_prepared&holding_food&!order_served&!order_taken, u7) -> 0.1\n(u9, !food_fell&food_prepared&holding_food&!order_served&order_taken, u2) -> 0.4\n(u9, !food_fell&food_prepared&holding_food&order_served&!order_taken, u6) -> 0.2\n(u9, !food_fell&food_prepared&holding_food&order_served&order_taken, u0) -> 0.5\n(u9, food_fell&!food_prepared&!holding_food&!order_served&!order_taken, u14) -> -4\n(u9, food_fell&!food_prepared&!holding_food&!order_served&order_taken, u14) -> -4\n(u9, food_fell&!food_prepared&!holding_food&order_served&!order_taken, u14) -> -4\n(u9, food_fell&!food_prepared&!holding_food&order_served&order_taken, u14) -> -4\n(u9, food_fell&!food_prepared&holding_food&!order_served&order_taken, u13) -> 0.1\n(u9, food_fell&!food_prepared&holding_food&order_served&!order_taken, u8) -> 0.1\n(u9, food_fell&!food_prepared&holding_food&order_served&order_taken, u4) -> 0.2\n(u9, food_fell&food_prepared&!holding_food&!order_served&!order_taken, u14) -> -4\n(u9, food_fell&food_prepared&!holding_food&!order_served&order_taken, u14) -> -4\n(u9, food_fell&food_prepared&!holding_food&order_served&!order_taken, u14) -> -4\n(u9, food_fell&food_prepared&!holding_food&order_served&order_taken, u14) -> -4\n(u9, food_fell&food_prepared&holding_food&!order_served&order_taken, u5) -> 0.3\n(u9, food_fell&food_prepared&holding_food&order_served&!order_taken, u8) -> 0.1\n(u9, food_fell&food_prepared&holding_food&order_served&order_taken, u3) -> 0.4\n(u10, !food_fell&!food_prepared&order_taken, u1) -> 0.3\n(u10, !food_fell&food_prepared&!order_served&!order_taken, u7) -> 0.1\n(u10, !food_fell&food_prepared&!order_served&order_taken, u2) -> 0.4\n(u10, !food_fell&food_prepared&order_served&!order_taken, u6) -> 0.2\n(u10, !food_fell&food_prepared&order_served&order_taken, u0) -> 0.5\n(u10, food_fell&!food_prepared&!order_taken, u11) -> -0.1\n(u10, food_fell&!food_prepared&order_taken, u4) -> 0.2\n(u10, food_fell&food_prepared&!order_served&order_taken, u5) -> 0.3\n(u10, food_fell&food_prepared&order_served&!order_taken, u8) -> 0.1\n(u10, food_fell&food_prepared&order_served&order_taken, u3) -> 0.4\n(u11, !food_fell&!food_prepared&!holding_food&!order_taken, u14) -> -4\n(u11, !food_fell&!food_prepared&!holding_food&order_taken, u14) -> -4\n(u11, !food_fell&!food_prepared&holding_food&!order_taken, u10) -> 0.1\n(u11, !food_fell&!food_prepared&holding_food&order_taken, u1) -> 0.4\n(u11, !food_fell&food_prepared&!holding_food&!order_served&!order_taken, u14) -> -4\n(u11, !food_fell&food_prepared&!holding_food&!order_served&order_taken, u14) -> -4\n(u11, !food_fell&food_prepared&!holding_food&order_served&!order_taken, u14) -> -4\n(u11, !food_fell&food_prepared&!holding_food&order_served&order_taken, u14) -> -4\n(u11, !food_fell&food_prepared&holding_food&!order_served&!order_taken, u7) -> 0.2\n(u11, !food_fell&food_prepared&holding_food&!order_served&order_taken, u2) -> 0.5\n(u11, !food_fell&food_prepared&holding_food&order_served&!order_taken, u6) -> 0.3\n(u11, !food_fell&food_prepared&holding_food&order_served&order_taken, u0) -> 0.6\n(u11, food_fell&!food_prepared&!holding_food&!order_taken, u14) -> -4\n(u11, food_fell&!food_prepared&!holding_food&order_taken, u14) -> -4\n(u11, food_fell&!food_prepared&holding_food&order_taken, u4) -> 0.3\n(u11, food_fell&food_prepared&!holding_food&!order_served&!order_taken, u14) -> -4\n(u11, food_fell&food_prepared&!holding_food&!order_served&order_taken, u14) -> -4\n(u11, food_fell&food_prepared&!holding_food&order_served&!order_taken, u14) -> -4\n(u11, food_fell&food_prepared&!holding_food&order_served&order_taken, u14) -> -4\n(u11, food_fell&food_prepared&holding_food&!order_served&!order_taken, u9) -> 0.1\n(u11, food_fell&food_prepared&holding_food&!order_served&order_taken, u5) -> 0.4\n(u11, food_fell&food_prepared&holding_food&order_served&!order_taken, u8) -> 0.2\n(u11, food_fell&food_prepared&holding_food&order_served&order_taken, u3) -> 0.5\n(u12, !client_arrived&!food_fell&!food_prepared&order_served, u1) -> 0.1\n(u12, !client_arrived&!food_fell&food_prepared&!order_served, u2) -> 0.2\n(u12, !client_arrived&!food_fell&food_prepared&order_served, u0) -> 0.3\n(u12, !client_arrived&food_fell&!food_prepared&!order_served, u13) -> -0.1\n(u12, !client_arrived&food_fell&food_prepared&!order_served, u5) -> 0.1\n(u12, !client_arrived&food_fell&food_prepared&order_served, u3) -> 0.2\n(u12, client_arrived&!food_fell&!food_prepared&!order_served&!order_taken, u15) -> -0.3\n(u12, client_arrived&!food_fell&!food_prepared&order_served&!order_taken, u10) -> -0.2\n(u12, client_arrived&!food_fell&!food_prepared&order_served&order_taken, u1) -> 0.1\n(u12, client_arrived&!food_fell&food_prepared&!order_served&!order_taken, u7) -> -0.1\n(u12, client_arrived&!food_fell&food_prepared&!order_served&order_taken, u2) -> 0.2\n(u12, client_arrived&!food_fell&food_prepared&order_served&order_taken, u0) -> 0.3\n(u12, client_arrived&food_fell&!food_prepared&!order_served&!order_taken, u16) -> -0.4\n(u12, client_arrived&food_fell&!food_prepared&!order_served&order_taken, u13) -> -0.1\n(u12, client_arrived&food_fell&!food_prepared&order_served&!order_taken, u11) -> -0.3\n(u12, client_arrived&food_fell&food_prepared&!order_served&!order_taken, u9) -> -0.2\n(u12, client_arrived&food_fell&food_prepared&!order_served&order_taken, u5) -> 0.1\n(u12, client_arrived&food_fell&food_prepared&order_served&!order_taken, u8) -> -0.1\n(u12, client_arrived&food_fell&food_prepared&order_served&order_taken, u3) -> 0.2\n(u13, !client_arrived&!food_fell&!food_prepared&!holding_food&!order_served, u14) -> -4\n(u13, !client_arrived&!food_fell&!food_prepared&!holding_food&order_served, u14) -> -4\n(u13, !client_arrived&!food_fell&!food_prepared&holding_food&!order_served, u12) -> 0.1\n(u13, !client_arrived&!food_fell&!food_prepared&holding_food&order_served, u1) -> 0.2\n(u13, !client_arrived&!food_fell&food_prepared&!holding_food&!order_served, u14) -> -4\n(u13, !client_arrived&!food_fell&food_prepared&!holding_food&order_served, u14) -> -4\n(u13, !client_arrived&!food_fell&food_prepared&holding_food&!order_served, u2) -> 0.3\n(u13, !client_arrived&!food_fell&food_prepared&holding_food&order_served, u0) -> 0.4\n(u13, !client_arrived&food_fell&!food_prepared&!holding_food&!order_served, u14) -> -4\n(u13, !client_arrived&food_fell&!food_prepared&!holding_food&order_served, u14) -> -4\n(u13, !client_arrived&food_fell&!food_prepared&holding_food&order_served, u4) -> 0.1\n(u13, !client_arrived&food_fell&food_prepared&!holding_food&!order_served, u14) -> -4\n(u13, !client_arrived&food_fell&food_prepared&!holding_food&order_served, u14) -> -4\n(u13, !client_arrived&food_fell&food_prepared&holding_food&!order_served, u5) -> 0.2\n(u13, !client_arrived&food_fell&food_prepared&holding_food&order_served, u3) -> 0.3\n(u13, client_arrived&!food_fell&!food_prepared&!holding_food&!order_served&!order_taken, u14) -> -4\n(u13, client_arrived&!food_fell&!food_prepared&!holding_food&!order_served&order_taken, u14) -> -4\n(u13, client_arrived&!food_fell&!food_prepared&!holding_food&order_served&!order_taken, u14) -> -4\n(u13, client_arrived&!food_fell&!food_prepared&!holding_food&order_served&order_taken, u14) -> -4\n(u13, client_arrived&!food_fell&!food_prepared&holding_food&!order_served&!order_taken, u15) -> -0.2\n(u13, client_arrived&!food_fell&!food_prepared&holding_food&!order_served&order_taken, u12) -> 0.1\n(u13, client_arrived&!food_fell&!food_prepared&holding_food&order_served&!order_taken, u10) -> -0.1\n(u13, client_arrived&!food_fell&!food_prepared&holding_food&order_served&order_taken, u1) -> 0.2\n(u13, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&!order_taken, u14) -> -4\n(u13, client_arrived&!food_fell&food_prepared&!holding_food&!order_served&order_taken, u14) -> -4\n(u13, client_arrived&!food_fell&food_prepared&!holding_food&order_served&!order_taken, u14) -> -4\n(u13, client_arrived&!food_fell&food_prepared&!holding_food&order_served&order_taken, u14) -> -4\n(u13, client_arrived&!food_fell&food_prepared&holding_food&!order_served&order_taken, u2) -> 0.3\n(u13, client_arrived&!food_fell&food_prepared&holding_food&order_served&!order_taken, u6) -> 0.1\n(u13, client_arrived&!food_fell&food_prepared&holding_food&order_served&order_taken, u0) -> 0.4\n(u13, client_arrived&food_fell&!food_prepared&!holding_food&!order_served&!order_taken, u14) -> -4\n(u13, client_arrived&food_fell&!food_prepared&!holding_food&!order_served&order_taken, u14) -> -4\n(u13, client_arrived&food_fell&!food_prepared&!holding_food&order_served&!order_taken, u14) -> -4\n(u13, client_arrived&food_fell&!food_prepared&!holding_food&order_served&order_taken, u14) -> -4\n(u13, client_arrived&food_fell&!food_prepared&holding_food&!order_served&!order_taken, u16) -> -0.3\n(u13, client_arrived&food_fell&!food_prepared&holding_food&order_served&!order_taken, u11) -> -0.2\n(u13, client_arrived&food_fell&!food_prepared&holding_food&order_served&order_taken, u4) -> 0.1\n(u13, client_arrived&food_fell&food_prepared&!holding_food&!order_served&!order_taken, u14) -> -4\n(u13, client_arrived&food_fell&food_prepared&!holding_food&!order_served&order_taken, u14) -> -4\n(u13, client_arrived&food_fell&food_prepared&!holding_food&order_served&!order_taken, u14) -> -4\n(u13, client_arrived&food_fell&food_prepared&!holding_food&order_served&order_taken, u14) -> -4\n(u13, client_arrived&food_fell&food_prepared&holding_food&!order_served&!order_taken, u9) -> -0.1\n(u13, client_arrived&food_fell&food_prepared&holding_food&!order_served&order_taken, u5) -> 0.2\n(u13, client_arrived&food_fell&food_prepared&holding_food&order_served&order_taken, u3) -> 0.3\n(u15, !food_fell&!food_prepared&!order_served&order_taken, u12) -> 0.3\n(u15, !food_fell&!food_prepared&order_served&!order_taken, u10) -> 0.1\n(u15, !food_fell&!food_prepared&order_served&order_taken, u1) -> 0.4\n(u15, !food_fell&food_prepared&!order_served&!order_taken, u7) -> 0.2\n(u15, !food_fell&food_prepared&!order_served&order_taken, u2) -> 0.5\n(u15, !food_fell&food_prepared&order_served&!order_taken, u6) -> 0.3\n(u15, !food_fell&food_prepared&order_served&order_taken, u0) -> 0.6\n(u15, food_fell&!food_prepared&!order_served&!order_taken, u16) -> -0.1\n(u15, food_fell&!food_prepared&!order_served&order_taken, u13) -> 0.2\n(u15, food_fell&!food_prepared&order_served&order_taken, u4) -> 0.3\n(u15, food_fell&food_prepared&!order_served&!order_taken, u9) -> 0.1\n(u15, food_fell&food_prepared&!order_served&order_taken, u5) -> 0.4\n(u15, food_fell&food_prepared&order_served&!order_taken, u8) -> 0.2\n(u15, food_fell&food_prepared&order_served&order_taken, u3) -> 0.5\n(u16, !food_fell&!food_prepared&!holding_food&!order_served&!order_taken, u14) -> -5\n(u16, !food_fell&!food_prepared&!holding_food&!order_served&order_taken, u14) -> -5\n(u16, !food_fell&!food_prepared&!holding_food&order_served&!order_taken, u14) -> -5\n(u16, !food_fell&!food_prepared&!holding_food&order_served&order_taken, u14) -> -5\n(u16, !food_fell&!food_prepared&holding_food&!order_served&!order_taken, u15) -> 0.1\n(u16, !food_fell&!food_prepared&holding_food&!order_served&order_taken, u12) -> 0.4\n(u16, !food_fell&!food_prepared&holding_food&order_served&!order_taken, u10) -> 0.2\n(u16, !food_fell&!food_prepared&holding_food&order_served&order_taken, u1) -> 0.5\n(u16, !food_fell&food_prepared&!holding_food&!order_served&!order_taken, u14) -> -5\n(u16, !food_fell&food_prepared&!holding_food&!order_served&order_taken, u14) -> -5\n(u16, !food_fell&food_prepared&!holding_food&order_served&!order_taken, u14) -> -5\n(u16, !food_fell&food_prepared&!holding_food&order_served&order_taken, u14) -> -5\n(u16, !food_fell&food_prepared&holding_food&!order_served&!order_taken, u7) -> 0.3\n(u16, !food_fell&food_prepared&holding_food&!order_served&order_taken, u2) -> 0.6\n(u16, !food_fell&food_prepared&holding_food&order_served&!order_taken, u6) -> 0.4\n(u16, !food_fell&food_prepared&holding_food&order_served&order_taken, u0) -> 0.7\n(u16, food_fell&!food_prepared&!holding_food&!order_served&!order_taken, u14) -> -5\n(u16, food_fell&!food_prepared&!holding_food&!order_served&order_taken, u14) -> -5\n(u16, food_fell&!food_prepared&!holding_food&order_served&!order_taken, u14) -> -5\n(u16, food_fell&!food_prepared&!holding_food&order_served&order_taken, u14) -> -5\n(u16, food_fell&!food_prepared&holding_food&!order_served&order_taken, u13) -> 0.3\n(u16, food_fell&!food_prepared&holding_food&order_served&!order_taken, u11) -> 0.1\n(u16, food_fell&!food_prepared&holding_food&order_served&order_taken, u4) -> 0.4\n(u16, food_fell&food_prepared&!holding_food&!order_served&!order_taken, u14) -> -5\n(u16, food_fell&food_prepared&!holding_food&!order_served&order_taken, u14) -> -5\n(u16, food_fell&food_prepared&!holding_food&order_served&!order_taken, u14) -> -5\n(u16, food_fell&food_prepared&!holding_food&order_served&order_taken, u14) -> -5\n(u16, food_fell&food_prepared&holding_food&!order_served&!order_taken, u9) -> 0.2\n(u16, food_fell&food_prepared&holding_food&!order_served&order_taken, u5) -> 0.5\n(u16, food_fell&food_prepared&holding_food&order_served&!order_taken, u8) -> 0.3\n(u16, food_fell&food_prepared&holding_food&order_served&order_taken, u3) -> 0.6\nPENDING_PROMISES:\nu1: hard 1, soft 0\nu2: hard 1, soft 0\nu3: hard 1, soft 0\nu4: hard 2, soft 0\nu5: hard 2, soft 0\nu6: hard 1, soft 0\nu7: hard 2, soft 0\nu8: hard 2, soft 0\nu9: hard 3, soft 0\nu10: hard 2, soft 0\nu11: hard 3, soft 0\nu12: hard 2, soft 0\nu13: hard 3, soft 0\nu15: hard 3, soft 0\nu16: hard 4, soft 0"
+       }
+      }
+     ]
+    },
+    {
+     "type": "table",
+     "heading": "Each state's text: stored (old tagger, as committed) and new (keyed tagger, round 1)",
+     "columns": [
+      "state",
+      "role, owed stages, a shortest way in (`state_list.py`)",
+      "stored text",
+      "verdict",
+      "new text, round 1",
+      "verdict"
+     ],
+     "rows": [
+      [
+       "u0",
+       "start; owes nothing",
+       "Nothing is pending: no client has been left waiting for attention, no prepared food has been promised to a client, and no fallen food is awaiting pickup. From here the work is to respond to whatever comes next: a newly arrived client must have their order taken, fetched food must eventually be prepared and served, and any fallen food must be picked up on the very next step.",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "No requirement is currently pending: no client is waiting for an order to be taken, no taken order is waiting for food, no prepared food is waiting to be served, and no fallen food is waiting to be picked up. This is the clean resting state, so if the episode ended now nothing would be left unmet. The shop routine continues, and later arrivals, orders, preparations, servings or slips will create new obligations.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u1",
+       "in progress; owes 1 hard and 0 soft stages; shortest path from the start: order_taken",
+       "An order has been taken, so that client is waiting and the taken order must still be followed by preparing food at the stove and then serving it. The order of fetching and preparing remains to be done. If food slips during this work, it must be picked up on the immediately following step.",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "A client's order has been taken, but no food has been prepared for it yet. Fetch a portion from the pantry and prepare it at the stove, then hand the prepared food to the waiting client. Handling this returns you to a clean state with nothing outstanding.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u2",
+       "in progress; owes 1 hard and 0 soft stages; shortest path from the start: food_prepared",
+       "The carried food has been prepared at the stove, so it must still be delivered to the waiting client. Because a client's order was necessarily taken before preparation, that client is still owed a serve. Any slip during this errand must be recovered on the very next step.",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "Food has been prepared for the waiting client and is ready to be handed over. Serve it at the counter to clear the outstanding promise. After serving, the shop returns to a clean state until the next arrival, order or slip.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u3",
+       "in progress; owes 1 hard and 0 soft stages; shortest path from the start: food_fell",
+       "Food has just slipped out of the hands while an order was already taken, so the client's order still needs preparing and serving. Picking the fallen food back up on the very next step is required, and failing to do so ends the task in failure.",
+       {
+        "text": "wrong",
+        "tone": "bad",
+        "title": "Says an order was taken and still needs preparing and serving. In u3 only the pickup of the fallen food is owed."
+       },
+       "The carried food has just slipped out of your hands, so you are not holding it. You must be holding food again on the very next step—pick up the fallen portion immediately. If the next step passes without food in hand, the recovery requirement is broken for good and the task fails.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u4",
+       "in progress; owes 2 hard and 0 soft stages; shortest path from the start: food_fell + order_taken",
+       "Food has just slipped out of the hands and an order is outstanding, so the client still needs preparation and serving of food. The slip must be answered by picking the food back up on the very next step; leaving the hands empty then makes success impossible.",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "An order has been taken, and the food has just slipped from your hands before any food was prepared for that order. You must pick up food on the very next step or the recovery requirement is broken and the task fails. Once food is back in hand, it still needs to be prepared at the stove and then served to the waiting client.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u5",
+       "in progress; owes 2 hard and 0 soft stages; shortest path from the start: food_fell + food_prepared",
+       "Food has just slipped out of the hands while food was already prepared, so the prepared portion must be regained and delivered to the client. The fallen food must be picked up on the immediately next step, or the task fails for good.",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "Prepared food has slipped out of your hands while the client's order remains unserved. Pick it up on the very next step; missing that step breaks the immediate-recovery requirement and fails the task. Once recovered, the prepared food still must be handed to the waiting client.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u6",
+       "in progress; owes 1 hard and 0 soft stages; shortest path from the start: client_arrived",
+       "A client has just arrived and their order has not been taken yet. The immediate job is to take that order, after which food must be fetched, prepared at the stove and served; any slip along the way must be recovered on the very next step.",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "A client has arrived and is waiting, but their order has not been taken yet. Take the order at the counter, then fetch and prepare food and serve it. The order need not be taken on the very next step, but it must eventually be taken and the whole request completed.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u7",
+       "in progress; owes 2 hard and 0 soft stages; shortest path from the start: client_arrived + food_prepared",
+       "A client has just arrived and still needs to place an order, and separately a prepared portion is being carried that must be delivered to a waiting client. Both the new client's order and the pending serve remain outstanding, and any slip of the carried food must be recovered on the very next step.",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "Two jobs are outstanding: a waiting client's order still needs to be taken, and some prepared food still needs to be served. Take the order and serve the prepared food. Further preparation for the new order will follow once those are handled.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u8",
+       "in progress; owes 2 hard and 0 soft stages; shortest path from the start: client_arrived + food_fell",
+       "A client has just arrived and the food has just slipped out of the hands, with an order already taken by that client. The food must be picked up on the immediately next step, then prepared and served to the waiting client.",
+       {
+        "text": "wrong",
+        "tone": "bad",
+        "title": "Says the client's order is already taken. In u8 the order is still to be taken, and the fallen food picked up."
+       },
+       "A client has arrived and is waiting for their order, and the food has just slipped from your hands. You must be holding food again on the very next step or the recovery requirement is broken and the task fails. After that immediate recovery, the waiting client's order still needs to be taken and the rest of the request completed.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u9",
+       "in progress; owes 3 hard and 0 soft stages; shortest path from the start: client_arrived + food_fell + food_prepared",
+       "A client has just arrived and the food has just slipped out of the hands, while food had already been prepared for a waiting client. The fallen food must be retrieved on the very next step, then delivered; both the new client's order and the pending serve remain.",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "Three jobs are outstanding: a waiting client's order still needs to be taken, prepared food still needs to be served, and the food has just fallen. Recover the fallen food on the very next step or the task fails immediately. After recovering it, take the pending order and serve the prepared food.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u10",
+       "in progress; owes 2 hard and 0 soft stages; shortest path from the start: order_taken then client_arrived",
+       "A new client has arrived and still needs to have their order taken, while an earlier order already has food prepared and awaiting delivery. The new order must be taken and the prepared portion served, with any slip recovered on the next step.",
+       {
+        "text": "wrong",
+        "tone": "bad",
+        "title": "Says food is prepared and waiting to be served. In u10 the earlier order still needs its food prepared, and the new client's order taken."
+       },
+       "Two jobs are outstanding: a client's order still needs to be taken, and food still needs to be prepared for an order that was already taken. Take the waiting order and prepare the owed food. Completing them returns the shop toward a clean state, ready for the next customer.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u11",
+       "in progress; owes 3 hard and 0 soft stages; shortest path from the start: order_taken then client_arrived + food_fell",
+       "A new client has arrived and needs their order taken, and the food has just slipped from the hands while a previous order is outstanding. The fallen food must be picked up on the very next step, then prepared and served alongside handling the new client.",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "Three jobs are outstanding: a client's order still needs to be taken, food still needs preparing for an earlier taken order, and the food has just fallen. You must pick up food on the very next step or the recovery requirement is broken and the task fails. Once recovered, take the waiting order and prepare the food that is owed.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u12",
+       "in progress; owes 2 hard and 0 soft stages; shortest path from the start: food_prepared then order_taken",
+       "A prepared portion is being carried and must be delivered to the waiting client. Any slip of it must be answered by picking it up on the immediately next step; if it cannot be recovered then, the task can no longer succeed.",
+       {
+        "text": "wrong",
+        "tone": "bad",
+        "title": "Names only the serve. u12 owes both preparing food for a taken order and serving the prepared food."
+       },
+       "Two jobs are outstanding: food still needs to be prepared for an order that was already taken, and prepared food is waiting to be served. Prepare the owed food at the stove and hand the prepared portion to the client. No fallen food is currently awaiting recovery.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u13",
+       "in progress; owes 3 hard and 0 soft stages; shortest path from the start: food_prepared then food_fell + order_taken",
+       "Food has just slipped out of the hands while a prepared portion was still owed to a waiting client, and no order is currently taken. The food must be picked up on the very next step, then served; failing to regain it immediately makes success impossible.",
+       {
+        "text": "wrong",
+        "tone": "bad",
+        "title": "Says no order is taken and names only the serve and the pickup. u13 also owes preparing food for a taken order."
+       },
+       "Three jobs are outstanding: food still needs to be prepared for a taken order, prepared food still needs to be served, and the food has just fallen. The fallen food must be back in your hands on the very next step, or the recovery requirement is broken and the task fails. After recovering it, prepare the owed food and serve the prepared portion.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u14",
+       "well: a hard rule is broken for good; shortest path from the start: food_fell then no event",
+       "A mandatory requirement has been broken: food that slipped was not picked up on the very next step, or carried food was lost without being regained immediately. Successful completion is no longer possible.",
+       {
+        "text": "right",
+        "tone": "ok"
+       },
+       "A food slip was not followed by holding food on the very next step. That immediate-recovery requirement is mandatory and irreversible, so the task has failed and successful completion is no longer possible. Later actions cannot make up for the missed pickup.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u15",
+       "in progress; owes 3 hard and 0 soft stages; shortest path from the start: food_prepared then order_taken then client_arrived",
+       "A client has just arrived and their order must be taken next, and there is also a prepared portion still to be delivered to a waiting client. If the carried food slips, it must be picked up on the immediately following step, or the task fails.",
+       {
+        "text": "wrong",
+        "tone": "bad",
+        "title": "Names the new order and the serve, not the preparing. u15 owes taking an order, preparing food and serving."
+       },
+       "Three jobs are outstanding: a client's order still needs to be taken, food still needs preparing for an order already taken, and prepared food still needs to be served. Take the order, prepare the owed food, and hand over the prepared portion. No fallen food is currently awaiting recovery.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ],
+      [
+       "u16",
+       "in progress; owes 4 hard and 0 soft stages; shortest path from the start: food_prepared then order_taken then client_arrived + food_fell",
+       "Food has just slipped out of the hands while both a new client's order and a pending prepared serve are outstanding. The fallen food must be picked up on the very next step; otherwise success becomes impossible.",
+       {
+        "text": "wrong",
+        "tone": "bad",
+        "title": "Names the new order, the serve and the pickup, not the preparing. u16 owes all four."
+       },
+       "Four jobs are outstanding: a client's order still needs to be taken, food still needs preparing for a taken order, prepared food still needs serving, and the food has just fallen. Recover the fallen food on the very next step or the task fails immediately. Then take the waiting order, prepare the owed food and serve the prepared portion.",
+       {
+        "text": "right",
+        "tone": "ok"
+       }
+      ]
+     ]
+    },
+    {
+     "type": "list",
+     "heading": "Why each text that is not right",
+     "items": [
+      "**u3, stored: wrong.** Says an order was taken and still needs preparing and serving. In u3 only the pickup of the fallen food is owed.",
+      "**u8, stored: wrong.** Says the client's order is already taken. In u8 the order is still to be taken, and the fallen food picked up.",
+      "**u10, stored: wrong.** Says food is prepared and waiting to be served. In u10 the earlier order still needs its food prepared, and the new client's order taken.",
+      "**u12, stored: wrong.** Names only the serve. u12 owes both preparing food for a taken order and serving the prepared food.",
+      "**u13, stored: wrong.** Says no order is taken and names only the serve and the pickup. u13 also owes preparing food for a taken order.",
+      "**u15, stored: wrong.** Names the new order and the serve, not the preparing. u15 owes taking an order, preparing food and serving.",
+      "**u16, stored: wrong.** Names the new order, the serve and the pickup, not the preparing. u16 owes all four."
+     ]
+    },
+    {
+     "type": "details",
+     "heading": "The texts of rounds 2 and 3",
+     "items": [
+      {
+       "title": "Round 2: 17 right",
+       "text": "`evidence/round-2/bundles-shop-serve.json`",
+       "blocks": [
+        {
+         "type": "table",
+         "columns": [
+          "state",
+          "new text",
+          "verdict"
+         ],
+         "rows": [
+          [
+           "u0",
+           "No client order or fallen-food recovery is outstanding. The agent is between service tasks and should stay ready for a new client to arrive or for carried food to slip; a new order will have to be taken, prepared, and served, while fallen food must be recovered immediately.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u1",
+           "A client's order has been taken, but the food for it has not yet been prepared. The agent still needs to fetch a portion if necessary, prepare it at the stove for the waiting client, and then serve the prepared food.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u2",
+           "The food for the current order has been prepared, but it has not yet been handed to the client. The agent must serve the prepared food to the waiting client; if it slips, it must be picked up on the very next move before serving can happen.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u3",
+           "Food has just slipped out of the agent's hands and is lying on the floor. The only outstanding requirement is to pick it up on the very next move; missing that pickup causes irreversible failure.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u4",
+           "An order has been taken and still needs its food prepared, while the raw food has just slipped to the floor. The next move must retrieve the fallen food; afterward, the agent still has to prepare the order and then serve it.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u5",
+           "The prepared portion has slipped out of the agent's hands, so it must be picked up on the very next move. Once recovered, it still has to be served to the waiting client.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u6",
+           "A client is waiting, but their order has not been taken. The agent needs to take the order, then fetch a portion if needed, prepare it at the stove, and serve the client.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u7",
+           "A waiting client's order has not been taken, and prepared food is also waiting to be served. Both duties are outstanding and must eventually be completed.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u8",
+           "A client is waiting whose order has not been taken, and food has just fallen. The very next move must pick up the fallen food; afterward, the agent still needs to take the order, prepare food, and serve the client.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u9",
+           "A waiting client's order is still untaken, prepared food is still awaiting delivery, and food has just fallen. The next move must retrieve the fallen food or the task fails; taking the order and serving the prepared food remain afterward.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u10",
+           "An order has been taken and still needs its food prepared, and a waiting client's order has not yet been taken. The agent must prepare the taken order and take the waiting order; after preparation, that order will still need to be served.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u11",
+           "A waiting client's order is untaken, an already-taken order still needs food prepared, and food has just fallen. The next move must pick up the fallen food; afterward, taking the order and preparing the food remain, followed by serving.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u12",
+           "An order has been taken but its food has not been prepared, while prepared food is also waiting to be served. The agent must complete both the preparation and the delivery of the prepared food.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u13",
+           "An order still awaits preparation, prepared food still awaits serving, and food has just fallen. The immediate next move must pick up the fallen food; after that, the preparation and serving duties remain.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u14",
+           "The mandatory rule to pick up fallen food on the very next move has been broken. Successful completion is no longer possible, even if other service duties remain.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u15",
+           "Three duties are outstanding: take a waiting client's order, prepare food for an order already taken, and serve prepared food that is waiting. All three must eventually be completed.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u16",
+           "Four duties are open at once: take the waiting client's order, prepare food for an order already taken, serve prepared food that is waiting, and recover food that has just fallen. The very next move must pick up the fallen food or the task fails immediately; afterward, the order-taking, preparation, and serving duties remain.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "title": "Round 3: 17 right",
+       "text": "`evidence/round-3/bundles-shop-serve.json`",
+       "blocks": [
+        {
+         "type": "table",
+         "columns": [
+          "state",
+          "new text",
+          "verdict"
+         ],
+         "rows": [
+          [
+           "u0",
+           "All prior requirements have been met and no obligation is currently pending: no client is waiting to have an order taken, no taken order is waiting for preparation, no prepared food is waiting to be served, and no fallen food needs an immediate pickup. This is the clean baseline for handling new events. The agent should continue taking a client's order when one arrives, preparing food after an order is taken, serving prepared food, and picking up food on the very next step if it slips.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u1",
+           "An order has been taken but its food has not yet been prepared. The next obligation is to prepare that food at the stove; once it is prepared, it will still need to be served. If the food slips before preparation, recovering it on the very next step becomes an additional immediate duty.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u2",
+           "Food has been prepared and must still be served. The agent should deliver it to the client to discharge that obligation. If the food slips now, it must first be picked up on the very next step, and the serving duty remains afterward.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u3",
+           "Food has just slipped and no other order or preparation duty is pending. The agent must pick the food up on the very next step; if that step ends without food in hand, the failure is irreversible. This is an immediate one-step deadline.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u4",
+           "An order has been taken and still needs its food prepared, and food has just slipped out of the agent's hands. The agent must regain food on the very next step or fail irreversibly. If the pickup succeeds, the earlier preparation obligation remains.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u5",
+           "Prepared food has slipped, so the agent must pick it up on the very next step or fail the immediate-pickup requirement. If it is recovered in time, the prepared food still needs to be served.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u6",
+           "A client is waiting and their order has not yet been taken. This obligation can persist while the agent does other things or delays, but the client will remain until served. Taking the order is the immediate objective; afterward preparation and serving still have to follow. If food slips while the order is still untaken, an additional next-step pickup duty appears.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u7",
+           "Two obligations are pending: a waiting client's order has not been taken, and prepared food is waiting to be served. The agent must both take the waiting client's order and serve the prepared food. Progress on either obligation reduces the outstanding work, and any food slip adds an immediate pickup requirement.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u8",
+           "A client is waiting whose order has not been taken, and food has just slipped. The agent must pick the food up on the very next step or fail irreversibly. After a successful pickup, the client's still-untaken order remains the objective, followed by preparation and serving.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u9",
+           "A waiting client's order is untaken, prepared food awaits serving, and food has just slipped. The agent must recover the fallen food on the very next step; otherwise the immediate-pickup requirement fails irreversibly. After a successful pickup, both the order-taking and serving obligations remain.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u10",
+           "An order has been taken and still needs preparation, while a client is also waiting whose order has not yet been taken. Both duties are pending: prepare food for the taken order and take the waiting client's order. A food slip adds an immediate next-step pickup requirement on top of these obligations.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u11",
+           "An order has been taken but not prepared, a client is waiting whose order is untaken, and food has just slipped. The agent must pick the food up on the very next step or fail irreversibly. After recovering it, the preparation and order-taking duties remain.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u12",
+           "Prepared food is waiting to be served, and an order has been taken whose food still needs preparation. The agent must eventually serve the prepared food and prepare food for the taken order. If the food slips, an immediate next-step pickup duty is added before those obligations can continue.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u13",
+           "Prepared food awaits serving, an order awaits preparation, and food has just slipped. The very next step must restore food to the agent's hands, or the immediate-pickup requirement is failed irreversibly. After a successful pickup, the serving and preparation obligations remain.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u14",
+           "A food slip was not answered by holding food on the very next step, so the required immediate pickup was missed. This violates the rule that every fall must be followed by holding food on the next step, and the failure is irreversible. Successful completion is no longer possible.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u15",
+           "Three obligations are pending: prepared food must be served, a taken order's food must be prepared, and a waiting client's order must be taken. The agent must work through these duties, and a food slip adds an immediate next-step pickup requirement before the remaining obligations can be addressed.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ],
+          [
+           "u16",
+           "Four obligations are outstanding: prepared food awaits serving, a taken order awaits preparation, a waiting client's order is untaken, and food has just slipped. The next step must restore food to the agent's hands, or the immediate-pickup requirement fails irreversibly. Only after a successful pickup can the serving, preparation, and order-taking duties be completed.",
+           {
+            "text": "right",
+            "tone": "ok"
+           }
+          ]
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "rounds",
+   "title": "5. Three rounds, the same placement each time",
+   "blocks": [
+    {
+     "type": "table",
+     "heading": "Verdicts per bundle (`evidence/state-texts.out`)",
+     "columns": [
+      "bundle",
+      "states",
+      "stored",
+      "round 1",
+      "round 2",
+      "round 3",
+      "model calls"
+     ],
+     "rows": [
+      [
+       "tpl-response-1-goal",
+       "7",
+       {
+        "text": "4 right, 3 wrong",
+        "tone": "bad"
+       },
+       {
+        "text": "7 right",
+        "tone": "ok"
+       },
+       {
+        "text": "7 right",
+        "tone": "ok"
+       },
+       {
+        "text": "7 right",
+        "tone": "ok"
+       },
+       "3 calls, 0 warnings"
+      ],
+      [
+       "tpl-precedence-1-goal",
+       "13",
+       {
+        "text": "8 right, 2 half right, 3 wrong",
+        "tone": "bad"
+       },
+       {
+        "text": "11 right, 2 half right",
+        "tone": "warn"
+       },
+       {
+        "text": "13 right",
+        "tone": "ok"
+       },
+       {
+        "text": "13 right",
+        "tone": "ok"
+       },
+       "3 calls, 0 warnings"
+      ],
+      [
+       "shop-serve",
+       "17",
+       {
+        "text": "10 right, 7 wrong",
+        "tone": "bad"
+       },
+       {
+        "text": "17 right",
+        "tone": "ok"
+       },
+       {
+        "text": "17 right",
+        "tone": "ok"
+       },
+       {
+        "text": "17 right",
+        "tone": "ok"
+       },
+       "3 calls, 0 warnings"
+      ]
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**Model:** deepseek-v4.1-flash at max thinking over OpenCode, the only provider run live.",
+      "**Attempts:** round 1 allowed 3 attempts per request (`RETAG_ATTEMPTS`), rounds 2 and 3 one. Every round needed one request per bundle; none was refused.",
+      "**Verdict standard:** right, the role and the owed steps match the state; half right, they match but the text adds a claim the machine does not support; wrong, the text describes another state or the wrong duties. The fix worker judged the new texts and the wrong stored ones; this entry added the two half-right stored texts of tpl-precedence-1-goal (u5, u6). One reader, no second judge (`evidence/verdicts.json`)."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "probe",
+   "title": "6. A word search does not find the fault",
+   "intro": "A cheaper check was also tried: search every stored text for words that claim the task is done in a state that is not final, or that a duty is pending in the final state (`check/keyword_probe.py`, no model call). A negative result.",
+   "blocks": [
+    {
+     "type": "stats",
+     "items": [
+      {
+       "value": "379",
+       "label": "stored bundles searched, 2,055 texts"
+      },
+      {
+       "value": "26",
+       "label": "hits"
+      },
+      {
+       "value": "4",
+       "label": "real hits, all four on this page"
+      },
+      {
+       "value": "22",
+       "label": "false alarms",
+       "tone": "warn"
+      },
+      {
+       "value": "9 of 13",
+       "label": "wrong stored texts on this page it misses",
+       "tone": "bad"
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "text": "The false alarms are conditionals and negations, such as \"once the box is held, the task is complete\" or \"no order is pending\". The four real hits are tpl-response-1-goal u4 and u6 and tpl-precedence-1-goal u8 and u10. The search misses response u5, precedence u1 and all seven of shop-serve's wrong texts: a text on the wrong state needs no completion word. The stored bundles need a re-tag, not a word search."
+    },
+    {
+     "type": "details",
+     "items": [
+      {
+       "title": "The 26 hits (`evidence/keyword_probe.json`)",
+       "text": "Real: the text is wrong by this page's verdicts. Every other hit was read by hand.",
+       "blocks": [
+        {
+         "type": "table",
+         "columns": [
+          "bundle",
+          "state",
+          "role",
+          "matched",
+          "",
+          "text"
+         ],
+         "rows": [
+          [
+           "`experiments/benchmark/base/bundles/farm/base-doorkey`",
+           "u3",
+           "not final",
+           "task is complete",
+           {
+            "text": "false alarm",
+            "tone": "muted"
+           },
+           "The door is open and inside the wall the agent can proceed, but the goal has not yet been reached. The only remaining objective is to step onto the goal tile, after which the task is complete. No further prerequisite remains since the door is already open."
+          ],
+          [
+           "`experiments/benchmark/box-carry/bundles/farm/tpl-chain-response-1-goal-carry~p1`",
+           "u4",
+           "not final",
+           "task is complete",
+           {
+            "text": "false alarm",
+            "tone": "muted"
+           },
+           "The agent is standing on the exit but the box is not in hand, so the box still needs to be picked up. Once the box is held, the task is complete; if it falls instead, it must be recovered on the very next step. The exit has been reached, but the box requirement is not yet met."
+          ],
+          [
+           "`experiments/benchmark/box-carry/bundles/farm/tpl-chain-response-1-goal-carry~p1`",
+           "u6",
+           "not final",
+           "task is complete",
+           {
+            "text": "false alarm",
+            "tone": "muted"
+           },
+           "The agent is on the exit and the box has just fallen with empty hands, so the box must be picked up immediately. If it is held on the next step the task is complete; otherwise the task fails. The exit is reached, but the carried-box requirement still hangs on the next step."
+          ],
+          [
+           "`experiments/benchmark/box-carry/bundles/farm/tpl-chain-response-1-goal-carry~p2`",
+           "u3",
+           "not final",
+           "task is complete",
+           {
+            "text": "false alarm",
+            "tone": "muted"
+           },
+           "The box has just fallen on the same step the agent arrived at the exit, leaving the hands empty, so the recovery is still owed. If the agent is holding the box again on the very next move, the task is complete at the exit; otherwise the requirement is violated and success is no longer possible."
+          ],
+          [
+           "`experiments/benchmark/box-carry/bundles/farm/tpl-chain-response-1-nogoal-carry~p1`",
+           "u2",
+           "not final",
+           "task is complete",
+           {
+            "text": "false alarm",
+            "tone": "muted"
+           },
+           "The agent has reached the exit but without the box in its hands. The box must now be picked up again, ideally on the very next move if it is still loose; once it is being carried, the task is complete. Failing to retrieve the box when the chance passes ends the episode in failure."
+          ],
+          [
+           "`experiments/benchmark/box-carry/bundles/farm/tpl-chain-response-3-goal-carry`",
+           "u5",
+           "not final",
+           "task is complete",
+           {
+            "text": "false alarm",
+            "tone": "muted"
+           },
+           "The agent has recovered or is otherwise holding the box on a step after a slip, with the pickup promise still owed one more confirmation step. If the box stays in hand through the next step, the task is complete; if it slips again on that step, the box must be picked up on the step after that or the attempt fails."
+          ],
+          [
+           "`experiments/benchmark/complex/bundles/farm/cx-sequence`",
+           "u4",
+           "not final",
+           "mission is complete",
+           {
+            "text": "false alarm",
+            "tone": "muted"
+           },
+           "The agent has opened the locked door and entered the target room, but has not yet picked up the ball. The only remaining objective is to pick up the ball. If the agent is still holding the key, it must be dropped first because the key and ball cannot be carried together; once the ball is picked up, the mission is complete."
+          ],
+          [
+           "`experiments/benchmark/forced-start/bundles/farm/tpl-responded-existence-1-nogoal-forced~p2`",
+           "u2",
+           "not final",
+           "task is complete",
+           {
+            "text": "false alarm",
+            "tone": "muted"
+           },
+           "The door has been opened, so the requirement is satisfied whether the key was lost beforehand or not. Any obligation arising from losing the key early has been met. The task is complete as far as this rule is concerned, and no further action is required for it."
+          ],
+          [
+           "`experiments/benchmark/forced-start/bundles/farm/tpl-responded-existence-1-nogoal-forced~p3`",
+           "u0",
+           "not final",
+           "task is satisfied",
+           {
+            "text": "false alarm",
+            "tone": "muted"
+           },
+           "No requirement is pending right now: the agent either is not carrying the matching key or the door is already open. The task is satisfied and stays satisfied as long as the door gets opened whenever the key is in hand."
+          ],
+          [
+           "`experiments/benchmark/shop/bundles/arm-fm/shop-serve~p2`",
+           "u0",
+           "final",
+           "is pending",
+           {
+            "text": "false alarm",
+            "tone": "muted"
+           },
+           "No client order is pending and the agent is not carrying food. Idle between clients: watch the counter for a client arrival (client_arrived moves to u1), and handle any siren separately. No food should be held at this point."
+          ],
+          [
+           "`experiments/benchmark/shop/bundles/arm-fm/shop-serve~p3`",
+           "u0",
+           "final",
+           "is pending",
+           {
+            "text": "false alarm",
+            "tone": "muted"
+           },
+           "Idle between clients: no order is pending. Watch for a client to arrive at the counter (go to u1 and take the order) and be ready to chase any food that slips (go to u5); otherwise continue waiting or reposition near the counter."
+          ],
+          [
+           "`experiments/benchmark/templates/bundles/arm-fm/tpl-absence-1-nogoal`",
+           "u0",
+           "final",
+           "not yet",
+           {
+            "text": "false alarm",
+            "tone": "muted"
+           },
+           "Initial state: the matching key has not yet been seen. Explore the corridor and side rooms, looking through open doorways and into the left-column rooms to locate the key, while avoiding the locked target door. Once the key comes into view, progress moves to u1."
+          ],
+          [
+           "`experiments/benchmark/templates/bundles/arm-fm/tpl-absence-1-nogoal`",
+           "u1",
+           "final",
+           "not yet",
+           {
+            "text": "false alarm",
+            "tone": "muted"
+           },
+           "The matching key has been located but is not yet carried. Navigate to the key and pick it up to advance to u2; do not toggle the locked target door, which would end the run in the failure state."
+          ],
+          [
+           "`experiments/benchmark/templates/bundles/arm-fm/tpl-chain-response-1-nogoal~p2`",
+           "u0",
+           "final",
+           "is pending",
+           {
+            "text": "false alarm",
+            "tone": "muted"
+           },
+           "Normal progress: the box is either in hand or was never lost, and no recovery is pending. Keep the box with you while heading to the exit. If the box falls this step, you enter recovery; stepping onto the exit while carrying it completes the task, while stepping onto the exit empty-handed fails it."
+          ],
+          [
+           "`experiments/benchmark/templates/bundles/farm/tpl-chain-response-2-goal`",
+           "u2",
+           "not final",
+           "task is satisfied",
+           {
+            "text": "false alarm",
+            "tone": "muted"
+           },
+           "The agent is standing on the exit but not carrying the box, and the box did not fall on this step. To finish successfully, the agent must now pick the box up (or otherwise come to hold it) while still at the exit. If the box falls before it is held, the agent enters the pick-up obligation; if it picks the box up, the task is satisfied."
+          ],
+          [
+           "`experiments/benchmark/templates/bundles/farm/tpl-existence-3-nogoal`",
+           "u0",
+           "not final",
+           "task is complete",
+           {
+            "text": "false alarm",
+            "tone": "muted"
+           },
+           "The door is not yet open. The only requirement is to get the locked door open, which in practice means obtaining the matching key and toggling the door; once the door is open the task is complete."
+          ],
+          [
+           "`experiments/benchmark/templates/bundles/farm/tpl-existence-two-1-goal~p2`",
+           "u4",
+           "not final",
+           "task is complete",
+           {
+            "text": "false alarm",
+            "tone": "muted"
+           },
+           "The agent has held the matching key on two distinct occasions, so the key requirement is already satisfied. The remaining objective is to pick up the mission's designated box, which still needs to be carried. Once the box is picked up, the task is complete."
+          ],
+          [
+           "`experiments/benchmark/templates/bundles/farm/tpl-existence-two-1-goal~p3`",
+           "u4",
+           "not final",
+           "task is complete",
+           {
+            "text": "false alarm",
+            "tone": "muted"
+           },
+           "The agent has carried the matching key on two distinct steps, satisfying the key-holding requirement. The target box is still in the other room and must be picked up to finish; once the box is taken, the task is complete."
+          ],
+          [
+           "`experiments/benchmark/templates/bundles/farm/tpl-precedence-1-goal`",
+           "u10",
+           "not final",
+           "All requirements are satisfied",
+           {
+            "text": "real",
+            "tone": "bad"
+           },
+           "The ball has been moved away, the door is open, the key is not held, and the box is being carried. All requirements are satisfied and the task is complete."
+          ],
+          [
+           "`experiments/benchmark/templates/bundles/farm/tpl-precedence-1-goal`",
+           "u8",
+           "not final",
+           "All requirements are satisfied",
+           {
+            "text": "real",
+            "tone": "bad"
+           },
+           "The ball has been moved away, the key is held, the door is open, and the box is being carried. All requirements are satisfied and the task is complete."
+          ],
+          [
+           "`experiments/benchmark/templates/bundles/farm/tpl-responded-existence-1-goal~p1`",
+           "u6",
+           "not final",
+           "task is complete",
+           {
+            "text": "false alarm",
+            "tone": "muted"
+           },
+           "The agent has located the key and is carrying the ball, but the locked door is currently not open. It must reopen the locked door; once the door is open again, holding the ball satisfies the remaining requirements and the task is complete."
+          ],
+          [
+           "`experiments/benchmark/templates/bundles/farm/tpl-responded-existence-1-goal~p2`",
+           "u4",
+           "not final",
+           "task is complete",
+           {
+            "text": "false alarm",
+            "tone": "muted"
+           },
+           "The agent has located the matching key and is carrying the ball, but the locked target door is still closed. The remaining objective is to open the locked door, after which the task is complete. Since the ball is held, the key cannot be carried, so the agent must put the ball down to handle the key and then retrieve the ball."
+          ],
+          [
+           "`experiments/benchmark/templates/bundles/farm/tpl-responded-existence-1-goal~p3`",
+           "u4",
+           "not final",
+           "task is complete",
+           {
+            "text": "false alarm",
+            "tone": "muted"
+           },
+           "The key was found and the ball has been picked up, but because of the promise to open the locked door, the task does not finish until that door has been opened. The only remaining objective is to open the locked door guarding the target room; once it opens, the task is complete."
+          ],
+          [
+           "`experiments/benchmark/templates/bundles/farm/tpl-response-1-goal`",
+           "u4",
+           "final",
+           "still pending",
+           {
+            "text": "real",
+            "tone": "bad"
+           },
+           "The door, which had already been opened, was subsequently closed while the matching key was in hand, and the target box is still uncollected. This creates a pending requirement to open the door again; reopening it restores normal progress toward the box. If the box is picked while the door remains shut, completion is still pending and the door must be opened afterward."
+          ],
+          [
+           "`experiments/benchmark/templates/bundles/farm/tpl-response-1-goal`",
+           "u6",
+           "not final",
+           "This is successful completion",
+           {
+            "text": "real",
+            "tone": "bad"
+           },
+           "This is successful completion: the target box has been picked up after the matching key was acquired and the door had been opened. The required ordering and the key-holding obligation have been satisfied, including any need to reopen the door. No further action is needed."
+          ],
+          [
+           "`experiments/benchmark/templates/bundles/farm/tpl-response-1-goal~p3`",
+           "u6",
+           "not final",
+           "all requirements are satisfied",
+           {
+            "text": "false alarm",
+            "tone": "muted"
+           },
+           "The target box has been picked up, but the door is shut and an earlier time holding the matching key while the door was closed has not yet been followed by reopening it. That outstanding key-use requirement means the task is not complete yet. Opening the door is the final condition; once it is open, all requirements are satisfied."
+          ]
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "evidence",
+   "title": "Evidence, rerun and code",
+   "blocks": [
+    {
+     "type": "list",
+     "items": [
+      "**Bundles:** `evidence/bundles/<name>/` (manifest, machine, labeling, stored state texts) for the three bundles, as committed on main `5284fff`; `graphs/`, the three machines as live HTML, SVG and RM text.",
+      "**Re-tag rounds:** `evidence/round-1/`, `round-2/`, `round-3/`, one JSON per bundle from `check/retag.py`: every state's role, entry guards, new text, stored text, the model's raw reply and the calls.",
+      "**Verdicts:** `evidence/verdicts.json`; `evidence/state-texts.out`, what `check/state_texts.py` prints (it checks that each raw reply is keyed by exactly the machine's states and equals the recorded texts, and that the recorded stored texts are the bundle's).",
+      "**Word search:** `evidence/keyword_probe.json`, from `check/keyword_probe.py`.",
+      "**Limits:** three bundles, one model, one provider (OpenCode); the verdicts are one reader's. The re-tag wrote no bundle: the stored bundles keep their old texts until they are rebuilt. No training ran with the new texts."
+     ]
+    },
+    {
+     "type": "text",
+     "text": "**Rerun (from the repository root in RM_RL_env; only `retag.py` calls a model)**"
+    },
+    {
+     "type": "code",
+     "text": "E=docs/paper/keyed-state-texts\n# every state's texts and verdicts, the checks, and graphs/<name>.rm (writes evidence/state-texts.out)\nPYTHONPATH=app python -W ignore $E/check/state_texts.py\nfor m in $E/graphs/*.rm; do PYTHONPATH=app python app/main.py render-rm --rm-file $m --svg-dir ${m%.rm}.svg --html; done\n# one machine's state list, as the tagger's request shows it\nPYTHONPATH=app python -W ignore $E/check/state_list.py $E/evidence/bundles/shop-serve/reward_machine.txt\n# the word search over every committed bundle\npython $E/check/keyword_probe.py . OUT.json\n# this page\nPYTHONPATH=app python -W ignore $E/check/build_page.py\npython3 ~/.claude/skills/agent-artifacts/scripts/fill.py $E/data.json $E/index.html\n# the live re-tag: one deepseek-v4.1-flash call per bundle over OpenCode, key from .env\nRETAG_ATTEMPTS=1 PYTHONPATH=app dotenv -f .env run --no-override -- python -W ignore $E/check/retag.py OUT_DIR \\\n  experiments/benchmark/templates/bundles/farm/tpl-response-1-goal \\\n  experiments/benchmark/templates/bundles/farm/tpl-precedence-1-goal \\\n  experiments/benchmark/shop/bundles/farm/shop-serve"
+    },
+    {
+     "type": "text",
+     "text": "Code: commit `6539207` (merge `ba918a9`), `app/src/engines/structured.py`, `app/src/engines/generic_engine.py`, `app/scripts/generate_rm.py`, `app/src/prompts/compiler-rm/reward-machine-tagger.system.md`, with tests in `tests/test_engines.py`, `tests/test_pipeline_orchestration.py` and `tests/test_prompts.py`. Records: `docs/decisions/arm-fm/task-and-rm-identity.md` (reply shape) and `docs/decisions/benchmark/thesis-benchmark.md` (pre-freeze prompt log)."
+    }
+   ]
+  }
+ ]
+}
