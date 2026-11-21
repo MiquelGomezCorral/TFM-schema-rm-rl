@@ -16,9 +16,10 @@ present), leaves a run whose process is alive alone, renames an ``interrupted`` 
 folder to ``<folder>.<status>`` and restarts it from zero (a ``timed-out`` run only with
 ``--retry-timed-out``), and never trains a run whose bundle lacks a file training needs, has
 status ``pipeline-failed``, was generated for another level than the card's ``gym_id`` (its
-stored environment page names other gym ids) or is an ablation no-op (``no-data``, with the
-reason). A bundle with status ``provider-error`` or ``incomplete`` is retried by bundle
-generation, not here: its runs stay ``pending``. The no-RM arm trains once per identical
+stored environment page names other gym ids), is an ablation no-op, or is a FARM bundle whose
+``<card-id>.plan_check.json`` records a failure (``no-data``, with the reason). A bundle with
+status ``provider-error`` or ``incomplete`` is retried by bundle generation, not here: its runs
+stay ``pending``. The no-RM arm trains once per identical
 training config and seed, across
 suites: the owner is a finished run under the runs root whose saved config matches, else a run
 another driver claimed (``.share-claims/``), else the first open card here. The other cards
@@ -53,6 +54,7 @@ from typing import IO
 import yaml
 
 from src.arm_fm.dqn import RUN_SETTINGS, layout_seed
+from src.benchmark.plan_check import RECORD_SUFFIX as PLAN_CHECK_SUFFIX
 from src.benchmark.traces import NO_PART, ablation_settings, read_json
 from src.config import Configuration
 
@@ -140,11 +142,14 @@ class Run:
         return self.exp_name, self.seed
 
 
-def bundle_path(spec: dict, card_id: str, arm: str, variant: str | None) -> Path | None:
-    """The bundle folder a run trains on: ``<bundles>/<arm>/<card>``, or the ablation variant's."""
+def bundle_path(spec: dict, card: dict, arm: str, variant: str | None) -> Path | None:
+    """The bundle folder a run trains on: ``<bundles>/<arm>/<card>``, or the ablation variant's.
+
+    A card with ``bundle_of`` uses that card's bundle: the same machine in other world settings.
+    """
     if arm == "no-rm":
         return None
-    root = Path(spec["bundles"])
+    root, card_id = Path(spec["bundles"]), card.get("bundle_of") or card["id"]
     return root / card_id / f"off-{variant}" if variant else root / arm / card_id
 
 
@@ -236,7 +241,7 @@ def expand_runs(spec: dict) -> list[Run]:
             learner,
             variant,
             seed,
-            bundle_path(spec, name, arm, variant),
+            bundle_path(spec, cards[name], arm, variant),
             spec["learners"].get(learner, {}).get("ram_gb", 0),
         )
         for name, arm, learner, variant, seed in combos
@@ -276,7 +281,7 @@ def mix_runs(spec: dict, cards: dict[str, dict], learners: list[str]) -> list[Ru
         for arm, learner, seed in product(
             [arm for arm in spec["arms"] if arm != "no-rm"], learners, spec["seeds"]
         ):
-            bundles = tuple(bundle_path(spec, member["id"], arm, None) for member in members)
+            bundles = tuple(bundle_path(spec, member, arm, None) for member in members)
             ram_gb = spec["learners"].get(learner, {}).get("ram_gb", 0)
             runs.append(
                 Run(spec["suite"], card, arm, learner, None, seed, bundles[0], ram_gb, bundles)
@@ -303,18 +308,20 @@ def bundle_problem(run: Run) -> tuple[str, str] | None:
     ``<card-id>.status.json`` (beside the folder) says ``pipeline-failed``, or it is an ablation
     variant whose manifest marks it a no-op (the machine equals its source: not trained; the
     ``none`` control stays eligible), or it was generated for another level: the environment
-    page its manifest stored names gym ids, and the card's is not among them. ``pending``: that
-    status is ``provider-error`` or ``incomplete``, which bundle generation retries.
+    page its manifest stored names gym ids, and the card's is not among them, or it is a FARM
+    bundle whose ``<card-id>.plan_check.json`` (beside the folder, written by ``check-plans``)
+    records a failure; a missing plan check does not refuse. ``pending``: that status is
+    ``provider-error`` or ``incomplete``, which bundle generation retries.
     """
     bundles = [bundle for bundle in run.bundles or (run.bundle,) if bundle]
     if not bundles:  # no-RM: nothing to check, and held_claim's stand-in card holds only the id
         return None
     gym_id = run.card["env"]["gym_id"]  # a mix's cards share it (mix_runs)
-    problems = (_bundle_problem(bundle, gym_id) for bundle in bundles)
+    problems = (_bundle_problem(bundle, gym_id, run.arm) for bundle in bundles)
     return next((problem for problem in problems if problem), None)
 
 
-def _bundle_problem(bundle: Path, gym_id: str) -> tuple[str, str] | None:
+def _bundle_problem(bundle: Path, gym_id: str, arm: str) -> tuple[str, str] | None:
     status_file = ROOT / bundle.parent / f"{bundle.name}.status.json"
     record = read_json(status_file)
     status = record.get("status")
@@ -322,6 +329,19 @@ def _bundle_problem(bundle: Path, gym_id: str) -> tuple[str, str] | None:
         return NO_DATA, f"bundle pipeline-failed: {record.get('reason')}"
     if status in BUNDLE_RETRIED:
         return PENDING, f"bundle {status}: {record.get('reason')}"
+
+    # ARM-FM is the baseline: its plan-check failures are the measurement, so those runs still train.
+    check_file = ROOT / bundle.parent / f"{bundle.name}{PLAN_CHECK_SUFFIX}"
+    plan_check = read_json(check_file) if arm == "farm" else {}
+    if plan_check.get("passed") is False:
+        runs = plan_check.get("runs") or []
+        failing = sorted({entry["plan"] for entry in runs if entry.get("problems")})
+        plans = ", ".join(failing) or "the bundle as a whole"
+        first = (plan_check.get("problems") or ["no detail recorded"])[0]
+        return (
+            NO_DATA,
+            f"plan check of {plan_check.get('card', bundle.name)} failed on {plans}: {first}",
+        )
 
     if not (ROOT / bundle).is_dir():
         return NO_DATA, "bundle missing"

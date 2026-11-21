@@ -61,7 +61,10 @@ diagnostics to reproduce a failed run without changing compilation semantics.
   before the agent acts (its initial state is final or rejecting) fails every plan. A bundle with no
   labeling source is unchecked, not failed. A failure fails the bundle with the reason
   `plan-check-failed`; each `--retry-failed` run generates it once more. A bundle that passes is
-  unchanged.
+  unchanged. Since 2026-11-21 `run-suite` also refuses (`no-data`) to train a FARM bundle whose
+  `<card-id>.plan_check.json` records a failure, so a later `check-plans` failure on a complete
+  bundle stops its runs too; ARM-FM bundles still train (their failures are the baseline's
+  measurement), and a missing plan check does not refuse.
 - Graph focus is a desktop-only reading mode; the focus control is hidden below the
   desktop breakpoint instead of introducing a separate mobile graph layout.
 
@@ -144,3 +147,5 @@ keeps their association visible when a trace is reopened.
   transition and the check records no problem, so a pass or fail can depend on that choice.
 - 2026-11-19: Every bundle records its pay-order verdict in its manifest, and generation stops before
   the LLM call when the default pricing has no level to price over (user decision).
+- 2026-11-21: `run-suite` refuses a FARM bundle whose plan check failed (user rule: never train a FARM
+  machine with an open sign that it is wrong).

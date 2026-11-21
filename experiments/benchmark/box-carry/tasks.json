@@ -47,6 +47,11 @@
             "breaks": [0, 1],
             "why": "Does nothing: the box falls and stays on the floor.",
             "steps": [{"do": "wait", "n": 200}]
+          },
+          {
+            "breaks": [0],
+            "why": "Waits nine moves, so the box has fallen (step 8 at the latest) and the move after the fall has passed, then picks it up and goes on as the solving plan does: a late pickup.",
+            "steps": [{"do": "wait", "n": 9}, {"do": "policy", "name": "service_room", "ignore": []}]
           }
         ]
       },
@@ -57,6 +62,117 @@
         "Get to the exit carrying the box; every time the box falls, your very next move must pick it up again."
       ],
       "notes": "Carry version of `tpl-chain-response-1-goal`: the agent starts holding the box, cannot put it down before the first fall, and the box falls at a step from 2 to 8 drawn from the seed (the fall turns the agent to face it), so the box rule always triggers and a next-move pickup is always possible. Same task and clauses; the solving policy waits in place for the fall and picks the box up."
+    },
+    {
+      "id": "tpl-chain-response-1-goal-carry-noturn",
+      "bundle_of": "tpl-chain-response-1-goal-carry",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room-carry/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": false, "box": true, "carry": true, "require": ["holding_box"], "max_steps": 200, "fall_turn": "none"},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Carry the box to the exit. Whenever the box falls, pick it up again on your very next move.",
+      "goal": true,
+      "template": "ChainResponse",
+      "status": "draft",
+      "expect": [
+        ["ChainResponse", ["box_fell", "holding_box"], "hard"],
+        ["Existence", ["at_exit"], "hard"],
+        ["Response", ["at_exit", "holding_box"], "hard"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0, 2],
+            "why": "Does not react to the fall and reaches the exit without the box.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [0, 2],
+            "why": "Waits until the box has fallen, then walks to the exit without picking it up.",
+            "steps": [{"do": "wait", "n": 10}, {"do": "goto", "obj": "exit"}]
+          },
+          {
+            "breaks": [0, 1],
+            "why": "Does nothing: the box falls and stays on the floor.",
+            "steps": [{"do": "wait", "n": 200}]
+          },
+          {
+            "breaks": [0],
+            "why": "Waits nine moves, so the box has fallen (step 8 at the latest) and the move after the fall has passed, then picks it up and goes on as the solving plan does: a late pickup.",
+            "steps": [{"do": "wait", "n": 9}, {"do": "policy", "name": "service_room", "ignore": []}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "World-setting copy of `tpl-chain-response-1-goal-carry` (user, 2026-11-21): same task, clauses and plans, only `fall_turn: none`. No paraphrases and no bundle of its own: `bundle_of` makes `run-suite` train it on that card's FARM machine, and `generate-suite` skips it. The fallen box lands on a side drawn from the seed (front, right, back or left; a blocked side takes the next free one clockwise) and the agent keeps its direction, so the next move can pick the box up only when it landed in front: over seeds 1 to 200, after 75.9% of the falls for the solving policy, which waits in the start corner, where two walls send back and left draws to the front. It tests training when the world can force a missed next-move pickup; such a break is the world's doing, not the machine's or the agent's. On the event seeds the world forces it once: on seed 1 the first fall lands to the agent's right, so the solving plan turns before the pickup and breaks the box rule at step 4. The plan that walks straight to the exit is left out of this copy: the rules it breaks depend on the landing side (0 and 1 on seed 3, 0 and 2 on seeds 1 and 2)."
+    },
+    {
+      "id": "tpl-chain-response-1-goal-carry-backturn",
+      "bundle_of": "tpl-chain-response-1-goal-carry",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room-carry/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": false, "box": true, "carry": true, "require": ["holding_box"], "max_steps": 200, "fall_turn": "side"},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Carry the box to the exit. Whenever the box falls, pick it up again on your very next move.",
+      "goal": true,
+      "template": "ChainResponse",
+      "status": "draft",
+      "expect": [
+        ["ChainResponse", ["box_fell", "holding_box"], "hard"],
+        ["Existence", ["at_exit"], "hard"],
+        ["Response", ["at_exit", "holding_box"], "hard"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0, 2],
+            "why": "Does not react to the fall and reaches the exit without the box.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [0, 2],
+            "why": "Waits until the box has fallen, then walks to the exit without picking it up.",
+            "steps": [{"do": "wait", "n": 10}, {"do": "goto", "obj": "exit"}]
+          },
+          {
+            "breaks": [0, 1],
+            "why": "Walks straight to the exit without reacting: the box falls on the way and blocks it, so the exit is never reached.",
+            "steps": [{"do": "goto", "obj": "exit"}]
+          },
+          {
+            "breaks": [0, 1],
+            "why": "Does nothing: the box falls and stays on the floor.",
+            "steps": [{"do": "wait", "n": 200}]
+          },
+          {
+            "breaks": [0],
+            "why": "Waits nine moves, so the box has fallen (step 8 at the latest) and the move after the fall has passed, then picks it up and goes on as the solving plan does: a late pickup.",
+            "steps": [{"do": "wait", "n": 9}, {"do": "policy", "name": "service_room", "ignore": []}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "World-setting copy of `tpl-chain-response-1-goal-carry` (user, 2026-11-21): same task, clauses and plans, only `fall_turn: side`. No paraphrases and no bundle of its own: `bundle_of` makes `run-suite` train it on that card's FARM machine, and `generate-suite` skips it. The landing side is drawn as with `none`; a box to the right or left turns the agent to face it, and a box behind turns the agent to its right or left (drawn too), so the pickup needs one more turn first. The solving policy waits in the start corner, where the walls behind it send a back draw to another side, so there the box never lands behind it (over seeds 1 to 200, in front after 100% of the falls; every event seed passes). It tests training when the world can force a missed next-move pickup, as `tpl-chain-response-1-goal-carry-noturn` does but less often; such a break is the world's doing, not the machine's or the agent's."
     },
     {
       "id": "tpl-chain-response-1-nogoal-carry",
@@ -102,6 +218,11 @@
             "breaks": [0],
             "why": "Does nothing: the box falls and stays on the floor.",
             "steps": [{"do": "wait", "n": 200}]
+          },
+          {
+            "breaks": [0],
+            "why": "Waits nine moves, so the box has fallen (step 8 at the latest) and the move after the fall has passed, then picks it up and goes on as the solving plan does: a late pickup.",
+            "steps": [{"do": "wait", "n": 9}, {"do": "policy", "name": "service_room", "ignore": []}]
           }
         ]
       },
@@ -158,6 +279,11 @@
             "breaks": [0, 1],
             "why": "Does nothing: the box falls and stays on the floor.",
             "steps": [{"do": "wait", "n": 200}]
+          },
+          {
+            "breaks": [0],
+            "why": "Waits nine moves, so the box has fallen (step 8 at the latest) and the move after the fall has passed, then picks it up and goes on as the solving plan does: a late pickup.",
+            "steps": [{"do": "wait", "n": 9}, {"do": "policy", "name": "service_room", "ignore": ["siren"]}]
           }
         ]
       },
@@ -209,6 +335,11 @@
             "breaks": [0],
             "why": "Does nothing: the box falls and stays on the floor.",
             "steps": [{"do": "wait", "n": 200}]
+          },
+          {
+            "breaks": [0],
+            "why": "Waits nine moves, so the box has fallen (step 8 at the latest) and the move after the fall has passed, then picks it up and goes on as the solving plan does: a late pickup.",
+            "steps": [{"do": "wait", "n": 9}, {"do": "policy", "name": "service_room", "ignore": ["siren"]}]
           }
         ]
       },
@@ -261,6 +392,11 @@
             "breaks": [0, 1],
             "why": "Does nothing: the box falls and stays on the floor.",
             "steps": [{"do": "wait", "n": 200}]
+          },
+          {
+            "breaks": [0],
+            "why": "Waits nine moves, so the box has fallen (step 8 at the latest) and the move after the fall has passed, then picks it up and goes on as the solving plan does: a late pickup.",
+            "steps": [{"do": "wait", "n": 9}, {"do": "policy", "name": "service_room", "ignore": []}]
           }
         ]
       },
@@ -312,6 +448,11 @@
             "breaks": [0],
             "why": "Does nothing: the box falls and stays on the floor.",
             "steps": [{"do": "wait", "n": 200}]
+          },
+          {
+            "breaks": [0],
+            "why": "Waits nine moves, so the box has fallen (step 8 at the latest) and the move after the fall has passed, then picks it up and goes on as the solving plan does: a late pickup.",
+            "steps": [{"do": "wait", "n": 9}, {"do": "policy", "name": "service_room", "ignore": []}]
           }
         ]
       },
