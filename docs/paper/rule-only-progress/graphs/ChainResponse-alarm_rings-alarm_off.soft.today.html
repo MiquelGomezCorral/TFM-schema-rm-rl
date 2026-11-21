@@ -447,17 +447,26 @@ if (theme === "auto") {
   theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 document.documentElement.dataset.rmTheme = theme;
+const padding = 60;
 const cy = cytoscape({
   container: document.getElementById("rm-graph"),
   elements: data.elements,
   style: data.styles[theme],
-  layout: { name: "preset", fit: true, padding: 60 },
+  layout: { name: "preset", fit: true, padding },
   wheelSensitivity: 0.15,
   boxSelectionEnabled: false,
 });
 const stage = document.getElementById("rm-graph-stage");
 window.rmGraph.attach(cy, stage);
 window.rmGraph.guardFrameWheel(cy, stage);
+// A frame can boot at size 0, where the layout skips its fit; fit once on the first real size.
+const fitOnFirstSize = new ResizeObserver(() => {
+  if (!stage.clientWidth || !stage.clientHeight) return;
+  fitOnFirstSize.disconnect();
+  cy.resize();
+  cy.fit(undefined, padding);
+});
+fitOnFirstSize.observe(stage);
 </script>
 </body>
 </html>
