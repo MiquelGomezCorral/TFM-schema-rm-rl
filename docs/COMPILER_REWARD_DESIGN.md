@@ -26,7 +26,7 @@ Every claim is marked with how it was checked:
    of all clause DFAs. One small addition: it also returns, for each product state, the tuple
    of per-clause DFA states (`sdict`).
 4. **Our cleanup layer** turns that product into the final Reward Machine: hard pruning and
-   rewards (minimization deferred).
+   rewards, then a merge of equivalent states (`minimize_machine`, on by default since 2026-11-21).
 5. **One critic** reviews the task, the clauses and the compiled RM before state descriptions.
 
 Out of scope for this redesign: labeling functions, RM state descriptions and embeddings, and
@@ -565,7 +565,7 @@ well -10); the 0.1 and 0.5 figures in the sections above are from before that ch
    Rewards above). Apart from joining the finals into one node and hard violations into one well,
    this is the only merge the layer does. It keeps every reward because no catalog template is
    broken by an idle step, so the soft terms price the old start and its successor alike.
-6. **Minimization: deferred (decision 2026-10-12).** It works only with the right starting
+6. **Minimization: deferred (decision 2026-10-12), on by default since 2026-11-21.** It works only with the right starting
    groups: one final group, one well group, and the other states split by which soft clauses are
    violated. **[run]** On FL-AT's RM for "reach the goal, if possible never touch lava", Moore's
    refinement (our former `_equivalence_partitions`, `app/src/compiler/reward_machine.py:530` at commit `5b74afe`) started
@@ -574,6 +574,11 @@ well -10); the 0.1 and 0.5 figures in the sections above are from before that ch
    With the soft-violation split they stay apart. The gain (fewer states to describe and embed)
    is small next to that risk, so the first version skips it; FL-AT's product is kept as is
    after pruning. A re-armed violated state keeps its violated label, so that split still holds.
+   Since 2026-11-21 `minimize_machine` (`_merge_equivalent` in `app/src/compiler/reward_layer.py`) merges
+   only states with the same pay on every step, the same end and the same next states, so the
+   lava case above stays split. It does merge a soft rule's kept and broken states when the
+   recurrent penalty makes them act alike (10 of 131 card answers); see
+   `docs/decisions/arm-fm/rm-execution.md`.
 7. **Compute rewards** on the pruned RM: progress, task completion, soft penalties.
 
 After passes 4 and 5, check that a final state is still reachable; if not, report the task as

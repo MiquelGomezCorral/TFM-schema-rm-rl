@@ -54,7 +54,7 @@ from src.utils import ltlf_of
 ENTRY = re.compile(r"^\[total [\d.]+s \| step [\d.]+s\] ", re.MULTILINE)
 # The logs come from runs made before the hard ceiling and a soft break cost of 1 became the
 # defaults: the flat hard break and a soft break cost of 5.
-LOGGED_PRICING = {"soft_break_cost": 5.0, "hard_ceiling": False}
+LOGGED_PRICING = {"soft_break_cost": 5.0, "hard_ceiling": False, "minimize_machine": False}
 RESTORABLE_STATUSES = ("pipeline-failed", "provider-error")
 # "Embedding state descriptions" contains "state descriptions", so the embeddings key is first.
 FAILED_STEPS = {
