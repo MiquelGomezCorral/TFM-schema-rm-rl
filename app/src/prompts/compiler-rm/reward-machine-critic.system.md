@@ -143,7 +143,8 @@ asks for twice still needs its `ExistenceTwo`. A lone commanded step
    requirement means a goal is missing.
    An event commanded unconditionally and without a preference cue is required even inside
    ordered wording ("do a before b", "a, then b", or steps in one sentence, each with its own
-   verb). In such an order the hard `Existence` of the last step with the hard `Precedence`
+   verb; a state or a count, such as "be holding `a` on two moves", is not a step of that
+   order). In such an order the hard `Existence` of the last step with the hard `Precedence`
    chain forces every earlier step, so the earlier steps need no `Existence` of their own.
    `Precedence` alone is a missing goal.
 3. Template and argument order: Is each template the right one, with its propositions
