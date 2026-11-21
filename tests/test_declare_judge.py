@@ -104,17 +104,18 @@ class TraceJudging(unittest.TestCase):
         self.assertEqual(judged.failed(), [1, 2])
 
     def test_every_soft_break_counts_not_only_the_first(self) -> None:
-        # (template, a, b, breaks): a break lasts while the labels stay as on its step and the
-        # rule starts again once they change, so labels held true are one break, pulses two.
+        # (template, a, b, breaks): counted as the machine charges them (user, 2026-11-21): the
+        # rule starts again on the step after a break, so labels held true break it every step.
         rows = (
-            ("Absence", "0110", "", 1),
+            ("Absence", "0110", "", 2),
             ("Absence", "0101", "", 2),
-            ("Precedence", "0000", "0110", 1),
+            ("Precedence", "0000", "0110", 2),
             ("Precedence", "0000", "0101", 2),
             ("Precedence", "0010", "0101", 1),
-            ("ChainResponse", "0110", "0000", 1),
+            ("ChainResponse", "0110", "0000", 1),  # the trigger on the break step is not read
+            ("ChainResponse", "1110", "0000", 2),
             ("ChainResponse", "1010", "0000", 2),
-            ("NotCoExistence", "0110", "0110", 1),
+            ("NotCoExistence", "0110", "0110", 2),
             ("NotCoExistence", "0101", "0101", 2),
             ("Response", "0100", "0000", 0),
         )

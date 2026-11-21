@@ -33,17 +33,22 @@ thing whichever arm produced it.
 - **Soft-rule quality.** Judged success says whether the task was solved, not how well the agent
   kept the soft rules (user, 2026-11-20: "it solves the task, but how well? Is it really following
   the human preferences?"). A card with a soft clause also reports, per episode and as run means,
-  `soft_break_count`, how many separate times the episode broke a soft rule, and `any_soft_break`,
+  `soft_break_count`, how many times the episode broke a soft rule, and `any_soft_break`,
   whether it broke one at least once (`mean_any_soft_break` is the share of such episodes). The
-  user asked for every break ("how many of the rules have been broken along the way"); what counts
-  as one break is the implementation's reading: a break lasts while the clause's labels stay as
-  they were on the break step, and the rule starts again once they change. So an Absence counts
-  each time its event turns true, a Precedence each new run of `b` before any `a`, a ChainResponse
-  each run of a trigger with no response, a NotCoExistence each time the pair comes back together.
-  The restarted NotCoExistence forgets the earlier side, so one side recurring alone is not a new
-  break: `a=1000, b=0101` counts 1. Existence, ExistenceTwo, Response and
-  RespondedExistence never break; they stay open (`soft_open`). `soft_breaks` still counts each
-  broken clause once, and judged success is unchanged. The judge owns the count
+  user asked for every break ("how many of the rules have been broken along the way"), and since
+  2026-11-21 the count is what the machine charges (user decision D8: count every step, as the
+  machine does, so the number is what the agent was charged for). The machine re-arms a broken
+  soft rule and reads the step after a break as a fresh start, so the judge restarts the rule on
+  that step and every step that breaks it again counts, also straight after a break. So an
+  Absence counts each step its event is true, a Precedence each step with `b` before any `a`, a
+  ChainResponse each trigger left unanswered (a trigger on the break step itself is not read: `a`
+  on three steps in a row with no `b`, then a clean step, counts 2), and a NotCoExistence each
+  time both events turn up again after a break. The restarted NotCoExistence forgets the earlier
+  side, so one side recurring alone is not a new break: `a=1000, b=0101` counts 1. The count
+  follows the default machine (recurrent soft penalty on); with the penalty off the machine
+  charges a rule at most once and the judge still counts every break. Existence, ExistenceTwo,
+  Response and RespondedExistence never break; they stay open (`soft_open`). `soft_breaks` still
+  counts each broken clause once, and judged success is unchanged. The judge owns the count
   (`_break_count`, `app/src/benchmark/declare_judge.py`); `judge.json` and the results table
   show it for every arm side by side.
 - **Episodes that cannot start.** A machine whose start state is final, or reaches a final state
@@ -484,3 +489,12 @@ and a restart is easier to trust.
   ball, then box with no key after the ball, which the level cannot produce; no 8-template answer
   rejects that trace and keeps key then box with no ball. Its FARM bundle lacks the Response and
   stays `mismatch`.
+- 2026-11-21: The judge counts every soft break the machine charges (user decision D8). The old
+  reading, one break while the labels stay as on the break step, counted an open door under a soft
+  `Absence(door_open)` once, while the machine charges it every step. `_break_count` now restarts
+  the rule on the step after each break, the way the re-armed machine reads it. Checked with no
+  model call: for each of the eight templates a one-clause soft machine (MONA, today's reward
+  layer) and the judge agree on about 300 random traces (`docs/paper/soft-break-quality/check/
+  judge_vs_machine.py`); the old count disagreed on 150 Absence, 24 Precedence, 18 ChainResponse and 42
+  NotCoExistence traces. Stored results keep the old count; only the soft-break-quality paper
+  entry was recounted from its traces (counts up to 10% higher, ranking unchanged).

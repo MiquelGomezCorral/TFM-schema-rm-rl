@@ -7,7 +7,6 @@ Each clause gets ``holds``, ``broken`` (with the 1-based step it broke) or ``ope
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from itertools import zip_longest
 
 HOLDS, BROKEN, OPEN_AT_END = "holds", "broken", "open_at_end"
 HARD, SOFT = "hard", "soft"
@@ -179,25 +178,23 @@ RULES: dict[str, Callable[[Sequence[bool], Sequence[bool]], Verdict]] = {
 
 
 def _break_count(template: str, a: Sequence[bool], b: Sequence[bool]) -> int:
-    """How many separate times the rule broke on the trace, not only the first.
+    """How many soft-break charges the compiled machine pays for the rule on the trace.
 
-    A broken soft rule still applies. One break lasts while the clause's labels stay as they were
-    on the break step; the rule starts again on the first step where they change. So an Absence
-    counts each time its event turns true, a Precedence each new run of b before any a, a
-    ChainResponse each run of a trigger with no response, and a NotCoExistence each time the pair
-    comes back together. A label true on several steps in a row is one break.
+    A broken soft rule still applies: the machine re-arms it (``_rearm_violated`` in
+    ``src/compiler/reward_layer.py``) and reads the step after a break as the first step of a
+    new trace, so the rule starts again there. Every step that breaks it again is one more break,
+    also straight after a break. So an Absence counts each step its event is true, a Precedence
+    each step with b before any a, a ChainResponse each trigger left unanswered (a trigger on a
+    break step is not read), and a NotCoExistence each time both events turn up again after a
+    break.
     """
     rule, count, start = RULES[template], 0, 0
-    steps = list(zip_longest(a, b))
     while True:
         status, step = rule(a[start:], b[start:])
         if status != BROKEN:
             return count
         count += 1
-        broken = start + step - 1
-        start = next(
-            (i for i in range(broken + 1, len(steps)) if steps[i] != steps[broken]), len(steps)
-        )
+        start += step  # ``step`` is 1-based, so this is the step right after the break
 
 
 # ======================================================================================
@@ -210,7 +207,8 @@ class ClauseVerdict:
     """One clause's verdict on one trace; ``step`` is the 1-based step of a break.
 
     ``activated`` is whether the clause's trigger happened (None: the template has none);
-    ``breaks`` how many separate times it broke (``_break_count``).
+    ``breaks`` how many times it broke, counted as the machine charges a soft break
+    (``_break_count``).
     """
 
     clause: Clause
