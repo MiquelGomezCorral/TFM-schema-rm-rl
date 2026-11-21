@@ -79,13 +79,13 @@ class PromptTests(unittest.TestCase):
             task="Finish",
             clauses_json=clauses,
             reward_machine="REWARD_MACHINE:\nSTATES: u0, u1",
-            nodes_json='["u0", "u1"]',
+            nodes_json='{"u0": "in progress", "u1": "final"}',
         )
 
         self.assertTrue(read_prompt("compiler", "rm_tagger"))
         self.assertIn("Finish", tagger)
         self.assertIn(clauses, tagger)
-        self.assertIn('["u0", "u1"]', tagger)
+        self.assertIn('{"u0": "in progress", "u1": "final"}', tagger)
         self.assertNotIn("${", tagger)
         with self.assertRaises(ValueError):
             render_prompt(
@@ -95,7 +95,7 @@ class PromptTests(unittest.TestCase):
                 task="Finish",
                 clauses_json=clauses,
                 reward_machine="REWARD_MACHINE:",
-                nodes_json='["u0"]',
+                nodes_json='{"u0": "final"}',
             )
 
     def test_compiler_labeling_prompts_render_grounded_context(self) -> None:

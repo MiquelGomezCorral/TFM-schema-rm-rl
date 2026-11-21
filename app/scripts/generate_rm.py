@@ -38,6 +38,9 @@ from src.compiler import (
 )
 from src.config import Configuration
 from src.engines import (
+    STATE_FINAL,
+    STATE_IN_PROGRESS,
+    STATE_REJECTING,
     GenericEngine,
     ImmediateEngineError,
     ProposalSelection,
@@ -536,28 +539,42 @@ def tag_states(
         ImmediateEngineError: Every request of one batch failed.
     """
     facts = _tagger_facts(compiled)
-    nodes = tuple(state_identifiers(compiled).values())
+    roles = _state_roles(compiled)
+    nodes = tuple(roles)
     size = Configuration.TAGGING_BATCH_STATES
     descriptions: list[str] = []
     for start in range(0, len(nodes), size):
-        descriptions.extend(_tag_batch(engine, task, facts, nodes[start : start + size], warn))
+        batch = {node: roles[node] for node in nodes[start : start + size]}
+        descriptions.extend(_tag_batch(engine, task, facts, batch, warn))
     return tuple(descriptions)
+
+
+def _state_roles(compiled: CompilationResult) -> dict[str, str]:
+    """Each node's role, in node order, so the tagger reads it next to the node it describes."""
+    identifiers = state_identifiers(compiled)
+    machine = compiled.reward_machine
+    roles = dict.fromkeys(identifiers.values(), STATE_IN_PROGRESS)
+    for state in machine.rejecting_states:
+        roles[identifiers[state]] = STATE_REJECTING
+    if machine.final_state is not None:
+        roles[identifiers[machine.final_state]] = STATE_FINAL
+    return roles
 
 
 def _tag_batch(
     engine: GenericEngine,
     task: str,
     facts: dict[str, str],
-    nodes: tuple[str, ...],
+    roles: dict[str, str],
     warn: Callable[[str], None],
 ) -> tuple[str, ...]:
     """One tagging request for these states of the machine, asked again when it fails."""
     attempts = Configuration.TAGGING_ATTEMPTS
     last_error: Exception | None = None
-    machine = machine_view(facts["Reward Machine"], nodes)
+    machine = machine_view(facts["Reward Machine"], tuple(roles))
     for tagging_attempt in range(1, attempts + 1):
         try:
-            return engine.describe_states(task, facts["Clauses"], machine, nodes)
+            return engine.describe_states(task, facts["Clauses"], machine, roles)
         except (RetryableEngineError, ProposalValidationError) as error:
             last_error = error
             warn(f"state tagging request {tagging_attempt}/{attempts} failed: {error}")

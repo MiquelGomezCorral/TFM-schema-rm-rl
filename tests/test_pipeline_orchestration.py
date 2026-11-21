@@ -121,8 +121,9 @@ class Engine:
             raise value
         return value
 
-    def describe_states(self, task, clauses, candidate, nodes):
-        self.tag_nodes.append(tuple(nodes))
+    def describe_states(self, task, clauses, candidate, roles):
+        nodes = tuple(roles)
+        self.tag_nodes.append(nodes)
         value = self.tag_results.pop(0) if self.tag_results else None
         if isinstance(value, BaseException):
             raise value
@@ -315,7 +316,11 @@ class OrchestrationTests(unittest.TestCase):
             patch("src.engines.provider_engines.OpenAI") as openai,
         ):
             create = openai.return_value.chat.completions.create
-            create.side_effect = [[], streamed_reply(proposal), streamed_reply('["start", "done"]')]
+            create.side_effect = [
+                [],
+                streamed_reply(proposal),
+                streamed_reply('{"u0": "start", "u1": "done"}'),
+            ]
             self.engine = OpenCodeEngine(ENV, "model")
             self.assertTrue(self.execute(hooks=GenerationHooks(warning=warnings.append)))
 
@@ -331,7 +336,7 @@ class OrchestrationTests(unittest.TestCase):
         )
         empty = []
         for tagging, accepted in (
-            ([empty, streamed_reply('["start", "done"]')], True),
+            ([empty, streamed_reply('{"u0": "start", "u1": "done"}')], True),
             ([empty, empty, empty], False),
         ):
             self.critic = Engine()
@@ -873,19 +878,23 @@ class OrchestrationTests(unittest.TestCase):
         )
         compiled = CompilationResult(ENV, prop(), structure, text)
         engine = Mock()
-        engine.describe_states.side_effect = lambda task, clauses, machine, nodes: nodes
+        engine.describe_states.side_effect = lambda task, clauses, machine, roles: tuple(
+            f"description {node}" for node in roles
+        )
 
         with patch.object(Configuration, "MACHINE_PROMPT_MAX_CHARS", len(text) - 1):
             tag_states(engine, "finish", compiled, Mock())
 
         requests = [call.args for call in engine.describe_states.call_args_list]
-        self.assertEqual([len(nodes) for *_, nodes in requests], [20, 20, 5])
-        for _, _, machine, nodes in requests:
+        self.assertEqual([len(roles) for *_, roles in requests], [20, 20, 5])
+        for _, _, machine, roles in requests:
             lines = machine.split("STATE_LIST:\n")[1].splitlines()
-            self.assertEqual([line.split(":")[0] for line in lines], list(nodes))
+            self.assertEqual([line.split(":")[0] for line in lines], list(roles))
             self.assertNotIn("(u0, done)", machine)
         self.assertIn("u0: start", requests[0][2])
         self.assertIn("u44: final: every hard goal is reached", requests[2][2])
+        # Each batch names every state's role beside it.
+        self.assertEqual((requests[0][3]["u0"], requests[2][3]["u44"]), ("in progress", "final"))
 
     def test_embeddings_stage_is_single_text_cached_and_persisted(self):
         requests = []
