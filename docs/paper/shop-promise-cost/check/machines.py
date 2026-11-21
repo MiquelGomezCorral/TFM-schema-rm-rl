@@ -3,7 +3,8 @@
 Usage, from the repository root inside RM_RL_env:
     PYTHONPATH=app python -W ignore docs/paper/shop-promise-cost/check/machines.py
 
-Reads the bundle copies in `evidence/bundles/` (and the committed forcing/lanes-rules bundle), copies
+Reads the bundle copies in `evidence/bundles/` (`lanes-rules-stored` is the forcing/lanes-rules
+bundle as committed before the 2026-11-21 rebuild), copies
 each `reward_machine.txt` to `graphs/<name>.rm`, and prints the task, every clause with its LTLf, the
 recorded reward switches, the state and transition counts, the rewards on edges into the well and the
 machine's md5. Checks that the rebuilt round 7 machine is the one round 7 trained, and that the three
@@ -57,7 +58,7 @@ MACHINES = (
     ),
     (
         "lanes-rules",
-        Path("experiments/benchmark/forcing/bundles/farm/lanes-rules"),
+        BUNDLES / "lanes-rules-stored",
         "committed forcing/lanes-rules",
     ),
 )

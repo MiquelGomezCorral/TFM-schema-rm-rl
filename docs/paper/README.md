@@ -1069,7 +1069,7 @@ one passes 35 of them, leaves the 275 goal bundles unchanged, catches shop-serve
 3 seeds and finds a real defect in forcing/lanes-rules (a -1 well). The page shows every machine with task, LTLf,
 live RM graph and RM text.
 
-**Evidence.** Copies of the ten bundles the page uses and their four cards; plan pay of the round 6 and 7 and probe
+**Evidence.** Copies of the 11 bundles the page uses and their four cards; plan pay of the round 6 and 7 and probe
 bundles, and of the four levels built before (`78c666c`) and after the fix with the promise cost on and off; md5 of
 the chain, card and promise sweeps and of every level machine before and after; per seed of 30 training runs (round
 6 A to E, round 7 B4 and B8b, the probe, the regression and today's shop-serve) `judge.json`, `test.json`,

@@ -406,14 +406,14 @@ dotenv -f .env run --no-override -- env PYTHONPATH=app python experiments/benchm
     lanes-rules cx-goal-one-rule cx-goal-many-rules
 ```
 
-Runs `ablate-rm` on the card's FARM bundle (`complex/bundles/farm/<card>`, or `forcing/bundles/farm/lanes-rules`) for each reward switch in `OFF_PARTS` (`progress`,
+Runs `ablate-rm` on the card's right-answer bundle (`complex/bundles/farm/<card>`, or the reference `forcing/reference/lanes-rules`) for the `none` control (nothing off: the same machine the variants are built from) and each reward switch in `OFF_PARTS` (`progress`,
 `well`, `soft_break`, `soft_pending`, `end_judgment`, `recurrent_soft_penalty`) and writes
 `ablation/bundles/<card>/off-<switch>/`. Then it checks each one against its source and prints one
 line each: `labeling.py` byte-equal, loads and validates complete, not too simple, the text changed
 unless the manifest marks the switch a no-op, descriptions and embeddings remade only when the states
 or transitions changed (in practice `recurrent_soft_penalty`), and the manifest names the switch. Exit 1 if a build or a check failed. Only
 `recurrent_soft_penalty` calls a model (it writes the state descriptions again) and the embedding server; leave it out with
-`--variants progress well soft_break soft_pending end_judgment` to work with no provider. Retry: run
+`--variants none progress well soft_break soft_pending end_judgment` to work with no provider. Retry: run
 it again; an existing `off-<switch>` folder is kept, so delete the one to rebuild. `--check-only`
 checks without building.
 

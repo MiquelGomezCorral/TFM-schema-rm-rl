@@ -4,9 +4,11 @@ Usage (repository root, `RM_RL_env`):
     PYTHONPATH=app python experiments/benchmark/scripts/build_ablation.py CARD [CARD ...] \
         [--variants progress well ...] [--check-only] [--root experiments/benchmark]
 
-For each card and variant it runs `ablate-rm` on the card's FARM bundle (`<root>/<suite>/bundles/farm/<card>`,
-the suite that holds the card: complex, or forcing for `lanes-rules`) and writes
-`<root>/ablation/bundles/<card>/off-<variant>/`. Variants default to every switch in `OFF_PARTS`
+For each card and variant it runs `ablate-rm` on the card's right-answer bundle: the suite's
+`<root>/<suite>/reference/<card>` when it keeps one (forcing, for `lanes-rules`), else its
+FARM bundle `<root>/<suite>/bundles/farm/<card>` (complex). It writes
+`<root>/ablation/bundles/<card>/off-<variant>/`. Variants default to the `none` control (the source
+with nothing off, the run the others are compared with) and every switch in `OFF_PARTS`
 (`progress`, `well`, `soft_break`, `soft_pending`, `end_judgment`, `recurrent_soft_penalty`). An
 existing `off-<variant>` folder is kept, not rebuilt: delete it to rebuild it. Only
 `recurrent_soft_penalty` calls a model (it writes the state descriptions again) and needs the local
@@ -21,9 +23,10 @@ and embeddings were remade (only when the states changed), and the manifest name
 """
 
 import argparse
+from itertools import chain
 from pathlib import Path
 
-from scripts.ablate_rm import OFF_PARTS, ablate_rm, skeleton
+from scripts.ablate_rm import OFF_CHOICES, ablate_rm, skeleton
 from src.arm_fm import ArtifactBundle
 from src.benchmark.early_end import machine_too_simple
 from src.config import Configuration
@@ -87,7 +90,9 @@ def check(variant: str, bundle_dir: Path, source_dir: Path) -> tuple[dict, list[
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("cards", nargs="+", help="ablation card ids, e.g. lanes-rules")
-    parser.add_argument("--variants", nargs="+", choices=list(OFF_PARTS), default=list(OFF_PARTS))
+    parser.add_argument(
+        "--variants", nargs="+", choices=list(OFF_CHOICES), default=list(OFF_CHOICES)
+    )
     parser.add_argument("--check-only", action="store_true", help="do not build, only check")
     parser.add_argument(
         "--root",
@@ -99,9 +104,10 @@ def main() -> None:
 
     failures = 0
     for card in args.cards:
-        source = next(
-            args.root.glob(f"*/bundles/farm/{card}"), args.root / "complex/bundles/farm" / card
+        found = chain(
+            args.root.glob(f"*/reference/{card}"), args.root.glob(f"*/bundles/farm/{card}")
         )
+        source = next(found, args.root / "complex/bundles/farm" / card)
         destinations = {
             v: args.root / "ablation/bundles" / card / f"off-{v}" for v in args.variants
         }
