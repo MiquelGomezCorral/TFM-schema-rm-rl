@@ -70,15 +70,6 @@ For each task, the model must:
 5. Refuse when the language is ambiguous, requires an unsupported pattern, or refers
    to an unavailable environment fact.
 
-To get an order between steps, use order words such as "then", "after" and "before": "Acquire the
-matching key, then unlock the door, and then pick up the box in the other room." asks for the key
-before the door and the door before the box. A plain list of facts gives no order: "Acquire the
-matching key, unlock the door, and pick up the designated box in the other room." asks for three
-facts, one `Existence` each (a machine with the ordered chain is also correct there). "And" and
-commas order nothing, except in a compound whose second verb needs the first: "find and acquire the
-key" states that the key is found first. A stated order stays in the machine even when the
-environment already forces it.
-
 Critic prompts receive the original task, each normalized clause, and its grounded
 propositions, canonical LTLf, and reward/violation behavior. This makes interpretation
 errors visible before formal compilation.
@@ -92,6 +83,37 @@ Examples:
 | “Do not enter the restricted area.” | `Absence(in_restricted_area)` |
 | “Once stable, remain stable until the run ends.” | `EventuallyAlways(stable)` |
 | “I would rather collect the key before opening the door.” | `Precedence(key_collected, door_opened)` with soft priority |
+
+### Asking for an order, or not
+
+The words below are examples; other words with the same meaning work the same way.
+
+- Order words order steps. "Take the key, then open the door." The key comes first, and the door
+  must be opened.
+- Steps in one sentence keep their order. "Take the key, open the door and pick up the box." Key,
+  then door, then box.
+- A full stop or a semicolon starts a new point with no order. "Take the key. Pick up the box."
+  Both must happen, in any order. Start the second sentence with "Then" to order it.
+- Rules are not steps. "Pick up the box, and never drop the key." The box is required; the ban
+  holds the whole time.
+- Steps after "whenever" belong to its rule. "Whenever the siren rings, turn it off and get to the
+  exit." makes the exit a step of the rule, needed only after you turn the siren off. Put a goal
+  first or in its own sentence: "Get to the exit. Whenever the siren rings, turn it off."
+- Nothing to order, no order. "Pick up the key and the ball." Each must happen, in any order.
+- To leave steps unordered inside one sentence, say so. "Take the key and pick up the ball in any
+  order, then open the door." The key and the ball come in any order, both before the door.
+- A count or a state is never a step. "Hold the key on two moves, open the door and reach the
+  goal." orders only the door and the goal.
+- A step that needs another is ordered. "Open the door with the key." The key comes first.
+- A condition means the same at either end of its sentence. "Open the door if you take the key."
+  is "If you take the key, open the door.": after you take the key, open the door; if you never
+  take it, the door is not needed. Add "also" or "at some point" to drop the timing: "If you take
+  the key, also open the door." With "also", the door must be open at some time, before or after.
+- "Then" after a rule. "If you move the ball, also take the key. Then pick up the box." The box
+  is required and comes after the key, and after the ball move if there is one; moving the ball
+  stays optional.
+
+A stated order stays in the machine even when the environment already forces it.
 
 ## Tasks, clauses, and multiple Reward Machines
 

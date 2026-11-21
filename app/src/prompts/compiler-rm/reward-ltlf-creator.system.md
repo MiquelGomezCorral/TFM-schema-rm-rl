@@ -27,9 +27,8 @@ Build the clause set from the task's own words:
   only once. A pure restriction, such as "never do b before a", needs
   only the rule. Goals come from the task text alone: the environment's own objective
   (the level's own goal) is not a requirement the task did not state.
-- A stated order of commanded steps ("`a`, then `b`, then `c`", "first `a`, then `b`", "do `a` before
-  `b`", and the steps listed after a leading "then", "finally" or "after that": "then do `b` and
-  `c`" is `b` before `c`) is the `Existence` of the last step plus one `Precedence` per consecutive pair:
+- A stated order of commanded steps (any order the task states, read by the order rules under the
+  template table) is the `Existence` of the last step plus one `Precedence` per consecutive pair:
   `Existence(c)`, `Precedence(b, c)` and `Precedence(a, b)`. With `Existence(c)` hard, the
   chain forces `a` and `b`, so they get no `Existence`: one `Existence` per step drops the
   order the task states, and an `Existence` next to the chain only repeats it. When the last
@@ -47,7 +46,9 @@ Build the clause set from the task's own words:
   would never close.
 - Use `RespondedExistence`, `Response` and `ChainResponse` only for conditional wording,
   never for a plain sequence. Neither the condition nor the consequent of such wording gets
-  an `Existence` clause.
+  an `Existence` clause. A later sentence, or a part after a semicolon, that opens with an
+  order word such as Then, After that or Finally commands goals, not consequents: its steps
+  take the clauses of a stated order (the last order rule under the template table).
 - A ban with a condition ("while ... is still shut", "until ..."): first read the banned
   event's description in the environment. If it already holds a "while ... is still shut"
   condition (an event described as "dropped while the gate is shut"), write plain `Absence`

@@ -128,13 +128,27 @@ thing whichever arm produced it.
   (`ab27c07`) stopped `cx-rules-only`, `tpl-absence-1-nogoal`, `tpl-response-1-nogoal`,
   `tpl-responded-existence-1-nogoal`, `tpl-responded-existence-1-goal`, `tpl-existence-two-1-goal`
   and `tpl-responded-existence-1-nogoal-forced`, and started `tpl-responded-existence-2-nogoal` and
-  the new `tpl-existence-two-4-goal` and `tpl-responded-existence-4-goal`. Each card's `notes` and
-  its suite README give the reason.
+  the new `tpl-existence-two-4-goal` and `tpl-responded-existence-4-goal`. On 2026-11-21 (user)
+  `tpl-responded-existence-2-goal` started training. Each card's `notes` and its suite README give
+  the reason.
 - **Stated orders.** Since 2026-11-20 (user) every order the task states is required, even when the
   level already forces it: FARM's generator writes its `Precedence`, and FARM's critic rejects a set
   that leaves it out (prompts since `42003cf`). A card answer that drops a stated clause or order is
   no longer an `also_ok` answer (`ab27c07`). An order the task does not state is never added from
-  environment facts.
+  environment facts. What states an order (user, 2026-11-21; FARM's `declare-templates.md` holds
+  the rule text): order words; commanded actions with their own verbs in one sentence, joined by
+  commas or "and", in their written order, ending at a full stop, a semicolon or a new condition;
+  and a compound verb or tool phrase whose second step needs the first ("find and take", "open
+  with"). A new sentence is a separate point unless an order word ("Then") opens it. A rule (a
+  ban, a preferred order, a condition rule) is never a step of a chain, and several objects under
+  one verb, states, counts and items under "in any order" or "both" get no order. Every cue list
+  gives examples of a meaning, never a closed set. A condition means the same on either side of
+  its sentence: "`b` must happen if `a`" is `Response(a, b)`, and only a no-timing cue ("also", "at
+  some point", "before or after") makes it `RespondedExistence`. After "if / whenever `x`, (also)
+  `y`", a sentence opened by an order word makes its step `z` required: `Existence(z)`,
+  `Precedence(y, z)` and `Response(x, z)`, the last left out when `z`'s own sentence already puts
+  `x` first. Every wording of a card states the same task, and an `also_ok` answer is the same task as `expect` or
+  stronger only on behaviour the task never needs, never weaker (MONA-checked).
 - **Card scoring.** `rm-facts` scores FARM's stored clauses against the card: `exact` (the `expect`
   clauses, `forced` ones optional), `also_ok` (one listed alternative), `equivalent` or `mismatch`.
   Since 2026-11-21 (user) a clause list that states the same task as one of those answers counts as
@@ -192,7 +206,8 @@ thing whichever arm produced it.
   method freeze; each change and its date are recorded here (2026-11-16: one trigger followed by
   ordered steps becomes a chain of Responses; 2026-11-20: a stated order keeps its `Precedence`,
   see Stated orders; 2026-11-21: the state tagger reads each state's role beside it and answers
-  one text keyed by each state id, not a list in node order) (user, 2026-11-16).
+  one text keyed by each state id, not a list in node order; 2026-11-21: the order rules, see
+  Stated orders) (user, 2026-11-16).
 - **One-hot machine state.** `rm_state_encoding: one_hot` gives the learner the machine state as one
   slot per state instead of the text embedding. It is a diagnostic learner input, not an arm: its
   runs are labeled one-hot and never pooled with embedding runs (user, 2026-11-16).
@@ -498,3 +513,17 @@ and a restart is easier to trust.
   judge_vs_machine.py`); the old count disagreed on 150 Absence, 24 Precedence, 18 ChainResponse and 42
   NotCoExistence traces. Stored results keep the old count; only the soft-break-quality paper
   entry was recounted from its traces (counts up to 10% higher, ranking unchanged).
+- 2026-11-21: Order rule (user). It replaces the 2026-11-20 reading above: commanded steps in one
+  sentence, joined by commas or "and", now keep their written order; a full stop or a semicolon
+  starts an unordered point; a condition reads the same on either side; the "Then" reading of
+  `tpl-responded-existence-2-goal` holds for every "if / whenever ..., (also) ... Then ..." card; an
+  `also_ok` answer is never weaker than `expect`. Cards: `base-unlock-pickup` (pilot and smoke
+  copies) and `base-key-corridor` require their one-sentence orders; `tpl-existence-two-3-goal`
+  requires door before goal; `tpl-response-2/3-goal` and `tpl-responded-existence-1/3-goal` gain
+  the `Precedence` and `Response` of their "Then" step; `tpl-absence-1/2/3-goal` lose the weaker
+  `NotCoExistence` answer, and the tuning copies of `base-doorkey` and `base-unlock-pickup` their
+  Response chains, which do not keep the stated orders; `tpl-existence-2/3-goal`, `cx-siren`, `cx-box`, `cx-box-carry`,
+  `smoke-doorkey-response` and three other wordings were reworded so every wording states the card's
+  task; the third wording of `tpl-responded-existence-1-goal` was dropped;
+  `tpl-responded-existence-2-goal` trains. FARM's generator and critic prompts gained the order
+  rules.

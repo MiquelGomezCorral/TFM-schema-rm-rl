@@ -44,6 +44,12 @@ acquire the key", since taking the key needs finding it first, so `base-key-corr
 `Precedence(key_found, has_matching_key)` in both answers. Its S4R3 FARM bundle gives that answer and
 counts: FARM learned 2 of 3 seeds (judged success 0.85, 0.82, 0.00), no-RM none.
 
+Order rule (2026-11-21, user): commanded steps in one sentence, joined by commas or "and", keep their
+written order. `base-unlock-pickup` (and its pilot and smoke copies) and `base-key-corridor` now state
+key before door before box or object: `expect` gains those `Precedence` clauses at its end, the chain
+stays the `also_ok` answer, and the chain with every `Existence` left `also_ok`, since it is now
+`expect`. The S4R3 FARM bundle of `base-key-corridor` stores the chain, so it still counts.
+
 Layouts: training resets draw new procedural layouts (`layout: procedural`). Evaluation keeps the fixed
 seeds `eval_seed_base + i`, the same for every run and arm. `layout_seed: 1` stays on the card only for
 the scripted plans, the trace records and the card checks; the trainer ignores it.
