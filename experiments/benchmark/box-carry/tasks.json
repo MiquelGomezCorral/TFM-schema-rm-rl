@@ -228,6 +228,227 @@
       "notes": "World-setting copy of `tpl-chain-response-1-goal-carry` (user, 2026-11-22): same task, clauses and plans, only `fall_turn: half`. No paraphrases and no bundle of its own: `bundle_of` makes `run-suite` train it on that card's machine, and `generate-suite` skips it. The landing side is drawn as with `none`; a second draw, a fair coin, turns the agent either to face the box or to have it on its right, one turn short of the pickup. So the next move can pick the box up after about half the falls wherever the agent stands: over reset seeds 0 to 999, 51.6% for the solving policy (which waits in the start corner) and 52.7% for an agent that walks to the exit; every fall allowed it in 38% to 42% of the episodes. A rule tied to the landing side (front stays, right turns to face, left and behind keep the direction) gave 94% and 75% there, since walls send blocked sides to the front. It tests training when the world forces a missed next-move pickup after about half the falls, the fourth fall world beside `face`, `side` and `none`; such a break is the world's doing, not the machine's or the agent's. On the event seeds the world forces it twice: on seeds 1 and 2 the coin leaves the first fallen box on the agent's right, so the solving plan turns before the pickup and breaks the box rule (at steps 4 and 5); seed 3 passes. The plan that walks straight to the exit is left out of this copy, as on `tpl-chain-response-1-goal-carry-noturn`: the rules it breaks depend on the landing side."
     },
     {
+      "id": "tpl-chain-response-soft-1-goal-carry",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room-carry/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": false, "box": true, "carry": true, "require": ["holding_box"], "max_steps": 200},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Carry the box to the exit. Whenever the box falls, try to pick it up again on your very next move.",
+      "goal": true,
+      "template": "ChainResponse",
+      "status": "draft",
+      "expect": [
+        ["ChainResponse", ["box_fell", "holding_box"], "soft"],
+        ["Existence", ["at_exit"], "hard"],
+        ["Response", ["at_exit", "holding_box"], "hard"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0, 2],
+            "why": "Does not react to the fall and reaches the exit without the box.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [0, 2],
+            "why": "Waits until the box has fallen, then walks to the exit without picking it up.",
+            "steps": [{"do": "wait", "n": 10}, {"do": "goto", "obj": "exit"}]
+          },
+          {
+            "breaks": [0, 1],
+            "why": "Walks straight to the exit without reacting: the box falls on the way and blocks it, so the exit is never reached.",
+            "steps": [{"do": "goto", "obj": "exit"}]
+          },
+          {
+            "breaks": [0, 1],
+            "why": "Does nothing: the box falls and stays on the floor.",
+            "steps": [{"do": "wait", "n": 200}]
+          },
+          {
+            "breaks": [0],
+            "why": "Waits nine moves, so the box has fallen (step 8 at the latest) and the move after the fall has passed, then picks it up and goes on as the solving plan does: a late pickup, which breaks only the soft box rule.",
+            "steps": [{"do": "wait", "n": 9}, {"do": "policy", "name": "service_room", "ignore": []}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "Soft twin of `tpl-chain-response-1-goal-carry` (user, 2026-11-22): the same task with the next-move pickup worded as a preference (\"try to\", as on `tpl-chain-response-soft-1-goal`), so `ChainResponse(box_fell, holding_box)` is soft while reaching the exit and carrying the box there stay hard. A missed next-move pickup then costs pay instead of ending the episode, so training goes on after it and shows whether the agent still picks the box up and carries it out. Same world (`fall_turn: face`), plans and event seeds as the hard card; the late-pickup plan breaks only the soft rule. No paraphrases: one bundle per arm, which the three world copies reuse through `bundle_of`. No `also_ok`: `Response(box_fell, holding_box)` is weaker."
+    },
+    {
+      "id": "tpl-chain-response-soft-1-goal-carry-backturn",
+      "bundle_of": "tpl-chain-response-soft-1-goal-carry",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room-carry/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": false, "box": true, "carry": true, "require": ["holding_box"], "max_steps": 200, "fall_turn": "side"},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Carry the box to the exit. Whenever the box falls, try to pick it up again on your very next move.",
+      "goal": true,
+      "template": "ChainResponse",
+      "status": "draft",
+      "expect": [
+        ["ChainResponse", ["box_fell", "holding_box"], "soft"],
+        ["Existence", ["at_exit"], "hard"],
+        ["Response", ["at_exit", "holding_box"], "hard"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0, 2],
+            "why": "Does not react to the fall and reaches the exit without the box.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [0, 2],
+            "why": "Waits until the box has fallen, then walks to the exit without picking it up.",
+            "steps": [{"do": "wait", "n": 10}, {"do": "goto", "obj": "exit"}]
+          },
+          {
+            "breaks": [0, 1],
+            "why": "Walks straight to the exit without reacting: the box falls on the way and blocks it, so the exit is never reached.",
+            "steps": [{"do": "goto", "obj": "exit"}]
+          },
+          {
+            "breaks": [0, 1],
+            "why": "Does nothing: the box falls and stays on the floor.",
+            "steps": [{"do": "wait", "n": 200}]
+          },
+          {
+            "breaks": [0],
+            "why": "Waits nine moves, so the box has fallen (step 8 at the latest) and the move after the fall has passed, then picks it up and goes on as the solving plan does: a late pickup, which breaks only the soft box rule.",
+            "steps": [{"do": "wait", "n": 9}, {"do": "policy", "name": "service_room", "ignore": []}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "World-setting copy of `tpl-chain-response-soft-1-goal-carry` (user, 2026-11-22), the soft twin of `tpl-chain-response-1-goal-carry-backturn`: same task, clauses and plans, only `fall_turn: side`. No paraphrases and no bundle of its own: `bundle_of` makes `run-suite` train it on that card's machine, and `generate-suite` skips it. The world can force a missed next-move pickup (over reset seeds 0 to 999, the next move can pick the box up after 100% of the falls for the solving policy, which waits in the start corner, and 77% for an agent that walks to the exit); with the rule soft, the miss costs pay and the episode goes on. Every event seed passes."
+    },
+    {
+      "id": "tpl-chain-response-soft-1-goal-carry-noturn",
+      "bundle_of": "tpl-chain-response-soft-1-goal-carry",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room-carry/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": false, "box": true, "carry": true, "require": ["holding_box"], "max_steps": 200, "fall_turn": "none"},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Carry the box to the exit. Whenever the box falls, try to pick it up again on your very next move.",
+      "goal": true,
+      "template": "ChainResponse",
+      "status": "draft",
+      "expect": [
+        ["ChainResponse", ["box_fell", "holding_box"], "soft"],
+        ["Existence", ["at_exit"], "hard"],
+        ["Response", ["at_exit", "holding_box"], "hard"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0, 2],
+            "why": "Does not react to the fall and reaches the exit without the box.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [0, 2],
+            "why": "Waits until the box has fallen, then walks to the exit without picking it up.",
+            "steps": [{"do": "wait", "n": 10}, {"do": "goto", "obj": "exit"}]
+          },
+          {
+            "breaks": [0, 1],
+            "why": "Does nothing: the box falls and stays on the floor.",
+            "steps": [{"do": "wait", "n": 200}]
+          },
+          {
+            "breaks": [0],
+            "why": "Waits nine moves, so the box has fallen (step 8 at the latest) and the move after the fall has passed, then picks it up and goes on as the solving plan does: a late pickup, which breaks only the soft box rule.",
+            "steps": [{"do": "wait", "n": 9}, {"do": "policy", "name": "service_room", "ignore": []}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "World-setting copy of `tpl-chain-response-soft-1-goal-carry` (user, 2026-11-22), the soft twin of `tpl-chain-response-1-goal-carry-noturn`: same task, clauses and plans, only `fall_turn: none`. No paraphrases and no bundle of its own: `bundle_of` makes `run-suite` train it on that card's machine, and `generate-suite` skips it. The world forces a missed next-move pickup after some falls (over reset seeds 0 to 999, the next move can pick the box up after 71% of the falls for the solving policy, which waits in the start corner, and 41% for an agent that walks to the exit); with the rule soft, the miss costs pay and the episode goes on. On the event seeds the world forces it once: on seed 1 the first fall lands to the agent's right, so the solving plan turns before the pickup, breaks the soft box rule and still carries the box out. The plan that walks straight to the exit is left out, as on the hard copy: the rules it breaks depend on the landing side."
+    },
+    {
+      "id": "tpl-chain-response-soft-1-goal-carry-half",
+      "bundle_of": "tpl-chain-response-soft-1-goal-carry",
+      "env": {
+        "description": "experiments/benchmark/envs/service-room-carry/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-ServiceRoom-v0",
+        "env_kwargs": {"siren": false, "box": true, "carry": true, "require": ["holding_box"], "max_steps": 200, "fall_turn": "half"},
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Carry the box to the exit. Whenever the box falls, try to pick it up again on your very next move.",
+      "goal": true,
+      "template": "ChainResponse",
+      "status": "draft",
+      "expect": [
+        ["ChainResponse", ["box_fell", "holding_box"], "soft"],
+        ["Existence", ["at_exit"], "hard"],
+        ["Response", ["at_exit", "holding_box"], "hard"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [{"do": "policy", "name": "service_room", "ignore": []}],
+        "wrong": [
+          {
+            "breaks": [0, 2],
+            "why": "Does not react to the fall and reaches the exit without the box.",
+            "steps": [{"do": "policy", "name": "service_room", "ignore": ["box_fall"]}]
+          },
+          {
+            "breaks": [0, 2],
+            "why": "Waits until the box has fallen, then walks to the exit without picking it up.",
+            "steps": [{"do": "wait", "n": 10}, {"do": "goto", "obj": "exit"}]
+          },
+          {
+            "breaks": [0, 1],
+            "why": "Does nothing: the box falls and stays on the floor.",
+            "steps": [{"do": "wait", "n": 200}]
+          },
+          {
+            "breaks": [0],
+            "why": "Waits nine moves, so the box has fallen (step 8 at the latest) and the move after the fall has passed, then picks it up and goes on as the solving plan does: a late pickup, which breaks only the soft box rule.",
+            "steps": [{"do": "wait", "n": 9}, {"do": "policy", "name": "service_room", "ignore": []}]
+          }
+        ]
+      },
+      "event_seeds": [1, 2, 3],
+      "paraphrases": [],
+      "notes": "World-setting copy of `tpl-chain-response-soft-1-goal-carry` (user, 2026-11-22), the soft twin of `tpl-chain-response-1-goal-carry-half`: same task, clauses and plans, only `fall_turn: half`. No paraphrases and no bundle of its own: `bundle_of` makes `run-suite` train it on that card's machine, and `generate-suite` skips it. A fair coin turns the agent to face the fallen box or one turn short of it, so the next move can pick the box up after about half the falls (over reset seeds 0 to 999, 52% for the solving policy and 53% for an agent that walks to the exit); with the rule soft, the miss costs pay and the episode goes on. On the event seeds the world forces it twice: on seeds 1 and 2 the solving plan turns before the pickup, breaks the soft box rule (at steps 4 and 5) and still carries the box out; seed 3 passes. The plan that walks straight to the exit is left out, as on the hard copy: the rules it breaks depend on the landing side."
+    },
+    {
       "id": "tpl-chain-response-1-nogoal-carry",
       "env": {
         "description": "experiments/benchmark/envs/service-room-carry/environment.md",
