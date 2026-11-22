@@ -14,6 +14,7 @@ PromptAgent = Literal[
     "creator",
     "critic",
     "rm_tagger",
+    "rm_tagger_critic_info",
     "labeling_generator",
     "labeling_reviewer",
     "rm_generator",
@@ -36,6 +37,8 @@ PROMPTS = {
             "creator": "reward-ltlf-creator",
             "critic": "reward-machine-critic",
             "rm_tagger": "reward-machine-tagger",
+            # User prompt only: the sections ``Configuration.tagger_critic_info`` appends.
+            "rm_tagger_critic_info": "reward-machine-tagger-critic-info",
             "labeling_generator": "labeling-generator",
             "labeling_reviewer": "labeling-reviewer",
         },

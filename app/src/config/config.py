@@ -275,6 +275,9 @@ class Configuration:
     attempts: int = 3
     labeling: bool = False
     state_descriptions: bool = True
+    # Off by default: on, the state tagger also reads what the critic reads beside the tagger's own
+    # inputs (the clause template guide, the compiler clues and the compiler warnings).
+    tagger_critic_info: bool = False
     embeddings: bool = False
     # None means the local llama-server on LLAMA_SERVER_PORT; see llama_server_command.
     embedding_endpoint: str | None = None
