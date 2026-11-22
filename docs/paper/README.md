@@ -4,6 +4,27 @@ Results worth citing in the paper: pages with visual proof, the data behind them
 scripts that reproduce them. Each entry is one folder that opens on its own from disk, with a
 note below.
 
+## Objectives
+
+The entries below serve two objectives of the paper (Miquel, 2026-11-22).
+
+1. **Reward Machines without human intervention.** A user states a task in plain language and gets a well-shaped,
+   ready-to-train Reward Machine, with no human repair and no technical knowledge of temporal logic or Reward
+   Machines (knowing the task and the world is enough). The machines should be better than ARM-FM's.
+   - Status after the final run: see "Wrong clauses at max" below. No machine, card, labeling or retry was edited by
+     hand during generation. Of 266 FARM machines, 265 encode the task or a fair reading of it, and the one over-broad
+     rule (`shop-boil~p2`) was held by the pipeline's own plan check. Two state descriptions name a goal their task
+     lacks (text for the embeddings; the machines are right). Not yet without help: the pipeline's checks held 39
+     right machines until a human ruled on two checks that are too strict.
+2. **Getting the agent to learn the hardest machine.** A good Reward Machine alone may not be enough for the agent
+   to learn a complex task; other techniques such as curriculum learning may be needed. KeyCorridorS6R3 already shows
+   it: no method learned the Response goal card there (0 of 71 runs on that level), so the card moved to UnlockPickup
+   (see "Response goal card on UnlockPickup" below). The plan for the shop's most
+   complex machine: train one agent on each sub-task alone (the siren; serving clients; picking up fallen food; the
+   boiling pot with food in hand), always with the same full machine and a world where only that sub-task happens;
+   then a round where each episode picks one sub-task setup at random; then the full shop. Planned after the final
+   run.
+
 ## How entries get here
 
 - When work produces something worth citing (a before/after page, a measured result, a figure,
@@ -1187,3 +1208,307 @@ lists every command.
 and the prompt `app/src/prompts/compiler-rm/reward-machine-tagger.system.md`, with `tests/test_engines.py`,
 `tests/test_pipeline_orchestration.py` and `tests/test_prompts.py`. Records: `docs/decisions/arm-fm/
 task-and-rm-identity.md` (reply shape) and `docs/decisions/benchmark/thesis-benchmark.md` (pre-freeze prompt log).
+
+### Thinking levels on the frozen code (`level-benchmark-freeze/`), 2026-11-22
+
+**What it shows.** How often FARM generation ends with the right Reward Machine at each thinking level, on the code
+freeze `809dfe3`, with the production pair (generator deepseek-v4.1-flash, critic glm-5.3-flash, over OpenCode): 46
+task cases of the generator loop, 3 runs each, at none, low, medium, high and max, 690 runs on 2026-11-22 between
+08:49 and 10:06. Right: 105 of 138 at none (76%), 134 at low (97%), 136 at medium (99%), 138 at high and 138 at max
+(100%). The median run took 4 s, 12 s, 18 s, 20 s and 88 s; 1,473 model calls in all. With any thinking the
+generator's first answer was right in all 552 runs: the 6 wrong runs at low and medium each started right, the critic
+rejected the right answer, and it accepted a wrong second one (4 of the 6 are G9, where the card reads "Then" as an
+order from holding the key to the goal and the critic does not; one is G4, which the critic made order the key count
+before the door against the 2026-11-21 ruling). At none 31 runs are wrong and 2 are form A; the page groups them by
+mistake (a soft ban read as an order, 10; a stated order dropped, 12; an unstated order added, 5; an order on the
+wrong step, 2; "never both" read as a plain ban, 1; an extra shop step, 1). The page shows, for every case, the task,
+the card answer and the right count per level, one live RM graph per case with its task, LTLf and RM text, every wrong
+run at low and medium with the critic's reply, and one full example per mistake group at none.
+
+**Evidence.** The 690 run records (`records/<level>/<case>-r<k>.json`: task, models, every candidate and critic
+reply, final clauses, machine text, time and call count) and the five rate-limited records kept as `*.json.429`.
+`check/arm_stats.py` on `records/` prints `stats.md`'s table again (runs, right, form A, wrong, first right, catch@1,
+false alarm, rounds and time match; its call-log columns print 0, since no call log is copied). `check/build_page.py`
+scores every run with the same scorer, checks that the records' call counts equal the call logs' (1,473), compiles
+every shown machine again from its run's clauses with the frozen compiler and stops if one differs from the record's
+`machine` text, and checks that the mistake groups cover every run not right at none. Limits: one model pair and one
+provider, 3 runs per case and level; the 46 cases are picked around past mistakes, not sampled; times come from 8
+runs at once beside 12 to 23 RL trainings; the mistake groups are this entry's reading. The 46 cases are the `CASES` list in
+`check/level-bench.sh`.
+
+**Incidents.** Rate limit: at none 5 runs (G6-r3, G7-r1, G7-r2, G7-r3, G8-r1) stopped on HTTP 429 after 10 reruns;
+their records were renamed `*.json.429`, kept, and the 5 runs were run again and accepted. Guard bug: the low round's
+budget guard outlived its round and stopped medium after 14 runs (`evidence/STOP.guard-bug-0900`); the driver now
+stops each level's guard, and medium resumed, skipping finished runs.
+
+**Files.** `index.html` (built from `data.json`; open it from disk), `records/`, `graphs/` (every machine on the page
+as live HTML, SVG and RM text; the 1,122-transition shop machine `w4a-none-r3` only as RM text), `stats.md` (the
+scorer's output on the full run folders, call logs included), `check/` (the scorer `arm_stats.py`, `chain_score.py`, `loopcrit.py` and `cases.py`, lint-clean copies of the plan
+folder's with the same logic; the page builder `build_page.py` with its prose in `page_text.json`; the run drivers
+`level-bench.sh` and `run_arms.sh`), `evidence/` (`cards/`, the cards the scorer reads: main `e6c3acb` plus the
+loop's local soft cards for S1 to S4; `round-logs/`, one per level with the account usage lines removed;
+`level-bench.log`; `STOP.guard-bug-0900`). Not copied: the call logs (`*.calls.jsonl`), the work folders and the
+Python tools the drivers call (`run_arms.py`, `gen_one.py`, `budget.py`, `budget_guard.sh`), which call the models and
+use path tricks the repository's hooks reject; they stay in the plan folder `farm-final-20261119/until-fix/tools/`.
+
+**Rerun** (no model call, from the repository root in `RM_RL_env`, MONA on PATH): `env -C
+docs/paper/level-benchmark-freeze/check CC_ROOT=$PWD PYTHONPATH=$PWD/app python -W ignore arm_stats.py
+none=../records/none low=../records/low medium=../records/medium high=../records/high max=../records/max
+--letters` prints the table and one letter per run; the same with `build_page.py` writes `graphs/` and `data.json`,
+and the artifacts skill's `fill.py` renders `index.html`. The run itself (model calls, credentials from `.env`), from
+the plan folder `farm-final-20261119/`: `bash freeze-prep/tools/level-bench.sh 8`, which runs each level as `bash
+until-fix/tools/run_arms.sh freeze-<level> <the 46 cases> A 3 8 <level>` (arm A, 3 runs per case, 8 at once) and keeps
+finished runs.
+
+**Code.** The code freeze `809dfe3` (merge "minimization on by default", feature commit `a849dfb`). The runs read main
+at `e6c3acb`, which adds only bundle data: no file under `app/` and no card file differs from the freeze.
+
+### Wrong clauses at max: every one reads two ways (`wrong-clauses-at-max/`), 2026-11-22
+
+**What it shows.** The final-run FARM bundles (266, generator deepseek-v4.1-flash and critic glm-5.3-flash at max
+thinking, code freeze `809dfe3`) whose stored clauses differed from their card's answer on the model's side: 8. Each
+came from a sentence a person could also read the model's way: an extra soft "at some point" beside a soft order (4),
+"not both" read as "neither" or as a plain ban (2), and an extra hard rule from the wording (2). Miquel accepted 7
+readings and added them to the cards' `also_ok`; `shop-boil~p2` stays held (below). The page shows each bundle's task,
+one row per clause (card answer, model answer, which side differs), the machine the model's clauses compile to as a
+live graph with its RM text, and the verdict.
+
+**Evaluation methodology.** A rule set that differs from the card's answer still counts as right when it is a fair
+reading of the sentence and its machine still trains the task in the card's world. The model gets the environment
+description, so world knowledge in its choice is fine (rule in `docs/decisions/benchmark/thesis-benchmark.md`, card
+scoring, 2026-11-22). Example: on `tpl-precedence-soft-1-goal` the extra soft `Existence(blocker_moved)` pays +1 for
+moving the ball, which every way to the box needs; the right order still beats taking the key first by 1, as in the
+card's own machine (12 vs 11, against 11 vs 10).
+
+**The writing lesson.** With thinking on, the generator's remaining mistakes are readings, not errors: how a task is
+worded decides which machine comes out. The task-language guide now lists these readings and how to write each one
+(`docs/LTLF_TASK_LANGUAGE.md`, "Wordings that read two ways"), next to the rules for commas, full stops and "then".
+
+**Held: `shop-boil~p2`.** "Each time the pot boils over, put your load down beside the stove, turn the stove down and
+pick the load back up" gave an extra hard `Response(stove_fixed, holding_food)`. The reading is fair, but the rule
+holds after every stove fix, even with empty hands, and the plan check measures the cost: the plan that ignores the
+siren pays no less than the solving plan (seed 1: -1.0 both; seed 3: discounted -2.25 against -2.40;
+`evidence/shop-boil_p2.plan_check.json`). When the agent carries food for an order, the card's own rules already make
+it pick the food back up (the food still has to be prepared or served), so the extra rule only bites with empty
+hands. The step the task states has no exact fact in the shop world: there is no "put the food down" event, only
+`holding_food`. With one, `Response(food_set_down, holding_food)` would say it exactly; without it the model chose a
+broader rule where the card leaves the step to the order rules. One more paraphrase, `tpl-not-co-existence-1-goal~p2`
+("You must not drop the key while the door is still closed and open the door in the same run"), read "and open the
+door" as its own order (`Existence(door_open)` beside the `Absence`); the "not" may or may not cover it, so it was
+accepted too.
+
+**Evidence.** `evidence/clause-status-after-rulings.json`: `rm-facts` on the stored bundles with the updated cards.
+Templates: 159 exact, 8 `also_ok`, 4 equivalent, 1 mismatch (`tpl-not-co-existence-1-goal~p2`, accepted afterwards);
+shop: 23 exact, 1 mismatch (`shop-boil~p2`, held). `evidence/wrong-bundles.json`: the 8 bundles' tasks, card clauses and model clauses with
+their LTLf.
+
+**Files.** `index.html` (built from `data.json`; open it from disk), `graphs/` (7 machines as live HTML and SVG;
+`shop-boil~p2`'s 7.2 MB machine is too big to draw), `evidence/`.
+
+**Rerun** (no model call, from the repository root in `RM_RL_env`, MONA on PATH): `PYTHONPATH=app python -W ignore
+app/main.py rm-facts --bundles experiments/benchmark/<suite>/bundles --tasks experiments/benchmark/<suite>/tasks.json
+--output <file>.json` for `templates` and `shop`; the artifacts skill's `fill.py` renders `index.html` from
+`data.json`.
+
+**Code.** Bundles from main `e6c3acb` (freeze `809dfe3`); cards as edited on 2026-11-22 (the `also_ok` answers
+above).
+
+### Plan-check validation: right machines pass, 6 wrong ones slip through (`plan-check-validation/`), 2026-11-22
+
+**What it shows.** Whether the plan check (`app/src/benchmark/plan_check.py`) passes right machines and fails wrong
+ones, tested on 62 machines whose rightness comes from other sources: 16 right final-run FARM bundles, 15 wrong FARM
+bundles from before the freeze, 16 ARM-FM bundles, and 15 mutants (a right bundle with one planted defect in its
+machine or its labeling). With the soft-break fix (main `029d82c`) every right machine passes (26 of 26) and 29 of 35
+wrong ones fail; 1 is not counted. Before the fix (`e6c3acb`) 4 right machines failed, each a soft rule priced by
+paying less than the solve, which ruling D1 (2026-11-22) accepts; the fix flips exactly those 4 and no other verdict.
+The 6 false passes are the check's blind spots: a soft break on every step that costs more than one hard break (2), an
+added goal the solve reaches anyway (1), a no-goal ARM-FM machine that ends the shift early (1), a well edge that pays
+more than the solve on a machine with a final state (1), and a fact that fires late but in the right order (1). The
+page shows the counts, one task with a machine from each set, every false verdict and the right verdicts whose reason
+is loose, each with its NL task, LTL (ARM-FM bundles store none), live graph and RM text, and the method.
+
+**Evaluation methodology.** Truth never comes from the plan check: the clause scorer (`rm-facts`, against the card's
+answer and `also_ok`), the labeling replay (`repair-labeling --check-only` on the suite's reference traces; the shop's
+freeze gate record), training results, the 2026-11-22 rulings D1-D3, and for mutants the planted defect. Two sources are
+supplementary and marked on the page: `check-pay-order` (it decides the two pricing blind spots) and a hand read of the
+ARM-FM machines, which store no clauses (the only source for ARM-FM `shop-serve` and `shop-siren`).
+`tpl-responded-existence-1-goal~prefreeze` stays out of the counts: it misses a `Response` its hard goal makes
+redundant. A fail can be trusted here; a pass alone cannot (6 of 32 counted passes are wrong), and 4 of the 6 are
+flagged by another tool in the study (pay order, scorer, labeling replay).
+
+**Evidence.** `evidence/records/phase1/` and `phase2/`: the 62 plan-check records per code version;
+`evidence/phase2-changes.json`: the 4 verdicts the fix changed; `evidence/truth.json` and `truth-raw/`: the truth and
+the scorer and pay-order outputs behind it. A rerun from the packed copies with the `029d82c` code gave the same verdict
+and problem list for all 62.
+
+**Files.** `index.html` (built from `data.json`; open it from disk), `graphs/` (19 machines as `.rm`, SVG and live
+HTML), `evidence/` (`copies.tar.gz`, the 62 bundle copies, packed so the hooks leave their `labeling.py` byte-exact;
+records, truth, joined results), `check/` (`spec.json` and `build.py` made the copies; `run_checks.py`,
+`snapshot_records.py`, `compare.py`, `collect.py`, `clause_diff.py`, `pay_order.py`, `export_code.py`;
+`build_page.py`).
+
+**Rerun** (no model call, from the repository root in `RM_RL_env`, MONA on PATH; `W` a scratch folder):
+`cp -r docs/paper/plan-check-validation/evidence W`, `tar -xzf W/copies.tar.gz -C W`, `python
+docs/paper/plan-check-validation/check/export_code.py 029d82c W/code`, `python
+docs/paper/plan-check-validation/check/run_checks.py W W/code/app W/logs`, `snapshot_records.py W W/records/again`,
+then `compare.py W/records/phase2 W/records/again W/changes.json` (expect 0 of 62 changed) and `collect.py W phase2`
+for the table. The page: `PYTHONPATH=app python docs/paper/plan-check-validation/check/build_page.py`, then the
+artifacts skill's `fill.py`.
+
+**Code.** Final-run bundles generated on the freeze `809dfe3` (stored at main `e6c3acb`); pre-freeze bundles from the
+`809dfe3` tree and the archives named in `check/spec.json`. Plan check of `e6c3acb` (before) and of `029d82c`, the
+merge of the soft-break fix `57a91cb` and the no-goal trace fix `957ccf2`; cards of `029d82c` for both runs.
+
+### Shop machines pay nothing per order (`shop-net-zero-pay/`), 2026-11-22
+
+**What it shows.** A FARM shop machine charges 3 when a client arrives and pays 1 back each for taking the order,
+cooking and serving, so a served order nets about 0 and the return mostly counts what is still open when the shift
+ends. A served order nets exactly 0 on 3 of the 10 machines; on the other 7 it pays +1 or -1 on 2.2% to 7.1% of orders
+(siren pay falling between serves), a mean of -0.003 to -0.010 (review R3, 2026-11-22).
+On `shop-serve` all 724 orders the scripted worker served on the judge's 100 test seeds netted exactly 0: solve 0, take
+one order and stop -2, serve one order and stop -3, idle -3. The solve still ranks first on every machine, but only by
+0.47 to 1.85 per episode discounted, and serving more does not raise it. This is the pricing rule, not a bug and not the
+model: all 10 clause sets equal the card's answer, and the end charge for an order left open is off by default since
+`deff802`. It is also not why the agents serve nothing: 0 of 51 trained shop runs served an order in their 100 test
+episodes (0%, 95% Wilson CI [0%, 7.0%]), FARM and no-RM with the world's +1 per serve included. On the six counted
+cards serving needs cooking, and no arm gets that far. Replayed with the promise cost on, the solve wins by 19.68 to
+43.79 plain. The page shows the plan returns, the judge table, the ladder check, and the ten machines with task, LTLf
+and RM text (a live graph for the six small enough to draw).
+
+**Evidence.** `evidence/shop-pricing/<bundle>.json` and `table.md`: four scripted plans per bundle on the judge seeds
+2000000-2000099, replayed through the stored FARM bundle (plain and discounted at 0.995, cut at the well as in the runs)
+and through a copy rebuilt with `rebuild-rewards --promise-cost`. `evidence/pricing-check.json`: the four ladder rungs
+and `shop-serve` on reset seeds 1-20. `evidence/judge/`: the 51 judge files. `evidence/plan_vs_agent.json`: the earlier
+solve returns the replay must match (it does, on every seed of the six counted cards). `evidence/shop-pricing.md`: the
+source note.
+
+**Gaps.** `shop-boil` at main `881b22d` holds a failed generation; the replayed bundle is the uncommitted worktree one,
+marked `reconstructed`, so no hash proves its labeling is the one the runs used. The end-judgment option and the
+paraphrase bundles were not replayed.
+
+**Files.** `index.html` (built from `data.json`; open it from disk), `graphs/` (6 machines as `.rm`, SVG and live HTML;
+the other 4 are too big to draw), `evidence/`, `check/` (`shop_pricing.py`, `pricing_check.py`, `build_page.py`).
+
+**Rerun** (no model call, no training, from the repository root in `RM_RL_env`): `PYTHONPATH=app python -P -W ignore
+docs/paper/shop-net-zero-pay/check/shop_pricing.py table` rebuilds the table from the copies; `shop_pricing.py play
+<bundle>` replays one bundle (about 5 minutes; the `rebuild-rewards --promise-cost` line before it is on the page);
+`PYTHONPATH=app python -W ignore docs/paper/shop-net-zero-pay/check/pricing_check.py --out <json> --seeds 20
+CARD@BUNDLE ...` is the ladder check. The page: `PYTHONPATH=app python -W ignore
+docs/paper/shop-net-zero-pay/check/build_page.py`, then the artifacts skill's `fill.py`.
+
+**Code.** Replays and checks on main `881b22d` with the FARM bundles stored there; the end charge has been off by
+default since `deff802` (2026-11-18).
+
+### ARM-FM shop machines end before the agent moves (`armfm-shop-start-final/`), 2026-11-22
+
+**What it shows.** Asked for reward machines for the shop's never-ending tasks, the ARM-FM generator made the start
+state final in 21 of 22 gated machines (95% Wilson CI [78%, 99%]), and 0 of 22 pass the gate. Our ARM-FM prompt asks
+the model to declare every accepting state in `FINAL_STATES`; for "whenever the siren rings, turn it off" the state
+where nothing is owed accepts, and that is the start. The runtime ends an episode at a final state, so each episode
+ends before the first action and nothing trains: none of the 11 counted ARM-FM shop cards gets a run, and all count as
+not learned. `shop-boil` (main) finished at 21:21, after the gate and after this entry was built; its machine also
+starts final (root check: INITIAL_STATE u0 = FINAL_STATES u0), so 23 of all 24 ARM-FM shop machines start final; it is
+not in the packed 23. Apart from that, all 8 siren and pot machines are
+right Response machines. The one exception, `shop-boil~p3`, steps to its final state on any served order, so wrong
+plans also end at their first serve; it passes the pay order check and fails the plan check. The page shows the siren,
+pot and serve machines and `shop-boil~p3` with task, the card's LTLf (ARM-FM bundles store none), live graph and RM
+text, and a table of all 23 finished bundles.
+
+**Evidence.** `evidence/bundles-freeze.tar.gz`: the 23 finished ARM-FM shop bundles from
+`experiments/benchmark/shop/bundles-freeze/arm-fm` with their status and plan-check files, packed so the hooks leave
+their `labeling.py` byte-exact. `evidence/gate/`: the gate records of the 22 gated bundles (precheck, gate verdict,
+summaries) and the gate's `summary.py`, kept as written; it predates `shop-boil~p2`, which finished after the gate, and
+stops there. `evidence/armfm-shop-gate.md`: the gate's source note.
+
+**Files.** `index.html` (built from `data.json`; open it from disk), `graphs/` (4 machines as `.rm`, SVG and live
+HTML), `evidence/`, `check/build_page.py`.
+
+**Rerun** (no model call, from the repository root in `RM_RL_env`, MONA on PATH; `W` a scratch folder): `PYTHONPATH=app
+python -W ignore docs/paper/armfm-shop-start-final/check/build_page.py` reads the pack and the gate records, then the
+artifacts skill's `fill.py`. The plan check again: `tar -xzf
+docs/paper/armfm-shop-start-final/evidence/bundles-freeze.tar.gz -C W`, then `PYTHONPATH=app python -W ignore
+app/main.py check-plans --tasks experiments/benchmark/shop/tasks.json --bundles W/bundles-freeze` (it needs the
+`<bundles>/arm-fm/<card>` layout and writes `W/bundles-freeze/arm-fm/<name>.plan_check.json`).
+
+**Code.** Bundles generated after the freeze `809dfe3`, on main commits `029d82c` to `881b22d` (main moved while the
+background generation ran; in `app/` only the half fall world `e37dff9` and the tagger default `f634e0f` changed, and
+neither touches the generator). Page built on main `881b22d`.
+
+### Two right answers: the wording picks, not chance (`clause-choice/`), 2026-11-22
+
+**What it shows.** Some cards accept more than one rule set (`expect` and `also_ok`); this entry asks which one the
+generator writes. It is not random: runs of one wording give one answer (51 of 52 three-run groups agree, where a
+uniform pick among the listed answers would make 27% agree). The card's `expect` gets no extra pull: it wins 84 of 153
+right level runs, 55% [47%, 63%], against 50% for a uniform pick. Ordered tasks get the form the generator prompt
+teaches, the last step's `Existence` plus the `Precedence`s: 12 of 12 final-run bundles and 119 of 119 level runs from
+low to max, whichever side the card lists it on. Rewording moves the pick and thinking does not: on each of the 5
+wording cards with four wordings, one or more wordings took the other answer (8 of 24 bundles), while low, medium, high
+and max pick the same on every right run. The page shows the shares as bars with 95% Wilson intervals, the ordered and
+wording tables, and each chosen answer's machine with its task, LTLf, live graph and RM text.
+
+**Evaluation methodology.** Two sets, never mixed: the final-run FARM bundles (36 bundles of 15 card entries that list
+more than one answer; freeze `809dfe3`, max thinking, generator deepseek-v4.1-flash, critic glm-5.3-flash) and the
+thinking-level benchmark at the freeze (`level-benchmark-freeze/`: 11 of its 46 cases, 3 runs at each of 5 levels, 165
+runs). The repo scorer `clause_status` decides right or wrong; the script only names which listed answer it matched:
+`expect`, then each `also_ok`, then the MONA same-task check. All 189 right answers matched exactly. The prompt's form
+is a hand reading of the generator prompt's order rules (`PROMPT_FORM` in `check/clause_choice.py`).
+
+**Gaps.** Six `also_ok` answers came from these same bundles: the readings accepted on 2026-11-22
+(`wrong-clauses-at-max/`) added them to six cards, which entered this set because a wording disagreed. So the final run
+overstates how often wordings split: its `expect` share is 24/36 with those answers and 11/15 without. Each reworded
+bundle ran once, so whether a wording repeats its pick is untested; three reruns of the 8 wordings at max (24 model
+calls) would settle it.
+
+**Evidence.** `evidence/choices.json`: the 201 generations (36 final-run, 165 level runs) with card, task, clauses and
+the answer matched; `evidence/tables.md`; `evidence/rm/`: the 25 chosen answers' machines; `evidence/clause-choice.md`:
+the source note.
+
+**Files.** `index.html` (built from `data.json`; open it from disk), `plots/choice-shares.svg` and
+`choice-shares-dark.svg`, `graphs/` (25 machines as SVG and live HTML), `evidence/`, `check/` (`clause_choice.py`,
+`build_page.py`).
+
+**Rerun** (no model call, from the repository root in `RM_RL_env`, MONA on PATH): `PYTHONPATH=app python -W ignore
+docs/paper/clause-choice/check/clause_choice.py` rewrites `evidence/` from the stored bundles and
+`docs/paper/level-benchmark-freeze/`; `PYTHONPATH=app python -W ignore docs/paper/clause-choice/check/build_page.py`
+writes `data.json` and the plot, then the artifacts skill's `fill.py`.
+
+**Code.** Final-run bundles generated on the freeze `809dfe3`; level runs with the cards of main `e6c3acb` (the
+snapshot in `level-benchmark-freeze/evidence/cards`); final-run scoring with the cards and scorer of main `881b22d`.
+
+### How often the next move can pick up a fallen box (`fall-rate/`), 2026-11-22
+
+**What it shows.** The box-carry rule "whenever the box falls, pick it up on your very next move" can only be met when
+the box lands right in front of the agent, and each fall world decides that differently. Two scripted agents, the
+solving plan and a walker, on reset seeds 0-999: face 100% for both; side 100% and 77.4% [75.1%, 79.5%]; none 71.1%
+[68.8%, 73.4%] and 41.1% [38.5%, 43.7%]; half, added on 2026-11-22, 51.6% [49.1%, 54.2%] and 52.7% [50.0%, 55.3%], the
+only world near one in two for both. The intended 25% and 75% of none and side hold only on open floor: in the start
+corner, walls send three landings in four to the front. The rule first asked for (turn only for a box at the right) was
+rejected at 93.9% and 75.4%. In the earlier training series (3 seeds), every arm solved face on 3 of 3 seeds; FARM
+solved side 3 of 3 and none 0 of 3, where its agent drops the box after the first fall and walks out for the safe +1.
+The page shows the rates as bars with 95% Wilson intervals (z = 1.96, as in the source), the full table, the task with
+its LTLf, the FARM and ARM-FM machines as live graphs with RM text, and the runs.
+
+**Evidence.** `evidence/table.md`, `falls.json`, `digests.json`: the rates, every fall (step, agent cell, direction,
+what lies in front) and one digest per episode. `evidence/before-029d82c/`: the same three files on the code before the
+half rule. `evidence/judge/`: the 15 judge files of the earlier series. `evidence/fall-half.md`: the source note. Rerun
+on main `881b22d`: the same table byte for byte and the same digest on all 13,200 episodes; against `029d82c`, 0 of
+11,000 shared episodes changed; half has the draws, first landing cell and step of none and side on 1000 of 1000
+seeds.
+
+**Gaps.** The rates come from scripted agents; a trained agent can stand elsewhere and see other rates on none and
+side. The half-world trainings and the ARM-FM and no-RM runs on side and none finished on 2026-11-22 after these
+sources and are not here; the Test 2 count owns them.
+
+**Files.** `index.html` (built from `data.json`; open it from disk), `plots/pickable-falls.svg` and
+`pickable-falls-dark.svg`, `graphs/` (2 machines as `.rm`, SVG and live HTML), `evidence/`, `check/`
+(`fall_half_rates.py`, `compare_digests.py`, `same_landing.py`, `missed_falls.py`, `build_page.py`).
+
+**Rerun** (no model call, no training, from the repository root in `RM_RL_env`): `PYTHONPATH=app python -W ignore
+docs/paper/fall-rate/check/fall_half_rates.py --out docs/paper/fall-rate/evidence`; `python
+docs/paper/fall-rate/check/compare_digests.py docs/paper/fall-rate/evidence/before-029d82c/digests.json
+docs/paper/fall-rate/evidence/digests.json`; `PYTHONPATH=app python -W ignore
+docs/paper/fall-rate/check/same_landing.py`; `python docs/paper/fall-rate/check/missed_falls.py
+docs/paper/fall-rate/evidence/falls.json templates walk`. The page: `PYTHONPATH=app python -W ignore
+docs/paper/fall-rate/check/build_page.py`, then the artifacts skill's `fill.py`.
+
+**Code.** Half rule `507886e`, merged as `e37dff9`; the before-code `029d82c`; reruns and page on main `881b22d`.

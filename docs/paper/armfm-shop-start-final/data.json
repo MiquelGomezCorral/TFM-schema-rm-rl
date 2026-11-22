@@ -1,0 +1,718 @@
+{
+ "eyebrow": "Paper entry \u00b7 ARM-FM shop machines on the freeze \u00b7 2026-11-22",
+ "title": "ARM-FM shop machines end before the agent moves",
+ "subtitle": "Asked for reward machines for the shop's never-ending tasks, the ARM-FM generator made the start state final in 21 of 22 machines. The runtime ends an episode at a final state, so each episode ends before the first action and nothing can train. The last machine ends the episode at the first served order instead.",
+ "sections": [
+  {
+   "id": "summary",
+   "title": "In short",
+   "blocks": [
+    {
+     "type": "stats",
+     "items": [
+      {
+       "value": "21 of 22",
+       "label": "gated machines whose start state is final",
+       "tone": "bad"
+      },
+      {
+       "value": "[78%, 99%]",
+       "label": "95% Wilson CI of that share",
+       "tone": "muted"
+      },
+      {
+       "value": "0 of 22",
+       "label": "machines that pass the gate",
+       "tone": "bad"
+      }
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**The model wrote an accepting automaton.** Our ARM-FM prompt asks it to \"declare every accepting state\" in `FINAL_STATES` (`app/src/prompts/arm_fm/rm_generator.system.md:16`). For \"whenever the siren rings, turn it off\", the state where nothing is owed accepts, and that is the start state.",
+      "**The runtime treats a final state as the end.** \"Entering a final or rejecting state ends the episode\" for every RM-wrapped run (`docs/decisions/arm-fm/rm-execution.md:47`). So the episode ends at step 0: the plan check reports \"ends the episode before the agent acts\" for the solve and for every wrong plan.",
+      "**Apart from that, the simple machines are right.** All 8 siren and pot machines are Response machines that owe a toggle or a fix after the event and pay it. It is a format limit of ARM-FM in our runtime, not a wrong reading of the task.",
+      "**Nothing trains, so the cards count as not learned.** None of the 11 counted ARM-FM shop cards (shop 6, shop-reward 5, same bundles) gets a run. `shop-boil` (main) finished at 21:21 after the gate; its machine starts final too (root check of `reward_machine.txt`), so 23 of all 24 ARM-FM shop machines start final."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "machines",
+   "title": "Three machines: siren, pot and serve",
+   "intro": "The main bundle of each card (the card's own wording). Each starts in u0 and lists u0 as its only final state.",
+   "blocks": [
+    {
+     "type": "details",
+     "items": [
+      {
+       "title": "shop-siren: 2 states, final u0",
+       "preview": "starts final",
+       "open": true,
+       "blocks": [
+        {
+         "type": "text",
+         "text": "**Task:** Keep the shop quiet: whenever the siren rings, turn it off."
+        },
+        {
+         "type": "table",
+         "heading": "The card's answer (ARM-FM writes no clauses, so this is what a right machine must do)",
+         "columns": [
+          "Clause",
+          "LTLf"
+         ],
+         "rows": [
+          [
+           "Response(siren_ringing, switch_toggled) hard",
+           "`(G (siren_ringing -> (F switch_toggled)))`"
+          ]
+         ]
+        },
+        {
+         "type": "figure",
+         "src": "graphs/shop-siren.html",
+         "height": 440,
+         "caption": "The ARM-FM machine: start u0, final u0. Otherwise a right Response machine: a ring owes a toggle, and the toggle pays 1. Drag a state, click an edge for its cases."
+        },
+        {
+         "type": "details",
+         "items": [
+          {
+           "title": "RM text",
+           "blocks": [
+            {
+             "type": "code",
+             "text": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES: u0\nTRANSITION_FUNCTION:\n(u0, siren_ringing) -> u1\n(u0, else) -> u0\n(u1, switch_toggled) -> u0\n(u1, else) -> u1\nREWARD_FUNCTION:\n(u1, switch_toggled, u0) -> 1\n"
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "type": "table",
+         "heading": "Gate, seed 1 of seeds 1-5 and 42 (all six seeds give the same problems)",
+         "columns": [
+          "Check",
+          "Result"
+         ],
+         "rows": [
+          [
+           "Plan check",
+           "solve-s1: ends the episode before the agent acts; wrong-0-s1: ends the episode before the agent acts; wrong-1-s1: ends the episode before the agent acts"
+          ],
+          [
+           "Pay order",
+           "finished 0 > not started 0; broken: finished must pay more than not started (gamma 0.99, step limit 600, soft breaks per step 1)"
+          ],
+          [
+           "Facts, labeling",
+           "pass"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "title": "shop-pot: 2 states, final u0",
+       "preview": "starts final",
+       "open": false,
+       "blocks": [
+        {
+         "type": "text",
+         "text": "**Task:** Whenever the pot boils over, turn the stove down."
+        },
+        {
+         "type": "table",
+         "heading": "The card's answer (ARM-FM writes no clauses, so this is what a right machine must do)",
+         "columns": [
+          "Clause",
+          "LTLf"
+         ],
+         "rows": [
+          [
+           "Response(pot_boiling, stove_fixed) hard",
+           "`(G (pot_boiling -> (F stove_fixed)))`"
+          ]
+         ]
+        },
+        {
+         "type": "figure",
+         "src": "graphs/shop-pot.html",
+         "height": 440,
+         "caption": "The ARM-FM machine: start u0, final u0. Otherwise a right Response machine: a boil owes a fix, and the fix pays 1. Drag a state, click an edge for its cases."
+        },
+        {
+         "type": "details",
+         "items": [
+          {
+           "title": "RM text",
+           "blocks": [
+            {
+             "type": "code",
+             "text": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES: u0\nTRANSITION_FUNCTION:\n(u0, pot_boiling) -> u1\n(u0, else) -> u0\n(u1, stove_fixed) -> u0\n(u1, else) -> u1\nREWARD_FUNCTION:\n(u0, pot_boiling, u1) -> 0.1\n(u1, stove_fixed, u0) -> 1\n"
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "type": "table",
+         "heading": "Gate, seed 1 of seeds 1-5 and 42 (all six seeds give the same problems)",
+         "columns": [
+          "Check",
+          "Result"
+         ],
+         "rows": [
+          [
+           "Plan check",
+           "solve-s1: ends the episode before the agent acts; wrong-0-s1: ends the episode before the agent acts; wrong-1-s1: ends the episode before the agent acts"
+          ],
+          [
+           "Pay order",
+           "finished 0 > not started 0; broken: finished must pay more than not started (gamma 0.99, step limit 600, soft breaks per step 1)"
+          ],
+          [
+           "Facts, labeling",
+           "pass"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "title": "shop-serve: 5 states, final u0",
+       "preview": "starts final",
+       "open": false,
+       "blocks": [
+        {
+         "type": "text",
+         "text": "**Task:** Whenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move."
+        },
+        {
+         "type": "table",
+         "heading": "The card's answer (ARM-FM writes no clauses, so this is what a right machine must do)",
+         "columns": [
+          "Clause",
+          "LTLf"
+         ],
+         "rows": [
+          [
+           "Response(client_arrived, order_taken) hard",
+           "`(G (client_arrived -> (F order_taken)))`"
+          ],
+          [
+           "Response(order_taken, food_prepared) hard",
+           "`(G (order_taken -> (F food_prepared)))`"
+          ],
+          [
+           "Response(food_prepared, order_served) hard",
+           "`(G (food_prepared -> (F order_served)))`"
+          ],
+          [
+           "ChainResponse(food_fell, holding_food) hard",
+           "`(G (food_fell -> (X holding_food)))`"
+          ]
+         ]
+        },
+        {
+         "type": "figure",
+         "src": "graphs/shop-serve.html",
+         "height": 440,
+         "caption": "The ARM-FM machine: start u0, final u0. Also a fall not picked up on the next move only costs 0.1 per step: the hard rule became soft. Drag a state, click an edge for its cases."
+        },
+        {
+         "type": "details",
+         "items": [
+          {
+           "title": "RM text",
+           "blocks": [
+            {
+             "type": "code",
+             "text": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u0\nTRANSITION_FUNCTION:\n(u0, client_arrived) -> u1\n(u0, else) -> u0\n(u1, order_taken & (holding_food | food_fell)) -> u3\n(u1, order_taken & !holding_food & !food_fell) -> u2\n(u1, food_fell & !order_taken) -> u3\n(u1, else) -> u1\n(u2, holding_food | food_fell) -> u3\n(u2, else) -> u2\n(u3, food_prepared) -> u4\n(u3, order_taken & (holding_food | food_fell)) -> u3\n(u3, !holding_food & !food_fell & !food_prepared) -> u3\n(u3, else) -> u3\n(u4, order_served) -> u0\n(u4, !holding_food & !food_fell & !order_served) -> u4\n(u4, else) -> u4\nREWARD_FUNCTION:\n(u1, order_taken & (holding_food | food_fell), u3) -> 0.3\n(u1, order_taken & !holding_food & !food_fell, u2) -> 0.1\n(u1, food_fell & !order_taken, u3) -> 0.2\n(u2, holding_food | food_fell, u3) -> 0.2\n(u3, food_prepared, u4) -> 0.3\n(u3, order_taken & (holding_food | food_fell), u3) -> 0.1\n(u3, !holding_food & !food_fell & !food_prepared, u3) -> -0.1\n(u4, order_served, u0) -> 1\n(u4, !holding_food & !food_fell & !order_served, u4) -> -0.1\n"
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "type": "table",
+         "heading": "Gate, seed 1 of seeds 1-5 and 42 (all six seeds give the same problems)",
+         "columns": [
+          "Check",
+          "Result"
+         ],
+         "rows": [
+          [
+           "Plan check",
+           "solve-s1: ends the episode before the agent acts; wrong-0-s1: ends the episode before the agent acts; wrong-1-s1: ends the episode before the agent acts"
+          ],
+          [
+           "Pay order",
+           "finished 0 > not started 0; broken: finished must pay more than not started (gamma 0.99, step limit 600, soft breaks per step 1)"
+          ],
+          [
+           "Facts, labeling",
+           "pass"
+          ]
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "boil-p3",
+   "title": "The exception: shop-boil~p3 ends at the first serve",
+   "intro": "The one gated machine whose start is not final. It has 11 states and its final is u10, which every state reaches on a served order. Wrong plans that never silence the siren, never turn the stove down or leave fallen food still serve an order, so they reach the final at steps 50, 67 and 71. It passes the pay order check (finished 129.65 > not started 0) and fails the plan check.",
+   "blocks": [
+    {
+     "type": "details",
+     "items": [
+      {
+       "title": "shop-boil~p3: 11 states, final u10",
+       "preview": "early final",
+       "open": false,
+       "blocks": [
+        {
+         "type": "text",
+         "text": "**Task:** Run the shop by turning the siren off every time it rings, and by serving each client who walks in: take their order, fetch food from the pantry, prepare it at the stove and serve it, and after the food falls pick it up on the very next move. Whenever the pot boils over, drop what you carry next to the stove, turn the stove down and pick it up again."
+        },
+        {
+         "type": "table",
+         "heading": "The card's answer (ARM-FM writes no clauses, so this is what a right machine must do)",
+         "columns": [
+          "Clause",
+          "LTLf"
+         ],
+         "rows": [
+          [
+           "Response(siren_ringing, switch_toggled) hard",
+           "`(G (siren_ringing -> (F switch_toggled)))`"
+          ],
+          [
+           "Response(client_arrived, order_taken) hard",
+           "`(G (client_arrived -> (F order_taken)))`"
+          ],
+          [
+           "Response(order_taken, food_prepared) hard",
+           "`(G (order_taken -> (F food_prepared)))`"
+          ],
+          [
+           "Response(food_prepared, order_served) hard",
+           "`(G (food_prepared -> (F order_served)))`"
+          ],
+          [
+           "ChainResponse(food_fell, holding_food) hard",
+           "`(G (food_fell -> (X holding_food)))`"
+          ],
+          [
+           "Response(pot_boiling, stove_fixed) hard",
+           "`(G (pot_boiling -> (F stove_fixed)))`"
+          ]
+         ]
+        },
+        {
+         "type": "figure",
+         "src": "graphs/shop-boil~p3.html",
+         "height": 440,
+         "caption": "The ARM-FM machine: start u0, final u10. Every state steps to the final on a served order, so the first serve ends the episode whatever is still owed. Drag a state, click an edge for its cases."
+        },
+        {
+         "type": "details",
+         "items": [
+          {
+           "title": "RM text",
+           "blocks": [
+            {
+             "type": "code",
+             "text": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10\nINITIAL_STATE: u0\nFINAL_STATES: u10\nTRANSITION_FUNCTION:\n(u0, order_taken & holding_food & !siren_ringing) -> u2\n(u0, order_taken & holding_food & siren_ringing) -> u6\n(u0, order_taken & !holding_food & !siren_ringing) -> u1\n(u0, order_taken & !holding_food & siren_ringing) -> u5\n(u0, stove_fixed & !siren_ringing) -> u8\n(u0, stove_fixed & siren_ringing) -> u9\n(u0, order_served) -> u10\n(u0, siren_ringing & !order_taken & !food_fell & !stove_fixed & !order_served) -> u4\n(u0, food_fell & !order_taken & !stove_fixed & !order_served & !siren_ringing) -> u8\n(u0, food_fell & !order_taken & !stove_fixed & !order_served & siren_ringing) -> u9\n(u0, else) -> u0\n(u1, holding_food & !siren_ringing) -> u2\n(u1, holding_food & siren_ringing) -> u6\n(u1, stove_fixed & !siren_ringing) -> u8\n(u1, stove_fixed & siren_ringing) -> u9\n(u1, order_served) -> u10\n(u1, siren_ringing & !holding_food & !food_fell & !stove_fixed & !order_served) -> u5\n(u1, food_fell & !holding_food & !stove_fixed & !order_served & !siren_ringing) -> u8\n(u1, food_fell & !holding_food & !stove_fixed & !order_served & siren_ringing) -> u9\n(u1, else) -> u1\n(u2, food_prepared & !food_fell & !siren_ringing) -> u3\n(u2, food_prepared & !food_fell & siren_ringing) -> u7\n(u2, food_prepared & food_fell & !siren_ringing) -> u8\n(u2, food_prepared & food_fell & siren_ringing) -> u9\n(u2, stove_fixed & !siren_ringing) -> u8\n(u2, stove_fixed & siren_ringing) -> u9\n(u2, order_served) -> u10\n(u2, siren_ringing & !food_prepared & !food_fell & !stove_fixed & !order_served) -> u6\n(u2, food_fell & !food_prepared & !stove_fixed & !order_served & !siren_ringing) -> u8\n(u2, food_fell & !food_prepared & !stove_fixed & !order_served & siren_ringing) -> u9\n(u2, else) -> u2\n(u3, order_served) -> u10\n(u3, stove_fixed & !siren_ringing) -> u8\n(u3, stove_fixed & siren_ringing) -> u9\n(u3, siren_ringing & !food_fell & !stove_fixed & !order_served) -> u7\n(u3, food_fell & !stove_fixed & !order_served & !siren_ringing) -> u8\n(u3, food_fell & !stove_fixed & !order_served & siren_ringing) -> u9\n(u3, else) -> u3\n(u4, switch_toggled & !holding_food) -> u0\n(u4, switch_toggled & holding_food) -> u2\n(u4, order_taken & holding_food) -> u6\n(u4, order_taken & !holding_food) -> u5\n(u4, stove_fixed) -> u9\n(u4, order_served) -> u10\n(u4, food_fell & !switch_toggled & !order_taken & !stove_fixed & !order_served) -> u9\n(u4, else) -> u4\n(u5, switch_toggled & !holding_food) -> u1\n(u5, switch_toggled & holding_food) -> u2\n(u5, holding_food & !switch_toggled) -> u6\n(u5, stove_fixed) -> u9\n(u5, order_served) -> u10\n(u5, food_fell & !switch_toggled & !holding_food & !stove_fixed & !order_served) -> u9\n(u5, else) -> u5\n(u6, switch_toggled) -> u2\n(u6, food_prepared & !food_fell) -> u7\n(u6, food_prepared & food_fell) -> u9\n(u6, stove_fixed) -> u9\n(u6, order_served) -> u10\n(u6, food_fell & !food_prepared & !switch_toggled & !stove_fixed & !order_served) -> u9\n(u6, else) -> u6\n(u7, switch_toggled) -> u3\n(u7, order_served) -> u10\n(u7, stove_fixed) -> u9\n(u7, food_fell & !switch_toggled & !stove_fixed & !order_served) -> u9\n(u7, else) -> u7\n(u8, holding_food & !siren_ringing) -> u2\n(u8, holding_food & siren_ringing) -> u6\n(u8, order_served) -> u10\n(u8, food_fell & !siren_ringing) -> u8\n(u8, food_fell & siren_ringing) -> u9\n(u8, stove_fixed & !siren_ringing & !food_fell) -> u8\n(u8, stove_fixed & siren_ringing & !food_fell) -> u9\n(u8, switch_toggled & !siren_ringing) -> u0\n(u8, switch_toggled & siren_ringing) -> u4\n(u8, !holding_food & !food_fell & !stove_fixed & !switch_toggled & !order_served & !siren_ringing) -> u0\n(u8, !holding_food & !food_fell & !stove_fixed & !switch_toggled & !order_served & siren_ringing) -> u4\n(u8, else) -> u8\n(u9, holding_food & siren_ringing) -> u6\n(u9, holding_food & !siren_ringing) -> u2\n(u9, switch_toggled & !holding_food) -> u0\n(u9, order_served) -> u10\n(u9, food_fell & siren_ringing) -> u9\n(u9, food_fell & !siren_ringing) -> u8\n(u9, stove_fixed & siren_ringing & !food_fell) -> u9\n(u9, stove_fixed & !siren_ringing & !food_fell) -> u8\n(u9, !holding_food & !food_fell & !stove_fixed & !switch_toggled & !order_served & siren_ringing) -> u4\n(u9, !holding_food & !food_fell & !stove_fixed & !switch_toggled & !order_served & !siren_ringing) -> u0\n(u9, else) -> u9\n(u10, siren_ringing & !stove_fixed) -> u4\n(u10, !siren_ringing & !stove_fixed) -> u0\n(u10, stove_fixed & siren_ringing) -> u9\n(u10, stove_fixed & !siren_ringing) -> u8\n(u10, else) -> u10\nREWARD_FUNCTION:\n(u0, order_taken & holding_food & !siren_ringing, u2) -> 0.2\n(u0, order_taken & holding_food & siren_ringing, u6) -> 0.2\n(u0, order_taken & !holding_food & !siren_ringing, u1) -> 0.2\n(u0, order_taken & !holding_food & siren_ringing, u5) -> 0.2\n(u0, stove_fixed & !siren_ringing, u8) -> 0.4\n(u0, stove_fixed & siren_ringing, u9) -> 0.4\n(u0, order_served, u10) -> 1\n(u1, holding_food & !siren_ringing, u2) -> 0.15\n(u1, holding_food & siren_ringing, u6) -> 0.15\n(u1, stove_fixed & !siren_ringing, u8) -> 0.4\n(u1, stove_fixed & siren_ringing, u9) -> 0.4\n(u1, order_served, u10) -> 1\n(u2, food_prepared & !food_fell & !siren_ringing, u3) -> 0.3\n(u2, food_prepared & !food_fell & siren_ringing, u7) -> 0.3\n(u2, food_prepared & food_fell & !siren_ringing, u8) -> 0.3\n(u2, food_prepared & food_fell & siren_ringing, u9) -> 0.3\n(u2, stove_fixed & !siren_ringing, u8) -> 0.4\n(u2, stove_fixed & siren_ringing, u9) -> 0.4\n(u2, order_served, u10) -> 1\n(u3, order_served, u10) -> 1\n(u3, stove_fixed & !siren_ringing, u8) -> 0.4\n(u3, stove_fixed & siren_ringing, u9) -> 0.4\n(u4, switch_toggled & !holding_food, u0) -> 0.4\n(u4, switch_toggled & holding_food, u2) -> 0.4\n(u4, order_taken & holding_food, u6) -> 0.2\n(u4, order_taken & !holding_food, u5) -> 0.2\n(u4, stove_fixed, u9) -> 0.4\n(u4, order_served, u10) -> 1\n(u5, switch_toggled & !holding_food, u1) -> 0.4\n(u5, switch_toggled & holding_food, u2) -> 0.4\n(u5, holding_food & !switch_toggled, u6) -> 0.15\n(u5, stove_fixed, u9) -> 0.4\n(u5, order_served, u10) -> 1\n(u6, switch_toggled, u2) -> 0.4\n(u6, food_prepared & !food_fell, u7) -> 0.3\n(u6, food_prepared & food_fell, u9) -> 0.3\n(u6, stove_fixed, u9) -> 0.4\n(u6, order_served, u10) -> 1\n(u7, switch_toggled, u3) -> 0.4\n(u7, order_served, u10) -> 1\n(u7, stove_fixed, u9) -> 0.4\n(u8, holding_food & !siren_ringing, u2) -> 0.25\n(u8, holding_food & siren_ringing, u6) -> 0.25\n(u8, order_served, u10) -> 1\n(u9, holding_food & siren_ringing, u6) -> 0.25\n(u9, holding_food & !siren_ringing, u2) -> 0.25\n(u9, switch_toggled & !holding_food, u0) -> 0.4\n(u9, order_served, u10) -> 1\n"
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "type": "table",
+         "heading": "Gate, seed 1 of seeds 1-5 and 42 (all six seeds give the same problems)",
+         "columns": [
+          "Check",
+          "Result"
+         ],
+         "rows": [
+          [
+           "Plan check",
+           "wrong-1-s1: reaches the final at step 50; wrong-2-s1: reaches the final at step 67; wrong-3-s1: reaches the final at step 71"
+          ],
+          [
+           "Pay order",
+           "finished 129.65 > not started 0; ok (gamma 0.99, step limit 600, soft breaks per step 1)"
+          ],
+          [
+           "Facts, labeling",
+           "pass"
+          ]
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "all",
+   "title": "All finished bundles",
+   "collapsed": true,
+   "intro": "Every ARM-FM shop bundle generated on the freeze that had finished, from the bundle's own machine text and status file. Paraphrase bundles (`~p1` to `~p3`) are generation records and never train.",
+   "blocks": [
+    {
+     "type": "table",
+     "columns": [
+      "Bundle",
+      "Wording",
+      "States / transitions",
+      "Start / finals",
+      "Start final",
+      "Pipeline plan check",
+      "Gate",
+      "Commit"
+     ],
+     "rows": [
+      [
+       "`shop-boil~p1`",
+       "p1",
+       "9 / 122",
+       "u0 / u0",
+       {
+        "text": "yes",
+        "tone": "bad"
+       },
+       "solve-s1: ends the episode before the agent acts",
+       "failed",
+       "`04fd146`"
+      ],
+      [
+       "`shop-boil~p2`",
+       "p2",
+       "24 / 141",
+       "u0000 / u0000",
+       {
+        "text": "yes",
+        "tone": "bad"
+       },
+       "solve-s1: ends the episode before the agent acts",
+       "not gated",
+       "`881b22d`"
+      ],
+      [
+       "`shop-boil~p3`",
+       "p3",
+       "11 / 93",
+       "u0 / u10",
+       {
+        "text": "no",
+        "tone": "warn"
+       },
+       "wrong-1-s1: reaches the final at step 50",
+       "failed",
+       "`881b22d`"
+      ],
+      [
+       "`shop-full`",
+       "card",
+       "14 / 73",
+       "u0 / u0",
+       {
+        "text": "yes",
+        "tone": "bad"
+       },
+       "solve-s1: ends the episode before the agent acts",
+       "failed",
+       "`e37dff9`"
+      ],
+      [
+       "`shop-full~p1`",
+       "p1",
+       "18 / 147",
+       "u0 / u0",
+       {
+        "text": "yes",
+        "tone": "bad"
+       },
+       "solve-s1: ends the episode before the agent acts",
+       "failed",
+       "`2c267e1`"
+      ],
+      [
+       "`shop-full~p2`",
+       "p2",
+       "16 / 116",
+       "u0 / u0",
+       {
+        "text": "yes",
+        "tone": "bad"
+       },
+       "solve-s1: ends the episode before the agent acts",
+       "failed",
+       "`2c267e1`"
+      ],
+      [
+       "`shop-full~p3`",
+       "p3",
+       "12 / 73",
+       "u0 / u0",
+       {
+        "text": "yes",
+        "tone": "bad"
+       },
+       "solve-s1: ends the episode before the agent acts",
+       "failed",
+       "`03905e4`"
+      ],
+      [
+       "`shop-pot`",
+       "card",
+       "2 / 4",
+       "u0 / u0",
+       {
+        "text": "yes",
+        "tone": "bad"
+       },
+       "solve-s1: ends the episode before the agent acts",
+       "failed",
+       "`04fd146`"
+      ],
+      [
+       "`shop-pot~p1`",
+       "p1",
+       "2 / 4",
+       "u0 / u0",
+       {
+        "text": "yes",
+        "tone": "bad"
+       },
+       "solve-s1: ends the episode before the agent acts",
+       "failed",
+       "`04fd146`"
+      ],
+      [
+       "`shop-pot~p2`",
+       "p2",
+       "2 / 4",
+       "u0 / u0",
+       {
+        "text": "yes",
+        "tone": "bad"
+       },
+       "solve-s1: ends the episode before the agent acts",
+       "failed",
+       "`04fd146`"
+      ],
+      [
+       "`shop-pot~p3`",
+       "p3",
+       "2 / 4",
+       "u0 / u0",
+       {
+        "text": "yes",
+        "tone": "bad"
+       },
+       "solve-s1: ends the episode before the agent acts",
+       "failed",
+       "`04fd146`"
+      ],
+      [
+       "`shop-quiet-first`",
+       "card",
+       "10 / 70",
+       "u0 / u0",
+       {
+        "text": "yes",
+        "tone": "bad"
+       },
+       "solve-s1: ends the episode before the agent acts",
+       "failed",
+       "`03905e4`"
+      ],
+      [
+       "`shop-quiet-first~p1`",
+       "p1",
+       "12 / 84",
+       "u0 / u0",
+       {
+        "text": "yes",
+        "tone": "bad"
+       },
+       "solve-s1: ends the episode before the agent acts",
+       "failed",
+       "`03905e4`"
+      ],
+      [
+       "`shop-quiet-first~p2`",
+       "p2",
+       "14 / 90",
+       "u0 / u0",
+       {
+        "text": "yes",
+        "tone": "bad"
+       },
+       "solve-s1: ends the episode before the agent acts",
+       "failed",
+       "`03905e4`"
+      ],
+      [
+       "`shop-quiet-first~p3`",
+       "p3",
+       "8 / 57",
+       "u0 / u0",
+       {
+        "text": "yes",
+        "tone": "bad"
+       },
+       "solve-s1: ends the episode before the agent acts",
+       "failed",
+       "`04fd146`"
+      ],
+      [
+       "`shop-serve`",
+       "card",
+       "5 / 17",
+       "u0 / u0",
+       {
+        "text": "yes",
+        "tone": "bad"
+       },
+       "solve-s1: ends the episode before the agent acts",
+       "failed",
+       "`029d82c`"
+      ],
+      [
+       "`shop-serve~p1`",
+       "p1",
+       "6 / 23",
+       "u0 / u0",
+       {
+        "text": "yes",
+        "tone": "bad"
+       },
+       "solve-s1: ends the episode before the agent acts",
+       "failed",
+       "`029d82c`"
+      ],
+      [
+       "`shop-serve~p2`",
+       "p2",
+       "8 / 24",
+       "u0 / u0",
+       {
+        "text": "yes",
+        "tone": "bad"
+       },
+       "solve-s1: ends the episode before the agent acts",
+       "failed",
+       "`029d82c`"
+      ],
+      [
+       "`shop-serve~p3`",
+       "p3",
+       "13 / 44",
+       "u0 / u0",
+       {
+        "text": "yes",
+        "tone": "bad"
+       },
+       "solve-s1: ends the episode before the agent acts",
+       "failed",
+       "`e37dff9`"
+      ],
+      [
+       "`shop-siren`",
+       "card",
+       "2 / 4",
+       "u0 / u0",
+       {
+        "text": "yes",
+        "tone": "bad"
+       },
+       "solve-s1: ends the episode before the agent acts",
+       "failed",
+       "`029d82c`"
+      ],
+      [
+       "`shop-siren~p1`",
+       "p1",
+       "2 / 4",
+       "u0 / u0",
+       {
+        "text": "yes",
+        "tone": "bad"
+       },
+       "solve-s1: ends the episode before the agent acts",
+       "failed",
+       "`029d82c`"
+      ],
+      [
+       "`shop-siren~p2`",
+       "p2",
+       "2 / 4",
+       "u0 / u0",
+       {
+        "text": "yes",
+        "tone": "bad"
+       },
+       "solve-s1: ends the episode before the agent acts",
+       "failed",
+       "`029d82c`"
+      ],
+      [
+       "`shop-siren~p3`",
+       "p3",
+       "2 / 4",
+       "u0 / u0",
+       {
+        "text": "yes",
+        "tone": "bad"
+       },
+       "solve-s1: ends the episode before the agent acts",
+       "failed",
+       "`029d82c`"
+      ]
+     ]
+    },
+    {
+     "type": "text",
+     "text": "Generation commits run from `029d82c` to `881b22d` on main (main moved while the background generation ran; all are after the freeze `809dfe3`). In `app/` only the box-carry half fall world (`507886e`, merged as `e37dff9`) and the tagger default (`f634e0f`) changed in that span; neither touches the machine generator."
+    }
+   ]
+  },
+  {
+   "id": "limits",
+   "title": "Limits",
+   "blocks": [
+    {
+     "type": "list",
+     "items": [
+      "`shop-boil` (main) finished after the gate (21:21). Its plan check reports a final start and its machine has INITIAL_STATE u0 = FINAL_STATES u0 (root check), so the two counted `shop-boil` cards count as not learned.",
+      "`shop-boil~p2` finished after the gate. Its own pipeline plan check reports a final start too, but it was not gated, so it is listed and not counted.",
+      "The extra findings per machine (the soft fall rule on `shop-serve`) are the gate agent's read of the machine text, not a run.",
+      "One generation per wording, at reasoning max with deepseek-v4.1-flash and the glm-5.3-flash critic; other models or prompts were not tried."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "files",
+   "title": "Files and rerun",
+   "collapsed": true,
+   "blocks": [
+    {
+     "type": "code",
+     "text": "# from the repository root, inside RM_RL_env (no model call)\nPYTHONPATH=app python -W ignore docs/paper/armfm-shop-start-final/check/build_page.py\npython3 <agent-artifacts skill>/scripts/fill.py docs/paper/armfm-shop-start-final/data.json docs/paper/armfm-shop-start-final/index.html\n# the plan check again on the copies, unpacked in a scratch folder W (writes W/bundles-freeze/arm-fm/<name>.plan_check.json)\ntar -xzf docs/paper/armfm-shop-start-final/evidence/bundles-freeze.tar.gz -C W\nPYTHONPATH=app python -W ignore app/main.py check-plans --tasks experiments/benchmark/shop/tasks.json --bundles W/bundles-freeze\n# the machine graphs\nPYTHONPATH=app python app/main.py render-rm --rm-file docs/paper/armfm-shop-start-final/graphs/shop-siren.rm --svg-dir docs/paper/armfm-shop-start-final/graphs/shop-siren.svg --html"
+    }
+   ]
+  }
+ ]
+}

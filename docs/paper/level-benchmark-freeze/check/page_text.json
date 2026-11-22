@@ -1,0 +1,128 @@
+{
+ "head": {
+  "title": "Thinking levels on the frozen code",
+  "eyebrow": "generation benchmark · code freeze 809dfe3 · 2026-11-22",
+  "subtitle": "How often FARM's generation gets the Reward Machine right at each thinking level, on the frozen code, with the production pair (generator deepseek-v4.1-flash, critic glm-5.3-flash): 46 task cases, 3 runs each. Right: 76% at none, 97% at low, 99% at medium, 100% at high and at max. Max takes about four times as long as high for the same score."
+ },
+ "after_levels": [
+  {
+   "id": "claim",
+   "title": "What it shows",
+   "blocks": [
+    {
+     "type": "callout",
+     "tone": "info",
+     "title": "In plain words",
+     "text": "FARM turns a task written in English into Declare clauses (the generator), has a second model check them (the critic), and compiles the accepted clauses into a Reward Machine. This benchmark asks how often that machine is the right one when both models think less or more. Each of the 46 cases is one task card; every level ran every case 3 times on the code freeze `809dfe3` (minimization on by default), 690 runs in all, on 2026-11-22 between 08:49 and 10:06.\n\nWithout thinking (`none`) 33 of 138 runs end with a machine that is not right. With any thinking the generator's first answer was right in all 552 runs. The 6 wrong machines at low and medium came from the critic turning a right answer down. At high and max nothing went wrong."
+    },
+    {
+     "type": "stats",
+     "items": [
+      {"value": "552 of 552", "label": "first answers right with thinking on (low to max)", "tone": "ok"},
+      {"value": "6", "label": "wrong runs at low and medium, each after the critic rejected a right first answer", "tone": "warn"},
+      {"value": "88 s against 20 s", "label": "median time per run, max against high, for the same 138 of 138", "tone": "warn"},
+      {"value": "1,473", "label": "model calls over the 690 runs (generator and critic)", "tone": "info"}
+     ]
+    },
+    {
+     "type": "list",
+     "items": [
+      "**No thinking is not enough.** At `none` 31 runs are wrong and 2 are form A. The critic caught 19 of the 43 first answers that were not right; most of what it let through is about order: a soft ban read as an order (10 runs), a stated order dropped (12), an order the task does not state (5).",
+      "**Low and medium: the critic is the weak link.** Every first answer was right. In 6 runs (4 at low, 2 at medium) the critic rejected it and accepted a wrong second answer. Four of the six are G9, where the card and the critic read \"Then\" differently.",
+      "**High and max: 138 of 138 each.** Every first answer was accepted on the first critic call, 276 calls per level. Max took a median 88 s per run against 20 s at high, and 13,946 s in all against 3,573 s.",
+      "**Model side, not pipeline side.** Every machine that is not right comes from an accepted clause set the card rejects. Each machine on this page was compiled again from its run's clauses and gives the record's machine text. The two incidents of the run (the provider's rate limit, our budget guard) changed no answer."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "scoring",
+   "title": "What \"right\" means",
+   "blocks": [
+    {
+     "type": "text",
+     "text": "The scorer is the loop's `chain_score.classify` (`check/chain_score.py`), the one that wrote `stats.md`. It compares a run's final clause set with the case's card. `check/cases.py` maps each case to a card; the cards are copied in `evidence/cards/`: those of main `e6c3acb`, plus the loop's local soft cards for S1 to S4."
+    },
+    {
+     "type": "list",
+     "items": [
+      "**Right**: the set is the card's `expect` set or one of its `also_ok` sets (the repository's `clause_status`), or the `expect` set plus orders it implies. An implied order is a `Precedence` the card's hard orders give by chaining (key before goal when key before door before goal) and, on three cards the loop may not edit, an order the level forces. A set with an extra hard `Existence` that its orders already force is right once that clause is dropped, except on ordered cases.",
+      "**Form A**: on an ordered case, the set passes only with a hard `Existence` on an earlier step, one \"must happen\" rule per step instead of the chain. Counted apart, not right.",
+      "**Wrong**: anything else, or a run that ended with no accepted set.",
+      "**Clause lists, not tasks.** A wrong set can still describe a task close to the card's; the page says so where it applies (G4, G9)."
+     ]
+    }
+   ]
+  }
+ ],
+ "after": [
+  {
+   "id": "incidents",
+   "title": "Two incidents, no answer changed",
+   "blocks": [
+    {
+     "type": "list",
+     "items": [
+      "**Rate limit at none.** 5 runs (G6-r3, G7-r1, G7-r2, G7-r3, G8-r1) stopped on the provider's HTTP 429 rate limit after 10 reruns, with no answer. Their records were renamed `*.json.429` and are kept in `records/none/`; the 5 runs were run again at 09:01 and all 5 were accepted. Their 55 refused requests are not in the 1,473 calls.",
+      "**Budget guard outlived its round.** The guard started for the low round kept watching after that round ended and wrote a STOP file at 09:00:20 (`evidence/STOP.guard-bug-0900`), which stopped the medium round after 14 runs (`evidence/round-logs/medium.log`). The driver now stops each level's guard when the level ends (`check/level-bench.sh`), and medium resumed at 09:02:26, skipping the runs already done."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "limits",
+   "title": "Limits",
+   "blocks": [
+    {
+     "type": "list",
+     "items": [
+      "One model pair through one provider (OpenCode), 3 runs per case and level: a case's 2 of 3 is a small sample.",
+      "The 46 cases are the generator loop's working set, picked around past mistakes (W, U), ordered tasks (O), guard cards (G) and soft last steps (S), not a random sample of tasks.",
+      "Times come from a shared machine: 8 runs at once beside 12 to 23 RL trainings.",
+      "The mistake groups at none are this entry's reading of the clause sets.",
+      "No call logs are copied, so output tokens and seconds per call are only in `stats.md`, which read them from the plan folder."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "rerun",
+   "title": "Rerun",
+   "blocks": [
+    {
+     "type": "text",
+     "text": "No model call, from the repository root inside `RM_RL_env`, with MONA on PATH. The first command prints the per-level table of `stats.md` (its call-log columns print 0 here) and one letter per run; the second scores, compiles and draws everything on this page; the third renders the page."
+    },
+    {
+     "type": "code",
+     "text": "env -C docs/paper/level-benchmark-freeze/check CC_ROOT=$PWD PYTHONPATH=$PWD/app python -W ignore \\\n    arm_stats.py none=../records/none low=../records/low medium=../records/medium \\\n    high=../records/high max=../records/max --letters\nenv -C docs/paper/level-benchmark-freeze/check CC_ROOT=$PWD PYTHONPATH=$PWD/app python -W ignore \\\n    build_page.py\npython3 ~/.claude/skills/agent-artifacts/scripts/fill.py docs/paper/level-benchmark-freeze/data.json \\\n    docs/paper/level-benchmark-freeze/index.html\n# one graph by hand\npython app/main.py render-rm --rm-file docs/paper/level-benchmark-freeze/graphs/g6-max.rm \\\n    --svg-dir docs/paper/level-benchmark-freeze/graphs/g6-max.svg --html"
+    },
+    {
+     "type": "text",
+     "text": "The run itself calls the models (credentials from `.env`). From the plan folder `farm-final-20261119/`: `bash freeze-prep/tools/level-bench.sh 8` ran the five levels in order, each as `bash until-fix/tools/run_arms.sh freeze-<level> <the 46 cases> A 3 8 <level>` (arm A, 3 runs per case, 8 at once). After the two incidents the driver ran again for none (the 5 rate-limited runs) and for medium, high and max; finished runs are kept, not run again. Both shell scripts are copied in `check/`. The Python tools they call (`run_arms.py`, `gen_one.py`, `budget.py`) and `budget_guard.sh` stay in `until-fix/tools/`; they call the models and use path tricks the repository's hooks reject."
+    }
+   ]
+  },
+  {
+   "id": "files",
+   "title": "Files and code",
+   "blocks": [
+    {
+     "type": "list",
+     "items": [
+      "`index.html`, built from `data.json`; open it from disk.",
+      "`records/<level>/`: the 690 run records (task, models, every candidate and critic reply, final clauses, machine text, time, calls) and the five `*.json.429` records of the rate-limited runs. Call logs and work folders are not copied.",
+      "`graphs/`: every machine on the page as RM text, SVG and live HTML; the shop machine `w4a-none-r3` (1,122 transitions) only as RM text, since its layout runs for minutes and its page would pass 1 MB.",
+      "`stats.md`: the scorer's output on the full run folders, call logs included.",
+      "`check/`: the scorer (`arm_stats.py`, `chain_score.py`, `loopcrit.py`, `cases.py`; lint-clean copies of the plan folder's, same logic), the page builder (`build_page.py`, with its prose in `page_text.json`) and the two run drivers (`level-bench.sh`, `run_arms.sh`).",
+      "`evidence/`: `cards/` (the cards the scorer reads), `round-logs/` (one per level, with the account usage lines removed), `level-bench.log` (the driver's log) and `STOP.guard-bug-0900`."
+     ]
+    },
+    {
+     "type": "text",
+     "text": "Code: the code freeze `809dfe3` (merge \"minimization on by default\", feature commit `a849dfb`). The runs read main at `e6c3acb` (the `cc_root` of the round logs), which adds only bundle data on top of the freeze: no file under `app/` and no card file differs."
+    }
+   ]
+  }
+ ]
+}

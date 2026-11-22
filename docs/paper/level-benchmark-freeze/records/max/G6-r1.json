@@ -1,0 +1,53 @@
+{
+ "suite": "templates",
+ "name": "tpl-precedence-2-goal",
+ "task": "Do not drop the key while the door is closed until the door has been opened once. Reach the goal.",
+ "gen": "deepseek-v4.1-flash",
+ "critic": "glm-5.3-flash",
+ "reasoning": "max",
+ "status": "accepted",
+ "error": null,
+ "wall_s": 128.1,
+ "attempts_used": 1,
+ "critic_rejections": 0,
+ "provider_reruns": 0,
+ "calls": 2,
+ "trace": [
+  {
+   "attempt": 1,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Do not drop the key while the door is closed until the door has been opened once.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"key_lost\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Reach the goal.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"at_goal\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 1,
+   "step": "critic",
+   "value": {
+    "accepted": true,
+    "feedback": "NO CHANGES NEEDED: The task's ban is worded with 'until the door has been opened once', so Precedence(door_open, key_lost) hard is the right template \u2014 key_lost is banned until the first door_open and may occur again afterward, and the 'while the door is closed' condition is already carried by the key_lost event definition; an Absence(key_lost) would wrongly fail a drop after the door was opened and re-shut. 'Reach the goal' is the one unconditionally commanded step and is correctly the hard Existence(at_goal), which is not redundant since nothing else forces it. Both clauses trace to their sentences, both priorities are hard as worded, all propositions are declared and grounded, and the machine matches: u1 rejects a key_lost before the first opening, u2 (door opened) lets later key_lost pass without penalty, and FINAL_STATES u3 is nonempty."
+   }
+  }
+ ],
+ "sends": [],
+ "clauses": [
+  [
+   "Precedence",
+   [
+    "door_open",
+    "key_lost"
+   ],
+   "hard"
+  ],
+  [
+   "Existence",
+   [
+    "at_goal"
+   ],
+   "hard"
+  ]
+ ],
+ "texts": [
+  "Do not drop the key while the door is closed until the door has been opened once.",
+  "Reach the goal."
+ ],
+ "machine": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&!door_open&key_lost) -> u1\n(u0, !at_goal&door_open) -> u2\n(u0, at_goal&!door_open&!key_lost) -> u3\n(u0, at_goal&!door_open&key_lost) -> u1\n(u0, at_goal&door_open) -> u3\n(u2, at_goal) -> u3\nREWARD_FUNCTION:\n(u0, !at_goal&!door_open&key_lost, u1) -> -10\n(u0, at_goal&!door_open&!key_lost, u3) -> 11\n(u0, at_goal&!door_open&key_lost, u1) -> -10\n(u0, at_goal&door_open, u3) -> 11\n(u2, at_goal, u3) -> 11\n"
+}

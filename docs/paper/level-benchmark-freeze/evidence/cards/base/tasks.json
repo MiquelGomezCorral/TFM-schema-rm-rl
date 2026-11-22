@@ -1,0 +1,212 @@
+{
+  "suite": "base",
+  "schema": 1,
+  "cards": [
+    {
+      "id": "base-doorkey",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-doorkey/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-DoorKey-8x8-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Use the key to open the door, then reach the goal.",
+      "goal": true,
+      "template": null,
+      "status": "draft",
+      "expect": [
+        ["Precedence", ["has_key", "door_open"], "hard"],
+        ["Precedence", ["door_open", "at_goal"], "hard"],
+        ["Existence", ["at_goal"], "hard"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": true,
+      "train": true,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "goto", "obj": "goal"}
+        ],
+        "wrong": [
+          {
+            "breaks": [2],
+            "why": "Takes the key and opens the door, then never reaches the goal.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Task text: first task of examples/arm-fm/minigrid-doorkey/tasks.json. Pilot bundle generated from this text. Changed in card fix 2: the key-before-door and door-before-goal orders are forced by the world, so they are optional extras in scoring (`forced`); Existence(at_goal) alone is also a correct output. S2 2026-11-19: the Response chain with the first trigger required (Response(first, door_open), Response(door_open, last), Existence(first)) is also a correct output (`also_ok`), the same alternative the pilot and smoke copies of this card already carry. Order audit 2026-11-20: the task states both orders (\"use the key to open the door\", \"then reach the goal\"), and a stated order is required even when the level forces it, so `forced` is gone and Existence(at_goal) alone is no longer correct. The Response chain stays `also_ok`: it states both orders as \"after a, b\". Card fixes 2026-11-20: the Response chain left `also_ok` too. `Response` is not a step form, so it does not carry the stated orders (user rule); the pilot and smoke copies lost it the same day."
+    },
+    {
+      "id": "base-unlock-pickup",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-UnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Acquire the matching key, unlock the door, and pick up the designated box in the other room.",
+      "goal": true,
+      "template": null,
+      "status": "draft",
+      "expect": [
+        ["Existence", ["has_door_key"], "hard"],
+        ["Existence", ["door_open"], "hard"],
+        ["Existence", ["target_picked_up"], "hard"],
+        ["Precedence", ["has_door_key", "door_open"], "hard"],
+        ["Precedence", ["door_open", "target_picked_up"], "hard"]
+      ],
+      "also_ok": [
+        [
+          ["Precedence", ["has_door_key", "door_open"], "hard"],
+          ["Precedence", ["door_open", "target_picked_up"], "hard"],
+          ["Existence", ["target_picked_up"], "hard"]
+        ]
+      ],
+      "env_reward_matches": true,
+      "train": true,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "box"}
+        ],
+        "wrong": [
+          {
+            "breaks": [2],
+            "why": "Takes the key and opens the door, then never picks up the box.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Task text: first task of examples/arm-fm/minigrid-unlock-pickup/tasks.json. Pilot bundle generated from this text. The agent carries one object, so it drops the key before taking the box. Changed in card fix 2: the key-before-door and door-before-box orders are forced by the world, so they are optional extras in scoring (`forced`); Existence(target_picked_up) alone is also a correct output. S2 2026-11-19: the Response chain with the first trigger required (Response(first, door_open), Response(door_open, last), Existence(first)) is also a correct output (`also_ok`), the same alternative the pilot and smoke copies of this card already carry. Order audit 2026-11-20: both orders stay `forced`. The task lists the steps with no order word (\"Acquire ..., unlock ..., and pick up ...\"), so it states no order; the same reading makes \"Open the door and pick up the box\" two goals. This is the closest call of the audit; the pilot and smoke copies of this card require both orders. Stated-order rule 2026-11-20 (user): only order words (\"then\", \"after\", \"before\") give an order, so this plain list is three facts. `expect` is one Existence per fact, the ordered chain (the old `expect`) is the `also_ok` answer, and `forced` is gone. The Response chain left `also_ok`: it is neither the facts nor the chain, and `Response` is not a step form (the base-doorkey ruling). The chain with all three Existences is also accepted (second `also_ok`): it equals the chain; the extra Existences are implied (MONA: same LTLf; same states and transitions, only the hard-break and end charges grow). Order rule 2026-11-21 (user): commanded steps in one sentence, joined by commas or \"and\", keep their written order, so the list states key before door before box. `expect` gains both `Precedence` clauses at its end (the plans' `breaks` stay valid; the world forces both orders), the chain stays `also_ok`, and the chain with all three Existences left `also_ok`, since it is now `expect`."
+    },
+    {
+      "id": "base-blocked-unlock-pickup",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-blocked-unlock-pickup/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-BlockedUnlockPickup-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Pick up the blocking ball and the key, in either order, unlock the door, and then pick up the box in the other room.",
+      "goal": true,
+      "template": null,
+      "status": "draft",
+      "expect": [
+        ["Precedence", ["blocker_moved", "door_open"], "hard"],
+        ["Precedence", ["has_door_key", "door_open"], "hard"],
+        ["Precedence", ["door_open", "target_picked_up"], "hard"],
+        ["Existence", ["target_picked_up"], "hard"]
+      ],
+      "also_ok": [],
+      "env_reward_matches": true,
+      "train": true,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "ball"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "box"}
+        ],
+        "wrong": [
+          {
+            "breaks": [3],
+            "why": "Clears the ball, takes the key and opens the door, then never picks up the box.",
+            "steps": [
+              {"do": "pickup", "obj": "ball"},
+              {"do": "drop"},
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Task text: first task of examples/arm-fm/minigrid-blocked-unlock-pickup/tasks.json. The first drop must leave the door reachable. Changed in card fix 2: the wording now says the ball and the key may come in either order (the example task text keeps the ball-first list), because a key-first run satisfies every clause; the three orders are forced by the world, so they are optional extras in scoring (`forced`) and Existence(target_picked_up) alone is also a correct output. Order audit 2026-11-20: the list \"..., unlock the door, and then pick up the box\" states all three orders (the ball and the key before the door, the door before the box), and a stated order is required even when the level forces it, so `forced` is gone and Existence(target_picked_up) alone is no longer correct."
+    },
+    {
+      "id": "base-key-corridor",
+      "env": {
+        "description": "experiments/benchmark/envs/minigrid-key-corridor/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-KeyCorridorS4R3-v0",
+        "env_kwargs": {},
+        "layout": "procedural",
+        "layout_seed": 1,
+        "observation": "symbolic"
+      },
+      "task": "Explore the side rooms, find and acquire the key matching the locked target room, return to the corridor, open the target door, and pick up the designated object.",
+      "goal": true,
+      "template": null,
+      "status": "draft",
+      "expect": [
+        ["Existence", ["has_matching_key"], "hard"],
+        ["Existence", ["target_door_open"], "hard"],
+        ["Existence", ["target_picked_up"], "hard"],
+        ["Precedence", ["key_found", "has_matching_key"], "hard"],
+        ["Precedence", ["has_matching_key", "target_door_open"], "hard"],
+        ["Precedence", ["target_door_open", "target_picked_up"], "hard"]
+      ],
+      "also_ok": [
+        [
+          ["Precedence", ["key_found", "has_matching_key"], "hard"],
+          ["Precedence", ["has_matching_key", "target_door_open"], "hard"],
+          ["Precedence", ["target_door_open", "target_picked_up"], "hard"],
+          ["Existence", ["target_picked_up"], "hard"]
+        ]
+      ],
+      "env_reward_matches": true,
+      "train": true,
+      "plans": {
+        "solve": [
+          {"do": "pickup", "obj": "key"},
+          {"do": "toggle", "obj": "door:locked"},
+          {"do": "drop"},
+          {"do": "pickup", "obj": "ball"}
+        ],
+        "wrong": [
+          {
+            "breaks": [2],
+            "why": "Takes the key and opens the target door, then never picks up the object.",
+            "steps": [
+              {"do": "pickup", "obj": "key"},
+              {"do": "toggle", "obj": "door:locked"},
+              {"do": "wait", "n": 1000}
+            ]
+          }
+        ]
+      },
+      "event_seeds": [],
+      "paraphrases": [],
+      "notes": "Task text: first task of examples/arm-fm/minigrid-key-corridor/tasks.json. Navigation opens closed unlocked side doors on the way. Changed in card fix 2: the key-before-door and door-before-object orders are forced by the world, so they are optional extras in scoring (`forced`); Existence(target_picked_up) alone is also a correct output, and the card does not measure exploration. Order audit 2026-11-20: both orders stay `forced`. The task lists the steps with no order word, so it states no order (the same reading as base-unlock-pickup). The stated \"find and acquire the key\" has no clause in `expect`; listed for review. Card fixes 2026-11-20: no change. \"Find and acquire the key\" is the key step, and `expect` names it (`has_matching_key`, in the first `Precedence`); `key_found` would add nothing, since the facts page says the key is never held before it is seen; \"explore the side rooms\" and \"return to the corridor\" have no label. Moved from KeyCorridorS6R3 to KeyCorridorS4R3 on 2026-11-20 (with cx-sequence): no method learned S6R3 in 71 runs. `expect` and the answer lists are unchanged. The S4R3 FARM bundle (production pair, `--reasoning max`, end judgment off: the default `reward_end_judgment`) adds Precedence(key_found, has_matching_key) beyond the card. That is on the LLM side: it read \"find and acquire\" as an order, and the user's rule is that only order words such as \"then\", \"after\" and \"before\" give an order. The scorer calls the clauses `mismatch`, so its training on S4R3 (FARM 2 of 3 seeds, no-RM 0 of 3) is kept as a probe only, not a benchmark result. The bundle is generated again after the card is updated for the user's stated-order rule. ARM-FM, 2026-11-20: the ARM-FM bundle still has the S6R3 page and room geometry; `run-suite` refuses it (bundle level mismatch), and it is generated again at the freeze. Stated-order rule 2026-11-20 (user): the plain list gives facts, but the compound \"find and acquire the key\" states an order (taking the key needs finding it first; user: \"this one is fine\"), so `expect` is Precedence(key_found, has_matching_key) with one Existence per fact, the ordered chain with that Precedence is the only `also_ok` answer, `forced` is gone, and the S4R3 FARM bundle above is correct and not generated again: its training counts (FARM 2 of 3 seeds, judged success 0.85, 0.82, 0.00 at 1.5M steps; no-RM 0 of 3). Order rule 2026-11-21 (user): commanded steps in one sentence, joined by commas or \"and\", keep their written order, so the list also states key before door before object. `expect` gains Precedence(has_matching_key, target_door_open) and Precedence(target_door_open, target_picked_up) at its end (the plans' `breaks` stay valid); the 4-clause chain stays `also_ok` and now states the same task as `expect`. The S4R3 FARM bundle above stores exactly that chain, so it stays right (`also_ok`)."
+    }
+  ]
+}
