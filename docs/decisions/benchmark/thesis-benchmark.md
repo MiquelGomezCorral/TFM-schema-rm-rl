@@ -263,12 +263,15 @@ thing whichever arm produced it.
   lands and how the agent turns: `face` (default, every card above) turns the agent to face it;
   `none` draws the landing side from the seed and keeps the agent's direction; `side` makes the same
   draw, turns the agent to face a box at its right or left, and to its right or left for a box
-  behind it. Two copies of `tpl-chain-response-1-goal-carry` with only that setting changed,
-  `-noturn` (`none`) and `-backturn` (`side`), test training when the world can force a missed
-  next-move pickup. They have no paraphrases and no bundle of their own: `bundle_of` makes
-  `run-suite` train them on that card's FARM machine (FARM only, 3 seeds, 1.5M steps,
-  `box-carry/runs-fall-turn.yaml`), and `generate-suite` skips them. A box-rule break after the box
-  landed aside or behind is the world's, not the machine's.
+  behind it. Since 2026-11-22 (user) `half` makes the same draw and a fair coin turns the agent
+  either to face the box or to have it on its right, one turn short, so about half the falls allow
+  a next-move pickup wherever the agent stands (a rule tied to the landing side gave 75% to 94%:
+  walls send blocked sides to the front). Three copies of `tpl-chain-response-1-goal-carry` with
+  only that setting changed, `-noturn` (`none`), `-backturn` (`side`) and `-half` (`half`), test
+  training when the world can force a missed next-move pickup. They have no paraphrases and no
+  bundle of their own: `bundle_of` makes `run-suite` train them on that card's machine (FARM:
+  3 seeds, 1.5M steps, `box-carry/runs-fall-turn.yaml`), and `generate-suite` skips them. A
+  box-rule break after such a fall is the world's, not the machine's.
 - **Forced cards.** Seed-1 judging with the empty-pass check showed two trained cards whose rule never
   triggered, so doing nothing passed: `tpl-response-1-nogoal` (`Response(blocker_moved, has_door_key)`,
   no-RM judged 1.00, non-empty 0.00) and `tpl-responded-existence-1-nogoal`
@@ -597,3 +600,8 @@ and a restart is easier to trust.
   with a right machine does not count against FARM's no-help count (the stage is inherited from ARM-FM). The two
   soft-only no-goal cards stay in the set: the idle agent breaks their soft rule (2.0 and 1.0 times per episode) and
   no-RM beats it, so they are not idle-passable.
+- 2026-11-22: A fourth fall world at about 50% (user). `fall_turn` gained `half` (a coin decides whether the
+  agent faces the fallen box), and box-carry the copy `tpl-chain-response-1-goal-carry-half`, trained like
+  `-noturn` (see Box-carry cards). The first rule tried (only a box at the right turns the agent) gave
+  94% of next-move pickups for the solving policy and 75% for an exit walker, since walls send blocked sides to
+  the front; the coin gives 52% and 53%. `face`, `none` and `side` play the same episodes as before.
