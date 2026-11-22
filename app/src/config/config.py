@@ -275,9 +275,11 @@ class Configuration:
     attempts: int = 3
     labeling: bool = False
     state_descriptions: bool = True
-    # Off by default: on, the state tagger also reads what the critic reads beside the tagger's own
-    # inputs (the clause template guide, the compiler clues and the compiler warnings).
-    tagger_critic_info: bool = False
+    # On by default since 2026-11-22 (user): the state tagger also reads what the critic reads beside
+    # its own inputs (the clause template guide, the compiler clues and the compiler warnings). On 6
+    # bundles with an off state text, 3 runs each, it cut off texts from 11 of 18 runs to 5 of 18.
+    # Bundles made before then were tagged with it off.
+    tagger_critic_info: bool = True
     embeddings: bool = False
     # None means the local llama-server on LLAMA_SERVER_PORT; see llama_server_command.
     embedding_endpoint: str | None = None

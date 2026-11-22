@@ -121,7 +121,7 @@ class Engine:
             raise value
         return value
 
-    def describe_states(self, task, clauses, candidate, roles):
+    def describe_states(self, task, clauses, candidate, roles, **critic_info):
         nodes = tuple(roles)
         self.tag_nodes.append(nodes)
         value = self.tag_results.pop(0) if self.tag_results else None
@@ -533,7 +533,7 @@ class OrchestrationTests(unittest.TestCase):
         engine = SimpleNamespace(
             environment=ENV,
             propose_task=lambda task, history="": order.append("generator") or (SELECTION,),
-            describe_states=lambda *args: order.append("tagger") or ("first", "second"),
+            describe_states=lambda *args, **kwargs: order.append("tagger") or ("first", "second"),
             review_candidate=lambda task, clauses, candidate, warnings=(), clues="": (
                 order.append("critic") or CriticResult(True, "ok")
             ),
