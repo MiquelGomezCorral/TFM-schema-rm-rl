@@ -5,7 +5,9 @@ state of the machine (the runtime's ``terminate_on_rm``), whatever the card's ``
 nothing after that counts. The solving plan must stop in a final state without entering the well
 first; a machine with no final state must end it with nothing owed. A wrong plan that breaks a
 hard rule must not stop in a final state. A wrong plan that breaks only soft rules still reaches
-the goal, so it must pay a negative reward (the trace bank's R43 rule). With no final state, every
+the goal, so it must pay a negative reward (the trace bank's R43 rule) or end where the solving
+plan on its layout ends and pay less than it, plain (a soft rule broken at the end, such as
+``Existence``'s, or on the finishing edge is priced by a smaller payout). With no final state, every
 wrong plan, and an idle plan where it breaks a rule of the card, must pay less than the solving
 plan on the same layout, plain and discounted at the bundle's gamma (the card review's pay test; a
 bundle whose solving plan paid on no layout fails), and must end in the well where it breaks a
@@ -41,6 +43,7 @@ FAILED_REASON = "plan-check-failed"  # the reason a failed generation records
 FINAL, WELL, OPEN = "final", "well", "open"  # where a plan's episode stops
 IDLE = "idle"  # the plan that only waits, played on a machine with no final state
 KEEPS_RULES = "keeps-rules"  # the kind of an idle run that breaks no rule of its card
+SOFT_UNPAID = "breaks only soft rules and pays nothing"
 # A wait stops where the env ends the episode (plans.py), so this one waits to the level's end.
 _IDLE_STEPS = ({"do": "wait", "n": 10**6},)
 
@@ -69,6 +72,7 @@ def check_card_plans(bundle: ArtifactBundle, card: Card, run_seed: int) -> dict[
         for seed in card.reset_seeds(run_seed)
         for plan in plans
     ]
+    _price_soft_breaks(runs)
     problems = _check_pay(runs) if no_goal else []
     problems += [
         f"{run['plan']}-s{run['seed']}: {text}" for run in runs for text in run["problems"]
@@ -166,6 +170,22 @@ def _check_pay(runs: list[dict[str, Any]]) -> list[str]:
     return []
 
 
+def _price_soft_breaks(runs: list[dict[str, Any]]) -> None:
+    """Drop ``SOFT_UNPAID`` from a soft break that ends like the solving run of its seed, paying less.
+
+    Only plain pay counts: a slower plan pays less discounted pay with nothing charged. The end
+    must match, so a soft rule compiled as hard (the plan reaches the goal, the machine does not)
+    still fails.
+    """
+    solved = {run["seed"]: run for run in runs if run["kind"] == SOLVE and "pay" in run}
+    for run in runs:
+        best = solved.get(run["seed"])
+        if SOFT_UNPAID not in run["problems"] or best is None:
+            continue
+        if run["end"] == best["end"] and run["pay"][0] < best["pay"][0]:
+            run["problems"].remove(SOFT_UNPAID)
+
+
 def _unpriced_breaks(judgment: Judgment) -> list[str]:
     """The hard rules a run breaks for good although the machine kept it out of the well."""
     return [
@@ -184,11 +204,7 @@ def _problems(
     if steps == 0 and end != OPEN:
         return ["ends the episode before the agent acts"]
     if kind == SOFT_BREAK:  # a soft rule broken for good does not stop the goal; it must cost
-        return (
-            []
-            if any(reward < 0 for reward in rewards)
-            else ["breaks only soft rules and pays nothing"]
-        )
+        return [] if any(reward < 0 for reward in rewards) else [SOFT_UNPAID]
     if kind in (SOLVE, KEEPS_RULES):  # an idle run that keeps every rule must not be punished
         if end == WELL:
             return [f"enters the well at step {steps}"]
