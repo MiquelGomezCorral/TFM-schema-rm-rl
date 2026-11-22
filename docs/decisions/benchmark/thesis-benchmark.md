@@ -148,7 +148,10 @@ thing whichever arm produced it.
   `y`", a sentence opened by an order word makes its step `z` required: `Existence(z)`,
   `Precedence(y, z)` and `Response(x, z)`, the last left out when `z`'s own sentence already puts
   `x` first. Every wording of a card states the same task, and an `also_ok` answer is the same task as `expect` or
-  stronger only on behaviour the task never needs, never weaker (MONA-checked).
+  stronger only on behaviour the task never needs, never weaker (MONA-checked). Since 2026-11-22 (user) an
+  `also_ok` answer may also be stronger where the wording itself reads that way, as long as its machine still
+  trains the task in the card's world: the model gets the environment description, so world knowledge in its
+  choice is fine. The readings are listed in `docs/LTLF_TASK_LANGUAGE.md` ("Wordings that read two ways").
 - **Card scoring.** `rm-facts` scores FARM's stored clauses against the card: `exact` (the `expect`
   clauses, `forced` ones optional), `also_ok` (one listed alternative), `equivalent` or `mismatch`.
   Since 2026-11-21 (user) a clause list that states the same task as one of those answers counts as
@@ -545,3 +548,24 @@ and a restart is easier to trust.
   gained `fall_turn` (default `face`, the world every stored trace and card already used), and the
   box-carry suite two copies of `tpl-chain-response-1-goal-carry` that train on its FARM machine
   under `none` and `side` (see Box-carry cards).
+- 2026-11-22: Readings the user accepted after the final-run generation (8 FARM bundles differed from their
+  card at maximum thinking). New `also_ok` answers: `tpl-not-co-existence-soft-1-nogoal` (two soft `Absence`s:
+  "both" read as "neither"), `tpl-precedence-soft-1-goal` and `tpl-precedence-soft-3-goal` (an extra soft
+  `Existence` of the first step beside the soft `Precedence`), `tpl-precedence-1-nogoal` (a hard
+  `Existence(at_exit)` beside the order) and `tpl-not-co-existence-soft-1-goal` (a soft `Absence(key_lost)`, as
+  on its hard twins; `key_lost` fires only with the door closed), and a second answer for `tpl-not-co-existence-1-goal`
+  (a hard `Existence(door_open)` beside the `Absence`, for wording ~p2). Rule: an answer may be stronger where the
+  wording reads that way, as long as its machine still trains the task in the card's world. `shop-boil~p2` stays
+  held: its extra `Response(stove_fixed, holding_food)` fails the plan check, and the shop world has no "put the food
+  down" fact to state the pick-up exactly.
+- 2026-11-22: Two check rules changed, no machine changed (user rulings D1 and D3). D1: the plan
+  check and the trace bank's R43 pass a soft break that ends like the solve of its layout and pays
+  less (user: "you have the right at 12, since you got 7 -> 7-12 = -5 and that is the charge the
+  agent got"). D3: R43 judges the solve of a machine with no final state and no end judgment by pay,
+  as the plan check does ("Judge them by pay, as the plan check does"). The FARM soft `Existence`,
+  `ExistenceTwo` and `Precedence` bundles that failed only those rules now pass.
+- 2026-11-22: A labeling may compute helper facts that only feed a machine fact (user ruling D2: "yeah we allow
+  it"). `key_lost` needs `has_door_key` (and `door_open`) from the step before; the machine reads only `key_lost`.
+  The gate's review still holds a labeling fact that no machine fact and no other fact reads. The 19 `key_lost`
+  bundles the old rule held (cx-goal-one-rule, tpl-absence(-soft)-1-goal, tpl-not-co-existence(-soft)-1-goal and
+  their wordings) count as right.

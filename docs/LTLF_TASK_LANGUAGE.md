@@ -115,6 +115,35 @@ The words below are examples; other words with the same meaning work the same wa
 
 A stated order stays in the machine even when the environment already forces it.
 
+### Wordings that read two ways
+
+Everyday language often allows two readings, and the model may take either one. In the final run
+(2026-11-22, generator at maximum thinking), every rule set that differed from a card's answer came
+from a sentence a person could also read the model's way. Write the reading you want:
+
+- "Try to move the ball before you take the key." can also mean "try to move the ball, and do it
+  before the key". That adds a soft "move the ball at some point" beside the order. To ask only
+  for the order, make the second step the condition: "If you take the key, try to move the ball
+  first."
+- "Try not to let zombies through both the top lane and the side lanes." "Both" can mean "not the
+  two together" or "neither one nor the other". Say "never both in one run" for the first reading
+  and "neither the top lane nor the side lanes" for the second.
+- "You may only reach the exit after you flip the switch." can make reaching the exit the aim. If
+  the exit is optional, say so: "If you go to the exit, flip the switch first."
+- "Put your load down, turn the stove down and pick the load back up." can become an every-time
+  rule: after the stove, hold food, even when you carried nothing. A step that applies only
+  sometimes needs its condition: "if you were carrying something, pick it back up".
+- A fact can already carry a condition. `key_lost` counts only while the door is closed, so "try
+  not to both drop the key while the door is still closed and open the door" comes out as "try
+  not to drop the key" in a world where the door has to open.
+
+The rewrites above are suggestions; the benchmark did not test them.
+
+When the benchmark scores a card, a rule set that differs from the card's answer still counts as
+right when it is a fair reading of the sentence and its machine still trains the task in the
+card's world. The model gets the environment description, so using what it knows about the world
+is fine. Such answers go in the card's `also_ok`.
+
 ## Tasks, clauses, and multiple Reward Machines
 
 One submitted **task** produces one RM. A task may contain several clauses, and those
