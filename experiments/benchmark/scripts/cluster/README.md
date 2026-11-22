@@ -31,27 +31,30 @@ PYTHONPATH=app python experiments/benchmark/scripts/cluster/cluster_runs.py fetc
   running job asks for. A finished run here blocks its name: archive that folder first to retrain it.
 - `RUNS` is a run-suite `runs.yaml` (all its runs) or a text file with one run per line:
   `<runs.yaml> <card> <arm> <seed> [<steps>]`, paths relative to the repository root, `#` comments.
-  Steps default to the runs file's `total_timesteps`. Example:
-  `experiments/benchmark/base/runs.yaml base-doorkey arm-fm 2 5000000`. One run at two step counts
-  is refused (run names carry no steps).
+  A mix run is named by its mix id in the card column. Steps default to the runs file's
+  `total_timesteps`. Example: `experiments/benchmark/base/runs.yaml base-doorkey arm-fm 2 5000000`.
+  One run at two step counts is refused (run names carry no steps).
 - `submit --dry-run` prints the jobs and their `sbatch` lines without touching the cluster: the
   dirty paths are listed but do not stop it, and only the runs here are checked for repeats.
 - `status` shows our SLURM jobs and, per job folder, how many runs finished, each driver's last line,
   and the runs not trained because their bundle is `no-data` or `pending` there (`job.sh` then
   exits 1).
 - `fetch` copies every finished run folder (its `resources.json` says `finished`) into DEST
-  (default `outputs/runs`), with the experiment's `card.json`, `run-config.yaml` and `seed<N>.log`
-  when DEST lacks them. Judge them as usual afterwards (`judge_all.py` or `test-rl --judge`). A folder
+  (default `outputs/runs`), with the experiment's `card.json`, `run-config.yaml`, `seed<N>.log`
+  and, for a mix, `members/` when DEST lacks them. Judge them as usual afterwards (`judge_all.py` or `test-rl --judge`). A folder
   that fails is reported and retried by the next fetch; the others still come, and fetch exits 1.
 - Cancel a job with `ssh tensor scancel <job id>` (ids are in `status`).
 
 ## How a submit becomes jobs
 
-1. The runs are grouped by (runs file, arm, steps, seeds of the card). Each group becomes a copy of
-   its runs file with `only`, `arms`, `seeds` and `total_timesteps` narrowed, and run-suite's own
-   `load_suite` + `expand_runs` must expand the copy to exactly the requested runs. Run names do not
-   include steps, so a 5M run keeps its card's usual name. Runs files with `mixes`, `variants` or
-   `compare_learners` are refused (train those here).
+1. The runs are grouped by (runs file, arm, steps, env family, seeds of the card or mix). Each group
+   becomes a copy of its runs file with `only` (its cards), `mixes` (its mixes), `arms`, `seeds` and
+   `total_timesteps` narrowed, and run-suite's own `load_suite` + `expand_runs` must expand the copy
+   to exactly the requested runs. Run names do not include steps, so a 5M run keeps its card's usual
+   name. A copy of mixes alone has `only: []`, which run-suite reads as every `train: true` card, so
+   that check refuses it in a suite with such cards (XLand has none; `complex/mixes-example.yaml`
+   does: send its mix with one of its cards). Runs files with `variants` or `compare_learners` are
+   refused (train those here).
 2. Copies are packed into jobs of at most `--slots` runs (default in the script, see Throughput),
    whole cards only, and at most one copy per suite name, because run-suite takes one lock per suite.
 3. Each job gets its own folder `~/tfm/jobs/<UTC stamp>-<n>/` with a shared clone (`repo/`) at the
@@ -61,11 +64,12 @@ PYTHONPATH=app python experiments/benchmark/scripts/cluster/cluster_runs.py fetc
    a run whose bundle is `no-data` or `pending` and still exits 0, so `job.sh` fails the job (exit
    1) when a driver's plan lists one.
 4. Resources: `--gres=shard:K` with K = ceil(6 x runs / slots) (6 shards = one L40S), 1 CPU per run
-   + 2 (a GPU run keeps one core busy, 2 GB RSS; SLURM here binds no cores, so the request is for
-   fair scheduling), memory = the learner's `ram_gb` per run + 4 GB, partition `docencia`. The time
-   limit is the job's longest run at 8,500 / slots steps/s per run (Throughput), x1.5, rounded up to
-   a quarter hour, at least 30 min: 3:00:00 for 5M steps at 12 slots, 1:00:00 for 1.5M. `--time`
-   overrides it. Each job takes one of `--lanes` names (`tfm-lane1`, `tfm-lane2`, ...) with
+   (2 for XLand, see XLand) + 2 (a GPU run keeps one core busy, 2 GB RSS; SLURM here binds no
+   cores, so the request is for fair scheduling), memory = the learner's `ram_gb` per run + 4 GB,
+   partition `docencia`. The time limit is the job's longest run at min(8,500 / slots, one run
+   alone) steps/s (Throughput; one run alone is 2,100 for MiniGrid, 780 for XLand), x1.5, rounded
+   up to a quarter hour, at least 30 min: 3:00:00 for 5M steps at 12 slots (MiniGrid or XLand),
+   1:00:00 for 1.5M. `--time` overrides it. Each job takes one of `--lanes` names (`tfm-lane1`, `tfm-lane2`, ...) with
    `--dependency=singleton`, so at most `--lanes` of our jobs run at once (default 2: two GPUs' worth).
 
 ## Rules fetch keeps
@@ -143,3 +147,34 @@ A cluster run and its local twin, same seed, are not bit-identical (losses diffe
 update: GPU and CUDA builds differ), but the live test matched on every judged field: base-doorkey
 FARM seed 1 at 1.5M steps judged 1.00 success on both, 0 hard or soft breaks, RM return 13.0, mean
 length 16.93 vs 16.91, steps to success 253,952 on both.
+
+## XLand
+
+XLand-MiniGrid steps its worlds with jax, on the CPU only (`custom_envs/xland_env.py`), so an XLand
+run is CPU-bound well below a MiniGrid run alone. `CPU_BOUND` in `cluster_runs.py` gives the
+`xland` env family its own speed and CPU request; every other family keeps 2,100 steps/s and 1 CPU.
+
+Measured 2026-11-23 with one check job (job 56363): the no-RM arm of `xland-x1-197` and of the
+3-card mix `xland-mix3`, PPO (16 envs x 256 steps), 100k steps, both on one L40S shard, while our
+9-run MiniGrid job ran. Both ended `finished`, 2.3 GB peak RSS each, 2.7-2.8 min end to end.
+
+| Measure | X1 card | 3-card mix |
+| ---: | ---: | ---: |
+| Training loop, no pinning (steps/s, `train.csv` collect + update) | 1,420-2,010 | 1,860 |
+| Training loop, pinned mid-run to 1 core / 2 cores (`taskset`) | 2,280 (1 core) | 1,950 (2 cores) |
+| Cores in use, no pinning (`top`, 10 s samples) | 1.0-1.3 | 1.3-1.4 |
+| Evaluation of 10 episodes every 50k steps (untrained policy, 5,070 steps) | 8.8 s | 8.4 s |
+| Final evaluation, 100 episodes | 88 s | 89 s |
+
+- **One core is enough.** A run starts 543 threads (jax sizes its pool to the node's 96 cores),
+  and SLURM here binds no cores (`ConstrainCores=no`), so unpinned it keeps 1.0-1.4 cores busy;
+  pinned to one core it trains as fast or faster. `submit` asks for 2 CPUs per run, so the
+  request covers what an unpinned run really uses.
+- **5M steps, no RM:** about 2,940 s of training at 1,700 steps/s, 99 evaluations x 8.6 s, the
+  final evaluation and start-up: about 3,900 s, 1,290 steps/s end to end.
+- **5M steps with a machine:** not measured here (no XLand bundle was committed yet). Locally a
+  run with a machine is 0.61x one without (970 vs 1,600 steps/s), so the estimate is 780 steps/s,
+  the `CPU_BOUND` speed for every XLand run.
+
+At 12 slots the GPU's share (8,500 / 12 = 708 steps/s) is below 780, so XLand jobs get the
+MiniGrid time limit, 3:00:00 for 5M steps; at `--slots 6` the CPU speed caps them (2:45:00).

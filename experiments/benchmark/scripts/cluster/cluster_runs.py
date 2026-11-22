@@ -9,16 +9,17 @@ Usage (repository root, `RM_RL_env`, UPV VPN up):
 
 `sync` fast-forwards the cluster clone `~/tfm/repo` to local `main` (a git bundle) and copies the
 job scripts. `submit` reads RUNS: a run-suite runs.yaml (all its runs) or a text file of lines
-`<runs.yaml> <card> <arm> <seed> [<steps>]` (steps default to the runs file's total_timesteps).
-It refuses unless the cluster clone is at this checkout's HEAD and what the runs read (app, the
-learner configs, the task files, the bundles) has no uncommitted change here, and it drops the
-runs finished, running or untrainable here, finished on the cluster, or asked for by a live job.
-It writes one runs.yaml copy per (runs file, arm, steps, seeds) group, narrowed with `only`,
-`arms`, `seeds` and `total_timesteps`, so run-suite trains exactly the requested runs under their
-usual names. Copies are packed into SLURM jobs of at most `--slots` runs and one copy per suite
-name (run-suite locks per suite). Each job takes the GPU shards its runs need (6 shards = one
-L40S), a time limit estimated from its steps unless `--time` is given, and one of `--lanes` job
-names with `--dependency=singleton`, so at most that many jobs run at once. `fetch` copies every
+`<runs.yaml> <card> <arm> <seed> [<steps>]` (a mix run is named by its mix id; steps default to
+the runs file's total_timesteps). It refuses unless the cluster clone is at this checkout's HEAD
+and what the runs read (app, the learner configs, the task files, the bundles) has no uncommitted
+change here, and it drops the runs finished, running or untrainable here, finished on the cluster,
+or asked for by a live job. It writes one runs.yaml copy per (runs file, arm, steps, env family,
+seeds) group, narrowed with `only`, `mixes`, `arms`, `seeds` and `total_timesteps`, so run-suite
+trains exactly the requested runs under their usual names. Copies are packed into SLURM jobs of at
+most `--slots` runs and one copy per suite name (run-suite locks per suite). Each job takes the
+GPU shards its runs need (6 shards = one L40S), the CPUs its runs keep busy, a time limit
+estimated from its steps unless `--time` is given, and one of `--lanes` job names with
+`--dependency=singleton`, so at most that many jobs run at once. `fetch` copies every
 finished run folder into DEST (default `outputs/runs`) with the local layout, newest job first,
 rewriting the cluster paths in its `config.yaml` (a shared no-RM run's links point at its owner's
 copy); it never overwrites a folder, skips a run that DEST already has another folder for, and
@@ -62,8 +63,11 @@ SLOTS = 12  # runs per L40S: see README.md, "Throughput"
 GPU_STEPS_PER_S = 8_500  # one L40S, all its runs together: README.md, "Throughput"
 SOLO_STEPS_PER_S = 2_100  # one run alone on an L40S is CPU-bound near this: README.md
 TIME_MARGIN = 1.5  # over the estimate: evals, start-up and other users' jobs on the GPU vary
-# The copies narrow only cards x arms x seeds, so runs files with these are refused.
-UNSUPPORTED = ("mixes", "variants", "compare_learners")
+# Env families whose worlds step on the CPU (XLand: jax, CPU only), so one of their runs is
+# CPU-bound well below SOLO_STEPS_PER_S: (steps/s of one run, CPUs it keeps busy). README.md, "XLand".
+CPU_BOUND = {"xland": (780, 2)}
+# The copies narrow cards and mixes x arms x seeds, so runs files with these are refused.
+UNSUPPORTED = ("variants", "compare_learners")
 # Every finished run folder of every job folder that fetch has not copied yet (fetch leaves a
 # FETCHED_MARK in it, so a run archived here for retraining is neither skipped nor copied back);
 # a shared no-RM run's links count too.
@@ -95,7 +99,7 @@ class Request:
 
 @dataclass
 class Chunk:
-    """The runs of one runs.yaml copy: cards x one arm x seeds, at one step count."""
+    """The runs of one runs.yaml copy: cards and mixes (ids) x one arm x seeds, at one step count."""
 
     runs_file: Path
     suite: str
@@ -104,6 +108,8 @@ class Chunk:
     seeds: tuple[int, ...]
     cards: list[str]
     ram_gb: float  # per run, the learner's run-suite estimate
+    solo_steps_per_s: int  # one run alone; the GPU's share caps it further (job_time)
+    cpus_per_run: int
 
     @property
     def runs(self) -> int:
@@ -183,7 +189,9 @@ def read_requests(path: Path, specs: dict[Path, dict]) -> list[Request]:
         card, arm, seed = fields[1], fields[2], int(fields[3])
         spec = suite_spec(runs_file, specs)
         if (card, arm, seed) not in {(r.card["id"], r.arm, r.seed) for r in expand_runs(spec)}:
-            raise ValueError(f"{line!r}: not a run of {fields[0]} (card, arm or seed unknown)")
+            raise ValueError(
+                f"{line!r}: not a run of {fields[0]} (card or mix, arm or seed unknown)"
+            )
         steps = int(fields[4]) if len(fields) > 4 else spec["total_timesteps"]
         request = Request(runs_file, card, arm, seed, steps)
         # Run names carry no steps, so two step counts would be two runs of one name.
@@ -194,25 +202,35 @@ def read_requests(path: Path, specs: dict[Path, dict]) -> list[Request]:
     return requests
 
 
-def plan_chunks(requests: list[Request], specs: dict[Path, dict], slots: int) -> list[Chunk]:
-    """Group the requests into runs.yaml copies of at most ``slots`` runs (whole cards)."""
+def plan_chunks(
+    requests: list[Request], runs: dict[tuple, Run], specs: dict[Path, dict], slots: int
+) -> list[Chunk]:
+    """Group the requests into runs.yaml copies of at most ``slots`` runs (whole cards or mixes).
+
+    A copy holds one env family, so its runs share one speed and CPU need.
+    """
     seeds: dict[tuple, set[int]] = {}
     for request in dict.fromkeys(requests):
-        key = (request.runs_file, request.arm, request.steps, request.card)
+        family = runs[request.key].card["env"]["family"]  # a mix's is its cards' (mix_runs)
+        key = (request.runs_file, request.arm, request.steps, family, request.card)
         seeds.setdefault(key, set()).add(request.seed)
 
     groups: dict[tuple, list[str]] = {}
-    for (runs_file, arm, steps, card), card_seeds in seeds.items():
-        groups.setdefault((runs_file, arm, steps, tuple(sorted(card_seeds))), []).append(card)
+    for (runs_file, arm, steps, family, card), card_seeds in seeds.items():
+        group = (runs_file, arm, steps, family, tuple(sorted(card_seeds)))
+        groups.setdefault(group, []).append(card)
 
     chunks = []
-    for (runs_file, arm, steps, group_seeds), cards in groups.items():
+    for (runs_file, arm, steps, family, group_seeds), cards in groups.items():
         spec = specs[runs_file]
         ram_gb = spec["learners"][spec["learner"]]["ram_gb"]
+        solo, cpus = CPU_BOUND.get(family, (SOLO_STEPS_PER_S, 1))
         per_chunk = max(1, slots // len(group_seeds))
         for start in range(0, len(cards), per_chunk):
             part = cards[start : start + per_chunk]
-            chunks.append(Chunk(runs_file, spec["suite"], arm, steps, group_seeds, part, ram_gb))
+            chunks.append(
+                Chunk(runs_file, spec["suite"], arm, steps, group_seeds, part, ram_gb, solo, cpus)
+            )
     return chunks
 
 
@@ -233,8 +251,17 @@ def pack_jobs(chunks: list[Chunk], slots: int) -> list[list[Chunk]]:
 def write_copy(chunk: Chunk, path: Path) -> None:
     """Write the chunk's runs.yaml copy and check run-suite expands it to exactly its runs."""
     spec = yaml.safe_load(chunk.runs_file.read_text(encoding="utf-8"))
+    mixes = [mix for mix in spec.get("mixes") or [] if mix["id"] in chunk.cards]
+    mix_ids = {mix["id"] for mix in mixes}
+    # shortcut: a copy of mixes alone gets `only: []`, which run-suite reads as every card with
+    # train: true (XLand has none); the check below refuses such a copy, so train those mixes
+    # beside one of their suite's cards, or locally.
     spec.update(
-        only=chunk.cards, arms=[chunk.arm], seeds=list(chunk.seeds), total_timesteps=chunk.steps
+        only=[card for card in chunk.cards if card not in mix_ids],
+        mixes=mixes,
+        arms=[chunk.arm],
+        seeds=list(chunk.seeds),
+        total_timesteps=chunk.steps,
     )
     path.write_text(yaml.safe_dump(spec, sort_keys=False), encoding="utf-8")
 
@@ -262,8 +289,9 @@ def job_time(job: list[Chunk], slots: int) -> str:
     One GPU's speed shared by ``slots`` runs, but never faster than one run alone, times
     ``TIME_MARGIN``, rounded up to a quarter hour, at least half an hour.
     """
-    per_run = min(GPU_STEPS_PER_S / slots, SOLO_STEPS_PER_S)
-    seconds = max(chunk.steps for chunk in job) / per_run * TIME_MARGIN
+    seconds = TIME_MARGIN * max(
+        chunk.steps / min(GPU_STEPS_PER_S / slots, chunk.solo_steps_per_s) for chunk in job
+    )
     minutes = max(30, math.ceil(seconds / 900) * 15)
     return f"{minutes // 60}:{minutes % 60:02d}:00"
 
@@ -286,9 +314,10 @@ def dirty_paths(
         spec = specs[request.runs_file]
         paths.add(spec["learners"][spec["learner"]]["config"])
         paths.update([spec["tasks"]] if isinstance(spec["tasks"], str) else spec["tasks"])
-        bundle = runs[request.key].bundle
-        if bundle is not None:
-            paths.update((str(bundle), f"{bundle}.status.json", f"{bundle}{PLAN_CHECK_SUFFIX}"))
+        planned = runs[request.key]
+        for bundle in planned.bundles or (planned.bundle,):  # a mix trains on each card's bundle
+            if bundle is not None:
+                paths.update((str(bundle), f"{bundle}.status.json", f"{bundle}{PLAN_CHECK_SUFFIX}"))
     return run("git", "-C", str(ROOT), "status", "--porcelain", "--", *sorted(paths)).splitlines()
 
 
@@ -396,7 +425,7 @@ def submit(args: argparse.Namespace) -> None:
         print("nothing to submit")
         return
 
-    jobs = pack_jobs(plan_chunks(sent, specs, args.slots), args.slots)
+    jobs = pack_jobs(plan_chunks(sent, suite_runs, specs, args.slots), args.slots)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
     lanes = [1] * len(jobs) if args.dry_run else pick_lanes(args.lanes, len(jobs))
     print(f"{len(sent)} runs in {len(jobs)} jobs, commit {commit}")
@@ -415,11 +444,12 @@ def submit(args: argparse.Namespace) -> None:
 
             runs = sum(chunk.runs for chunk in job)
             shards = min(SHARDS_PER_GPU, math.ceil(SHARDS_PER_GPU * runs / args.slots))
+            cpus = sum(chunk.runs * chunk.cpus_per_run for chunk in job) + 2
             mem_gb = math.ceil(sum(chunk.runs * chunk.ram_gb for chunk in job)) + 4
             time_limit = args.time or job_time(job, args.slots)
             sbatch = (
                 f"sbatch --parsable -p {args.partition} -t {time_limit} -J {LANE}{lane} "
-                f"--dependency=singleton --comment {name} -c {runs + 2} --mem {mem_gb}G "
+                f"--dependency=singleton --comment {name} -c {cpus} --mem {mem_gb}G "
                 f"--gres=shard:{shards} -o tfm/jobs/{name}/slurm.out "
                 f"tfm/cluster/job.sh tfm/jobs/{name} {commit} {args.slots}"
             )
@@ -496,7 +526,8 @@ def fetch_folder(folder: PurePosixPath, exp_dir: Path, dest: Path, linked: bool)
         localize(part / "config.yaml")
 
     seed = folder.name.split("-")[0]
-    names = ("card.json", "run-config.yaml", f"{seed}.log")  # a linked run has no log
+    # A linked run has no log; only a mix has members/ (its cards, for test-rl --judge).
+    names = ("card.json", "run-config.yaml", f"{seed}.log", "members")
     sources = [f"{REMOTE}:{folder.parent / name}" for name in names]
     exp_dir.mkdir(parents=True, exist_ok=True)
     rsync("--ignore-existing", "--ignore-missing-args", *sources, f"{exp_dir}/")
