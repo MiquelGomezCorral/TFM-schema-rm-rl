@@ -8,7 +8,7 @@ passes by doing nothing. Here the environment provides the pickup (`carry: true`
 so every episode meets it, whatever the agent does: the box cannot be dropped before that fall, and
 the fall turns the agent to face the box, so a pickup on the very next move is always possible.
 
-10 cards. Seven, one per original, ids `<original id>-carry`: `tpl-chain-response-{1,2,3}-{goal,nogoal}-carry`
+14 cards. Seven, one per original, ids `<original id>-carry`: `tpl-chain-response-{1,2,3}-{goal,nogoal}-carry`
 and `cx-box-carry`. The task wording, the clauses, the paraphrases and the `train` flags are those of
 the originals; none of the originals asks for the box to be picked up first, so no part was dropped.
 Trained: `tpl-chain-response-1-goal-carry`, `tpl-chain-response-1-nogoal-carry`, `cx-box-carry`.
@@ -45,6 +45,16 @@ lies on the floor):
 
 The corner walls send blocked back and left draws to the front, so a rule tied to the landing side
 depends on where the agent waits; the coin of `half` does not.
+
+Four soft cards (user, 2026-11-22): `tpl-chain-response-soft-1-goal-carry` and its world copies
+`-backturn` (`side`), `-noturn` (`none`) and `-half` (`half`). Task: "Carry the box to the exit.
+Whenever the box falls, try to pick it up again on your very next move." The "try to" wording of
+the templates' soft cards makes the next-move pickup a soft `ChainResponse`; reaching the exit and
+carrying the box there stay hard. With the hard rule the machine ends the episode at a missed
+pickup; with the soft one the miss costs pay and the episode goes on, so training shows whether the
+agent still picks the box up after a miss. Same plans as the hard cards (the late pickup breaks only
+the soft rule), no paraphrases. The face card has its own bundle; the three copies take it through
+`bundle_of`. They are not in `runs.yaml` or `runs-fall-turn.yaml`.
 
 Plans: the solving policy waits in place for each fall and picks the box up. Wrong plans: ignoring
 the fall (`ignore: ["box_fall"]`), waiting for the fall and then walking to the exit without the box,
