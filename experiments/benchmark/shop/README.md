@@ -1,6 +1,6 @@
 # Shop suite
 
-A MiniGrid level where things keep happening on their own and the agent has to react, with a ladder of six cards.
+A MiniGrid level where things keep happening on their own and the agent has to react, with a ladder of six cards and a serving ladder of five more ("Ladder", below).
 
 Why: a rule "whenever X happens, do Y" passes when X never happens. On the older MiniGrid cards X is something the agent does, so an agent that does nothing keeps the rule and is judged 1.00 on idle runs. In the shop X is the world's: a siren rings, a client walks in, the food in the agent's hands slips, the pot boils over. Doing nothing breaks every card (300 of 300 seeds, `check_shop.py`).
 
@@ -61,6 +61,36 @@ Seeds 1 to 3 (since 2026-11-20; the Runs column counts one seed). Learner PPO, s
 2026-11-15: the FARM bundles `shop-serve` and `shop-full` (and the archive `shop-serve~p3`) were rebuilt with the chain-weighted progress reward (each rule weighted by the chain it hands off to; `docs/COMPILER_REWARD_DESIGN.md`; `python app/main.py rebuild-rewards --bundle <dir>`): only the transition rewards changed, so the serve chain now pays arrive -0.3, order +0.1, cook +0.1, serve +0.1. Earlier shop results used the old rewards (code up to commit `ad470f6`).
 
 13 trainings per seed (39 over seeds 1 to 3). No-RM trains once per level (Shop for the first four cards, Shop-Pot for `shop-boil` and `shop-pot`; the dry run prints `start` twice and `share` four times) and is judged against every card of its level with `test-rl --judge <card.json>`. The 5M of `shop-pot` is a choice (the brief gives none for it). Reward note: the shop penalty repeats (-0.5 for every further K steps a waiting client hears the siren, K = 30; pot, K_p = 24), so the solving worker out-earns every plan that breaks `shop-full` or `shop-boil` (Shop: 7.2 against -9.5 for doing nothing, 5.2 for ignoring the siren, 7.0 for leaving fallen food; Pot: 5.8 against -20.5, 3.5, -3.8 for ignoring the pot, 5.7; 300 seeds, `check_shop.py`). `shop-quiet-first` has no such target: serving before switching the siren off breaks only its quiet clause and averages 7.5 on Shop. Preparing ahead is impossible (the stove cooks only to an order taken), and a worker that holds raw food at the stove while nobody waits keeps every rule: it is no wrong plan and averages 8.2 on Shop and 6.3 on Pot, above the solving worker, which is fine because the target only ranks plans that break a card.
+
+## Ladder: from "just deliver" to the full shop (2026-11-22)
+
+The full shop is not learned: FARM's `shop-serve` and `shop-full` were judged 0.00 on all three seeds in the final run. The ladder (user, 2026-11-22) adds one step per rung, to show where learning breaks and why the whole task at once is too much. Food slips at the default chance and the next-move pickup rule stay on every rung; the siren is a second axis. The rungs use the options above, so `environment.md`, and with it the vocabulary the generator sees, is the same on every rung.
+
+| Rung | Card | World options | Clauses |
+|---|---|---|---|
+| 1 deliver | `shop-ladder-deliver` | `order_needed`, `cooking_needed`, `siren` false | 0 `Response(client_arrived, order_served)`, 1 `ChainResponse(food_fell, holding_food)` |
+| 2 deliver + siren | `shop-ladder-deliver-siren` | `order_needed`, `cooking_needed` false | 0 `Response(siren_ringing, switch_toggled)`, then rung 1's as 1 and 2 |
+| 3 order + deliver | `shop-ladder-order-deliver` | `cooking_needed`, `siren` false | 0 `Response(client_arrived, order_taken)`, 1 `Response(order_taken, order_served)`, 2 the food clause |
+| 4 order + deliver + siren | `shop-ladder-order-deliver-siren` | `cooking_needed` false | 0 the siren clause, then rung 3's as 1 to 3 |
+| 5 serve, no siren | `shop-ladder-serve` | `siren` false | `shop-serve`'s four clauses, on `shop-serve`'s machine (`bundle_of`) |
+| 6 serve, full shop | `shop-serve`, `shop-full` | none | levels 2 and 3 above (trained in the 60-card set, not rerun) |
+
+- Fetching the food gets no clause on any rung: it only makes `holding_food` true, so the chain links the events (the generator prompt's whenever-chain rule, as on `shop-serve`). Without the stove, the order hands off straight to the serve.
+- No ladder clause starts at `holding_food`. The 2026-11-16 ladder had `Response(holding_food, order_served)`: its agents served about 18 clients per episode but kept a spare portion, so every test episode ended with that rule open and was judged 0. Here a stock worker that holds a spare portion whenever it is idle (`check_shop.py`'s `stock_policy`) ends 100% of its episodes holding food and is judged 1.00 on every rung.
+- The four new cards have three paraphrases each and get their own bundles; `shop-ladder-serve` has none and `generate-suite` skips it. `train` is false on all five: they are not in the counted 60-card set, and the ladder trains from its own runs file (suite `shop-ladder`).
+- `check_shop.py` plays every card of a level in the first card's world, so it checks the ladder cards in the default shop, not in their own worlds. The check below plays them in their own worlds.
+
+Check, 2026-11-22: the trace bank passes 60 of 60 plans (solve, wrong and idle, event seeds 1 to 3), each wrong plan breaking exactly the clauses it promises. On reset seeds 1 to 100 of each rung's own world, the scripted solving worker is judged 1.00 and serves, per episode:
+
+| Rung | Solving worker served (min) | Stock worker served, judged |
+|---|---|---|
+| 1 deliver | 12.11 (10) | 15.11, 1.00 |
+| 2 deliver + siren | 10.42 (9) | 13.41, 1.00 |
+| 3 order + deliver | 11.69 (10) | 14.61, 1.00 |
+| 4 order + deliver + siren | 9.01 (7) | 12.68, 1.00 |
+| 5 serve, no siren | 9.33 (8) | 9.86, 1.00 |
+
+Every rung's solving worker clears the shop's learned bar of 7.5 served per episode on average. `shop-serve`'s FARM machine passes the plan check in rung 5's world (solve, wrong and idle plans, event seeds 1 to 3; no plan fails to run).
 
 ## Contents
 
