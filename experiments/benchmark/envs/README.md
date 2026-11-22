@@ -7,7 +7,7 @@ Rule: `environment.md` holds facts; implementation is in `environment-code.md`.
 
 | Folder | Gym id | Propositions |
 |---|---|---|
-| `minigrid-doorkey` | `MiniGrid-DoorKey-8x8-v0` | |
+| `minigrid-doorkey` | `MiniGrid-DoorKey-8x8-v0`; `-5x5-v0` and `-16x16-v0` in `../armfm-paper` | |
 | `minigrid-unlock-pickup` | `MiniGrid-UnlockPickup-v0` | |
 | `minigrid-blocked-unlock-pickup` | `MiniGrid-BlockedUnlockPickup-v0` | |
 | `minigrid-key-corridor` | `MiniGrid-KeyCorridorS6R3-v0`, `MiniGrid-KeyCorridorS4R3-v0` | |
@@ -19,11 +19,14 @@ Rule: `environment.md` holds facts; implementation is in `environment-code.md`.
 | `minigrid-unlock-pickup-key-held` | `MiniGrid-UnlockPickup-KeyHeld-v0` | the same four as the plain level; the agent starts holding the key (cards in `../forced-start`) |
 | `minigrid-lanes` | `MiniGrid-Lanes-v0` | `top_breach`, `side_breach`, `plant_trampled`, `zombie_killed`; all events, no goal, zombies come by themselves (cards in `../forcing`) |
 | `minigrid-key-gift` | `MiniGrid-KeyGift-v0` | `has_door_key`, `door_open`; a key lands in the empty hands by itself, no goal (cards in `../forcing`) |
+| `babyai-unlock-to-unlock` | `BabyAI-UnlockToUnlock-v0` | six, in its `environment.md`; two locked doors in a chain, colours drawn per layout (cards in `../armfm-paper`) |
 
 Propositions of the four MiniGrid envs live in each env's `environment.md`, section `## Propositions`; the service-room row lists them here because its folder is added by S3.
 
 - The four MiniGrid folders are verbatim copies of the same-named folders in `examples/arm-fm/`
   at commit `42bc2f0`.
+- `babyai-unlock-to-unlock` is a verbatim copy of `experiments/dev/arm-fm/babyai-unlock-to-unlock/`
+  (its two env pages only) at commit `4f63579`.
 - `minigrid-key-corridor` holds for any room size (the labeling reads `env.room_size`);
   `cx-sequence` and `base-key-corridor` run on S4R3 since 2026-11-20.
 - The `service-room` folder is added by slice S3 (the event room). Until it is merged, the

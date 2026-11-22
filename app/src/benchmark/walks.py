@@ -34,7 +34,7 @@ LOCKED_SHARE = 0.5  # of the moves that name a door: aim at a locked one
 
 
 def walkable(gym_id: str) -> bool:
-    """Whether random walks run in ``gym_id``: the four MiniGrid envs, the shop, the service room."""
+    """Whether random walks run in ``gym_id``: ``MINIGRID_LABELERS`` envs, the shop, the service room."""
     return gym_id.startswith((*MINIGRID_LABELERS, *POLICY_ENVS))
 
 

@@ -1,12 +1,13 @@
 """Reference labelers: the truth of every proposition, computed straight from the environment.
 
-They are the yardstick of the judge and belong to neither pipeline. The four MiniGrid labelers
-follow the truth conditions in each env's ``environment-code.md``
-(``experiments/dev/arm-fm/minigrid-*/``). Any other env, such as the event room, supplies
-``reference_labels(env)`` beside its own class and is found through that class's module.
+They are the yardstick of the judge and belong to neither pipeline. The MiniGrid and BabyAI
+labelers follow the truth conditions in each env's ``environment-code.md``
+(``experiments/dev/arm-fm/minigrid-*/``, ``babyai-unlock-to-unlock/``). Any other env, such as
+the event room, supplies ``reference_labels(env)`` beside its own class and is found through that
+class's module.
 
 A labeler exposes ``reset()`` (forget the episode) and ``labels(env)`` (the labels after the
-step just taken). The four MiniGrid labelers remember the previous labels, so event propositions
+step just taken). The MiniGrid and BabyAI labelers remember the previous labels, so event propositions
 such as ``key_lost`` and latched ones such as ``key_found`` work. A ``reference_labels(env)``
 function sees only the env: it must compute every proposition from the env state alone.
 """
@@ -169,11 +170,40 @@ class KeyCorridor(ReferenceLabeler):
         }
 
 
+class UnlockToUnlock(ReferenceLabeler):
+    """BabyAI UnlockToUnlock: the prerequisite door's key opens the room of the target door's key."""
+
+    def compute(self, env: Any) -> dict[str, bool]:
+        # Three rooms in a row: the left door guards the ball, the right one the target door's key.
+        (_, _, target), (_, _, prerequisite) = sorted(_doors(env), key=lambda door: door[0])
+        key = _carrying(env, "key")
+        has_prerequisite_key = key is not None and key.color == prerequisite.color
+        has_target_door_key = key is not None and key.color == target.color
+        lost = (
+            self.previous.get("has_prerequisite_key", False)
+            and not has_prerequisite_key
+            and not prerequisite.is_open
+        ) or (
+            self.previous.get("has_target_door_key", False)
+            and not has_target_door_key
+            and not target.is_open
+        )
+        return {
+            "has_prerequisite_key": has_prerequisite_key,
+            "prerequisite_door_open": prerequisite.is_open,
+            "has_target_door_key": has_target_door_key,
+            "target_door_open": target.is_open,
+            "target_ball_picked_up": _carrying(env, "ball") is not None,
+            "required_key_lost": lost,
+        }
+
+
 MINIGRID_LABELERS: dict[str, type[ReferenceLabeler]] = {
     "MiniGrid-DoorKey-": DoorKey,
     "MiniGrid-UnlockPickup-": UnlockPickup,
     "MiniGrid-BlockedUnlockPickup-": BlockedUnlockPickup,
     "MiniGrid-KeyCorridor": KeyCorridor,
+    "BabyAI-UnlockToUnlock-": UnlockToUnlock,
 }
 
 
@@ -191,7 +221,7 @@ def labeler_for(gym_id: str, env: Any) -> ReferenceLabeler:
     """The reference labeler of ``gym_id``; ``env`` is the live env, for envs that bring their own.
 
     Raises:
-        NoReferenceLabelerError: If the env is not one of the four MiniGrid envs and its module has
+        NoReferenceLabelerError: If the env is not in ``MINIGRID_LABELERS`` and its module has
             no ``reference_labels`` (the event room before it is in the codebase, Craftium, ...).
     """
     for prefix, labeler in MINIGRID_LABELERS.items():

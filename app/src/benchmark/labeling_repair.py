@@ -80,7 +80,7 @@ class Traces:
     Plans visit only the states their author planned, so a labeling is ``ok`` only when plans and
     walks both agree with the reference labels. The walks come in blocks of fresh layouts: block 0
     is a bundle's first check and repair round ``n`` is graded on block ``n``, so a repair is never
-    graded on the layouts that showed its failure. Walks run in the four MiniGrid envs, the shop
+    graded on the layouts that showed its failure. Walks run in the MiniGrid and BabyAI envs, the shop
     and the service room (``walkable``); the other envs hand their events to the labeling, so they
     keep the plan check alone (``walks`` is None).
     """
