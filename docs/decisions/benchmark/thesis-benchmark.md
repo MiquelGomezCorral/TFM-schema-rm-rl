@@ -13,8 +13,9 @@ thing whichever arm produced it.
   train on the RM reward only (`reward_source: rm`). Every arm also reports environment success.
 - **Fresh ARM-FM machines.** ARM-FM bundles come from `generate-larm --mode arm-fm` with their own
   labeling and state descriptions, from the same small generator and critic pair as FARM (through
-  the explicit `arm_fm_critic` opt-in), with no human fix. A failed or unlearnable ARM-FM machine
-  is "no data" for that card. The first version and the authors' bundles are not arms.
+  the explicit `arm_fm_critic` opt-in), with no human fix. A failed or unlearnable machine of
+  either pipeline counts as not learned on that card, with its reason (user, 2026-11-22; until then
+  "no data"). The first version and the authors' bundles are not arms.
 - **Task cards first.** Every task is a card in `experiments/benchmark/<suite>/tasks.json`, fixed
   before generation and approved by the user: the wording both pipelines receive, the expected
   clauses, solving and wrong plans, and whether the environment reward matches the task.
@@ -131,6 +132,22 @@ thing whichever arm produced it.
   the new `tpl-existence-two-4-goal` and `tpl-responded-existence-4-goal`. On 2026-11-21 (user)
   `tpl-responded-existence-2-goal` started training. Each card's `notes` and its suite README give
   the reason.
+- **One training set for every arm.** FARM, ARM-FM and no-RM train the same 60 cards (user,
+  2026-11-22): FARM's 59 trained runs (54 cards, plus the 5 shop cards again under `shop-reward`)
+  and `tpl-precedence-soft-2-goal`, picked for coverage (a soft `Precedence` in a third world). The
+  two box-carry fall-world cards train on each pipeline's own carry machine. A card where doing
+  nothing beats or ties every arm is dropped; none of the 60 is. Each arm's result is over all 60:
+  a machine that fails its gates counts as not learned.
+- **Side tests.** Failed ARM-FM machines that still let the agent act (a soft rule priced as hard,
+  or a wrong plan accepted) train as a labeled side test and never enter the counts; a machine
+  whose episode ends before the agent moves never trains (user, 2026-11-22).
+- **Reporting by test.** Results are reported per test, never mixed: generation (own wordings and
+  rewordings: right machine, same machine across wordings), training on the 60 cards, and side
+  tests. Each says how its set was chosen and uses one denominator per row (user, 2026-11-22).
+- **No-help count.** A FARM bundle counts as built with no human help when its machine passes the
+  gates with no repair, hand retry, reworded card or edited labeling. A state text that is off (it
+  names an objective the task lacks) with a right machine does not count against it: the
+  state-text stage is inherited from ARM-FM unchanged (user, 2026-11-22).
 - **Stated orders.** Since 2026-11-20 (user) every order the task states is required, even when the
   level already forces it: FARM's generator writes its `Precedence`, and FARM's critic rejects a set
   that leaves it out (prompts since `42003cf`). A card answer that drops a stated clause or order is
@@ -298,11 +315,12 @@ thing whichever arm produced it.
   food, scores 7.0 and 5.7; a worker that holds raw food at the stove keeps every rule, is no wrong
   plan, and earns more). Runs, user's "we try with and
   without it": FARM with the RM reward only (suite `shop`) and with the RM reward plus the shop
-  reward (`reward_source: both`, suite `shop-reward`), and no-RM on the shop reward. Shop runs use
-  FARM and the no-RM baseline only (user, 2026-11-15). ARM-FM is out of the shop and of its transfer
-  experiment: 12 of its 22 shop machines have a final start state (1-step episodes), and when final
-  states do not end the episode it farms the loops of its own machine (probe, stopped at 2.4M steps).
-  Final and rejecting states keep ending the episode.
+  reward (`reward_source: both`, suite `shop-reward`), and no-RM on the shop reward. Since
+  2026-11-22 (user) ARM-FM trains the shop cards too, on bundles regenerated on the code freeze and
+  gated like its others; a machine that fails counts as not learned. From 2026-11-15 to 2026-11-22
+  the shop ran FARM and the no-RM baseline only: 12 of ARM-FM's 22 shop machines then had a final
+  start state (1-step episodes), and when final states do not end the episode it farms the loops of
+  its own machine (probe, stopped at 2.4M steps). Final and rejecting states keep ending the episode.
 
 ## Protected invariants
 
@@ -345,8 +363,9 @@ thing whichever arm produced it.
   checked against the owner's saved configuration, never against the request that found it.
 - One no-RM training per configuration and seed across suites and existing runs; two drivers never
   train the same key.
-- A pipeline failure stays "no data": no arm gets a human fix or retries the others do not get; both
-  get the same attempt limit (up to 10).
+- A pipeline failure counts as not learned (until 2026-11-22: "no data"): no arm gets a human fix
+  or retries the others do not get; both get the same attempt limit (up to 10). A failed machine
+  trained as a side test never enters the counts.
 - Both pipelines receive the same card wording, environment file, generator and critic.
 - A results table that does not state how a time-out is paid for both methods, or with pooled
   cross-critic numbers, is wrong. Until 2026-11-20 (superseded): "A results table without the
@@ -380,7 +399,9 @@ of inside the yardstick. Evaluating the eight templates directly is smaller than
 keeps the judge apart from the stack FARM itself uses; the cost is a second definition of the
 templates, cross-checked against nl2ltl's formulas. Fresh ARM-FM machines from the same small
 models compare generation methods, not models; the authors' bundles would mix both. Counting a
-wrong machine as "no data" measures what each pipeline delivers on its own. Skipping finished runs
+wrong machine as not learned, over every card both pipelines were asked to train, measures what
+each pipeline delivers on its own; comparing only the cards both trained hides the cards one
+pipeline could not start (user, 2026-11-22). Skipping finished runs
 and restarting interrupted ones from zero was chosen over checkpoint resume because runs are short
 and a restart is easier to trust.
 
@@ -569,3 +590,10 @@ and a restart is easier to trust.
   The gate's review still holds a labeling fact that no machine fact and no other fact reads. The 19 `key_lost`
   bundles the old rule held (cx-goal-one-rule, tpl-absence(-soft)-1-goal, tpl-not-co-existence(-soft)-1-goal and
   their wordings) count as right.
+- 2026-11-22: One training set for every arm (user): FARM, ARM-FM and no-RM on the same 60 cards, the 60th
+  `tpl-precedence-soft-2-goal`. A failed machine now counts as not learned (was "no data"), over every card both
+  pipelines were asked to train. Failed ARM-FM machines that let the agent act train only as a labeled side test.
+  ARM-FM returns to the shop on bundles regenerated on the freeze. Results are reported by test. An off state text
+  with a right machine does not count against FARM's no-help count (the stage is inherited from ARM-FM). The two
+  soft-only no-goal cards stay in the set: the idle agent breaks their soft rule (2.0 and 1.0 times per episode) and
+  no-RM beats it, so they are not idle-passable.
