@@ -1,0 +1,120 @@
+{
+  "api_definitions": {
+    "labeling": "- `env.last_action`: name of the last action (`\"forward\"`, `\"turn_right\"`, `\"turn_left\"`, `\"pickup\"`, `\"putdown\"`, `\"toggle\"`), `None` after reset.\n- `env.products_made`: tuple of tile names (`\"<color> <kind>\"`, for example `\"blue pyramid\"`), one per rule that fired on the last step, in rule order; empty when none fired.\n- `env.picked_up`: name of the tile the last step's `pickup` took from the grid, else `None`. A holding rule may already have changed it in the pocket.\n- `env.goal_reached`: `True` on the step the ruleset's goal fired (that step ends the episode), else `False`.\n- `env.pocket`: name of the carried tile, or `None`.\n- `env.agent_pos`: `(row, column)` of the agent. `env.agent_dir`: its facing, `0` up, `1` right, `2` down, `3` left.\n- `env.tiles`: tuple of rows, each a tuple of cell names (`\"black floor\"`, `\"grey wall\"`, `\"red door_closed\"`, `\"blue pyramid\"`, ...); read a cell as `env.tiles[row][column]`.\n\nEvery proposition of this ruleset is an event of the last step: read it from `env.products_made`, `env.picked_up` or `env.goal_reached`, not from the grid."
+  },
+  "bundle_version": 1,
+  "effective_settings": {
+    "critic_model": "glm-5.3-flash",
+    "embedding": {
+      "context": "",
+      "device": "remote",
+      "dimension": 768,
+      "endpoint": "http://127.0.0.1:8934/v1/embeddings",
+      "extraction": "server-mean-pooling-last-layer",
+      "model": "nomic-embed-text",
+      "model_revision": "sha256:970aa74c0a90ef7482477cf803618e776e173c007bf957f635f1015bfcfef0e6",
+      "normalize": true,
+      "tokenizer_revision": "sha256:970aa74c0a90ef7482477cf803618e776e173c007bf957f635f1015bfcfef0e6"
+    },
+    "fold_soft_absence": true,
+    "gamma": 0.99,
+    "generator_model": "deepseek-v4.1-flash",
+    "hard_ceiling": true,
+    "max_attempts": 10,
+    "minimize_machine": true,
+    "mode": "compiler",
+    "pay_order": {
+      "hard_charge": -10.0,
+      "ok": true,
+      "summary": "finished 13 > started 2 > not started 0 > hard break -10; ok"
+    },
+    "recurrent_soft_penalty": true,
+    "reward_end_judgment": false,
+    "reward_progress": true,
+    "reward_promise_cost": false,
+    "reward_soft_break": true,
+    "reward_soft_pending": true,
+    "reward_well": true,
+    "soft_break_cost": 1.0,
+    "soft_breaks_per_step": 1,
+    "step_limit": 507
+  },
+  "environment": "experiments/benchmark/envs/xland-figure10-a/environment.md",
+  "errors": [],
+  "generation": {
+    "attempt": 1,
+    "attempt_classification": "first_attempt",
+    "clause_texts": [
+      "Pick up the blue key before an orange star is made.",
+      "Make an orange star before picking up the orange star.",
+      "Pick up the orange star at least once."
+    ],
+    "clauses": [
+      [
+        "Precedence",
+        [
+          "blue_key_picked_up",
+          "orange_star_made"
+        ],
+        "hard"
+      ],
+      [
+        "Precedence",
+        [
+          "orange_star_made",
+          "orange_star_held"
+        ],
+        "hard"
+      ],
+      [
+        "Existence",
+        [
+          "orange_star_held"
+        ],
+        "hard"
+      ]
+    ],
+    "compiler_text": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u4\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !blue_key_picked_up&!orange_star_held&orange_star_made) -> u1\n(u0, !blue_key_picked_up&orange_star_held&!orange_star_made) -> u1\n(u0, !blue_key_picked_up&orange_star_held&orange_star_made) -> u1\n(u0, blue_key_picked_up&!orange_star_held&!orange_star_made) -> u2\n(u0, blue_key_picked_up&!orange_star_held&orange_star_made) -> u3\n(u0, blue_key_picked_up&orange_star_held&!orange_star_made) -> u1\n(u0, blue_key_picked_up&orange_star_held&orange_star_made) -> u4\n(u2, !orange_star_held&orange_star_made) -> u3\n(u2, orange_star_held&!orange_star_made) -> u1\n(u2, orange_star_held&orange_star_made) -> u4\n(u3, orange_star_held) -> u4\nREWARD_FUNCTION:\n(u0, !blue_key_picked_up&!orange_star_held&orange_star_made, u1) -> -10\n(u0, !blue_key_picked_up&orange_star_held&!orange_star_made, u1) -> -10\n(u0, !blue_key_picked_up&orange_star_held&orange_star_made, u1) -> -10\n(u0, blue_key_picked_up&!orange_star_held&!orange_star_made, u2) -> 1\n(u0, blue_key_picked_up&!orange_star_held&orange_star_made, u3) -> 2\n(u0, blue_key_picked_up&orange_star_held&!orange_star_made, u1) -> -10\n(u0, blue_key_picked_up&orange_star_held&orange_star_made, u4) -> 13\n(u2, !orange_star_held&orange_star_made, u3) -> 1\n(u2, orange_star_held&!orange_star_made, u1) -> -11\n(u2, orange_star_held&orange_star_made, u4) -> 12\n(u3, orange_star_held, u4) -> 11\n",
+    "first_attempt": true,
+    "labeling_api": "- `env.last_action`: name of the last action (`\"forward\"`, `\"turn_right\"`, `\"turn_left\"`, `\"pickup\"`, `\"putdown\"`, `\"toggle\"`), `None` after reset.\n- `env.products_made`: tuple of tile names (`\"<color> <kind>\"`, for example `\"blue pyramid\"`), one per rule that fired on the last step, in rule order; empty when none fired.\n- `env.picked_up`: name of the tile the last step's `pickup` took from the grid, else `None`. A holding rule may already have changed it in the pocket.\n- `env.goal_reached`: `True` on the step the ruleset's goal fired (that step ends the episode), else `False`.\n- `env.pocket`: name of the carried tile, or `None`.\n- `env.agent_pos`: `(row, column)` of the agent. `env.agent_dir`: its facing, `0` up, `1` right, `2` down, `3` left.\n- `env.tiles`: tuple of rows, each a tuple of cell names (`\"black floor\"`, `\"grey wall\"`, `\"red door_closed\"`, `\"blue pyramid\"`, ...); read a cell as `env.tiles[row][column]`.\n\nEvery proposition of this ruleset is an event of the last step: read it from `env.products_made`, `env.picked_up` or `env.goal_reached`, not from the grid.",
+    "refined": false
+  },
+  "inputs": {
+    "environment_markdown": "# XLand-MiniGrid ruleset Figure 10 A\n\n## Environment\n\nA 13 x 13 grid with a grey wall border and a wall cross on row 6 and column 6, so four rooms of 5 x 5 free cells. Each of the four wall arms has one door at a random place along the arm, closed and not locked, of a random color among red, green, blue, purple, yellow and grey. Every initial object lands on its own random floor cell in any room; so does the agent, with a random facing and an empty pocket. All free cells connect through the four doors. The layout, the doors and the start change with every reset; the ruleset does not.\n\nThis world's ruleset:\n- Goal: a `pickup` while the pocket holds an orange star (also when the pickup takes nothing).\n- Rules, in the order they run after every action:\n  1. A tile-pair rule: a `putdown` that leaves a blue key beside a purple ball, or a purple ball beside a blue key, turns the neighbour into an orange star and leaves floor where the tile was put; both inputs are used up.\n- Initial objects: a blue key, a purple ball, an orange pyramid.\n\nActions: `forward`, `turn_right` (clockwise), `turn_left`, `pickup`, `putdown`, `toggle`; there is no `done`. The agent sees the 5 x 5 cells in front of it (walls hide nothing), what it carries and which way it faces; it never sees the rules or the goal.\n\n## Objective and episode boundary\n\nThe episode ends on the step the goal fires: a `pickup` while the pocket holds an orange star (also when the pickup takes nothing). The reward is then `1 - 0.9 * (steps taken / 507)`, otherwise 0. The step limit is 507 steps; at step 507 without the goal the episode ends with reward 0. No step follows the goal.\n\n## Proposition semantics\n\n| id | kind | true when |\n|---|---|---|\n| `orange_star_made` | event | a rule turned a tile into an orange star on this step |\n| `blue_key_picked_up` | event | this step's `pickup` took a blue key from the grid into the empty pocket |\n| `purple_ball_picked_up` | event | this step's `pickup` took a purple ball from the grid into the empty pocket |\n| `orange_star_held` | event | the goal fired on this step: a `pickup` while the pocket holds an orange star (also when the pickup takes nothing); the episode ends on this step |\n\nEvery proposition is an event: true only on the step its action fires, false on every other step, also while the made tile stays in the world. This file reads \"made\" as the step a rule changes a tile, so a rule that fires again makes its event true again, and \"picked up\" as the step the tile leaves the grid for the pocket. Up, right, down and left are sides of the grid (up is the row above), whatever way the agent faces.\n\n## Constraints\n\n- `orange_star_held` cannot become true before `orange_star_made`: an orange star only exists once a rule makes it.\n\n## What the agent can and cannot do\n\n- Forward: onto floor, goal tiles and open doors only; a wall, a closed door or any object blocks it and the agent stays, but the step still counts as `forward` for rules and the goal. Turns change only the facing and fire no rule and no goal.\n- Pickup: the facing cell must hold a ball, square, pyramid, key, hex or star, and the pocket must be empty; the cell becomes floor. Goal tiles, doors and walls cannot be picked up. The pocket holds one tile.\n- Putdown: needs a full pocket and floor in the facing cell; a goal tile, a door, a wall or an object blocks it.\n- Toggle: opens a closed door and closes an open one. No door is locked.\n- Rules run after every action, in the order listed, each on the grid the one before left, so two rules can fire in one step. A tile a rule uses up comes back only if a rule makes it again, so a rule can make the goal unreachable.\n\n## Example trace\n\nOne real episode that reaches the goal: 23 steps, reward 0.9592.\n\n1. 14 steps of turning and moving\n2. `pickup` (step 15): `blue_key_picked_up` true\n3. 4 steps of turning and moving\n4. `putdown` (step 20): `orange_star_made` true\n5. 2 steps of turning and moving\n6. `pickup` (step 23): `orange_star_held` true [episode terminated]\n\n## Propositions\n- `orange_star_made`: A rule turned a tile into an orange star on this step.\n- `blue_key_picked_up`: The agent picked up a blue key from the grid on this step.\n- `purple_ball_picked_up`: The agent picked up a purple ball from the grid on this step.\n- `orange_star_held`: The goal fired on this step (pick up the orange star).\n\n## Example tasks\n\n- Pick up the orange star.\n- Pick up the blue key and put it down next to the purple ball to make an orange star, then reach the goal.\n\n\n# XLand-MiniGrid ruleset Figure 10 A: code notes\n\nAddition to `environment.md`; read both. Facts live there; this file says where they come from and how code reads them.\n\n## Source and runtime\n\n- Source: `app/src/arm_fm/custom_envs/xland_env.py:XLandEnv`, a Gymnasium wrapper over the jitted `xminigrid` environment `XLand-MiniGrid-R4-13x13` <https://github.com/dunnolab/xland-minigrid>. Importing `src.arm_fm` registers the id; the wrapper module (and JAX, on CPU) loads only when an env is made.\n- Gymnasium ID: `XLand-R4-13x13-v0`, keyword argument `ruleset=\"figure10-a\"`, read from `app/src/arm_fm/custom_envs/xland_rulesets.json`: rebuilt by hand from the ARM-FM paper's Figure 10, whose rules are only partly visible.\n- Runtime: `xminigrid==0.9.3` (with JAX), `gymnasium==1.3.0`, pinned in `requirements.txt`.\n- `reset(seed=s)` draws the layout from `jax.random.key(s)`, xminigrid's own layout for this ruleset; without a seed it draws one from the env's own random stream.\n- Observation: `(5, 5, 5)` uint8: xminigrid's 5 x 5 view (tile id, color id per cell), then the pocket's tile id, its color id and the facing on every cell.\n- `[code: file:function]` is under `xminigrid/` unless named otherwise. `[run: render]` is `experiments/benchmark/scripts/render_xland.py`, which wrote both files.\n\n## Truth conditions in code\n\nAll read what the last step did; none reads the grid.\n\n| id | expression |\n|---|---|\n| `orange_star_made` | `\"orange star\" in env.products_made` |\n| `blue_key_picked_up` | `env.picked_up == \"blue key\"` |\n| `purple_ball_picked_up` | `env.picked_up == \"purple ball\"` |\n| `orange_star_held` | `env.goal_reached` |\n\n## Evidence\n\n- Environment, layout, doors and start: [code: `envs/xland.py:generate_four_rooms`, `XLandMiniGrid._generate_problem`].\n- Environment, the rules and their actions: [code: `rules.py:TileNearRule`; `rules.py:check_rule` runs them in order].\n- Objective, goal and reward: [code: `goals.py:AgentHoldGoal`; `environment.py:Environment.step`; `envs/xland.py:XLandMiniGrid.default_params` sets `max_steps` to `3 * 13 * 13`].\n- Proposition semantics: [code: `xland_env.py:XLandEnv.step`: `products_made` from each rule's own replay in `_step`, `picked_up` from `pick_up`'s condition, `goal_reached` from the zero discount of a goal step].\n- Constraints: only rules create tiles; actions move a tile between grid and pocket or open and close doors [code: `core/actions.py`].\n- What the agent can and cannot do: [code: `core/actions.py:move_forward`, `pick_up`, `put_down`, `toggle`; `core/constants.py:WALKABLE`, `PICKABLE`, `FREE_TO_PUT_DOWN`; `core/grid.py:check_can_put`].\n- Example trace: [run: render, reset seed 1, `xland_env.py:scripted_policy`]: 23 steps, reward 0.9592.\n- Reference labeling: `xland_env.py:reference_labels` computes the expressions above; the benchmark's labeling check compares a bundle's labeling with it.\n\n## Labeling API\n\n- `env.last_action`: name of the last action (`\"forward\"`, `\"turn_right\"`, `\"turn_left\"`, `\"pickup\"`, `\"putdown\"`, `\"toggle\"`), `None` after reset.\n- `env.products_made`: tuple of tile names (`\"<color> <kind>\"`, for example `\"blue pyramid\"`), one per rule that fired on the last step, in rule order; empty when none fired.\n- `env.picked_up`: name of the tile the last step's `pickup` took from the grid, else `None`. A holding rule may already have changed it in the pocket.\n- `env.goal_reached`: `True` on the step the ruleset's goal fired (that step ends the episode), else `False`.\n- `env.pocket`: name of the carried tile, or `None`.\n- `env.agent_pos`: `(row, column)` of the agent. `env.agent_dir`: its facing, `0` up, `1` right, `2` down, `3` left.\n- `env.tiles`: tuple of rows, each a tuple of cell names (`\"black floor\"`, `\"grey wall\"`, `\"red door_closed\"`, `\"blue pyramid\"`, ...); read a cell as `env.tiles[row][column]`.\n\nEvery proposition of this ruleset is an event of the last step: read it from `env.products_made`, `env.picked_up` or `env.goal_reached`, not from the grid.\n",
+    "task": "Pick up the blue key and put it down next to the purple ball to make an orange star, then pick up the orange star."
+  },
+  "proposition_semantics": {
+    "blue_key_picked_up": "The agent picked up a blue key from the grid on this step.",
+    "orange_star_held": "The goal fired on this step (pick up the orange star).",
+    "orange_star_made": "A rule turned a tile into an orange star on this step.",
+    "purple_ball_picked_up": "The agent picked up a purple ball from the grid on this step."
+  },
+  "provenance": {
+    "generator": "compiler-adaptation",
+    "stamp": {
+      "attempts": 1,
+      "commit": "52e8b3503e5272a34f7e10fccbac84654bfd17f0",
+      "critic_interventions": 0,
+      "critic_model": "glm-5.3-flash",
+      "dirty": false,
+      "generator_model": "deepseek-v4.1-flash",
+      "provisional": false,
+      "reasoning": "max",
+      "retries": 0,
+      "wall_time_s": 127.7
+    },
+    "status": "reconstructed"
+  },
+  "rm_mode": "compiler",
+  "stage_status": {
+    "descriptions": "complete",
+    "embeddings": "complete",
+    "labeling": "complete",
+    "reward_machine": "complete"
+  },
+  "task": "Pick up the blue key and put it down next to the purple ball to make an orange star, then pick up the orange star.",
+  "validation": {
+    "critic": true,
+    "structural": true
+  }
+}
