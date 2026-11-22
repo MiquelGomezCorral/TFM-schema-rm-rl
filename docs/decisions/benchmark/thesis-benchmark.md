@@ -616,3 +616,9 @@ and a restart is easier to trust.
   `-noturn` (see Box-carry cards). The first rule tried (only a box at the right turns the agent) gave
   94% of next-move pickups for the solving policy and 75% for an exit walker, since walls send blocked sides to
   the front; the coin gives 52% and 53%. `face`, `none` and `side` play the same episodes as before.
+- 2026-11-22: XLand-MiniGrid is back as a family (user, ARM-FM baseline B2), so the three arms run the ARM-FM
+  paper's XLand tasks (Figures 9 and 10): `xland` family, `XLand-R4-13x13-v0` (one ruleset per env, 13x13, 507
+  steps), `xminigrid==0.9.3` pinned, 8 cards in `experiments/benchmark/xland/` (`train: false`; their task texts
+  are reconstructed from the rulesets). Runs are 5M steps; mixes of cards whose rulesets differ get a no-RM arm.
+  Two 5-task-mix ablations add the smallest switches: `rm_state_encoding: none` (the machine pays, the policy
+  never sees its state) and `reward_source: env_rm_state` (env reward, the machine only gives its state).
