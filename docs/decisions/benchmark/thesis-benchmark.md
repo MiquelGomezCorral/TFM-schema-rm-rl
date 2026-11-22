@@ -623,3 +623,9 @@ and a restart is easier to trust.
   bundles). A fixed map is the existing `layout: fixed` with `layout_seed` 1. BabyAI UnlockToUnlock gets the
   dev catalogue's env pages and a reference labeler; its layout stays procedural. 1.5M steps for 5x5 and 8x8,
   5M for 16x16 and UnlockToUnlock (user D3).
+- 2026-11-22: XLand-MiniGrid is back as a family (user, ARM-FM baseline B2), so the three arms run the ARM-FM
+  paper's XLand tasks (Figures 9 and 10): `xland` family, `XLand-R4-13x13-v0` (one ruleset per env, 13x13, 507
+  steps), `xminigrid==0.9.3` pinned, 8 cards in `experiments/benchmark/xland/` (`train: false`; their task texts
+  are reconstructed from the rulesets). Runs are 5M steps; mixes of cards whose rulesets differ get a no-RM arm.
+  Two 5-task-mix ablations add the smallest switches: `rm_state_encoding: none` (the machine pays, the policy
+  never sees its state) and `reward_source: env_rm_state` (env reward, the machine only gives its state).

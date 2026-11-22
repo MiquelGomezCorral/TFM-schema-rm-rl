@@ -221,9 +221,49 @@ def craftium_environment(CONFIG: Configuration) -> RunEnvironment:
     )
 
 
+# ======================================================================================
+#                                    XLAND ADAPTER
+# ======================================================================================
+
+# Category counts of the five XLand view channels: tile, color, pocket tile, pocket color, facing.
+XLAND_CHANNEL_SIZES = (13, 12, 13, 12, 4)
+
+
+class XLandCNN(nn.Module):
+    """Small CNN over the one-hot symbolic 5x5 XLand view (HWC uint8 category ids)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.network = nn.Sequential(
+            nn.Conv2d(sum(XLAND_CHANNEL_SIZES), 32, 2),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, 2),
+            nn.ReLU(),
+            nn.Conv2d(64, 64, 2),
+            nn.ReLU(),
+            nn.Flatten(),
+        )
+
+    def forward(self, image: Tensor) -> Tensor:
+        one_hot = [
+            nn.functional.one_hot(image[..., channel].long(), size)
+            for channel, size in enumerate(XLAND_CHANNEL_SIZES)
+        ]
+        return self.network(torch.cat(one_hot, dim=-1).permute(0, 3, 1, 2).float())
+
+
+def xland_environment(CONFIG: Configuration) -> RunEnvironment:
+    """Build an XLand-MiniGrid env (``env_kwargs`` names its ruleset); symbolic view only."""
+    if CONFIG.observation != "symbolic":
+        raise ValueError(f"Unknown XLand observation {CONFIG.observation!r}; use symbolic")
+    env = make_environment(CONFIG.gym_id, **CONFIG.env_kwargs)
+    return RunEnvironment(env, XLandCNN, terminated_with_reward)
+
+
 ENVIRONMENT_FAMILIES: dict[str, Callable[[Configuration], RunEnvironment]] = {
     "minigrid": minigrid_environment,
     "craftium": craftium_environment,
+    "xland": xland_environment,
 }
 
 
@@ -241,7 +281,8 @@ class RewardMachineObservation(gym.Wrapper):
     follows ``reward_source``, RM reset on env reset. Observations are
     ``{"image": obs, "rm_embedding": phi(u)}`` with phi(u_I) after reset; with
     ``rm_state_encoding: one_hot`` the key is ``rm_state`` and phi(u) is the one-hot vector of
-    the state's position in ``one_hot_state_names(machine)``. ``info`` gains
+    the state's position in ``one_hot_state_names(machine)``; with ``none`` the observation is
+    the image alone. ``info`` gains
     ``env_reward``, ``rm_reward``, ``rm_state`` and ``rm_accept`` (state is final, or accepting
     where the environment ended the episode of a machine with no final).
     """
@@ -261,6 +302,8 @@ class RewardMachineObservation(gym.Wrapper):
             RewardMachineRuntime(machine, propositions=bundle.labeling_propositions),
             labeling,
             reward_source=CONFIG.reward_source,
+            # env_rm_state: the env alone pays and ends episodes; the machine only tracks state.
+            terminate_on_rm=CONFIG.reward_source != "env_rm_state",
         )
         self.reward_machine.time_limit_penalty = CONFIG.time_limit_penalty
         self.final_states = frozenset(machine.final_states)
@@ -268,6 +311,10 @@ class RewardMachineObservation(gym.Wrapper):
         self.accepting_states = frozenset(machine.judgment.accepting if self.judged else ())
         self.accepted = False
 
+        if CONFIG.rm_state_encoding == "none":
+            self.state_key = None
+            self.observation_space = env.observation_space
+            return
         if CONFIG.rm_state_encoding == "one_hot":
             states = one_hot_state_names(machine)
             self.state_key = "rm_state"
@@ -312,7 +359,9 @@ class RewardMachineObservation(gym.Wrapper):
         # success is read.
         return (terminated or self.judged) and self.accepted
 
-    def _observation(self, image: np.ndarray, state: str) -> dict[str, np.ndarray]:
+    def _observation(self, image: np.ndarray, state: str) -> dict[str, np.ndarray] | np.ndarray:
+        if self.state_key is None:
+            return image
         return {"image": image, self.state_key: self.state_vectors[state]}
 
 
@@ -376,13 +425,13 @@ def _reward_machine_inputs(
     if CONFIG.bundle is None:
         raise ValueError("reward_source rm or both needs a bundle in the run config")
     bundle = load_bundle(CONFIG.bundle)
-    one_hot = CONFIG.rm_state_encoding == "one_hot"
-    if not one_hot and bundle.manifest.generation.get("rewards_rebuilt", {}).get("dropped"):
+    embedded = CONFIG.rm_state_encoding == "embedding"
+    if embedded and bundle.manifest.generation.get("rewards_rebuilt", {}).get("dropped"):
         raise ValueError(
             f"{CONFIG.bundle}: rebuild-rewards dropped its state descriptions and embeddings "
             "(they were written for the old moves); train it with rm_state_encoding: one_hot"
         )
-    bundle.validate(require_complete=True, described=not one_hot)
+    bundle.validate(require_complete=True, described=embedded)
     if CONFIG.shuffle_embeddings_seed is not None:
         permutation = embedding_permutation(bundle.embeddings, CONFIG.shuffle_embeddings_seed)
         bundle.embeddings = {
@@ -409,8 +458,8 @@ def _reward_machine_inputs(
 
 
 def task_name(entry: Mapping[str, Any]) -> str:
-    """A ``task_bundles`` entry is named after its bundle folder."""
-    return Path(entry["bundle"]).name
+    """A ``task_bundles`` entry is named after its bundle folder; a no-RM entry by its ``name``."""
+    return entry.get("name") or Path(entry["bundle"]).name
 
 
 class MultiTaskEnvironment(gym.Env):
@@ -527,7 +576,7 @@ def _task_config(CONFIG: Configuration, entry: Mapping[str, Any]) -> Configurati
     the entry alone, with ``success`` falling back to the run's.
     """
     task = copy.copy(CONFIG)  # replace() would reload the YAML over these values
-    task.bundle = entry["bundle"]
+    task.bundle = entry.get("bundle")
     task.labeling_bundle = entry.get("labeling_bundle")
     task.env_kwargs = {**CONFIG.env_kwargs, **entry.get("env_kwargs", {})}
     task.success = entry.get("success", CONFIG.success)

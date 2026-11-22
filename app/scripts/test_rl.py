@@ -191,7 +191,8 @@ def test_rl(CONFIG: Configuration, gifs: int, judge: Path | None = None) -> None
     ``judge`` (a card file) the episodes are also saved as agent traces and judged. With
     ``CONFIG.bundle`` the policy plays that bundle's machine instead of its own, and with
     ``CONFIG.shuffle_embeddings_seed`` the state embeddings are permuted; both write under
-    ``<run>/transfer/<name>/``.
+    ``<run>/transfer/<name>/``. A no-RM multi-task run with ``judge`` plays that card's setup
+    alone, under ``<run>/transfer/card-<id>/``.
 
     Raises:
         ValueError: If no finished run matches ``CONFIG.exp_name``.
@@ -249,6 +250,8 @@ def _test_run(
     config, transfer = trained, None
     if CONFIG.bundle is not None or CONFIG.shuffle_embeddings_seed is not None:
         config, transfer = _transferred_config(CONFIG, saved, judge)
+    elif judge is not None and saved.get("reward_source") == "env" and saved.get("task_bundles"):
+        config, transfer = _no_rm_card_config(CONFIG, saved, judge)
     out = directory / "transfer" / transfer["name"] if transfer else directory
     if CONFIG.test_model != "final":
         out /= model_folder(CONFIG.test_model)  # the final model's results stay where they are
@@ -362,6 +365,26 @@ def _transferred_config(
     return config, record
 
 
+def _no_rm_card_config(
+    CONFIG: Configuration, saved: dict[str, Any], judge: Path
+) -> tuple[Configuration, dict[str, Any]]:
+    """A no-RM multi-task run playing one card's setup: a mix member, or a card it never saw.
+
+    There is no machine to swap, so only the card's ``env_kwargs`` replace the tasks.
+    """
+    _, card = load_card(judge)
+    overrides = {"task_bundles": [], "task_draw": None, "env_kwargs": dict(card.env["env_kwargs"])}
+    record = {
+        "name": f"card-{card.id}",
+        "trained_on": [entry["name"] for entry in saved["task_bundles"]],
+        "tested_bundle": None,
+        "card": card.id,
+        "shuffle_embeddings_seed": None,
+        "shuffled_embeddings": None,
+    }
+    return run_config(saved, CONFIG.eval_seed_base, overrides), record
+
+
 def _check_same_spaces(
     trained: Configuration, saved: dict[str, Any], tested: RunEnvironment, bundle: Path
 ) -> None:
@@ -457,6 +480,7 @@ RENDERERS: dict[str, Callable[[gym.Env], Image.Image]] = {
         getattr(env, "picture", env.get_frame)(tile_size=GIF_TILE_PIXELS)
     ),
     "craftium": lambda env: Image.fromarray(env.last_observation).convert("RGB"),
+    "xland": lambda env: Image.fromarray(env.render()),
 }
 
 
@@ -693,8 +717,8 @@ class JudgeRecorder:
         if any(clause[2] == "soft" for clause in self.card.expect):
             summary["soft_quality_definition"] = SOFT_QUALITY_DEFINITION
             summary.update(judge_means(episodes, SOFT_QUALITY_MEANS))
-        if self.config.rm_state_encoding == "one_hot":
-            summary["rm_state_encoding"] = "one_hot"
+        if self.config.rm_state_encoding != "embedding":
+            summary["rm_state_encoding"] = self.config.rm_state_encoding
         return summary
 
     def _soft_only_summary(
