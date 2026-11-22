@@ -51,7 +51,11 @@ diagnostics to reproduce a failed run without changing compilation semantics.
   (ARM-FM machines always have a final state), and nothing after it counts. The solving plan must stop
   in a final state without entering the well first (a machine with no final state must end owing
   nothing). A plan that breaks a hard rule must not stop in a final state; a plan that breaks only
-  soft rules must pay a negative reward. Since 2026-11-20 a machine with no final state also plays an
+  soft rules must pay a negative step reward, or end where the solving plan of its layout ends and
+  pay less than it, plain: a soft rule broken only at the end (`Existence`'s "at some point") or on
+  the finishing edge is priced by a smaller payout, never a negative step, and discounted pay alone
+  does not count, since a slower plan pays less of it with nothing charged. Since 2026-11-20 a
+  machine with no final state also plays an
   idle plan: every wrong plan, and the idle plan where it breaks a rule of the card, must pay less
   than the solving plan on the same layout, plain and discounted at the bundle's gamma, and must end
   in the well where it breaks a hard rule for good (`broken@i` in the card's judge); an idle plan
@@ -149,3 +153,15 @@ keeps their association visible when a trace is reopened.
   the LLM call when the default pricing has no level to price over (user decision).
 - 2026-11-21: `run-suite` refuses a FARM bundle whose plan check failed (user rule: never train a FARM
   machine with an open sign that it is wrong).
+- 2026-11-22: A soft-break plan also passes when it ends where the solving plan of its layout ends
+  and pays less than it, plain (final-run finding: every FARM soft `Existence` and `ExistenceTwo`
+  bundle, and soft `Precedence` broken on the finishing edge, failed "pays nothing" although the
+  machine paid the break less). The end condition keeps a soft rule compiled as hard failing. The
+  trace bank's soft rule (R43, `replay-traces`) asks the same, with whether the machine accepts the
+  trace as its end.
+- 2026-11-22: R43 judges the solve of a machine with no final state and no end judgment, which
+  accepts no trace, by pay, as the plan check's no-goal rule does (user ruling D3: "Judge them by
+  pay, as the plan check does"): the solve must stay out of the well and every wrong trace of its
+  seed must pay less, plain and discounted at the bundle's gamma. Both checks share that rule
+  (`traces.pays_less`, `traces.run_pay`). R43 had failed every soft `Existence` and `ExistenceTwo`
+  machine with no goal, which the plan check passed.
