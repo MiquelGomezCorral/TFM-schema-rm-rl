@@ -15,10 +15,14 @@ cannot put the box down before that fall, and the fall turns the agent to face t
 - ``"side"``: the same draw. A box in front stays in front, a box to the right or left turns the
   agent to face it, and a box behind turns the agent to its right or left (also drawn), so one more
   turn comes before the pickup.
+- ``"half"``: the same draw. The second draw, a fair coin, turns the agent either to face the box or
+  to have it on its right, one turn short of the pickup. So about half the falls allow a next-move
+  pickup wherever the agent stands; a rule tied to the landing side does not, since walls send
+  blocked sides to the front (in the start corner, three draws in four land in front).
 
-These draws come after every other draw of the seed, and only off ``"face"``, so the three values
-play the same schedule, ``"none"`` and ``"side"`` the same landing sides, and ``"face"`` the episodes
-it always played.
+These draws come after every other draw of the seed, and only off ``"face"``, so the four values
+play the same schedule, ``"none"``, ``"side"`` and ``"half"`` the same landing sides, and ``"face"``
+the episodes it always played.
 
 The rules (schedule, step order, reward) are in ``environment.md`` and the code-side facts in
 ``environment-code.md``, both in ``experiments/benchmark/envs/service-room/``
@@ -54,7 +58,7 @@ EXIT_POS = (6, 6)
 SILENT_COLOR, RINGING_COLOR, BOX_COLOR = "blue", "red", "purple"
 REQUIREMENTS = ("siren_silent", "holding_box")
 IGNORABLE = ("siren", "box_fall")
-FALL_TURNS = ("face", "none", "side")
+FALL_TURNS = ("face", "none", "side", "half")
 DIRECTIONS = ((1, 0), (0, 1), (-1, 0), (0, -1))  # right, down, left, up
 
 
@@ -140,7 +144,7 @@ class ServiceRoomEnv(MiniGridEnv):
         self._ring_steps: list[int] = []
         self._fall_delays: list[int] = []
         self._fall_steps: list[int] = []  # absolute steps, set by pickups
-        self._fall_draws: list[tuple[int, int]] = []  # per fall: first side, turn if behind
+        self._fall_draws: list[tuple[int, int]] = []  # per fall: first side, turn if behind or coin
 
     @staticmethod
     def _gen_mission() -> str:
@@ -265,7 +269,9 @@ class ServiceRoomEnv(MiniGridEnv):
         self.carrying.cur_pos = np.array(landing)
         offset = (landing[0] - self.agent_pos[0], landing[1] - self.agent_pos[1])
         box_dir = DIRECTIONS.index(offset)
-        if self.fall_turn == "side" and (box_dir - self.agent_dir) % 4 == 2:
+        if self.fall_turn == "half":  # the behind-turn draw is the coin: face it, or one turn short
+            self.agent_dir = box_dir if back_turn == 0 else (box_dir - 1) % 4
+        elif self.fall_turn == "side" and (box_dir - self.agent_dir) % 4 == 2:
             self.agent_dir = (self.agent_dir + (1, 3)[back_turn]) % 4  # behind: right or left
         elif self.fall_turn == "side" or (self.fall_turn == "face" and self.face_fallen):
             self.agent_dir = box_dir  # face the item, so the very next move can pick it up
