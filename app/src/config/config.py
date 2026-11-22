@@ -52,9 +52,9 @@ def _coerce_number(numeric_type: type, value: object) -> int | float:
 
 ALGORITHMS = ("dqn", "ppo")
 SUCCESS_MODES = ("env", "rm")
-REWARD_SOURCES = ("rm", "env", "both")
-RM_STATE_ENCODINGS = ("embedding", "one_hot")
-TASK_BUNDLE_KEYS = ("bundle", "labeling_bundle", "env_kwargs", "success")
+REWARD_SOURCES = ("rm", "env", "both", "env_rm_state")
+RM_STATE_ENCODINGS = ("embedding", "one_hot", "none")
+TASK_BUNDLE_KEYS = ("bundle", "name", "labeling_bundle", "env_kwargs", "success")
 TASK_DRAWS = ("alternate",)
 PPO_POSITIVE = (
     "ppo_num_envs",
@@ -104,15 +104,20 @@ def _check_removed_keys(yaml_data: dict, config_path: Path) -> None:
         )
 
 
-def _task_bundle(entry: object, index: int) -> dict:
-    """Validate one ``task_bundles`` entry and convert its bundle paths to ``Path``."""
+def _task_bundle(entry: object, index: int, no_rm: bool) -> dict:
+    """Validate one ``task_bundles`` entry and convert its bundle paths to ``Path``.
+
+    ``no_rm`` (``reward_source: env``): the entry is a task without a machine, named by ``name``.
+    """
     where = f"task_bundles[{index}]"
     if not isinstance(entry, dict):
         raise ValueError(f"{where} must be a mapping")
     unknown = sorted(str(key) for key in entry.keys() - set(TASK_BUNDLE_KEYS))
     if unknown:
         raise ValueError(f"Unknown keys in {where}: {', '.join(unknown)}")
-    if entry.get("bundle") is None:
+    if no_rm and (entry.get("name") is None or entry.get("bundle") is not None):
+        raise ValueError(f"{where}: reward_source env takes a task name and no bundle")
+    if not no_rm and entry.get("bundle") is None:
         raise ValueError(f"{where} needs a bundle")
     if entry.get("success", "env") not in SUCCESS_MODES:
         raise ValueError(f"{where}.success must be one of {', '.join(SUCCESS_MODES)}")
@@ -332,7 +337,9 @@ class Configuration:
     layout_seed: int | None = None  # None means the run seed
     labeling_bundle: Path | None = None
     # The learner's reward: ``rm`` the RM reward alone, ``both`` environment + RM reward, ``env``
-    # the plain environment with no RM. The flag is run-wide.
+    # the plain environment with no RM, ``env_rm_state`` the environment reward with the RM run
+    # beside it only for its state input (it pays nothing and ends no episode; an ablation). The
+    # flag is run-wide.
     reward_source: str = "rm"
     # Added to the RM reward on the step where the time limit ends an episode the RM did not (0 or
     # negative; the default is half a completion, in pay units). A machine with an end judgment
@@ -340,7 +347,8 @@ class Configuration:
     time_limit_penalty: float = -5 * PROGRESS_REWARD
     # How the learner sees the machine state: ``embedding`` the text embedding of the state
     # (``rm_embedding``), ``one_hot`` one slot per state, in sorted state-name order (``rm_state``).
-    # ``one_hot`` is a diagnostic input, not an arm.
+    # ``one_hot`` is a diagnostic input, not an arm. ``none`` hides the state: the RM pays, the
+    # policy sees the image alone (an ablation).
     rm_state_encoding: str = "embedding"
     env_kwargs: dict = field(default_factory=dict)  # keyword arguments of gym.make
     algorithm: str = "dqn"
@@ -348,7 +356,8 @@ class Configuration:
     # acceptance (``rm``).
     success: str = "env"
     # Several tasks in one run: entries of ``bundle`` plus optional ``labeling_bundle``,
-    # ``env_kwargs`` and ``success``. Mutually exclusive with ``bundle``.
+    # ``env_kwargs`` and ``success``. Mutually exclusive with ``bundle``. With ``reward_source:
+    # env`` an entry is a ``name`` plus its ``env_kwargs``, a task without a machine.
     task_bundles: list[dict] = field(default_factory=list)
     # How a multi-task run picks each episode's task: None draws it from a seeded RNG, ``alternate``
     # cycles the ``task_bundles`` in order, each training env starting one entry after the last.
@@ -531,10 +540,9 @@ class Configuration:
             raise ValueError("task_bundles must be a list of mappings")
         if self.task_bundles and self.bundle is not None:
             raise ValueError("task_bundles and bundle are mutually exclusive")
-        if self.task_bundles and self.reward_source == "env":
-            raise ValueError("task_bundles needs a Reward Machine; reward_source: env has none")
+        no_rm = self.reward_source == "env"
         self.task_bundles = [
-            _task_bundle(entry, index) for index, entry in enumerate(self.task_bundles)
+            _task_bundle(entry, index, no_rm) for index, entry in enumerate(self.task_bundles)
         ]
         _check_task_draw(self.task_draw, bool(self.task_bundles))
         self._validate_rm_state_encoding()
@@ -546,21 +554,18 @@ class Configuration:
                 f"rm_state_encoding must be one of {', '.join(RM_STATE_ENCODINGS)}: "
                 f"{self.rm_state_encoding!r}"
             )
-        if self.rm_state_encoding != "one_hot":
+        if self.rm_state_encoding == "embedding":
             return
+        name = f"rm_state_encoding: {self.rm_state_encoding}"
         if self.algorithm != "ppo":
-            raise ValueError("rm_state_encoding: one_hot is for PPO; set algorithm: ppo")
+            raise ValueError(f"{name} is for PPO; set algorithm: ppo")
         if self.reward_source == "env":
             raise ValueError(
-                "rm_state_encoding: one_hot needs a Reward Machine; reward_source: env has none; "
-                "set reward_source: rm"
+                f"{name} needs a Reward Machine; reward_source: env has none; set reward_source: rm"
             )
         if self.shuffle_embeddings_seed is not None:
-            raise ValueError(
-                "rm_state_encoding: one_hot has no embeddings to shuffle; "
-                "drop shuffle_embeddings_seed"
-            )
-        if self.task_bundles:
+            raise ValueError(f"{name} has no embeddings to shuffle; drop shuffle_embeddings_seed")
+        if self.rm_state_encoding == "one_hot" and self.task_bundles:
             raise ValueError("rm_state_encoding: one_hot needs a single machine; drop task_bundles")
 
     def _validate_ppo(self) -> None:

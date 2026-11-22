@@ -6,8 +6,9 @@ Usage:
 
 A ``mixes:`` list in the runs.yaml (``- {id: siren-serve, cards: [cx-siren, cx-box]}``) adds runs that
 train one policy on several cards' machines at once: ``task_bundles`` with ``task_draw: alternate``,
-for the arms with a bundle (not ``no-rm``). The run's ``summary.json`` records the ``task_split``;
-the cards are written to ``members/<id>.json`` in the run's folder for ``test-rl --judge``.
+for the arms with a bundle, and for ``no-rm`` when the cards' ``env_kwargs`` differ. The run's
+``summary.json`` records the ``task_split``; the cards are written to ``members/<id>.json`` in the
+run's folder for ``test-rl --judge``.
 
 A run is one card x arm x learner x variant x seed. Its folder is
 ``outputs/runs/<exp_name>/seed<seed>-<UTC>-<pid>/`` (written by ``train-rl``), beside the
@@ -74,6 +75,8 @@ FINISHED, RUNNING, TIMED_OUT, INTERRUPTED, NO_DATA, PENDING = (
     "pending",
 )
 ARMS = ("no-rm", "arm-fm", "farm")
+# A suite's ``reward_source`` for its bundle arms; ``env_rm_state`` is the no-RM-reward ablation.
+BUNDLE_REWARD_SOURCES = ("rm", "both", "env_rm_state")
 SUITE_KEYS = (
     "suite",
     "tasks",
@@ -162,8 +165,8 @@ def load_suite(path: Path) -> dict:
 
     Raises:
         ValueError: If a key, arm or learner entry is missing or unknown, ``reward_source`` is
-            not ``rm`` or ``both``, a card id appears more than once across the task files, or
-            ``only`` is a path that is not a card file with a non-empty ``cards`` list.
+            not one of ``BUNDLE_REWARD_SOURCES``, a card id appears more than once across the task
+            files, or ``only`` is a path that is not a card file with a non-empty ``cards`` list.
     """
     spec = yaml.safe_load(path.read_text(encoding="utf-8"))
     missing = [key for key in SUITE_KEYS if key not in spec]
@@ -173,10 +176,10 @@ def load_suite(path: Path) -> dict:
     if bad_arms:
         raise ValueError(f"{path}: unknown arms {', '.join(bad_arms)}; use {', '.join(ARMS)}")
     source = spec.get("reward_source", "rm")
-    if source not in ("rm", "both"):
+    if source not in BUNDLE_REWARD_SOURCES:
         raise ValueError(
-            f"{path}: reward_source {source!r} is not allowed; bundle arms take rm or both "
-            "(no-RM arms always train on the env reward)"
+            f"{path}: reward_source {source!r} is not allowed; bundle arms take "
+            f"{', '.join(BUNDLE_REWARD_SOURCES)} (no-RM arms always train on the env reward)"
         )
     for name, learner in spec["learners"].items():
         absent = [key for key in LEARNER_KEYS if key not in learner]
@@ -259,8 +262,9 @@ def mix_runs(spec: dict, cards: dict[str, dict], learners: list[str]) -> list[Ru
 
     A mix trains one policy on the machines of its cards in alternating episodes
     (``task_bundles`` with ``task_draw: alternate``). Its cards must share the environment
-    (family, gym id, observation, layout); they may differ in ``env_kwargs``. The mix has no
-    no-RM arm, since without a machine its cards are the same task.
+    (family, gym id, observation, layout); they may differ in ``env_kwargs``. The mix has a
+    no-RM arm only when its cards' ``env_kwargs`` differ (XLand rulesets): with one setup, its
+    cards without a machine are the same task.
 
     Raises:
         ValueError: If a mix has fewer than two cards, names an unknown card or has cards whose
@@ -278,14 +282,17 @@ def mix_runs(spec: dict, cards: dict[str, dict], learners: list[str]) -> list[Ru
             if len({json.dumps(member["env"].get(key)) for member in members}) > 1:
                 raise ValueError(f"mix {mix['id']}: its cards differ in env.{key}")
         card = {"id": mix["id"], "env": members[0]["env"], "members": members}
-        for arm, learner, seed in product(
-            [arm for arm in spec["arms"] if arm != "no-rm"], learners, spec["seeds"]
-        ):
-            bundles = tuple(bundle_path(spec, member, arm, None) for member in members)
+        setups = {
+            json.dumps(member["env"].get("env_kwargs", {}), sort_keys=True) for member in members
+        }
+        arms = [arm for arm in spec["arms"] if arm != "no-rm" or len(setups) > 1]
+        for arm, learner, seed in product(arms, learners, spec["seeds"]):
+            bundles = tuple(
+                path for member in members if (path := bundle_path(spec, member, arm, None))
+            )  # empty for no-rm
+            first = bundles[0] if bundles else None
             ram_gb = spec["learners"].get(learner, {}).get("ram_gb", 0)
-            runs.append(
-                Run(spec["suite"], card, arm, learner, None, seed, bundles[0], ram_gb, bundles)
-            )
+            runs.append(Run(spec["suite"], card, arm, learner, None, seed, first, ram_gb, bundles))
     return runs
 
 
@@ -448,7 +455,15 @@ def run_config(run: Run, spec: dict) -> dict:
         total_timesteps=spec["total_timesteps"],
         success="env",
     )
-    if run.bundle is None:
+    if run.bundle is None and "members" in run.card:  # a no-RM mix: each card keeps its setup
+        entries = [
+            {"name": member["id"], "env_kwargs": member["env"].get("env_kwargs", {})}
+            for member in run.card["members"]
+        ]
+        config.update(
+            reward_source="env", env_kwargs={}, task_bundles=entries, task_draw="alternate"
+        )
+    elif run.bundle is None:
         config["reward_source"] = "env"
     elif run.bundles:  # a mix: each card keeps its own setup and machine
         entries = [
@@ -456,7 +471,7 @@ def run_config(run: Run, spec: dict) -> dict:
             for bundle, member in zip(run.bundles, run.card["members"], strict=True)
         ]
         config.update(
-            reward_source="rm",
+            reward_source=spec.get("reward_source", "rm"),
             env_kwargs={},
             task_bundles=entries,
             task_draw="alternate",
@@ -652,7 +667,7 @@ def write_run_files(run: Run, spec: dict) -> Path:
     """Write the run's ``card.json`` and ``run-config.yaml``; return the config path."""
     run.exp_dir.mkdir(parents=True, exist_ok=True)
     write_atomic(run.exp_dir / "card.json", json.dumps(run.card, indent=2) + "\n")
-    if run.bundles:  # a mix's cards, one file each: ``test-rl --judge`` takes one card
+    if "members" in run.card:  # a mix's cards, one file each: ``test-rl --judge`` takes one card
         (run.exp_dir / "members").mkdir(exist_ok=True)
         for member in run.card["members"]:
             path = run.exp_dir / "members" / f"{member['id']}.json"
