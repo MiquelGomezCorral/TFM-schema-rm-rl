@@ -159,3 +159,9 @@ keeps their association visible when a trace is reopened.
   machine paid the break less). The end condition keeps a soft rule compiled as hard failing. The
   trace bank's soft rule (R43, `replay-traces`) asks the same, with whether the machine accepts the
   trace as its end.
+- 2026-11-22: R43 judges the solve of a machine with no final state and no end judgment, which
+  accepts no trace, by pay, as the plan check's no-goal rule does (user ruling D3: "Judge them by
+  pay, as the plan check does"): the solve must stay out of the well and every wrong trace of its
+  seed must pay less, plain and discounted at the bundle's gamma. Both checks share that rule
+  (`traces.pays_less`, `traces.run_pay`). R43 had failed every soft `Existence` and `ExistenceTwo`
+  machine with no goal, which the plan check passed.

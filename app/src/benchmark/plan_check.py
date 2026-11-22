@@ -9,7 +9,8 @@ the goal, so it must pay a negative reward or end where the solving plan on its 
 pay less than it, plain (``traces.priced_by_payout``; the trace bank's R43 rule asks the same).
 With no final state, every
 wrong plan, and an idle plan where it breaks a rule of the card, must pay less than the solving
-plan on the same layout, plain and discounted at the bundle's gamma (the card review's pay test; a
+plan on the same layout, plain and discounted at the bundle's gamma (``traces.pays_less``, the card
+review's pay test, which R43 also asks of a solve its machine cannot accept; a
 bundle whose solving plan paid on no layout fails), and must end in the well where it breaks a
 hard rule for good (``broken@i`` in the card's judge, not ``open_at_end``). An idle run that keeps
 every rule is held to the solving plan's rules. A machine that stops before the agent acts fails
@@ -22,7 +23,6 @@ from pathlib import Path
 from typing import Any
 
 from src.arm_fm.artifacts import ArtifactBundle
-from src.config import Configuration
 
 from .cards import Card
 from .declare_judge import BROKEN, HARD, Judgment, judge_trace
@@ -33,9 +33,11 @@ from .traces import (
     SOFT_BREAK,
     SOLVE,
     make_record,
+    pays_less,
     plans_of,
     priced_by_payout,
     replay_in_bundle,
+    run_pay,
     write_json,
 )
 
@@ -67,9 +69,8 @@ def check_card_plans(bundle: ArtifactBundle, card: Card, run_seed: int) -> dict[
         }
     no_goal = not bundle.reward_machine.final_states
     plans = plans_of(card) + ([(IDLE, _IDLE_STEPS, [])] if no_goal else [])
-    gamma = bundle.manifest.effective_settings.get("gamma") or Configuration.gamma
     runs = [
-        _check_run(bundle, card, plan, seed, gamma)
+        _check_run(bundle, card, plan, seed)
         for seed in card.reset_seeds(run_seed)
         for plan in plans
     ]
@@ -110,7 +111,7 @@ def _kind(card: Card, breaks: list[int] | None) -> str:
 
 
 def _check_run(
-    bundle: ArtifactBundle, card: Card, plan: tuple[str, Any, Any], seed: int, gamma: float
+    bundle: ArtifactBundle, card: Card, plan: tuple[str, Any, Any], seed: int
 ) -> dict[str, Any]:
     name, steps, breaks = plan
     kind = _kind(card, breaks)
@@ -140,16 +141,10 @@ def _check_run(
         "owed": machine.judgment.end_charge(state) if machine.judgment else 0.0,
     }
     rewards = replay.rewards[:stop]
-    discounted = sum(gamma**step * reward for step, reward in enumerate(rewards))
     problems = _problems(entry["kind"], bool(finals), ending, rewards)
     if judgment is not None and ending["end"] != WELL:
         problems += _unpriced_breaks(judgment)
-    return {
-        **entry,
-        "problems": problems,
-        **ending,
-        "pay": [round(sum(rewards), 4), round(discounted, 4)],
-    }
+    return {**entry, "problems": problems, **ending, "pay": run_pay(bundle, rewards)}
 
 
 def _check_pay(runs: list[dict[str, Any]]) -> list[str]:
@@ -166,7 +161,7 @@ def _check_pay(runs: list[dict[str, Any]]) -> list[str]:
         best = solved.get(run["seed"])
         if run["kind"] in (SOLVE, KEEPS_RULES) or best is None or "pay" not in run:
             continue
-        if any(paid >= solve for paid, solve in zip(run["pay"], best, strict=True)):
+        if not pays_less(run["pay"], best):
             run["problems"].append(f"pays {run['pay']}, not less than the solving plan's {best}")
     return []
 

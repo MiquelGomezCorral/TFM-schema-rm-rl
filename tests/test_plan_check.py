@@ -2,8 +2,19 @@
 
 import unittest
 
+from src.arm_fm.artifacts import ArtifactBundle, BundleManifest
+from src.benchmark.declare_judge import judge_trace
 from src.benchmark.plan_check import FINAL, OPEN, SOFT_UNPAID, WELL, _price_soft_breaks, _problems
-from src.benchmark.traces import HARD_BREAK, SOFT_BREAK, SOLVE
+from src.benchmark.traces import (
+    HARD_BREAK,
+    SOFT_BREAK,
+    SOLVE,
+    Replay,
+    TraceRecord,
+    _pay_open_solves,
+    check_row,
+)
+from src.compiler.rm_format import parse_paper_reward_machine
 
 # kind, has a final state, where the episode stopped, step it stopped at, owed, rewards, problem
 CASES = [
@@ -50,6 +61,61 @@ class SoftBreakPayTest(unittest.TestCase):
                 soft["problems"] = [SOFT_UNPAID]
                 _price_soft_breaks([SOLVE_RUN, soft])
                 self.assertEqual(soft["problems"], [SOFT_UNPAID] if unpaid else [])
+
+
+# The FARM machine of "Try to flip the switch on the wall at some point" (soft Existence): no final
+# state and no end judgment, so no trace ends accepted. {reward} is what the flip pays.
+SWITCH_RM = """REWARD_MACHINE:
+STATES: u0, u1
+INITIAL_STATE: u0
+FINAL_STATES:
+DEFAULT_REWARD: 0
+TRANSITION_FUNCTION:
+(u0, switch_toggled) -> u1
+REWARD_FUNCTION:
+(u0, switch_toggled, u1) -> {reward}
+"""
+OFF, ON = {"switch_toggled": False}, {"switch_toggled": True}
+
+
+def _record(plan: str, labels: list[dict[str, bool]]) -> TraceRecord:
+    return TraceRecord(
+        suite="templates",
+        card_id="switch",
+        plan=plan,
+        source="plan",
+        gym_id="",
+        env_kwargs={},
+        layout=None,
+        layout_seed=None,
+        reset_seed=1,
+        actions=[0, 0],
+        labels=labels,
+        env_rewards=[0.0, 0.0],
+        terminated=False,
+        truncated=True,
+    )
+
+
+class NoFinalSolvePayTest(unittest.TestCase):
+    """R43 judges a solve its machine cannot accept by pay, as the plan check does (D3)."""
+
+    def test_solve_against_the_wrong_trace(self):
+        for reward, passed in ((1, True), (0, False)):  # a flip that pays nothing is no better
+            with self.subTest(reward=reward):
+                machine = parse_paper_reward_machine(SWITCH_RM.format(reward=reward))
+                bundle = ArtifactBundle(BundleManifest("flip the switch", "MiniGrid"), machine)
+                traces = [
+                    (_record("solve", [OFF, ON]), Replay(["u0", "u0", "u1"], [], [0.0, reward])),
+                    (_record("wrong-0", [OFF, OFF]), Replay(["u0", "u0", "u0"], [], [0.0, 0.0])),
+                ]
+                expect = [("Existence", ("switch_toggled",), "soft")]
+                rows = [
+                    check_row(bundle, record, judge_trace(expect, record.labels), replay)
+                    for record, replay in traces
+                ]
+                _pay_open_solves(rows, machine)
+                self.assertEqual(rows[0]["ok"], passed)
 
 
 if __name__ == "__main__":
