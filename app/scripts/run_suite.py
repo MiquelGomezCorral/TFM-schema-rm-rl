@@ -146,10 +146,15 @@ def bundle_path(spec: dict, card: dict, arm: str, variant: str | None) -> Path |
     """The bundle folder a run trains on: ``<bundles>/<arm>/<card>``, or the ablation variant's.
 
     A card with ``bundle_of`` uses that card's bundle: the same machine in other world settings.
+    ``bundle_of: <suite>/<card-id>`` borrows from a sibling suite, whose bundles sit in
+    ``<suite>/bundles`` beside this suite's folder (``experiments/benchmark/<suite>/bundles``).
     """
     if arm == "no-rm":
         return None
     root, card_id = Path(spec["bundles"]), card.get("bundle_of") or card["id"]
+    suite, _, borrowed = card_id.rpartition("/")
+    if suite:
+        root, card_id = root.parent.parent / suite / "bundles", borrowed
     return root / card_id / f"off-{variant}" if variant else root / arm / card_id
 
 
