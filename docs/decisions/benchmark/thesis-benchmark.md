@@ -616,3 +616,10 @@ and a restart is easier to trust.
   `-noturn` (see Box-carry cards). The first rule tried (only a box at the right turns the agent) gave
   94% of next-move pickups for the solving policy and 75% for an exit walker, since walls send blocked sides to
   the front; the coin gives 52% and 53%. `face`, `none` and `side` play the same episodes as before.
+- 2026-11-22: Suite `armfm-paper` (user): the ARM-FM paper's MiniGrid tasks the benchmark lacked, for all three
+  arms, `train: false` (outside the counted 60). DoorKey 5x5 and 16x16 with new maps get machines of their own;
+  their fixed-map copies, and DoorKey 8x8 on a fixed map, train on the new-map card's machines through
+  `bundle_of` (8x8 borrows `base/base-doorkey`: `bundle_of: <suite>/<card-id>` now reads a sibling suite's
+  bundles). A fixed map is the existing `layout: fixed` with `layout_seed` 1. BabyAI UnlockToUnlock gets the
+  dev catalogue's env pages and a reference labeler; its layout stays procedural. 1.5M steps for 5x5 and 8x8,
+  5M for 16x16 and UnlockToUnlock (user D3).
