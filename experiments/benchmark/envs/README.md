@@ -19,6 +19,7 @@ Rule: `environment.md` holds facts; implementation is in `environment-code.md`.
 | `minigrid-unlock-pickup-key-held` | `MiniGrid-UnlockPickup-KeyHeld-v0` | the same four as the plain level; the agent starts holding the key (cards in `../forced-start`) |
 | `minigrid-lanes` | `MiniGrid-Lanes-v0` | `top_breach`, `side_breach`, `plant_trampled`, `zombie_killed`; all events, no goal, zombies come by themselves (cards in `../forcing`) |
 | `minigrid-key-gift` | `MiniGrid-KeyGift-v0` | `has_door_key`, `door_open`; a key lands in the empty hands by itself, no goal (cards in `../forcing`) |
+| `xland-<ruleset>` (8 folders) | `XLand-R4-13x13-v0` with `ruleset=<ruleset>` | per ruleset: `<tile>_made` per rule, `<tile>_picked_up`, and the goal fact; page written by `../scripts/render_xland.py`, task text reconstructed (cards in `../xland`) |
 
 Propositions of the four MiniGrid envs live in each env's `environment.md`, section `## Propositions`; the service-room row lists them here because its folder is added by S3.
 
