@@ -15,4 +15,4 @@ def box_fell(env):
 
 
 def at_exit(env):
-    return env.grid.get(*env.agent_pos) is not None and env.grid.get(*env.agent_pos).type == "goal"
+    return env.grid.get(env.agent_pos[0], env.agent_pos[1]) is not None and env.grid.get(env.agent_pos[0], env.agent_pos[1]).type == "goal"

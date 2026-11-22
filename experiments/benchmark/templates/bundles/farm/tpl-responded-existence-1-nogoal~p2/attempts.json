@@ -1,7 +1,7 @@
 [
   {
     "attempt": 1,
-    "candidate": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: u2\nACCEPTING_STATES:\nDEFAULT_REWARD: 0\nHARD_FAILED_REWARD: -1\nSOFT_FAILED_REWARD: -0.5\nTRANSITION_FUNCTION:\n(u0, !door_open&has_door_key) -> u1\n(u0, door_open) -> u2\n(u1, door_open) -> u2\nREWARD_FUNCTION:\n(u0, !door_open&has_door_key, u1) -> -0.1\n(u0, door_open, u2) -> 1.1\n(u1, door_open, u2) -> 1.2\nPENDING_PROMISES:\nu0: hard 1, soft 0\nu1: hard 2, soft 0\n",
+    "candidate": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&has_door_key) -> u1\n(u0, door_open) -> u2\n(u1, door_open) -> u2\nREWARD_FUNCTION:\n(u0, !door_open&has_door_key, u1) -> -1\n(u1, door_open, u2) -> 1\n",
     "error": "",
     "feedback": "",
     "stage": "compiler",
@@ -9,9 +9,9 @@
   },
   {
     "attempt": 1,
-    "candidate": "def has_door_key(env):\n    return env.carrying is not None and env.carrying.type == \"key\" and any(c is not None and c.type == \"door\" and c.color == env.carrying.color for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)])\n\ndef door_open(env):\n    return any(c is not None and c.type == \"door\" and c.is_open for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)])\n",
+    "candidate": "def has_door_key(env):\n    return env.carrying is not None and env.carrying.type == \"key\" and any(cell is not None and cell.type == \"door\" and cell.color == env.carrying.color for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n\n\ndef door_open(env):\n    return any(cell is not None and cell.type == \"door\" and cell.is_open for x in range(env.width) for y in range(env.height) for cell in [env.grid.get(x, y)])\n",
     "error": "",
-    "feedback": "NO CHANGES NEEDED. Declared propositions are exactly covered: has_door_key correctly checks that the carried object is a key whose color matches a door present on the grid, guarding grid cells against None; door_open correctly scans the grid for an open door with proper None guarding. Both are persistent conditions reading only the current observation, no event semantics are needed for the declared set, and only documented API attributes and allowed builtins are used.",
+    "feedback": "NO CHANGES NEEDED. The candidate covers exactly the declared propositions with one expression-only predicate each, named `has_door_key` and `door_open`, each taking only `env`. `has_door_key` guards `env.carrying is not None` before reading `type`/`color`, and verifies the carried key's color equals the color of the (single) door found by a guarded grid scan, matching the declared meaning 'carrying the key whose color matches the locked door'. `door_open` scans the grid with `cell is not None` guards and reads the documented door attribute `is_open`, matching 'the door is currently open'. Both are persistent conditions reading only the current observation, use no previous valuation, no forbidden builtins (only `any`/`range` plus the documented scan idiom), no invented API attributes, and no mutation of `env` or `env.episode_memory`. No predicates are supplied for the undeclared propositions `target_picked_up` and `key_lost`, which is correct since the accepted machine does not use them.",
     "raw_response": "",
     "stage": "labeling",
     "status": "accepted"

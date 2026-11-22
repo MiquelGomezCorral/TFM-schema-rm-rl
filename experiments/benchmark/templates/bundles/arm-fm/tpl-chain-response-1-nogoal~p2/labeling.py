@@ -1,5 +1,5 @@
 def siren_ringing(env):
-    return bool(env.siren_ringing)
+    return env.siren_ringing
 
 def switch_toggled(env):
     return "toggle" in env.events_this_step
@@ -11,4 +11,4 @@ def box_fell(env):
     return "fall" in env.events_this_step
 
 def at_exit(env):
-    return env.grid.get(*env.agent_pos) is not None and env.grid.get(*env.agent_pos).type == "goal"
+    return env.grid.get(env.agent_pos[0], env.agent_pos[1]) is not None and env.grid.get(env.agent_pos[0], env.agent_pos[1]).type == "goal"

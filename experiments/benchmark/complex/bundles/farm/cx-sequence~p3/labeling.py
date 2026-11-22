@@ -1,17 +1,40 @@
 def key_found(env):
-    return any(cell[0] == 5 for col in env.gen_obs()["image"] for cell in col) or bool(env.episode_memory["previous_valuation"] and env.episode_memory["previous_valuation"]["key_found"])
+    return (env.episode_memory["previous_valuation"] and env.episode_memory["previous_valuation"]["key_found"]) or any(
+        cell[0] == 5 for col in env.gen_obs()["image"] for cell in col
+    )
 
 
 def has_matching_key(env):
-    return env.carrying is not None and env.carrying.type == "key" and env.carrying.color == max([c.color for y in range((env.room_size - 1) * (max([y for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)] if c is not None and c.type == "ball"], default=env.agent_pos[1]) // (env.room_size - 1)), (env.room_size - 1) * (max([y for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)] if c is not None and c.type == "ball"], default=env.agent_pos[1]) // (env.room_size - 1)) + env.room_size) for c in [env.grid.get(env.width - env.room_size, y)] if c is not None and c.type == "door"], default=None)
+    return env.carrying is not None and env.carrying.type == "key" and any(
+        c is not None and c.type == "door" and c.color == env.carrying.color
+        for B in [max([by for bx in range(env.width) for by in range(env.height)
+                       for b in [env.grid.get(bx, by)] if b is not None and b.type == "ball"],
+                      default=env.agent_pos[1]) // (env.room_size - 1)]
+        for y in range((env.room_size - 1) * B, (env.room_size - 1) * B + env.room_size)
+        for c in [env.grid.get(env.width - env.room_size, y)]
+    )
 
 
 def target_door_open(env):
-    return any(c is not None and c.type == "door" and c.is_open for y in range((env.room_size - 1) * (max([y for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)] if c is not None and c.type == "ball"], default=env.agent_pos[1]) // (env.room_size - 1)), (env.room_size - 1) * (max([y for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)] if c is not None and c.type == "ball"], default=env.agent_pos[1]) // (env.room_size - 1)) + env.room_size) for c in [env.grid.get(env.width - env.room_size, y)])
+    return any(
+        c is not None and c.type == "door" and c.is_open
+        for B in [max([by for bx in range(env.width) for by in range(env.height)
+                       for b in [env.grid.get(bx, by)] if b is not None and b.type == "ball"],
+                      default=env.agent_pos[1]) // (env.room_size - 1)]
+        for y in range((env.room_size - 1) * B, (env.room_size - 1) * B + env.room_size)
+        for c in [env.grid.get(env.width - env.room_size, y)]
+    )
 
 
 def target_room_entered(env):
-    return bool(env.episode_memory["previous_valuation"] and env.episode_memory["previous_valuation"]["target_room_entered"]) or (env.agent_pos[0] >= env.width - env.room_size and 0 <= env.agent_pos[1] - (env.room_size - 1) * (max([y for x in range(env.width) for y in range(env.height) for c in [env.grid.get(x, y)] if c is not None and c.type == "ball"], default=env.agent_pos[1]) // (env.room_size - 1)) <= env.room_size - 1)
+    return any(
+        (env.episode_memory["previous_valuation"] and env.episode_memory["previous_valuation"]["target_room_entered"])
+        or (env.agent_pos[0] >= env.width - env.room_size
+            and 0 <= env.agent_pos[1] - (env.room_size - 1) * B <= env.room_size - 1)
+        for B in [max([by for bx in range(env.width) for by in range(env.height)
+                       for b in [env.grid.get(bx, by)] if b is not None and b.type == "ball"],
+                      default=env.agent_pos[1]) // (env.room_size - 1)]
+    )
 
 
 def target_picked_up(env):

@@ -1,11 +1,42 @@
 def blocker_moved(env):
-    return not any(env.grid.get(x, y) is not None and env.grid.get(x, y).type == "ball" for x in range(env.width) for y in range(env.height) if x + 1 < env.width and env.grid.get(x + 1, y) is not None and env.grid.get(x + 1, y).type == "door")
-
-def has_door_key(env):
-    return env.carrying is not None and env.carrying.type == "key" and any(env.grid.get(x, y) is not None and env.grid.get(x, y).type == "door" and env.grid.get(x, y).color == env.carrying.color for x in range(env.width) for y in range(env.height))
+    return not any(
+        x > 0
+        and door is not None
+        and door.type == "door"
+        and env.grid.get(x - 1, y) is not None
+        and env.grid.get(x - 1, y).type == "ball"
+        for x in range(env.width)
+        for y in range(env.height)
+        for door in [env.grid.get(x, y)]
+    )
 
 def door_open(env):
-    return any(env.grid.get(x, y) is not None and env.grid.get(x, y).type == "door" and env.grid.get(x, y).is_open for x in range(env.width) for y in range(env.height))
+    return any(
+        cell is not None
+        and cell.type == "door"
+        and cell.is_open
+        for x in range(env.width)
+        for y in range(env.height)
+        for cell in [env.grid.get(x, y)]
+    )
+
+def has_door_key(env):
+    return (
+        env.carrying is not None
+        and env.carrying.type == "key"
+        and any(
+            cell is not None
+            and cell.type == "door"
+            and cell.color == env.carrying.color
+            for x in range(env.width)
+            for y in range(env.height)
+            for cell in [env.grid.get(x, y)]
+        )
+    )
 
 def target_picked_up(env):
-    return env.carrying is not None and env.carrying.type == "box" and env.mission == "pick up the " + str(env.carrying.color) + " box"
+    return (
+        env.carrying is not None
+        and env.carrying.type == "box"
+        and env.mission == f"pick up the {env.carrying.color} box"
+    )

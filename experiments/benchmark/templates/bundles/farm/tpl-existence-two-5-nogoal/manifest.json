@@ -1,0 +1,102 @@
+{
+  "api_definitions": {
+    "labeling": "- `env.events_this_step`: list of strings for the step that just ended, empty when nothing happened. It can hold `\"top_breach\"`, `\"side_breach\"`, `\"plant_trampled\"` and `\"zombie_killed\"`, a kind can appear twice when two zombies get through side lanes on the same step. Event propositions come from it.\n- `env.agent_pos`: the agent position as `(x, y)`.\n- `env.agent_dir`: the facing direction as `0` right, `1` down, `2` left, `3` up.\n- `env.grid.get(x, y)`: the object at that cell, or `None` when the cell is empty. Grid coordinates use `0 <= x < env.width` and `0 <= y < env.height`.\n- Object attributes: `type` (`wall` or `ball`) and `color` (`red` for a zombie, `green` for a plant).\n- `env.width`, `env.height`: grid size (11 x 11).\n\nObject classes cannot be imported. Guard empty cells with `cell is not None` before reading an attribute."
+  },
+  "bundle_version": 1,
+  "effective_settings": {
+    "critic_model": "glm-5.3-flash",
+    "embedding": {
+      "context": "",
+      "device": "remote",
+      "dimension": 768,
+      "endpoint": "http://127.0.0.1:8934/v1/embeddings",
+      "extraction": "server-mean-pooling-last-layer",
+      "model": "nomic-embed-text",
+      "model_revision": "sha256:970aa74c0a90ef7482477cf803618e776e173c007bf957f635f1015bfcfef0e6",
+      "normalize": true,
+      "tokenizer_revision": "sha256:970aa74c0a90ef7482477cf803618e776e173c007bf957f635f1015bfcfef0e6"
+    },
+    "fold_soft_absence": true,
+    "gamma": 0.99,
+    "generator_model": "deepseek-v4.1-flash",
+    "hard_ceiling": true,
+    "max_attempts": 10,
+    "minimize_machine": true,
+    "mode": "compiler",
+    "pay_order": {
+      "hard_charge": null,
+      "ok": true,
+      "summary": "finished 12 > started 1 > not started 0; ok"
+    },
+    "recurrent_soft_penalty": true,
+    "reward_end_judgment": false,
+    "reward_progress": true,
+    "reward_promise_cost": false,
+    "reward_soft_break": true,
+    "reward_soft_pending": true,
+    "reward_well": true,
+    "soft_break_cost": 1.0,
+    "soft_breaks_per_step": 1,
+    "step_limit": 300
+  },
+  "environment": "experiments/benchmark/envs/minigrid-lanes/environment.md",
+  "errors": [],
+  "generation": {
+    "attempt": 1,
+    "attempt_classification": "first_attempt",
+    "clause_texts": [
+      "Kill at least two zombies."
+    ],
+    "clauses": [
+      [
+        "ExistenceTwo",
+        [
+          "zombie_killed"
+        ],
+        "hard"
+      ]
+    ],
+    "compiler_text": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, zombie_killed) -> u1\n(u1, zombie_killed) -> u2\nREWARD_FUNCTION:\n(u0, zombie_killed, u1) -> 1\n(u1, zombie_killed, u2) -> 11\n",
+    "first_attempt": true,
+    "labeling_api": "- `env.events_this_step`: list of strings for the step that just ended, empty when nothing happened. It can hold `\"top_breach\"`, `\"side_breach\"`, `\"plant_trampled\"` and `\"zombie_killed\"`, a kind can appear twice when two zombies get through side lanes on the same step. Event propositions come from it.\n- `env.agent_pos`: the agent position as `(x, y)`.\n- `env.agent_dir`: the facing direction as `0` right, `1` down, `2` left, `3` up.\n- `env.grid.get(x, y)`: the object at that cell, or `None` when the cell is empty. Grid coordinates use `0 <= x < env.width` and `0 <= y < env.height`.\n- Object attributes: `type` (`wall` or `ball`) and `color` (`red` for a zombie, `green` for a plant).\n- `env.width`, `env.height`: grid size (11 x 11).\n\nObject classes cannot be imported. Guard empty cells with `cell is not None` before reading an attribute.",
+    "refined": false
+  },
+  "inputs": {
+    "environment_markdown": "# MiniGrid Lanes\n\n## Environment\n\nZombies walk by themselves down three lanes of a field and the agent must stop them. The agent has seven actions: turn left, turn right, move forward, pick up, drop, toggle, and done. Only turning and moving forward do anything; pick up, drop, toggle and done do nothing, because there is nothing to hold or toggle.\n\nLayout: a field of 9 x 9 cells inside an outer wall (an 11 x 11 grid). Three lanes run left to right along field rows 0, 4 and 8, from the top. The top lane (row 0) is the protected one; the other two are the side lanes. The agent starts in the middle of the field, on the middle lane, facing left. The agent sees the whole grid, not a partial view. Nothing else is fixed: the layout is the same in every episode and only the events change.\n\nZombies (red balls) enter at the right end of a random lane at random times and step one cell left every 3 steps, counted from the step they entered. The agent moves one cell per step, so it is faster. A zombie that steps past the left end gets through and disappears. A zombie does not enter while another one stands on the entry cell of its lane. The chance that a zombie enters at a step rises over the episode, from 4% at the first step to 17% at the last, so later in the episode more zombies come than the agent can stop.\n\nPlants (green balls) sprout now and then (one try every 20 to 60 steps) on a random free cell of the field that is not on a lane, and at most 3 are alive at once. A plant stays until the agent steps on it.\n\nThe agent kills a zombie by moving onto its cell. A zombie that steps onto the agent's cell is not killed and keeps walking. All draws are made at the start of the episode from the reset seed.\n\n## Objective and episode boundary\n\nThe task is to keep zombies from getting through the top lane. The environment never ends the episode on its own: it cuts it at the step limit, 300 steps.\n\nThe environment pays 1 for every zombie killed, nothing else. The episode counts as a success when no zombie got through the top lane. The environment's reward does not depend on the rules of any task.\n\n## Proposition semantics\n\nAll four are events: each is true only on the step it happens, false on every other step. Several events can be true on one step.\n\n| id | kind | true when |\n|---|---|---|\n| `top_breach` | event | a zombie stepped past the left end of the top lane at this step |\n| `side_breach` | event | a zombie stepped past the left end of the middle or the bottom lane at this step |\n| `plant_trampled` | event | the agent moved onto a plant at this step, and the plant died |\n| `zombie_killed` | event | the agent moved onto a zombie at this step, and the zombie died |\n\n## Constraints\n\n- `top_breach` and `side_breach` cannot become true before step 28: a zombie needs 9 moves of 3 steps from its entry to get through.\n- `plant_trampled` and `zombie_killed` never hold together: the agent lands on one cell per step, and a cell holds a plant or a zombie, never both, because plants are off the lanes.\n\n## What the agent can and cannot do\n\n- Can: turn; move forward onto an empty cell, a plant or a zombie; walk along or across any lane.\n- Cannot: walk through the outer wall; hold, drop or toggle anything.\n- The agent never gets hurt. Standing in a lane stops no zombie: it walks through the agent's cell.\n- A zombie killed by the agent does not breach anything. A zombie nobody touches always gets through, 27 steps after it entered.\n- More than one zombie can walk the same lane, and zombies on different lanes can get through on the same step, so `top_breach` and `side_breach` can hold together.\n- A plant can lie on the shortest walk between two lanes; the agent can walk around it.\n- A plant cannot sprout on the agent's cell. Plants sprout only until 3 are alive; killed plants free a place for the next try.\n- How many zombies enter in an episode depends on the seed and on how often the entry cells are free: 18 to 37 in 40 episodes of an idle agent.\n\n## Example trace\n\nA real episode: 300 steps, 21 zombies killed, reward 21, no zombie through the top lane.\n\n1. steps 1 to 9, the agent waits: no changes\n2. step 10, a zombie enters the middle lane: no proposition changes\n3. steps 11 to 14, turns and moves right along the middle lane: no changes\n4. `forward` (step 15): `zombie_killed` true\n5. step 16, a turn: `zombie_killed` false\n6. step 37, a zombie enters the top lane; steps 38 to 45, the agent walks up to the top lane: no changes\n7. `forward` (step 46): `zombie_killed` true\n8. steps 47 to 237, the agent keeps killing zombies of the top and middle lanes: eleven more `zombie_killed` steps, no breach\n9. `forward` (step 238): `side_breach` true, a zombie got through a side lane while the agent was busy elsewhere\n10. steps 239 to 300: more kills, three more `side_breach` steps; `top_breach` never true [episode cut at the step limit]\n\nThe episode shows that a guard that holds the top lane can keep it for the whole episode, while it loses some side-lane zombies in the busy end of the episode.\n\n## Propositions\n- `top_breach`: A zombie got through the top lane of the field.\n- `side_breach`: A zombie got through one of the other two lanes of the field.\n- `plant_trampled`: The agent stepped on a plant and killed it.\n- `zombie_killed`: The agent killed a zombie by moving onto it.\n\n## Example tasks\n\n- Never let a zombie through the top lane.\n- Try not to let zombies through the other lanes.\n- Try not to step on plants.\n\n\n# MiniGrid Lanes: code notes\n\nAddition to `environment.md`; read both. Facts live there; this file says where they come from and how code reads them.\n\n## Source and runtime\n\n- Source: `app/src/arm_fm/forcing_envs.py:LanesEnv`, a MiniGrid environment written for this project on the Farama base <https://github.com/Farama-Foundation/Minigrid>. Importing `src.arm_fm.environments` registers it.\n- Gymnasium ID: `MiniGrid-Lanes-v0`. Keyword argument: `max_steps` (int, default 300).\n- Runtime: `minigrid==3.1.0`, `gymnasium==1.3.0`, pinned in `requirements.txt`.\n- `reset(seed=s)` seeds the whole schedule. Without a seed it draws one from the environment's own random stream. Either way `reset` returns the seed it used as `info[\"event_seed\"]`, beside `info[\"events\"]`.\n- The observation is the whole grid: `gen_obs` returns `{\"image\": grid.encode() with the agent written in, \"direction\", \"mission\"}`, as MiniGrid's `FullyObsWrapper` does, so the standard `ImgObsWrapper` and `MiniGridCNN` work unchanged on an 11 x 11 x 3 image.\n- `[code: file:function]` is `forcing_envs.py` unless a MiniGrid path is given. `[run: check]` is `experiments/benchmark/scripts/check_forcing.py` on the real environment, reset seeds 1 to 20.\n\n## Truth conditions in code\n\nAll four read the state after the step. `events_this_step` is reset at the start of every step.\n\n| id | expression |\n|---|---|\n| `top_breach` | `\"top_breach\" in env.events_this_step` |\n| `side_breach` | `\"side_breach\" in env.events_this_step` |\n| `plant_trampled` | `\"plant_trampled\" in env.events_this_step` |\n| `zombie_killed` | `\"zombie_killed\" in env.events_this_step` |\n\n## Evidence\n\n- Environment, layout: 9 x 9 field, three lanes on grid rows 1, 5, 9, agent at (5, 5) facing left, the grid empty at reset [code: `LANES_SIZE`, `LANE_ROWS`, `LANES_START`, `_gen_grid`; run: check, layout, 20/20].\n- Environment, whole-grid observation: the agent, its facing and each zombie show in the image [code: `gen_obs`; run: check, observation, 20/20]. A zombie on the agent's own cell is hidden by the agent.\n- Environment, entry on a random lane, rhythm and the walk: a zombie nobody stops gets through exactly 27 steps after it entered [code: `ZOMBIE_PERIOD`, `_advance_zombies`; run: check, idle walk, 20/20 episodes; the earliest breach in them is step 31]. Zombies enter only on the lane rows, never two on one step, and breaches + zombies left on the grid = zombies entered [run: check, idle, 20/20 each].\n- Environment, no entry while the entry cell is occupied [code: `_spawn_zombie`].\n- Environment, the spawn chance rises 4% to 17% [code: `SPAWN_CHANCE`, `_plan_events`; run: check, idle spawns, mean 5.8 entries in steps 1 to 100 against 13.3 in steps 201 to 300].\n- Environment, plants: off the lanes in every step of 20 random episodes (6000 steps), at most 3 alive, a step onto one kills it and removes exactly that plant (17 tramples) [code: `_sprout_plant`, `_land`, `MAX_PLANTS`; run: check, random walks].\n- Environment, a kill needs a move of the agent onto the zombie (24 kills in the random walks); a zombie that stepped onto the agent's cell is not killed [code: `step` runs `_land` only when the position changed, before `_advance_zombies`; run: check, idle, the agent waits on the middle lane and every one of its zombies still gets through, 20/20]. Kills + breaches + zombies left = zombies entered [run: check, random walks, 20/20].\n- Environment, the agent cannot hold, drop or toggle anything [code: `Creature.can_pickup` is False; MiniGrid `WorldObj.toggle` returns False for a ball].\n- Objective, step limit 300, no other end [code: `MAX_STEPS`; `step` returns MiniGrid's truncation only].\n- Objective, reward 1 per kill [code: `step`]. `success` is true exactly while no top breach happened [code: `success`; run: check, env flag, 20 of 20 idle episodes failed and the guard's flag equals its held top lane in 20/20].\n- Constraints, no breach before step 28 [code: the walk takes 27 steps after the earliest entry at step 1; run: check, idle, first breach at step 31]. `plant_trampled` and `zombie_killed` never together [code: `_land` handles one cell per step; run: check, random walks, 6000/6000 steps].\n- Same seed and same actions give the same episode [code: `reset`, `_plan_events`; run: check, replay, 20/20].\n- Example trace: seed 1, scripted guard `scripted_policy` (see `forcing_envs.py`): 300 steps, 21 kills, side breaches at steps 238, 256, 275 and 293, no top breach [run: check; the guard keeps the top lane on 19 of 20 seeds, 37 of 40 over seeds 1 to 40].\n\n## Labeling API\n\n- `env.events_this_step`: list of strings for the step that just ended, empty when nothing happened. It can hold `\"top_breach\"`, `\"side_breach\"`, `\"plant_trampled\"` and `\"zombie_killed\"`, a kind can appear twice when two zombies get through side lanes on the same step. Event propositions come from it.\n- `env.agent_pos`: the agent position as `(x, y)`.\n- `env.agent_dir`: the facing direction as `0` right, `1` down, `2` left, `3` up.\n- `env.grid.get(x, y)`: the object at that cell, or `None` when the cell is empty. Grid coordinates use `0 <= x < env.width` and `0 <= y < env.height`.\n- Object attributes: `type` (`wall` or `ball`) and `color` (`red` for a zombie, `green` for a plant).\n- `env.width`, `env.height`: grid size (11 x 11).\n\nObject classes cannot be imported. Guard empty cells with `cell is not None` before reading an attribute.\n",
+    "task": "Kill at least two zombies."
+  },
+  "proposition_semantics": {
+    "plant_trampled": "The agent stepped on a plant and killed it.",
+    "side_breach": "A zombie got through one of the other two lanes of the field.",
+    "top_breach": "A zombie got through the top lane of the field.",
+    "zombie_killed": "The agent killed a zombie by moving onto it."
+  },
+  "provenance": {
+    "generator": "compiler-adaptation",
+    "stamp": {
+      "attempts": 1,
+      "commit": "809dfe3f932528c90be33232ddd684a883d8fbb0",
+      "critic_interventions": 0,
+      "critic_model": "glm-5.3-flash",
+      "dirty": false,
+      "generator_model": "deepseek-v4.1-flash",
+      "provisional": false,
+      "reasoning": "max",
+      "retries": 0,
+      "wall_time_s": 56.0
+    },
+    "status": "reconstructed"
+  },
+  "rm_mode": "compiler",
+  "stage_status": {
+    "descriptions": "complete",
+    "embeddings": "complete",
+    "labeling": "complete",
+    "reward_machine": "complete"
+  },
+  "task": "Kill at least two zombies.",
+  "validation": {
+    "critic": true,
+    "structural": true
+  }
+}

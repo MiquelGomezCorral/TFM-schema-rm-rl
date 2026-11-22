@@ -1,5 +1,5 @@
 def at_exit(env):
-    return env.grid.get(env.agent_pos[0], env.agent_pos[1]) is not None and env.grid.get(env.agent_pos[0], env.agent_pos[1]).type == "goal"
+    return any(cell is not None and cell.type == "goal" for cell in [env.grid.get(env.agent_pos[0], env.agent_pos[1])])
 
 def box_fell(env):
     return "fall" in env.events_this_step

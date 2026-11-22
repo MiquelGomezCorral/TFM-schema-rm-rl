@@ -2,4 +2,4 @@ def siren_ringing(env):
     return bool(env.siren_ringing)
 
 def switch_toggled(env):
-    return any(event == "toggle" for event in env.events_this_step)
+    return env.events_this_step is not None and "toggle" in env.events_this_step
