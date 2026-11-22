@@ -90,6 +90,10 @@ semantic rather than byte-for-byte.
 - Compiler generation optionally produces MiniGrid labeling functions through the shared
   bounded generation/validation loop, using compiler-specific context and role engines.
   Baseline prompts, model resolution, and generation behavior remain unchanged.
+- Compiler state tagging reads, beside its own inputs, what the compiler critic reads: the clause
+  template guide, the compiler's clues and its warnings (`tagger_critic_info`, on by default since
+  2026-11-22; bundles made before then were tagged without it). The ARM-FM paper profile keeps its own
+  state descriptions.
 - Compiler node embeddings optionally use a configured local llama-server endpoint and
   the existing embedding settings/cache/bundle interfaces. Input defaults to exactly each
   node description. An opt-in context (`--embedding-context`) prefixes each description with

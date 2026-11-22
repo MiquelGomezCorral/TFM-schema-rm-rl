@@ -51,7 +51,11 @@ thing whichever arm produced it.
   Response and RespondedExistence never break; they stay open (`soft_open`). `soft_breaks` still
   counts each broken clause once, and judged success is unchanged. The judge owns the count
   (`_break_count`, `app/src/benchmark/declare_judge.py`); `judge.json` and the results table
-  show it for every arm side by side.
+  show it for every arm side by side. A soft-only card (no hard clause) is learned when neither the every-break
+  count nor `soft_open` is above an idle plan's on the same reset seeds, one of them is below it, and the agent
+  changes labels more often than idle; every arm is compared this way (user, 2026-11-22). The judge's
+  `soft_only` block compares the once-per-rule count, which saturates when a world floods (Lanes: 2.0 for both
+  FARM and idle); the idle every-break figure comes from `FP/tools/soft_every_break.py` in agent memory.
 - **Episodes that cannot start.** A machine whose start state is final, or reaches a final state
   from the start, ends every episode after the first action, so its rules pass untested
   (`machine_too_simple`, with the reason, in `judge.json`; a rejecting state stops the walk). The
@@ -67,7 +71,9 @@ thing whichever arm produced it.
   `raw_judged_success` keeps the judge's value before this rule, `mean_judged_success` and
   non-empty success follow the corrected one, and a run is flagged when more than half of its test
   episodes cannot start. The 5% limit is reported beside, not applied. Same rule for every arm
-  (user, 2026-11-14).
+  (user, 2026-11-14). The paper reports ARM-FM's start-final machines as a limit of its format, not a model error: its prompts
+  define a final state as accepting and its runtime ends the episode there, so a recurring rule with no goal
+  has no way to say "keep going" (46 of 133 no-goal machines, none of 131 goal machines; user, 2026-11-22).
 - **Shop served success.** Shop cards also record `served_count` and `served_success` (at least one
   client served) per test episode, from the reference labels. It is the shop's reported success;
   promises open at the 600-step limit do not affect it. `judged_success` and the columns built on it
@@ -600,6 +606,11 @@ and a restart is easier to trust.
   with a right machine does not count against FARM's no-help count (the stage is inherited from ARM-FM). The two
   soft-only no-goal cards stay in the set: the idle agent breaks their soft rule (2.0 and 1.0 times per episode) and
   no-RM beats it, so they are not idle-passable.
+- 2026-11-22: Later rulings (user). Soft-only cards compare every break with the idle plan, for every arm (the
+  once-per-rule count saturates in Lanes). ARM-FM's start-final machines are reported as a format limit. FARM's
+  state tagger reads the critic's information by default (off state texts 11 of 18 runs to 5 of 18 on the six
+  bundles with an off text). New tests of a right machine on a hard task: the KeyCorridor world size, more
+  training steps, a soft box-carry card on the fall worlds and a replay after a missed pickup.
 - 2026-11-22: A fourth fall world at about 50% (user). `fall_turn` gained `half` (a coin decides whether the
   agent faces the fallen box), and box-carry the copy `tpl-chain-response-1-goal-carry-half`, trained like
   `-noturn` (see Box-carry cards). The first rule tried (only a box at the right turns the agent) gave
