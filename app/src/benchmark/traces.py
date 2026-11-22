@@ -495,7 +495,11 @@ def machine_accepts(machine: PaperRewardMachine, rm_states: Sequence[str]) -> bo
 def check_row(
     machine: PaperRewardMachine, record: TraceRecord, judgment: Judgment, replay: Replay
 ) -> dict[str, Any]:
-    """R43 on one trace: solves accepted, hard breaks not, soft breaks pay at or after the break."""
+    """R43 on one trace: solves accepted, hard breaks not, soft breaks pay at or after the break.
+
+    A soft break that pays nothing negative can still pass by ``priced_by_payout``, which needs the
+    solving trace of its seed (``_price_soft_rows``).
+    """
     kind = trace_class(judgment)
     accepted = machine_accepts(machine, replay.rm_states)
     negative = [step for step, reward in enumerate(replay.rewards, start=1) if reward < 0]
@@ -516,13 +520,37 @@ def check_row(
     return {
         "trace": f"{record.card_id}/{record.key}",
         "class": kind,
+        "seed": record.reset_seed,
         "steps": len(record.actions),
         "accepted": accepted,
+        "pay": round(sum(replay.rewards), 4),
         "first_soft_break": first_soft,
         "negative_reward_steps": negative[:5],
         "error": replay.error,
         "ok": ok,
     }
+
+
+def priced_by_payout(end: object, paid: float, solve_end: object, solve_paid: float) -> bool:
+    """Whether a soft break is priced by a smaller payout: the plan check's rule and R43's.
+
+    FARM prices a soft rule broken at the end, such as ``Existence``'s, or on the finishing edge by
+    a smaller payout, not a negative step. The break must end like the solving run of its layout
+    and pay less than it, plain: a slower plan pays less discounted pay with nothing charged. The
+    end must match, so a soft rule compiled as hard (the plan reaches the goal, the machine does
+    not) still fails.
+    """
+    return end == solve_end and paid < solve_paid
+
+
+def _price_soft_rows(rows: Sequence[dict[str, Any]]) -> None:
+    """Pass each failing soft-break row that ``priced_by_payout`` against the solve of its seed."""
+    solved = {row["seed"]: row for row in rows if row["class"] == SOLVE and not row["error"]}
+    for row in rows:
+        best = solved.get(row["seed"])
+        if row["class"] != SOFT_BREAK or row["ok"] or row["error"] or best is None:
+            continue
+        row["ok"] = priced_by_payout(row["accepted"], row["pay"], best["accepted"], best["pay"])
 
 
 def machine_check(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
@@ -630,6 +658,7 @@ def _replay_bundle(
             output / "steps" / ref.arm / ref.name / f"{record.key}.json",
             _steps_file(ref, record, replay),
         )
+    _price_soft_rows(rows)
     return {
         "arm": ref.arm,
         "card_id": ref.card_id,

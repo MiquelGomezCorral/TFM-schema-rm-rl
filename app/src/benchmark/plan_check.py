@@ -5,9 +5,9 @@ state of the machine (the runtime's ``terminate_on_rm``), whatever the card's ``
 nothing after that counts. The solving plan must stop in a final state without entering the well
 first; a machine with no final state must end it with nothing owed. A wrong plan that breaks a
 hard rule must not stop in a final state. A wrong plan that breaks only soft rules still reaches
-the goal, so it must pay a negative reward (the trace bank's R43 rule) or end where the solving
-plan on its layout ends and pay less than it, plain (a soft rule broken at the end, such as
-``Existence``'s, or on the finishing edge is priced by a smaller payout). With no final state, every
+the goal, so it must pay a negative reward or end where the solving plan on its layout ends and
+pay less than it, plain (``traces.priced_by_payout``; the trace bank's R43 rule asks the same).
+With no final state, every
 wrong plan, and an idle plan where it breaks a rule of the card, must pay less than the solving
 plan on the same layout, plain and discounted at the bundle's gamma (the card review's pay test; a
 bundle whose solving plan paid on no layout fails), and must end in the well where it breaks a
@@ -34,6 +34,7 @@ from .traces import (
     SOLVE,
     make_record,
     plans_of,
+    priced_by_payout,
     replay_in_bundle,
     write_json,
 )
@@ -171,18 +172,13 @@ def _check_pay(runs: list[dict[str, Any]]) -> list[str]:
 
 
 def _price_soft_breaks(runs: list[dict[str, Any]]) -> None:
-    """Drop ``SOFT_UNPAID`` from a soft break that ends like the solving run of its seed, paying less.
-
-    Only plain pay counts: a slower plan pays less discounted pay with nothing charged. The end
-    must match, so a soft rule compiled as hard (the plan reaches the goal, the machine does not)
-    still fails.
-    """
+    """Drop ``SOFT_UNPAID`` from a soft break that is ``priced_by_payout`` against its seed's solve."""
     solved = {run["seed"]: run for run in runs if run["kind"] == SOLVE and "pay" in run}
     for run in runs:
         best = solved.get(run["seed"])
         if SOFT_UNPAID not in run["problems"] or best is None:
             continue
-        if run["end"] == best["end"] and run["pay"][0] < best["pay"][0]:
+        if priced_by_payout(run["end"], run["pay"][0], best["end"], best["pay"][0]):
             run["problems"].remove(SOFT_UNPAID)
 
 

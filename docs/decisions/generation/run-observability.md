@@ -156,4 +156,6 @@ keeps their association visible when a trace is reopened.
 - 2026-11-22: A soft-break plan also passes when it ends where the solving plan of its layout ends
   and pays less than it, plain (final-run finding: every FARM soft `Existence` and `ExistenceTwo`
   bundle, and soft `Precedence` broken on the finishing edge, failed "pays nothing" although the
-  machine paid the break less). The end condition keeps a soft rule compiled as hard failing.
+  machine paid the break less). The end condition keeps a soft rule compiled as hard failing. The
+  trace bank's soft rule (R43, `replay-traces`) asks the same, with whether the machine accepts the
+  trace as its end.
