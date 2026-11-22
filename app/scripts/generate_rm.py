@@ -3,6 +3,7 @@
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, replace
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -261,7 +262,7 @@ class _Pipeline:
                 return None
 
             self.accepted = self._kept(compiled)
-            compiled = self._describe_states(task, compiled)
+            compiled = self._describe_states(task, compiled, dfas)
             self.accepted = self._kept(compiled)
             compiled = self.accepted = self._generate_labeling(task, compiled)
             return self._embed_states(compiled)
@@ -349,7 +350,9 @@ class _Pipeline:
         self.progress.complete()
         return compiled
 
-    def _describe_states(self, task: str, compiled: CompilationResult) -> CompilationResult:
+    def _describe_states(
+        self, task: str, compiled: CompilationResult, dfas: Sequence[dict]
+    ) -> CompilationResult:
         """Tag every machine state, retrying malformed or transient responses locally."""
         if not self.CONFIG.state_descriptions:
             self.progress.stage_skip(PipelineStep.STATE_DESCRIPTIONS)
@@ -362,7 +365,13 @@ class _Pipeline:
             self.reruns += 1
             self.progress.warn(message)
 
-        descriptions = tag_states(self.generator_engine, task, compiled, count_failed_request)
+        descriptions = tag_states(
+            self.generator_engine,
+            task,
+            compiled,
+            count_failed_request,
+            dfas if self.CONFIG.tagger_critic_info else None,
+        )
         nodes = tuple(state_identifiers(compiled).values())
 
         self.progress.artifact("State descriptions", dict(zip(nodes, descriptions, strict=True)))
@@ -524,7 +533,11 @@ class _Pipeline:
 
 
 def tag_states(
-    engine: GenericEngine, task: str, compiled: CompilationResult, warn: Callable[[str], None]
+    engine: GenericEngine,
+    task: str,
+    compiled: CompilationResult,
+    warn: Callable[[str], None],
+    critic_dfas: Sequence[dict] | None = None,
 ) -> tuple[str, ...]:
     """Have the generator describe every state of one compiled machine, in node order.
 
@@ -535,17 +548,29 @@ def tag_states(
     malformed answer or a transient provider failure is asked again for that batch, at most
     ``Configuration.TAGGING_ATTEMPTS`` requests in all.
 
+    ``critic_dfas``, the candidate's DFAs, are given when ``Configuration.tagger_critic_info`` is
+    on: every request then also carries what the critic reads beside the tagger's facts (the
+    clues computed from them, the compiler warnings and the clause guide).
+
     Raises:
         ImmediateEngineError: Every request of one batch failed.
     """
     facts = _tagger_facts(compiled)
+    critic_info = {}
+    if critic_dfas is not None:
+        critic_info = {
+            "clues": critic_clues(compiled.proposal.clauses, critic_dfas, compiled.reward_machine),
+            "warnings": "\n".join(f"- {warning}" for warning in compiled.warnings),
+        }
+    describe = partial(engine.describe_states, task, **critic_info)
+
     roles = _state_roles(compiled)
     nodes = tuple(roles)
     size = Configuration.TAGGING_BATCH_STATES
     descriptions: list[str] = []
     for start in range(0, len(nodes), size):
         batch = {node: roles[node] for node in nodes[start : start + size]}
-        descriptions.extend(_tag_batch(engine, task, facts, batch, warn))
+        descriptions.extend(_tag_batch(describe, facts, batch, warn))
     return tuple(descriptions)
 
 
@@ -562,8 +587,7 @@ def _state_roles(compiled: CompilationResult) -> dict[str, str]:
 
 
 def _tag_batch(
-    engine: GenericEngine,
-    task: str,
+    describe: Callable[[str, str, dict[str, str]], tuple[str, ...]],
     facts: dict[str, str],
     roles: dict[str, str],
     warn: Callable[[str], None],
@@ -574,7 +598,7 @@ def _tag_batch(
     machine = machine_view(facts["Reward Machine"], tuple(roles))
     for tagging_attempt in range(1, attempts + 1):
         try:
-            return engine.describe_states(task, facts["Clauses"], machine, roles)
+            return describe(facts["Clauses"], machine, roles)
         except (RetryableEngineError, ProposalValidationError) as error:
             last_error = error
             warn(f"state tagging request {tagging_attempt}/{attempts} failed: {error}")

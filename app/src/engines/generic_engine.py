@@ -115,23 +115,29 @@ class GenericEngine:
         clauses_json: str,
         candidate_rm: str,
         roles: Mapping[str, str],
+        **critic_info: str,
     ) -> tuple[str, ...]:
         """Request one validated description per node, in the order of ``roles``.
 
         ``roles`` maps each node identifier to its role (``final``, ``rejecting`` or
-        ``in progress``); the prompt shows both and the reply is keyed by node.
+        ``in progress``); the prompt shows both and the reply is keyed by node. ``critic_info``,
+        when given, holds the critic's ``clues`` and ``warnings`` prompt fields: the user prompt
+        then ends with them and the critic's clause guide (``Configuration.tagger_critic_info``).
         """
+        user = render_prompt(
+            "compiler",
+            "rm_tagger",
+            environment_markdown=self.environment.markdown,
+            task=task,
+            clauses_json=clauses_json,
+            reward_machine=candidate_rm,
+            nodes_json=json.dumps(dict(roles)),
+        )
+        if critic_info:
+            user += "\n\n" + render_prompt("compiler", "rm_tagger_critic_info", **critic_info)
         response_text = self._request_structured(
             read_prompt("compiler", "rm_tagger"),
-            render_prompt(
-                "compiler",
-                "rm_tagger",
-                environment_markdown=self.environment.markdown,
-                task=task,
-                clauses_json=clauses_json,
-                reward_machine=candidate_rm,
-                nodes_json=json.dumps(dict(roles)),
-            ),
+            user,
             state_descriptions_schema(tuple(roles)),
             "rm_tagger",
         )

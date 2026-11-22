@@ -161,7 +161,7 @@ def _ablate(CONFIG: Configuration, off: str, destination: Path) -> str:
     unchanged = skeleton(machine) == skeleton(source.reward_machine)
     embedded = bool(source.embeddings)
     if not unchanged:
-        _redescribe(CONFIG, source, bundle, result)
+        _redescribe(CONFIG, source, bundle, result, dfas)
     bundle.save(destination, overwrite=CONFIG.overwrite)
     if not unchanged and embedded:
         # The same local-server embedding the other bundles use (``embed-larm --embedding-server``).
@@ -287,7 +287,11 @@ def skeleton(machine: PaperRewardMachine) -> tuple:
 
 
 def _redescribe(
-    CONFIG: Configuration, source: ArtifactBundle, bundle: ArtifactBundle, result: CompilationResult
+    CONFIG: Configuration,
+    source: ArtifactBundle,
+    bundle: ArtifactBundle,
+    result: CompilationResult,
+    dfas: Sequence[dict],
 ) -> None:
     """Describe the changed states again; the embeddings follow after the save.
 
@@ -312,7 +316,13 @@ def _redescribe(
         model,
         warn=lambda message: print_warning(f"Generator {message}"),
     )
-    descriptions = tag_states(engine, bundle.manifest.task, result, print_warning)
+    descriptions = tag_states(
+        engine,
+        bundle.manifest.task,
+        result,
+        print_warning,
+        dfas if CONFIG.tagger_critic_info else None,
+    )
     bundle.state_descriptions = pair_state_descriptions(result, descriptions)
     bundle.embeddings = {}
     bundle.manifest.stage_status.pop("embeddings", None)
