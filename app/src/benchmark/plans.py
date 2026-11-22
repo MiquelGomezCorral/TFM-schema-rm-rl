@@ -73,10 +73,12 @@ class PlanPlayer(_Player):
     def run_step(self, step: Mapping[str, Any]) -> None:
         kind = _field(step, "do")
         if kind == "wait":
+            # An env without MiniGrid's ``done`` (XLand) names its own no-op.
+            wait = getattr(env_module(self.base), "WAIT_ACTION", DONE)
             for _ in range(_field(step, "n")):
                 if self.done:
                     return
-                self.act(DONE)
+                self.act(wait)
         elif self.done:
             raise PlanError("the episode already ended")
         elif kind == "drop":

@@ -5,9 +5,9 @@ other state still passes the plan check. ``Walks`` records walks on layouts the 
 the labeling check replays them like plan traces. Two walks per layout seed: ``uniform`` takes
 uniformly random actions; ``task`` mixes bursts of random actions with random task moves (go to,
 pick up, toggle or drop a random object), because uniform actions almost never unlock the door or
-take the target, so those propositions would never turn true. The shop and the service room have no
-doors or keys to name; their ``task`` walk mixes the same random bursts with runs of the env's own
-``scripted_policy``, each run ignoring a random subset of the rules it can ignore.
+take the target, so those propositions would never turn true. The shop, the service room and XLand
+have no MiniGrid objects to name; their ``task`` walk mixes the same random bursts with runs of the
+env's own ``scripted_policy``, each run ignoring a random subset of the rules it can ignore.
 """
 
 import random
@@ -22,7 +22,7 @@ from .reference_labels import MINIGRID_LABELERS, env_module, labeler_for
 from .traces import TraceRecord
 
 UNIFORM, TASK = "uniform", "task"
-POLICY_ENVS = ("MiniGrid-Shop", "MiniGrid-ServiceRoom")  # envs whose task walk runs their policy
+POLICY_ENVS = ("MiniGrid-Shop", "MiniGrid-ServiceRoom", "XLand")  # task walks run their policy
 POLICY_RUN = 20  # most steps of one scripted-policy run in a task walk
 IGNORE_SHARE = 0.3  # of the rules a policy run can ignore, how many it ignores on average
 FIRST_SEED = 1000  # above every layout seed a card, a bank or an earlier review used
@@ -34,7 +34,7 @@ LOCKED_SHARE = 0.5  # of the moves that name a door: aim at a locked one
 
 
 def walkable(gym_id: str) -> bool:
-    """Whether random walks run in ``gym_id``: the four MiniGrid envs, the shop, the service room."""
+    """Whether random walks run in ``gym_id``: the four MiniGrid envs and the ``POLICY_ENVS``."""
     return gym_id.startswith((*MINIGRID_LABELERS, *POLICY_ENVS))
 
 
