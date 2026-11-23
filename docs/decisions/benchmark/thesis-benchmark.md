@@ -629,3 +629,8 @@ and a restart is easier to trust.
   are reconstructed from the rulesets). Runs are 5M steps; mixes of cards whose rulesets differ get a no-RM arm.
   Two 5-task-mix ablations add the smallest switches: `rm_state_encoding: none` (the machine pays, the policy
   never sees its state) and `reward_source: env_rm_state` (env reward, the machine only gives its state).
+- 2026-11-23: Closer zombie lanes (user). `LanesEnv(lane_spacing=k)` is the row distance between lanes, 1 to 4,
+  default 4 (the counted world, byte-identical); width 11, grid height `2k + 3`. Spacing 2 leaves one free row
+  between lanes (11x7 grid), spacing 1 puts them side by side (11x5 grid), so no plant sprouts and the plant clause
+  is vacuous there. Suite `lanes-spacing` copies four counted Lanes cards at spacing 2 and 1 (`bundle_of`,
+  `train: false`, outside the counted 60). The Lanes environment pages stay unchanged, because bundles store them.

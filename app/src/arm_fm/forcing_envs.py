@@ -40,12 +40,23 @@ from .service_room import DIRECTIONS, _faces
 LANES_ID, KEY_GIFT_ID = "MiniGrid-Lanes-v0", "MiniGrid-KeyGift-v0"
 MAX_STEPS = 300
 
-# Lanes: the field is 9 x 9 inside the outer wall, so the grid is 11 x 11 and field row r is grid row r + 1.
-LANES_SIZE = 11
-LANE_ROWS = (1, 5, 9)  # field rows 0, 4, 8; the first is the top lane, the protected one
-FIELD = range(1, 10)  # grid columns and rows of the field
+# Lanes: the field is 9 columns wide inside the outer wall (the grid is 11 wide) and field row r is grid row
+# r + 1. By default it is 9 rows tall too: the lanes are LANE_SPACING = 4 rows apart (3 free rows between
+# neighbours), so the grid is 11 x 11. ``lane_spacing`` closes the rows up and keeps the width: 2 gives a 9 x 5
+# field (grid 11 x 7), 1 a 9 x 3 field (grid 11 x 5) with the lanes touching.
+LANES_SIZE = 11  # grid width
+LANE_SPACING = 4  # the default; also the largest the env accepts
+
+
+def lane_rows(spacing: int) -> tuple[int, int, int]:
+    """Grid rows of the three lanes, the first the top lane, the protected one."""
+    return 1, 1 + spacing, 1 + 2 * spacing
+
+
+LANE_ROWS = lane_rows(LANE_SPACING)  # (1, 5, 9): field rows 0, 4, 8 of the default world
+FIELD = range(1, 10)  # grid columns of the field
 RIGHT_END, LEFT_END = 9, 1
-LANES_START, LANES_START_DIR = (5, 5), 2  # the middle of the field, facing left
+LANES_START_X, LANES_START_DIR = 5, 2  # the middle column on the middle lane, facing left
 ZOMBIE_PERIOD = 3  # a zombie steps one cell left every 3 env steps, counted from its spawn
 SPAWN_CHANCE = (0.04, 0.17)  # chance per step of a spawn, rising linearly over the episode
 PLANT_GAP = (20, 60)  # steps between two sprout attempts
@@ -74,11 +85,11 @@ class ForcingEnv(MiniGridEnv):
     the step just taken and ``event_counts`` counts them over the episode.
     """
 
-    def __init__(self, size: int, max_steps: int, **kwargs) -> None:
+    def __init__(self, size: int, max_steps: int, height: int | None = None, **kwargs) -> None:
         super().__init__(
             mission_space=MissionSpace(mission_func=self._gen_mission),
             width=size,
-            height=size,
+            height=size if height is None else height,
             max_steps=max_steps,
             **kwargs,
         )
@@ -143,16 +154,28 @@ class LanesEnv(ForcingEnv):
     zombie has got through the top lane. The observation is the whole grid, as MiniGrid's
     ``FullyObsWrapper`` gives it (the agent's cell and facing included).
 
+    With ``lane_spacing`` below 4 the lanes sit closer in a shorter map of the same width; the zombie
+    schedule, the rhythm and the rules stay the same. With touching lanes (1) the field has no cell
+    off the lanes, so no plant ever sprouts.
+
     Args:
         max_steps: Episode length.
+        lane_spacing: Grid rows from one lane to the next, 1 to 4. The default 4 is the world every
+            stored card, bundle and run used (an 11 x 11 grid); 2 gives 11 x 7 and 1 gives 11 x 5.
     """
 
-    def __init__(self, max_steps: int = MAX_STEPS, **kwargs) -> None:
-        super().__init__(LANES_SIZE, max_steps, **kwargs)
+    def __init__(
+        self, max_steps: int = MAX_STEPS, lane_spacing: int = LANE_SPACING, **kwargs
+    ) -> None:
+        if not 1 <= lane_spacing <= LANE_SPACING:
+            raise ValueError(f"lane_spacing must be 1 to {LANE_SPACING}, got {lane_spacing!r}")
+        super().__init__(LANES_SIZE, max_steps, height=2 * lane_spacing + 3, **kwargs)
+        self.lane_rows = lane_rows(lane_spacing)
+        self.field_rows = range(1, self.height - 1)
         self.observation_space = spaces.Dict(
             {
                 **self.observation_space.spaces,
-                "image": spaces.Box(0, 255, (LANES_SIZE, LANES_SIZE, 3), np.uint8),
+                "image": spaces.Box(0, 255, (self.width, self.height, 3), np.uint8),
             }
         )
         self.zombies: list[Zombie] = []
@@ -171,7 +194,7 @@ class LanesEnv(ForcingEnv):
 
         Not ``get_frame``: the RGB pixel observation reads that, and it stays MiniGrid's.
         """
-        return render_lanes(self, tile_size, LANE_ROWS, ZOMBIE_PERIOD)
+        return render_lanes(self, tile_size, self.lane_rows, ZOMBIE_PERIOD)
 
     @property
     def success(self) -> bool:
@@ -180,7 +203,7 @@ class LanesEnv(ForcingEnv):
     def _gen_grid(self, width: int, height: int) -> None:
         self.grid = Grid(width, height)
         self.grid.wall_rect(0, 0, width, height)
-        self.agent_pos, self.agent_dir = LANES_START, LANES_START_DIR
+        self.agent_pos, self.agent_dir = (LANES_START_X, self.lane_rows[1]), LANES_START_DIR
 
     def gen_obs(self):
         image = self.grid.encode()
@@ -192,7 +215,7 @@ class LanesEnv(ForcingEnv):
         steps = self.max_steps
         chance = np.linspace(*SPAWN_CHANCE, steps)
         self._spawns = rng.random(steps) < chance  # entry i happens at step i + 1
-        self._spawn_lanes = rng.integers(0, len(LANE_ROWS), size=steps)
+        self._spawn_lanes = rng.integers(0, len(self.lane_rows), size=steps)
         gaps = rng.integers(PLANT_GAP[0], PLANT_GAP[1] + 1, size=steps // PLANT_GAP[0])
         # sprout step -> a draw in [0, 1) that picks the cell among the free ones at that step
         self._sprouts = dict(
@@ -245,11 +268,11 @@ class LanesEnv(ForcingEnv):
                 continue
             self.zombies.remove(zombie)
             self.breaches.append((y, self.step_count))
-            self._emit("top_breach" if y == LANE_ROWS[0] else "side_breach")
+            self._emit("top_breach" if y == self.lane_rows[0] else "side_breach")
 
     def _spawn_zombie(self) -> None:
         index = self.step_count - 1
-        y = LANE_ROWS[self._spawn_lanes[index]]
+        y = self.lane_rows[self._spawn_lanes[index]]
         if self._spawns[index] and self.grid.get(RIGHT_END, y) is None:
             zombie = Zombie(self.step_count)
             self._put(zombie, RIGHT_END, y)
@@ -263,9 +286,11 @@ class LanesEnv(ForcingEnv):
         free = [
             (x, y)
             for x in FIELD
-            for y in FIELD
-            if y not in LANE_ROWS and self.grid.get(x, y) is None and (x, y) != self.agent_pos
+            for y in self.field_rows
+            if y not in self.lane_rows and self.grid.get(x, y) is None and (x, y) != self.agent_pos
         ]
+        if not free:  # touching lanes: nothing is left off the lanes
+            return
         plant = Plant()
         self._put(plant, *free[int(draw * len(free))])
         self.plants.append(plant)
@@ -459,8 +484,9 @@ def _step_toward(base, cells: list[tuple[int, int]], *, in_order: bool) -> int |
 
 def _hold_lanes(base: LanesEnv, ignore: set[str]) -> int:
     zombies = sorted((tuple(zombie.cur_pos) for zombie in base.zombies), key=lambda cell: cell[0])
-    top = [cell for cell in zombies if cell[1] == LANE_ROWS[0] and "top" not in ignore]
-    side = [cell for cell in zombies if cell[1] != LANE_ROWS[0]]
+    top_row = base.lane_rows[0]
+    top = [cell for cell in zombies if cell[1] == top_row and "top" not in ignore]
+    side = [cell for cell in zombies if cell[1] != top_row]
     plants = [tuple(plant.cur_pos) for plant in base.plants] if "plants" in ignore else []
     # the top-lane zombie nearest the left end first, then the nearest plant (if told to), then
     # the nearest side-lane zombie

@@ -73,9 +73,9 @@ def play(gym_id: str, seed: int, actions: list[int]):
     return env.unwrapped, log
 
 
-def idle_episode(gym_id: str, seed: int):
+def idle_episode(gym_id: str, seed: int, **env_kwargs):
     """An idle episode with a log of each zombie that left the grid: (lane row, born, step)."""
-    env = make_environment(gym_id)
+    env = make_environment(gym_id, **env_kwargs)
     env.reset(seed=seed)
     base = env.unwrapped
     exits, spawned = [], []
@@ -114,6 +114,45 @@ def check_lanes_layout(checks: Checks, seeds: range) -> None:
     checks.report(
         "lanes: reset is the empty 11x11 field, agent at (5, 5) facing left", ring_only, len(seeds)
     )
+
+
+def check_lanes_spacing(checks: Checks, seeds: range) -> None:
+    """``lane_spacing`` 2 and 1 move the lane rows and keep the width and the idle episode's schedule."""
+    for spacing in (2, 1):
+        rows, height = forcing.lane_rows(spacing), 2 * spacing + 3
+        layout_ok = schedule_ok = plants_ok = 0
+        for seed in seeds:
+            env = make_environment(LANES_ID, lane_spacing=spacing)
+            obs, _ = env.reset(seed=seed)
+            base = env.unwrapped
+            cells = [base.grid.get(x, y) for x in range(base.width) for y in range(base.height)]
+            walls = sum(cell is not None and cell.type == "wall" for cell in cells)
+            layout_ok += (
+                walls == 2 * (base.width + height) - 4
+                and sum(cell is not None for cell in cells) == walls
+                and obs["image"].shape == (11, height, 3)
+                and (*base.agent_pos, base.agent_dir) == (5, rows[1], 2)
+            )
+            _, default_exits, default_spawned = idle_episode(LANES_ID, seed)
+            idle, exits, spawned = idle_episode(LANES_ID, seed, lane_spacing=spacing)
+            lane = {row: i for i, row in enumerate(forcing.LANE_ROWS)}
+            schedule_ok += [(born, lane[row]) for born, row in default_spawned] == [
+                (born, rows.index(row)) for born, row in spawned
+            ] and [(born, step) for _, born, step in default_exits] == [
+                (born, step) for _, born, step in exits
+            ]
+            plants_ok += all(p.cur_pos[1] not in rows for p in idle.plants) and (
+                spacing > 1 or idle.event_counts["plant_sprouted"] == 0
+            )
+        n = len(seeds)
+        name = f"lanes spacing {spacing}"
+        checks.report(
+            f"{name}: reset is the empty 11x{height} field, agent on the middle lane", layout_ok, n
+        )
+        checks.report(
+            f"{name}: idle entries and breaches match the default world's", schedule_ok, n
+        )
+        checks.report(f"{name}: plants stay off the lanes (none when they touch)", plants_ok, n)
 
 
 def check_lanes_observation(checks: Checks, seeds: range) -> None:
@@ -546,6 +585,7 @@ def main() -> int:
     seeds, checks = range(1, args.seeds + 1), Checks()
     for check in (
         check_lanes_layout,
+        check_lanes_spacing,
         check_lanes_observation,
         check_lanes_idle,
         check_lanes_walks,
