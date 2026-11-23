@@ -1512,3 +1512,52 @@ docs/paper/fall-rate/evidence/falls.json templates walk`. The page: `PYTHONPATH=
 docs/paper/fall-rate/check/build_page.py`, then the artifacts skill's `fill.py`.
 
 **Code.** Half rule `507886e`, merged as `e37dff9`; the before-code `029d82c`; reruns and page on main `881b22d`.
+
+### Generation rounds and paying loops (`reward-loops-and-rounds/`), 2026-11-22
+
+**What it shows.** Two counts over the frozen set of the final run. The frozen set leaves out the `xland` and
+`armfm-paper` suites: they are ARM-FM's own baseline ground, generated after the freeze.
+
+- **Generator-then-critic rounds, FARM.** A FARM bundle passes two generator-then-critic stages: the machine and the
+  labeling code. Of 266 bundles asked, 265 were built. 262 needed one round in each stage, 2 a second labeling round
+  and 1 a second machine round, each after one critic rejection; no stage needed more than 2. Mean rounds per built
+  bundle: machine 266/265 = 1.004, labeling 267/265 = 1.008, both stages 533/265 = 2.01 (the minimum is 2). No
+  generator answer was refused before the critic (the only statuses are accepted and rejected), and provider retries
+  were 0 on all 265. The unbuilt `shop-boil~p2` passed both stages at the first round, then failed the plan check.
+- **Paying loops.** A paying loop is a cycle among states reachable from the start before a final state whose
+  undiscounted rewards sum above zero (Bellman-Ford, the same test as `app/src/compiler/reward_layer.py:806`). FARM:
+  0 of 265 built machines have one; its compiler refuses them. ARM-FM: 24 of 152 do (box-carry 11, templates 8,
+  complex 5). Example `box-carry/bundles/arm-fm/cx-box-carry`: `(u0, box_fell) -> u1`, then `(u1, holding_box) ->
+  u0` pays +0.1, every time round.
+- **Every ARM-FM loop needs the world.** All 24 pass through a world event, `box_fell` or the siren ring. The world
+  schedules at most two falls and two rings per episode, and a voluntary drop is not a fall
+  (`app/src/arm_fm/service_room.py`). With those edges removed, 0 of the 24 still pay: no loop the agent can repeat
+  on its own. 3 of the 24 belong to trained cards (`cx-box-carry`, `tpl-chain-response-1-goal-carry`,
+  `tpl-chain-response-1-nogoal-carry`).
+
+So ARM-FM machines can hold reward loops that FARM's compiler forbids, but in this benchmark each one is capped by a
+world event; "ARM-FM agents farmed reward" is not supported by these machines.
+
+**Evidence.** `evidence/bundles.json`: the frozen set, one row per asked bundle (arm, suite, card, bundle, path,
+status, built, trained card), 266 FARM (265 built) and 266 ARM-FM (152 built). `evidence/gen-rounds.txt`: the round
+patterns from each built FARM bundle's `attempts.json` (stage `compiler` = machine, `labeling` = labeling code) and the
+manifest stamp's attempts, critic interventions and retries. `evidence/pay_cycles.json`: per arm, built and paying
+counts and each hit with its loop, trained card and whether it pays without a world event. Rerun on main `52e8b35`,
+both match the source run of 2026-11-22 23:43: `pay_cycles.json` equal key for key, `gen-rounds.txt` identical.
+
+**Gaps.** The loop check is static: it reads the reward table and does not ask whether the world can produce a loop's
+labels again; the world-event test is a label regex (`WORLD` in `check/pay_cycles.py`). The rounds count covers the
+frozen FARM set only; ARM-FM rounds are not counted here.
+
+**Files.** `evidence/` (the three files above), `check/` (`bundle_list.py`, `pay_cycles.py`, `gen_rounds.py`). No
+page.
+
+**Rerun** (no model call, no training, from the repository root in `RM_RL_env`): `env
+PYTHONPATH=app:.git/agent-memory/artifacts/final-results python -P
+docs/paper/reward-loops-and-rounds/check/bundle_list.py` rewrites the bundle list; it is the only step that needs
+`.git/agent-memory` (the final-results builder's `STATUS` and `bundle_root`, which skip the baseline suites). Then
+`python docs/paper/reward-loops-and-rounds/check/pay_cycles.py` and `python
+docs/paper/reward-loops-and-rounds/check/gen_rounds.py` read only `evidence/bundles.json` and the bundles it names.
+
+**Code.** All 265 built FARM bundles and 143 of the 152 built ARM-FM bundles were generated on the freeze `809dfe3`
+(manifest stamps); the other 9 ARM-FM bundles on `68b904d` (7) and `029d82c` (2). Counts rerun on main `52e8b35`.
