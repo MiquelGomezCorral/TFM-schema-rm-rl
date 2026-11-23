@@ -634,3 +634,11 @@ and a restart is easier to trust.
   between lanes (11x7 grid), spacing 1 puts them side by side (11x5 grid), so no plant sprouts and the plant clause
   is vacuous there. Suite `lanes-spacing` copies four counted Lanes cards at spacing 2 and 1 (`bundle_of`,
   `train: false`, outside the counted 60). The Lanes environment pages stay unchanged, because bundles store them.
+- 2026-11-23: Shop world curriculum and back falls (user, after FARM never served with slips: "let it start
+  learning first without slipping ... same run"). A card's env block may list `env_stages`: each stage sets shop
+  attributes on every training env and the run moves on when its last 100 training episodes serve 10 orders on
+  average (and, before back falls, catch 90% of falls on the next move). Machine, policy, optimizer and step count
+  carry on; evaluation and the judge use the card's own world, the last stage; switches go to `stages.csv`.
+  `back_fall_chance` p (default 0, byte-identical): a slip lands the food behind the agent and turns it 90 degrees,
+  so the next move cannot pick it up. Cards `shop-ladder-{deliver,order-deliver}-curriculum[-back]` (`bundle_of`,
+  `train: false`, FARM only: `env_stages` is not a no-RM share setting), outside the counted 60.

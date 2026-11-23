@@ -8,12 +8,13 @@ The world is the same for every card of a level: the siren, the clients and the 
 
 ## Options: a smaller shop, an easier start, fewer food slips, no siren or clients, a client who leaves
 
-Nine settings of the shop environment, all off by default (the default shop, its cards and every existing run are unchanged). Set them in a card's `env_kwargs`, next to `max_steps` and `agent_view_size`; they work on Shop and Shop-Pot.
+Ten settings of the shop environment, all off by default (the default shop, its cards and every existing run are unchanged). Set them in a card's `env_kwargs`, next to `max_steps` and `agent_view_size`; they work on Shop and Shop-Pot.
 
 - `small: true`: a 7 x 7 room with the counter, the pantry and the stove close together. The same objects, events and rules; the quiet end and the late-siren fine follow the shorter walks (`environment.md`, "Variants"). A scripted solver serves its first client about 35 steps after the client arrives, against about 49 in the default room. It is a constructor setting, not new gym ids, so one mechanism carries both options and no card or runs file needs a second id.
 - `area: n` (8, 7, 5 or 3, default 8): the side of the square of floor the agent walks in, walls not counted. 8 is the shop as it is (a 10 x 10 map), 5 is `small: true`, 7 and 3 are new. The same objects, events and rules, the same step limit (600) and the same event schedule on a seed; the walks, and with them the quiet end and the late-siren fine, follow the room. A smaller room means more orders served per episode. See "World size" below.
 - `easy_start_prob: p` (0 to 1): a share `p` of the episodes starts with the agent at the counter, facing the client spot, and the first client arrives on step 1 as the normal `client_arrived` event, so every machine and the labeling see it. The other events of the episode keep their seeded times. Not with `clients: false`: with no client to arrive there is no easy start.
 - `slip_chance: p` (0 to 1, default 0.5): the chance that a pickup is followed by a slip. The first pickup of an episode always slips while `p > 0`; `slip_chance: 0` means no slip ever (`food_fell` never true). The other events keep their seeded times. Built to test whether the risk of holding food is what blocks serving; `environment.md` is not changed, so the generated machines are the same.
+- `back_fall_chance: p` (0 to 1, default 0): the chance, per slip, that the food lands behind the agent and the fall turns the agent a quarter to the left or right (drawn), so the next move cannot pick it up: one more turn is needed first, and a worker that must catch every fall on its very next move misses it (the card's `ChainResponse(food_fell, holding_food)`). If the cell behind is blocked, the food takes the next free cell clockwise (left, front, right) and the agent faces it: a plain slip, which the next move can catch. The draws come after every other draw of the seed, so every event keeps its time and `back_fall_chance: 0` is byte-identical to the shop without the option. `environment.md` is not changed (the generated machines are the same); `ServiceRoomEnv`'s `fall_turn: side` is the same mechanism with behind drawn first.
 - `siren: false` / `clients: false`: the siren never rings / no client ever comes in. For a test that should run in a shop with only the parts its card uses (a serving card without the siren, a siren card without clients). With no clients, every ring is fined after the usual walk limit. The other events keep their seeded times.
 - `client_patience: n` (a step count, default none): a client not served `n` steps after coming in leaves and the episode ends there as a loss (`terminated`, event `leave`), so a machine pays its end charge at that step instead of at step 600. The fewest actions from a client's arrival to the serve are 37 from the worst pose, 30 from the episode start and 28 from the counter, so 50 fits.
 - `order_needed: false` / `cooking_needed: false` (default true): a client needs no order (it is marked ordered when it arrives and takes food as soon as it is held at the counter; the `order` event never fires) / any carried food, raw included, counts as served (the stove still cooks). For testing simpler serving steps: deliver only (both off), order then deliver (`cooking_needed: false`), then the full chain. The events keep their seeded times and `environment.md` is not changed, so the generated machines are the same.
@@ -111,6 +112,33 @@ Check, 2026-11-23, no model call (reset seeds 1 to 100 of each card's own world)
 Reading the table: a smaller room serves more orders per episode, so a learned policy gets more reward signal per episode and the quiet end moves later. In the 3 x 3 shop `K` is 6 (3 times the shortest walk to the switch): the env reward fines 0.5 for every further 6 steps a waiting client hears the siren, against 30 in the 8 x 8 shop. A scripted worker still switches it off within 5 steps from any pose, so the solving worker is never fined.
 
 Runs files (suites `shop-size`, `shop-size-std`, `shop-size-reward`) are in the plan folder `freeze-prep/`, not here.
+
+## Curriculum: the world changes while one agent learns (2026-11-23)
+
+FARM never serves on the ladder: the first pickup of every episode slips, a missed catch goes to the -10 well, and idling beats a half-skilled server. User, 2026-11-23: "let it start learning first without slipping. when already serving / has learned a bit, turn on slipping. with the same machine all eh, same run", and then "try the 25% of 'not able to get it on the next step'" once it has learned to pick up right away. So one run plays several worlds in turn; the machine, policy, optimizer and step count carry on, and only the world changes.
+
+Cards (rungs 1 and 3; `train` false, `bundle_of` the base card, so the base card's FARM machine; same task and clauses, no paraphrases; suite `shop-curriculum`, `runs-curriculum.yaml`, FARM only, 12 runs):
+
+| Card | Stages, in order | Final world (the card's `env_kwargs`: evaluation, the judge, the gates) |
+|---|---|---|
+| `<base>-curriculum` | no slips | today's world: slips at the default chance |
+| `<base>-curriculum-back` | no slips; slips, no back falls | slips plus `back_fall_chance: 0.25` |
+
+`<base>` is `shop-ladder-deliver` or `shop-ladder-order-deliver`. A stage list is `env_stages` in the card's `env` (and `env_stages` in a run config):
+
+```json
+"env_stages": [
+  {"env_kwargs": {"slip_chance": 0.0}, "until": {"served": 10}},
+  {"env_kwargs": {"back_fall_chance": 0.0}, "until": {"served": 10, "caught": 0.9}}
+]
+```
+
+- `env_kwargs` are shop attributes (any option above that the env reads at reset: `slip_chance`, `back_fall_chance`, `easy_start_prob`, ...) set on every training env at each reset, over the card's own values; a key a stage does not set is back at the card's value. After the last stage the run plays the card's own world.
+- `until`: `served` (required) is the least mean number of served orders per episode, `caught` (optional, 0 to 1) the least share of food falls picked up on the very next move, `episodes` (default 100) the window. The window is the last `episodes` finished training episodes that began in the stage, across all envs. Stages only move forward.
+- Each switch is a row of `stages.csv` in the run folder (`global_step`, the stage entered, the episodes in the window, `mean_served`, `caught_share`) and a line in the run log; `summary.json` has `world_stage` (the last stage reached) and `world_final_stage`. A run without stages has neither and its `config.yaml` is the one it always had.
+- Only training episodes change world. Evaluation during training, the final evaluation and the judge play the card's own world. PPO only, one card per run (no `task_bundles`).
+- Code: `app/src/arm_fm/curriculum.py`; the stage list is checked in `app/src/config/config.py`.
+- The back-fall cards make the rule impossible on some falls on purpose: when the food lands behind the agent, the fall turns it a quarter aside and one more turn comes before the pickup, so no worker can pick it up on the very next move. The scripted solving worker is judged success on 19 and 21 of 100 episodes of the two back cards, and the gate's plan check fails on event seed 2 (the solving plan breaks the food clause at the first slip, step 16 and step 25). That is the test, not a fault of the machine; no judge or pricing code was changed for it.
 
 ## Contents
 

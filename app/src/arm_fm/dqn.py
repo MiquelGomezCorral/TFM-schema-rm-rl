@@ -700,6 +700,8 @@ class RunRecorder:
         settings["layout_seed"] = layout_seed(CONFIG)
         # Not in RUN_SETTINGS: run_suite keys shared no-RM runs on those, and old runs lack these.
         settings["rm_state_encoding"] = CONFIG.rm_state_encoding
+        if CONFIG.env_stages:  # a run without stages keeps the config.yaml it always had
+            settings["env_stages"] = _plain(CONFIG.env_stages)
         if CONFIG.rm_state_encoding == "one_hot":
             settings["rm_state_names"] = one_hot_state_names(
                 load_bundle(CONFIG.bundle).reward_machine
