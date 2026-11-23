@@ -261,16 +261,16 @@ def render_lanes(env, tile_size: int, lane_rows: tuple, period: int) -> np.ndarr
 
 def _field(env, lane_rows: tuple) -> Canvas:
     """Grass, lanes, palisade, crypts and gates; a gate a zombie went through is broken."""
-    n, protected = env.width, lane_rows[0]
+    width, height, protected = env.width, env.height, lane_rows[0]
     broken = {row for row, _ in env.breaches}
-    c = Canvas.blank(n, n, GRASS[0])
-    for y in range(n):
-        for x in range(n):
+    c = Canvas.blank(width, height, GRASS[0])
+    for y in range(height):
+        for x in range(width):
             if x == 0 and y in lane_rows:
                 _gate(c, x, y, y == protected, y in broken)
-            elif x == n - 1 and y in lane_rows:
+            elif x == width - 1 and y in lane_rows:
                 _crypt(c, x, y)
-            elif x in (0, n - 1) or y in (0, n - 1):
+            elif x in (0, width - 1) or y in (0, height - 1):
                 _palisade(c, x, y)
             elif y in lane_rows:
                 _lane(c, x, y, y == protected)
