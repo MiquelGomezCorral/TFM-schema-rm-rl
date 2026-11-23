@@ -460,6 +460,8 @@ def run_config(run: Run, spec: dict) -> dict:
         total_timesteps=spec["total_timesteps"],
         success="env",
     )
+    if "env_stages" in env:  # the card's curriculum: worlds to play before its own
+        config["env_stages"] = env["env_stages"]
     if run.bundle is None and "members" in run.card:  # a no-RM mix: each card keeps its setup
         entries = [
             {"name": member["id"], "env_kwargs": member["env"].get("env_kwargs", {})}

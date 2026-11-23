@@ -56,6 +56,8 @@ REWARD_SOURCES = ("rm", "env", "both", "env_rm_state")
 RM_STATE_ENCODINGS = ("embedding", "one_hot", "none")
 TASK_BUNDLE_KEYS = ("bundle", "name", "labeling_bundle", "env_kwargs", "success")
 TASK_DRAWS = ("alternate",)
+ENV_STAGE_KEYS = ("env_kwargs", "until")
+STAGE_UNTIL_KEYS = ("served", "caught", "episodes")
 PPO_POSITIVE = (
     "ppo_num_envs",
     "ppo_num_steps",
@@ -93,6 +95,31 @@ def _check_task_draw(draw: str | None, has_tasks: bool) -> None:
 def _check_env_kwargs(value: object, where: str) -> None:
     if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
         raise ValueError(f"{where} must be a mapping with string keys")
+
+
+def _check_env_stages(stages: object) -> None:
+    """Check ``env_stages``: a list of ``{env_kwargs, until}``; ``until`` must give ``served``."""
+    if not isinstance(stages, list):
+        raise ValueError("env_stages must be a list of mappings")
+    for index, stage in enumerate(stages):
+        where = f"env_stages[{index}]"
+        if not isinstance(stage, dict) or set(stage) != set(ENV_STAGE_KEYS):
+            raise ValueError(f"{where} must be a mapping with exactly {', '.join(ENV_STAGE_KEYS)}")
+        _check_env_kwargs(stage["env_kwargs"], f"{where}.env_kwargs")
+        until = stage["until"]
+        if (
+            not isinstance(until, dict)
+            or "served" not in until
+            or not (until.keys() <= set(STAGE_UNTIL_KEYS))
+        ):
+            raise ValueError(f"{where}.until must name served, and only {STAGE_UNTIL_KEYS}")
+        if not all(_is_finite_number(value) and value >= 0 for value in until.values()):
+            raise ValueError(f"{where}.until values must be finite numbers, 0 or more")
+        episodes = until.get("episodes", 1)
+        if not 0 <= until.get("caught", 0) <= 1 or not isinstance(episodes, int) or episodes < 1:
+            raise ValueError(
+                f"{where}.until: caught is a share (0 to 1), episodes a whole number, 1 or more"
+            )
 
 
 def _check_removed_keys(yaml_data: dict, config_path: Path) -> None:
@@ -351,6 +378,10 @@ class Configuration:
     # policy sees the image alone (an ablation).
     rm_state_encoding: str = "embedding"
     env_kwargs: dict = field(default_factory=dict)  # keyword arguments of gym.make
+    # The worlds a PPO run plays before its final one (``env_kwargs``): a list of ``env_kwargs``
+    # (shop attributes set over the final world's) and ``until`` (when to move on), see
+    # ``arm_fm/curriculum.py``. Empty: the run plays one world. Saved in ``config.yaml`` only if set.
+    env_stages: list[dict] = field(default_factory=list)
     algorithm: str = "dqn"
     # Which rule counts an episode as a success: the environment's own (``env``) or RM
     # acceptance (``rm``).
@@ -535,6 +566,9 @@ class Configuration:
                 f"{self.time_limit_penalty}"
             )
         _check_env_kwargs(self.env_kwargs, "env_kwargs")
+        _check_env_stages(self.env_stages)
+        if self.env_stages and (self.algorithm != "ppo" or self.task_bundles):
+            raise ValueError("env_stages needs algorithm: ppo and no task_bundles")
 
         if not isinstance(self.task_bundles, list):
             raise ValueError("task_bundles must be a list of mappings")

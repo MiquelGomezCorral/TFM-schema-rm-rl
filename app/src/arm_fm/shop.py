@@ -5,14 +5,15 @@ pot that boils over). There is no goal: the episode ends only at the time limit.
 client arrives, a carried food portion slips out of the hands, and the pot boils, all at times drawn
 from the reset seed, so every card of the suite sees the same world and differs only in its rules.
 
-Nine options, all off by default (the default shop is unchanged): ``small=True`` puts the counter,
+Ten options, all off by default (the default shop is unchanged): ``small=True`` puts the counter,
 the pantry and the stove close together in a 7 x 7 room, ``area`` (8, 7, 5 or 3; 5 is ``small``)
 sets the side of the square of floor the agent moves in, ``easy_start_prob`` makes a share of
 the episodes start at the counter with a client arriving on step 1, ``slip_chance`` lowers
-(or, at 0, removes) the chance that a carried food slips, ``siren=False`` and ``clients=False``
-take the siren or the clients out of the shop, ``client_patience=N`` makes a client who
-waits N steps unserved leave and end the episode as a loss, and ``order_needed=False`` and
-``cooking_needed=False`` let a client take food without an order or raw food without cooking.
+(or, at 0, removes) the chance that a carried food slips, ``back_fall_chance`` makes a share of
+the slips land behind the agent, so one more turn comes before the pickup, ``siren=False`` and
+``clients=False`` take the siren or the clients out of the shop, ``client_patience=N`` makes a
+client who waits N steps unserved leave and end the episode as a loss, and ``order_needed=False``
+and ``cooking_needed=False`` let a client take food without an order or raw food without cooking.
 
 It builds on ``ServiceRoomEnv`` and reuses its siren, switch, fall and seeded-schedule code. The
 rules (layout, events, reward) are in ``environment.md`` and the code-side facts in
@@ -102,6 +103,7 @@ FIRST_START = {"ring": (3, 30), "client": (3, 25), "pot": (30, 90)}
 GAP = {"ring": (25, 70), "client": (10, 40), "pot": (40, 100)}
 SLIP_DELAY = (2, 8)  # steps from a pickup to the slip planned for it
 SLIP_CHANCE = 0.5  # default slip_chance: every pickup but the first; the first always slips
+BEHIND = 2  # the side a back fall tries first: the agent's back (0 front, 1 right, 3 left)
 GAP_DRAWS, PICKUP_DRAWS = 60, 60
 QUIET_FACTOR = 3  # an event does not start in the last QUIET_FACTOR x N_x steps
 MISS_PENALTY = -0.5
@@ -296,7 +298,8 @@ class ShopEnv(ServiceRoomEnv):
             together) instead of ``NORMAL``. The events, schedule and rules are the same.
         easy_start_prob: Chance, per episode, of the easy start: the agent stands at the counter
             facing the client spot and a client arrives on step 1. The chance is drawn from the
-            reset seed, after every other draw, so the schedule is the same whatever the value.
+            reset seed, after every other draw but the back falls', so the schedule is the same
+            whatever the value.
         slip_chance: Chance that a pickup is followed by a slip. The first pickup of an episode
             always slips while this is above 0 (the fall rule is never idle); at 0 no food ever
             slips. The slip draws are made whatever the value, so every other event keeps its time.
@@ -314,6 +317,13 @@ class ShopEnv(ServiceRoomEnv):
         cooking_needed (via kwargs, default True): False means raw food from the pantry counts as
             served; the stove still cooks. Neither option moves a draw or ``N_x``, so every card
             sees the same schedule.
+        back_fall_chance (via kwargs, default 0 = every slip lands where the next move can take it):
+            the chance, per slip, that the food lands behind the agent and the fall turns the agent a
+            quarter to one side (drawn), so the next move cannot pick it up and one more turn is
+            needed. If behind is blocked the food takes the next free cell clockwise (left, front,
+            right) and the agent faces it, a plain slip: the service room's ``fall_turn="side"``
+            rule with behind drawn first. The draws come after every other draw of the seed, so
+            every event keeps its time whatever the value.
         area (via kwargs, default 8 = the shop as it is): the side of the square of floor the agent
             moves in, one of ``LAYOUTS`` (8, 7, 5 or 3). The events, draws and rules are the same;
             ``N_x``, the walk limits and the quiet end follow the layout. ``small=True`` is
@@ -345,6 +355,9 @@ class ShopEnv(ServiceRoomEnv):
             raise ValueError(f"area {area} is not one of {sorted(LAYOUTS)}")
         if small and area != NORMAL_AREA:
             raise ValueError(f"small=True is area=5; do not also set area={area}")
+        back_fall_chance = kwargs.pop("back_fall_chance", 0.0)
+        if not 0.0 <= back_fall_chance <= 1.0:
+            raise ValueError(f"back_fall_chance {back_fall_chance} is not between 0 and 1")
         self.layout = SMALL if small else LAYOUTS[area]
         self.size, self.switch_pos = self.layout.size, self.layout.switch  # read by the base class
         # siren and clients ride in kwargs (the signature is at the argument limit); the base class
@@ -361,7 +374,7 @@ class ShopEnv(ServiceRoomEnv):
         super().__init__(max_steps=max_steps, **kwargs)
         self.pot, self.face_fallen = pot, True
         self.easy_start_prob, self.easy_start = easy_start_prob, False
-        self.slip_chance = slip_chance
+        self.slip_chance, self.back_fall_chance = slip_chance, back_fall_chance
         self.pot_boiling = False
         self.client_present = self.order_taken = False
         self._ringing_before = False
@@ -370,6 +383,9 @@ class ShopEnv(ServiceRoomEnv):
         self._due: dict[str, int | None] = {}
         self._gaps: dict[str, deque[int]] = {}
         self._slips: list[int | None] = []
+        # a back fall's quarter turn (0 or 1) per pickup, else None; _back_turn is the pending slip's
+        self._back_turns: list[int | None] = []
+        self._back_turn: int | None = None
         self._pickups = 0
         self._heard = self._boiled = 0
         self._arrived_at = 0
@@ -417,10 +433,16 @@ class ShopEnv(ServiceRoomEnv):
         slips = rng.random(PICKUP_DRAWS) < self.slip_chance
         # the first food of the episode always slips (the rule is never idle), unless slips are off
         slips[0] = self.slip_chance > 0
-        # last: no other draw moves; no easy start without clients (it needs a client on step 1)
+        # no other draw moves; no easy start without clients (it needs a client on step 1)
         self.easy_start = bool(rng.random() < self.easy_start_prob) and self.clients
         if self.easy_start:
             first["client"] = 1  # arrives on the first step, as the normal "arrive" event
+        # last of all, so every draw above, the easy start included, stays where it was
+        behind = rng.random(PICKUP_DRAWS) < self.back_fall_chance
+        turns = rng.integers(2, size=PICKUP_DRAWS)  # which way a back fall turns the agent
+        self._back_turns = [
+            int(turn) if hit else None for turn, hit in zip(turns, behind, strict=True)
+        ]
 
         self._gaps = {kind: deque(values) for kind, values in gaps.items()}
         self._first = first
@@ -428,6 +450,7 @@ class ShopEnv(ServiceRoomEnv):
         self._due = {kind: first[kind] if enabled[kind] else None for kind in first}
         self._slips = [delay if slip else None for delay, slip in zip(delays, slips, strict=True)]
         self._pickups = 0
+        self._back_turn, self.fall_turn = None, "face"
         self._fall_steps = []
         self._heard = self._boiled = 0
         self.siren_ringing = self.pot_boiling = False
@@ -554,11 +577,19 @@ class ShopEnv(ServiceRoomEnv):
                 if cell != self.layout.pantry:
                     self.grid.set(*cell, None)
         delay = self._slips[self._pickups] if self._pickups < PICKUP_DRAWS else None
+        self._back_turn = self._back_turns[self._pickups] if self._pickups < PICKUP_DRAWS else None
+        self.fall_turn = "face" if self._back_turn is None else "side"  # read by the fall
         self._pickups += 1
         self._fall_steps = []
         if delay is not None and self.step_count + delay <= self._last_start["fall"]:
             self._fall_steps.append(self.step_count + delay)
             self.event_counts["fall"]["planned"] += 1
+
+    def _fall_draw(self) -> tuple[int, int]:
+        """A back fall tries behind first, with its drawn turn; any other fall is the plain one."""
+        if self._back_turn is None:
+            return super()._fall_draw()
+        return BEHIND, self._back_turn
 
     def _fire_due_events(self) -> None:
         step = self.step_count

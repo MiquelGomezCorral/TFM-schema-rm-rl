@@ -256,11 +256,16 @@ class ServiceRoomEnv(MiniGridEnv):
         counts["fired"] += 1
         self.events_this_step.append("ring")
 
+    def _fall_draw(self) -> tuple[int, int]:
+        """The side the fall now due tries first, and its turn draw (the shop overrides this)."""
+        if self.fall_turn == "face":
+            return 0, 0  # front first, never behind
+        counts = self.event_counts["fall"]
+        return self._fall_draws[counts["fired"] + counts["skipped"]]
+
     def _fall(self) -> None:
         counts = self.event_counts["fall"]
-        first_side, back_turn = 0, 0  # "face": front first, never behind
-        if self.fall_turn != "face":
-            first_side, back_turn = self._fall_draws[counts["fired"] + counts["skipped"]]
+        first_side, back_turn = self._fall_draw()
         landing = self._landing_cell(first_side) if self.carrying is not None else None
         if landing is None:
             counts["skipped"] += 1

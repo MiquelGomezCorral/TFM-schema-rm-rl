@@ -58,6 +58,7 @@ from torch.distributions.categorical import Categorical
 from src.config import Configuration
 
 from .artifacts import load_bundle
+from .curriculum import WorldCurriculum, WorldStage
 from .dqn import (
     EpisodeTracker,
     RunRecorder,
@@ -139,8 +140,9 @@ def train_ppo(CONFIG: Configuration) -> Path:
     with ExitStack() as cleanup:
         runs = [_open_run(CONFIG, cleanup, index) for index in range(CONFIG.ppo_num_envs)]
         eval_run = _open_run(CONFIG, cleanup)
+        curriculum = WorldCurriculum(CONFIG) if CONFIG.env_stages else None
         envs = SyncVectorEnv(
-            [partial(_training_env, CONFIG, run) for run in runs],
+            [partial(_training_env, CONFIG, run, curriculum) for run in runs],
             autoreset_mode=AutoresetMode.SAME_STEP,
         )
         directory = _run(CONFIG, runs, eval_run, envs, device)
@@ -179,9 +181,13 @@ def _open_run(CONFIG: Configuration, cleanup: ExitStack, index: int = 0) -> RunE
     return run
 
 
-def _training_env(CONFIG: Configuration, run: RunEnvironment) -> Env:
-    # Evaluation passes its own seeds, so only the vector env's training envs need the wrapper.
-    return FixedLayoutReset(run.env, layout_seed(CONFIG)) if fixed_layout(CONFIG) else run.env
+def _training_env(
+    CONFIG: Configuration, run: RunEnvironment, curriculum: WorldCurriculum | None = None
+) -> Env:
+    # Evaluation plays the card's own world and passes its own seeds, so only the vector env's
+    # training envs take the wrappers.
+    env = run.env if curriculum is None else WorldStage(run.env, curriculum)
+    return FixedLayoutReset(env, layout_seed(CONFIG)) if fixed_layout(CONFIG) else env
 
 
 def _run(
@@ -478,6 +484,10 @@ class RolloutCollector:
         self.global_step = 0
         self.trackers = [EpisodeTracker() for _ in runs]
         self.rm_states: set[str] = set()
+        # the one the training envs' WorldStage wrappers report to (``train_ppo`` made it)
+        self.curriculum: WorldCurriculum | None = (
+            envs.get_attr("curriculum")[0] if CONFIG.env_stages else None
+        )
         observation, _ = envs.reset(seed=training_reset_seeds(CONFIG))
         self.next_observation = _to_tensors(_as_dict(observation), device)
         self.next_done = torch.zeros(len(runs), device=device)
@@ -512,6 +522,8 @@ class RolloutCollector:
 
             # The logged returns use the env's float64 rewards, not the float32 training tensor.
             self._record_episodes(recorder, rewards, terminated, truncated, infos)
+            if self.curriculum is not None:
+                self.curriculum.update(self.global_step, recorder.directory)
             self.next_observation = _to_tensors(_as_dict(observation), self.device)
             self.next_done = torch.as_tensor(done, dtype=torch.float32, device=self.device)
 
@@ -536,6 +548,9 @@ class RolloutCollector:
         }
         if self.rm_states:
             fields["rm_states_visited"] = sorted(self.rm_states)
+        if self.curriculum is not None:  # the last stage reached; the final world is the last
+            fields["world_stage"] = self.curriculum.stage
+            fields["world_final_stage"] = len(self.curriculum.stages)
         return fields
 
     def _bootstrap_timeouts(
