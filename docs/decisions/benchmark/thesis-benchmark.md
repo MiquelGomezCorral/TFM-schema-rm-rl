@@ -642,3 +642,8 @@ and a restart is easier to trust.
   `back_fall_chance` p (default 0, byte-identical): a slip lands the food behind the agent and turns it 90 degrees,
   so the next move cannot pick it up. Cards `shop-ladder-{deliver,order-deliver}-curriculum[-back]` (`bundle_of`,
   `train: false`, FARM only: `env_stages` is not a no-RM share setting), outside the counted 60.
+- 2026-11-23: Shop size curriculum (user: "3x3, then 5x5, then 7x7 (stop there, 7x7 the biggest)"). The shop
+  reads `area` at every reset, so an `env_stages` stage may set it; the observation stays 7x7x3 at every area.
+  Cards `shop-ladder-{deliver,order-deliver}-grow` grow 3x3 -> 5x5 -> 7x7 inside one run (10 served to move on)
+  on the base card's FARM machine; evaluation and the judge play the 7x7 world. Defaults byte-identical. Outside
+  the counted 60.

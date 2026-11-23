@@ -84,11 +84,11 @@ SMALL = Layout(7, (3, 3), (1, 3), (5, 3), (3, 0), (4, 6), ((1, 2), (1, 4), (5, 2
 # The ``area`` option: the side of the square of floor the agent moves in (walls not counted). The
 # counter and the pantry are 3 cells in the outer floor columns, so at 3 they fill both columns and
 # the agent walks the 3 cells between them, the stove in the wall at one end and the switch at the other.
-NORMAL_AREA = 8
+NORMAL_AREA, SMALL_AREA = 8, 5
 LAYOUTS = {
     NORMAL_AREA: NORMAL,
     7: Layout(9, (4, 4), (1, 4), (7, 4), (4, 0), (5, 8), ((1, 3), (1, 5), (7, 3), (7, 5))),
-    5: SMALL,
+    SMALL_AREA: SMALL,
     3: Layout(5, (2, 2), (1, 2), (3, 2), (2, 0), (2, 4), ((1, 1), (1, 3), (3, 1), (3, 3))),
 }
 COUNTER_COLOR, STOVE_COLOR = "yellow", "purple"  # a boiling stove takes the ringing red
@@ -327,7 +327,9 @@ class ShopEnv(ServiceRoomEnv):
         area (via kwargs, default 8 = the shop as it is): the side of the square of floor the agent
             moves in, one of ``LAYOUTS`` (8, 7, 5 or 3). The events, draws and rules are the same;
             ``N_x``, the walk limits and the quiet end follow the layout. ``small=True`` is
-            ``area=5``, so setting both is an error.
+            ``area=5``, so setting both is an error. Like the other options it is read at every
+            reset, so a world stage (``env_stages``) may change it mid-run; the observation (the
+            agent's 7 x 7 view, walls beyond the room) has the same shape at every area.
     """
 
     def __init__(
@@ -358,8 +360,8 @@ class ShopEnv(ServiceRoomEnv):
         back_fall_chance = kwargs.pop("back_fall_chance", 0.0)
         if not 0.0 <= back_fall_chance <= 1.0:
             raise ValueError(f"back_fall_chance {back_fall_chance} is not between 0 and 1")
-        self.layout = SMALL if small else LAYOUTS[area]
-        self.size, self.switch_pos = self.layout.size, self.layout.switch  # read by the base class
+        self.area = SMALL_AREA if small else area
+        self.size = LAYOUTS[self.area].size  # read by the base class when it sets the grid
         # siren and clients ride in kwargs (the signature is at the argument limit); the base class
         # takes siren itself and Shop builds its own grid, so for the Shop it only records the flag
         self.clients = kwargs.pop("clients", True)
@@ -378,7 +380,7 @@ class ShopEnv(ServiceRoomEnv):
         self.pot_boiling = False
         self.client_present = self.order_taken = False
         self._ringing_before = False
-        self._last_start = last_start_steps(max_steps, self.layout)
+        self._enter_area()
         self._first: dict[str, int] = {}
         self._due: dict[str, int | None] = {}
         self._gaps: dict[str, deque[int]] = {}
@@ -414,7 +416,15 @@ class ShopEnv(ServiceRoomEnv):
 
     # ============================== episode ==============================
 
+    def _enter_area(self) -> None:
+        """Take the room ``self.area`` names: the layout, the grid size and the quiet end."""
+        self.layout = LAYOUTS[self.area]
+        self.size, self.switch_pos = self.layout.size, self.layout.switch
+        self.width = self.height = self.size
+        self._last_start = last_start_steps(self.max_steps, self.layout)
+
     def reset(self, *, seed: int | None = None, options: dict | None = None):
+        self._enter_area()  # a world stage may have set another area since the last reset
         obs, info = super().reset(seed=seed, options=options)
         # the event seed, hence the easy-start choice, is known only after the grid is built
         if self.easy_start:

@@ -2744,6 +2744,247 @@
       ],
       "paraphrases": [],
       "notes": "Shop ladder rung 3, order and deliver, with a world curriculum that ends in back falls (user, 2026-11-23: \"try the 25% of 'not able to get it on the next step'. like when it falls on its back it has to turn by itself once more ... only when it has learned to pick up right away\"). Stages: no food slips; slips at the default chance and every fall the next move can take; then the card's own world, which adds `back_fall_chance: 0.25`: a quarter of the slips drop the food behind the agent and turn it a quarter aside, so the next move cannot take it and one more turn is needed (box-carry's `fall_turn: side` back case). The third stage starts when the last 100 episodes serve 10 orders on average and catch 90% of the falls on the next move. In the final world the scripted solving worker catches 77.4% of the falls on its very next move (2270 falls, 300 episodes) and is judged success on 21 of 100 episodes, so the solving plan breaks the food clause on some seeds (event seed 2, step 25) and the gate's plan check fails: that is the test, a rule the world sometimes makes impossible, not a machine fault. World copy of `shop-ladder-order-deliver`: same task text, clauses and plans, `env_stages` added to `env`. `bundle_of` makes `run-suite` train it on `shop-ladder-order-deliver`'s FARM machine (its labeling reads the events, not the stage), `generate-suite` skips it, and `train` is false: the card is not in the counted 60-card set; `runs-curriculum.yaml` trains it. The run plays the stages in order, on the same machine, policy and optimizer, and moves on when the last 100 finished training episodes of the stage meet its `until`; evaluation, the judge and the gates play the final world, the card's own `env_kwargs`. Switches are logged in the run folder's `stages.csv` (README, \"Curriculum\"). No paraphrases."
+    },
+    {
+      "id": "shop-ladder-deliver-grow",
+      "bundle_of": "shop-ladder-deliver",
+      "env": {
+        "description": "experiments/benchmark/envs/shop/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-Shop-v0",
+        "env_kwargs": {
+          "max_steps": 600,
+          "order_needed": false,
+          "cooking_needed": false,
+          "siren": false,
+          "area": 7
+        },
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic",
+        "env_stages": [
+          {
+            "env_kwargs": {
+              "area": 3
+            },
+            "until": {
+              "served": 10
+            }
+          },
+          {
+            "env_kwargs": {
+              "area": 5
+            },
+            "until": {
+              "served": 10
+            }
+          }
+        ]
+      },
+      "task": "Whenever a client comes in, fetch food from the pantry and give it to them; if the food falls, pick it up on your very next move.",
+      "goal": false,
+      "template": null,
+      "status": "draft",
+      "expect": [
+        [
+          "Response",
+          [
+            "client_arrived",
+            "order_served"
+          ],
+          "hard"
+        ],
+        [
+          "ChainResponse",
+          [
+            "food_fell",
+            "holding_food"
+          ],
+          "hard"
+        ]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [
+          {
+            "do": "policy",
+            "name": "shop",
+            "ignore": []
+          }
+        ],
+        "wrong": [
+          {
+            "breaks": [
+              0
+            ],
+            "why": "Does nothing for the whole episode: every rule that opens is left open.",
+            "steps": [
+              {
+                "do": "wait",
+                "n": 600
+              }
+            ]
+          },
+          {
+            "breaks": [
+              1
+            ],
+            "why": "Serves the clients, but leaves a fallen food portion on the floor for one step.",
+            "steps": [
+              {
+                "do": "policy",
+                "name": "shop",
+                "ignore": [
+                  "food_fall"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "event_seeds": [
+        1,
+        2,
+        3
+      ],
+      "paraphrases": [],
+      "notes": "Shop ladder rung 1, deliver, in a world that grows (user, 2026-11-23: \"you can try to 3x3, then 5x5, then 7x7 (stop there, 7x7 the biggest)\"): FARM learns the 3 x 3 shop (3 of 3 runs, 17 to 21 orders served per episode) but serves 0 at 5 x 5 and 7 x 7, so one run starts in the 3 x 3 shop and grows. Stages: `area: 3`, then `area: 5`, each until the last 100 finished training episodes serve 10 orders on average; then the card's own world, `shop-ladder-deliver-7x7`'s (a 7 x 7 floor in a 9 x 9 room, slips at the default chance). World copy of `shop-ladder-deliver-7x7`: same task text, clauses and plans, `env_stages` added to `env`. The room is read at every reset, so the same agent, machine and optimizer play on in the bigger room; the observation (the 7 x 7 view) keeps its shape. `bundle_of` makes `run-suite` train it on `shop-ladder-deliver`'s FARM machine (its labeling reads the events, not the room), `generate-suite` skips it, and `train` is false: the card is not in the counted 60-card set; `runs-grow.yaml` trains it. Evaluation, the judge and the gates play the final 7 x 7 world, as for `shop-ladder-deliver-7x7`; the switches are in the run folder's `stages.csv` (README, \"Curriculum\"). No paraphrases."
+    },
+    {
+      "id": "shop-ladder-order-deliver-grow",
+      "bundle_of": "shop-ladder-order-deliver",
+      "env": {
+        "description": "experiments/benchmark/envs/shop/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-Shop-v0",
+        "env_kwargs": {
+          "max_steps": 600,
+          "cooking_needed": false,
+          "siren": false,
+          "area": 7
+        },
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic",
+        "env_stages": [
+          {
+            "env_kwargs": {
+              "area": 3
+            },
+            "until": {
+              "served": 10
+            }
+          },
+          {
+            "env_kwargs": {
+              "area": 5
+            },
+            "until": {
+              "served": 10
+            }
+          }
+        ]
+      },
+      "task": "Whenever a client comes in, take their order, fetch food from the pantry and give it to them; if the food falls, pick it up on your very next move.",
+      "goal": false,
+      "template": null,
+      "status": "draft",
+      "expect": [
+        [
+          "Response",
+          [
+            "client_arrived",
+            "order_taken"
+          ],
+          "hard"
+        ],
+        [
+          "Response",
+          [
+            "order_taken",
+            "order_served"
+          ],
+          "hard"
+        ],
+        [
+          "ChainResponse",
+          [
+            "food_fell",
+            "holding_food"
+          ],
+          "hard"
+        ]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [
+          {
+            "do": "policy",
+            "name": "shop",
+            "ignore": []
+          }
+        ],
+        "wrong": [
+          {
+            "breaks": [
+              0
+            ],
+            "why": "Does nothing for the whole episode: every rule that opens is left open.",
+            "steps": [
+              {
+                "do": "wait",
+                "n": 600
+              }
+            ]
+          },
+          {
+            "breaks": [
+              2
+            ],
+            "why": "Serves the clients, but leaves a fallen food portion on the floor for one step.",
+            "steps": [
+              {
+                "do": "policy",
+                "name": "shop",
+                "ignore": [
+                  "food_fall"
+                ]
+              }
+            ]
+          },
+          {
+            "breaks": [
+              1
+            ],
+            "why": "Takes the first client's order and then does nothing.",
+            "steps": [
+              {
+                "do": "wait",
+                "n": 30
+              },
+              {
+                "do": "toggle",
+                "obj": "ball"
+              },
+              {
+                "do": "wait",
+                "n": 600
+              }
+            ]
+          }
+        ]
+      },
+      "event_seeds": [
+        1,
+        2,
+        3
+      ],
+      "paraphrases": [],
+      "notes": "Shop ladder rung 3, order + deliver, in a world that grows (user, 2026-11-23: \"you can try to 3x3, then 5x5, then 7x7 (stop there, 7x7 the biggest)\"): FARM learns the 3 x 3 shop (3 of 3 runs, 17 to 21 orders served per episode) but serves 0 at 5 x 5 and 7 x 7, so one run starts in the 3 x 3 shop and grows. Stages: `area: 3`, then `area: 5`, each until the last 100 finished training episodes serve 10 orders on average; then the card's own world, `shop-ladder-order-deliver-7x7`'s (a 7 x 7 floor in a 9 x 9 room, slips at the default chance). World copy of `shop-ladder-order-deliver-7x7`: same task text, clauses and plans, `env_stages` added to `env`. The room is read at every reset, so the same agent, machine and optimizer play on in the bigger room; the observation (the 7 x 7 view) keeps its shape. `bundle_of` makes `run-suite` train it on `shop-ladder-order-deliver`'s FARM machine (its labeling reads the events, not the room), `generate-suite` skips it, and `train` is false: the card is not in the counted 60-card set; `runs-grow.yaml` trains it. Evaluation, the judge and the gates play the final 7 x 7 world, as for `shop-ladder-order-deliver-7x7`; the switches are in the run folder's `stages.csv` (README, \"Curriculum\"). No paraphrases."
     }
   ]
 }

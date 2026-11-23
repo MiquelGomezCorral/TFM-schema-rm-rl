@@ -140,6 +140,17 @@ Cards (rungs 1 and 3; `train` false, `bundle_of` the base card, so the base card
 - Code: `app/src/arm_fm/curriculum.py`; the stage list is checked in `app/src/config/config.py`.
 - The back-fall cards make the rule impossible on some falls on purpose: when the food lands behind the agent, the fall turns it a quarter aside and one more turn comes before the pickup, so no worker can pick it up on the very next move. The scripted solving worker is judged success on 19 and 21 of 100 episodes of the two back cards, and the gate's plan check fails on event seed 2 (the solving plan breaks the food clause at the first slip, step 16 and step 25). That is the test, not a fault of the machine; no judge or pricing code was changed for it.
 
+### Size curriculum: 3x3, then 5x5, then 7x7 (2026-11-23)
+
+FARM serves only in the 3x3 shop (rungs 1 and 3; 0 served at 5x5, 7x7 and 8x8). User, 2026-11-23: "you can try to 3x3, then 5x5, then 7x7 (stop there, 7x7 the biggest)". `area` is read at every reset, so a stage may set it; the agent's view stays 7x7x3 at every area. Cards `shop-ladder-deliver-grow` and `shop-ladder-order-deliver-grow` (`train` false, `bundle_of` the base card; final world = the 7x7 card's world, slips on); suite `shop-grow`, `runs-grow.yaml`, FARM only, `ppo-shop.yaml`, 6 runs:
+
+```json
+"env_stages": [
+  {"env_kwargs": {"area": 3}, "until": {"served": 10}},
+  {"env_kwargs": {"area": 5}, "until": {"served": 10}}
+]
+```
+
 ## Contents
 
 - `tasks.json`: the cards. `runs-*.yaml`: the run grid above. `bundles/<arm>/<card-id>/`: the generated machines (made by `generate-suite`, not in this slice except for the proof).
