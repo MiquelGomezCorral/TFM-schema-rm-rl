@@ -1,0 +1,68 @@
+% Data boxes are parallelograms with sides at one fixed angle, so every data box has the same slant
+% whatever its height. The box is widened by its slant, so the text keeps the room it has in a rectangle.
+\makeatletter
+\def\farmslantcot{0.3249}% cot of 72 degrees
+\def\farm@slantsize{% \pgf@x: width plus slant, \pgf@y: height, \pgf@xa: slant (all without outer sep)
+    \pgf@x=\wd\pgfnodeparttextbox
+    \pgfmathsetlength\pgf@xc{\pgfkeysvalueof{/pgf/inner xsep}}\advance\pgf@x by 2\pgf@xc
+    \pgfmathsetlength\pgf@xb{\pgfkeysvalueof{/pgf/minimum width}}\ifdim\pgf@x<\pgf@xb\pgf@x=\pgf@xb\fi
+    \pgf@y=\ht\pgfnodeparttextbox\advance\pgf@y by\dp\pgfnodeparttextbox
+    \pgfmathsetlength\pgf@yc{\pgfkeysvalueof{/pgf/inner ysep}}\advance\pgf@y by 2\pgf@yc
+    \pgfmathsetlength\pgf@yb{\pgfkeysvalueof{/pgf/minimum height}}\ifdim\pgf@y<\pgf@yb\pgf@y=\pgf@yb\fi
+    \pgf@xa=\farmslantcot\pgf@y
+    \advance\pgf@x by\pgf@xa}
+\def\farm@slantbox{%
+    \southwest\edef\farm@xo{\the\pgf@x}\edef\farm@yo{\the\pgf@y}%
+    \northeast\edef\farm@xi{\the\pgf@x}\edef\farm@yi{\the\pgf@y}}
+\pgfdeclareshape{farm slant}{%
+    \saveddimen\farmd{\farm@slantsize\pgf@x=\pgf@xa}%
+    \savedanchor\northeast{%
+        \farm@slantsize
+        \pgf@x=.5\pgf@x\advance\pgf@x by.5\wd\pgfnodeparttextbox
+        \pgfmathsetlength\pgf@xa{\pgfkeysvalueof{/pgf/outer xsep}}\advance\pgf@x by\pgf@xa
+        \pgf@y=.5\pgf@y\advance\pgf@y by-.5\dp\pgfnodeparttextbox\advance\pgf@y by.5\ht\pgfnodeparttextbox
+        \pgfmathsetlength\pgf@ya{\pgfkeysvalueof{/pgf/outer ysep}}\advance\pgf@y by\pgf@ya}%
+    \savedanchor\southwest{%
+        \farm@slantsize
+        \pgf@x=-.5\pgf@x\advance\pgf@x by.5\wd\pgfnodeparttextbox
+        \pgfmathsetlength\pgf@xa{\pgfkeysvalueof{/pgf/outer xsep}}\advance\pgf@x by-\pgf@xa
+        \pgf@y=-.5\pgf@y\advance\pgf@y by-.5\dp\pgfnodeparttextbox\advance\pgf@y by.5\ht\pgfnodeparttextbox
+        \pgfmathsetlength\pgf@ya{\pgfkeysvalueof{/pgf/outer ysep}}\advance\pgf@y by-\pgf@ya}%
+    \inheritanchor[from=rectangle]{center}%
+    \inheritanchor[from=rectangle]{north}%
+    \inheritanchor[from=rectangle]{south}%
+    \inheritanchor[from=rectangle]{north east}%
+    \inheritanchor[from=rectangle]{south west}%
+    \inheritanchor[from=rectangle]{mid}%
+    \inheritanchor[from=rectangle]{base}%
+    \anchor{east}{\farm@slantbox\pgfpoint{\farm@xi-0.5*\farmd}{0.5*\farm@yi+0.5*\farm@yo}}%
+    \anchor{west}{\farm@slantbox\pgfpoint{\farm@xo+0.5*\farmd}{0.5*\farm@yi+0.5*\farm@yo}}%
+    \anchor{north west}{\farm@slantbox\pgfpoint{\farm@xo+\farmd}{\farm@yi}}%
+    \anchor{south east}{\farm@slantbox\pgfpoint{\farm@xi-\farmd}{\farm@yo}}%
+    \anchorborder{%
+        \edef\farm@tx{\the\pgf@x}\edef\farm@ty{\the\pgf@y}%
+        \farm@slantbox
+        \pgfmathsetmacro\farm@hw{0.5*(\farm@xi-\farm@xo)}%
+        \pgfmathsetmacro\farm@hh{0.5*(\farm@yi-\farm@yo)}%
+        \pgfpointborderrectangle{\pgfqpoint{\farm@tx}{\farm@ty}}{\pgfqpoint{\farm@hw pt}{\farm@hh pt}}%
+        \edef\farm@bx{\the\pgf@x}\edef\farm@by{\the\pgf@y}%
+        % a point on a side moves onto the slanted side at the same height; one on the top or the
+        % bottom stays on that edge's shorter span
+        \pgfmathsetmacro\farm@nx{\farm@bx > \farm@hw-0.01 ? \farm@hw-0.5*\farmd+0.5*\farmd*\farm@by/\farm@hh
+            : (\farm@bx < 0.01-\farm@hw ? 0.5*\farmd-\farm@hw+0.5*\farmd*\farm@by/\farm@hh
+            : (\farm@by > 0 ? max(\farm@bx, \farmd-\farm@hw) : min(\farm@bx, \farm@hw-\farmd)))}%
+        \pgfmathsetmacro\farm@cx{0.5*(\farm@xi+\farm@xo)}%
+        \pgfmathsetmacro\farm@cy{0.5*(\farm@yi+\farm@yo)}%
+        \pgf@x=\farm@nx pt\advance\pgf@x by \farm@cx pt
+        \pgf@y=\farm@by\advance\pgf@y by \farm@cy pt}%
+    \backgroundpath{%
+        \farm@slantbox
+        \pgfmathsetlength\pgf@xa{\pgfkeysvalueof{/pgf/outer xsep}}\edef\farm@ox{\the\pgf@xa}%
+        \pgfmathsetlength\pgf@ya{\pgfkeysvalueof{/pgf/outer ysep}}\edef\farm@oy{\the\pgf@ya}%
+        \pgfpathmoveto{\pgfpoint{\farm@xo+\farm@ox}{\farm@yo+\farm@oy}}%
+        \pgfpathlineto{\pgfpoint{\farm@xi-\farmd-\farm@ox}{\farm@yo+\farm@oy}}%
+        \pgfpathlineto{\pgfpoint{\farm@xi-\farm@ox}{\farm@yi-\farm@oy}}%
+        \pgfpathlineto{\pgfpoint{\farm@xo+\farmd+\farm@ox}{\farm@yi-\farm@oy}}%
+        \pgfpathclose}%
+}
+\makeatother
