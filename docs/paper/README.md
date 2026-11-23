@@ -1561,3 +1561,374 @@ docs/paper/reward-loops-and-rounds/check/gen_rounds.py` read only `evidence/bund
 
 **Code.** All 265 built FARM bundles and 143 of the 152 built ARM-FM bundles were generated on the freeze `809dfe3`
 (manifest stamps); the other 9 ARM-FM bundles on `68b904d` (7) and `029d82c` (2). Counts rerun on main `52e8b35`.
+
+**Update 2026-11-23: ARM-FM rounds.** ARM-FM's `attempts.json` has other stages than FARM's, so a sibling script
+counts them: `reward_machine` (the machine) and `labeling` go through the critic, `descriptions` (state texts) has no
+critic, and the status `failed` marks an answer that does not parse or compile, refused before the critic sees it. A
+round is one generator answer, a failed one included. Of the 152 built ARM-FM bundles, 132 passed every stage on the
+first answer, 19 after a critic rejection (18 in the machine stage, 1 in labeling) and 1 after an invalid first
+machine (`templates/bundles/arm-fm/tpl-chain-response-soft-1-goal~p1`, "Reward refers to nonexistent transition (u1,
+holding_box & !at_exit, u2)", critic interventions 0). Machine rounds: 133 needed 1, 16 needed 2, 2 needed 3, 1
+needed 4; mean 175/152 = 1.151, one of the 175 answers invalid. Labeling: 151 needed 1, 1 needed 2; mean 153/152 =
+1.007. Both critic stages 328/152 = 2.158 (FARM 2.01). Descriptions: one answer on all 152. The manifest stamps agree:
+`attempts` counts the machine answers (133, 16, 2, 1), critic interventions are 0 on 133, and `retries` is 1 on the
+invalid one and 0 on the other 151. Evidence `evidence/gen-rounds-armfm.txt`, script `check/gen_rounds_armfm.py`; it
+reads only `evidence/bundles.json` and the bundles it names. Rerun from the repository root in `RM_RL_env`: `python
+docs/paper/reward-loops-and-rounds/check/gen_rounds_armfm.py`. The FARM count reran on main `93b3ea0` byte-identical.
+Gap: only built bundles count. The 114 unbuilt ones passed generation too and failed the plan check
+(`armfm-failure-kinds/`); they are left out, as the FARM count leaves out `shop-boil~p2`.
+
+### ARM-FM failures by kind: all 114 fail the plan check (`armfm-failure-kinds/`), 2026-11-23
+
+**What it shows.** ARM-FM was asked for 266 machines of the frozen set and built 152. The other 114 failed their own
+check, and each is sorted here by the failure it ended on. All 114 ended on the plan check: their generation passed
+(the last answer of every stage was accepted), so 0 ended on an invalid output, 0 on critic rejections until the
+attempts ran out, and 0 on anything else. The plan check names the first problem it found:
+
+- **The machine ends before the agent acts, 57** (shop 23, templates 18, forcing 16). Example
+  `forcing/bundles/arm-fm/keygift-hard`: "solve-s1: ends the episode before the agent acts".
+- **A plan that breaks only soft rules pays nothing, 27** (all templates): the run never gets a negative reward.
+  Example `templates/bundles/arm-fm/tpl-chain-response-soft-1-goal`: "wrong-0-s1: breaks only soft rules and pays
+  nothing".
+- **A plan that breaks a hard rule reaches the final, 20** (complex 8, templates 6, forced-start 4, box-carry 1, shop
+  1). Example `box-carry/bundles/arm-fm/tpl-chain-response-2-nogoal-carry`: "wrong-4-s1: reaches the final at step
+  21".
+- **The solving plan does not reach the final, 9** (templates 8, forced-start 1). Example
+  `forced-start/bundles/arm-fm/tpl-responded-existence-1-nogoal-forced~p1`: "solve-s1: ends in u1, not the final".
+- **The labeling code crashes, 1.** `templates/bundles/arm-fm/tpl-precedence-1-goal~p3`: "solve-s1: the labeling
+  failed: AssertionError:", with no message.
+
+**Evidence.** `evidence/failures.json`: the counts (by kind, by plan-check problem, by suite and problem), one example
+per kind, and one row per failed bundle (suite, card, bundle, path, status, kind, problem, the status error cut at 160
+characters, and whether generation passed). The kind comes from the reason in each `<bundle>.status.json`
+(`plan-check-failed: <plan>-s<seed>: <first problem>`); for a reason that is not a plan check it would come from the
+last answer in `attempts.json` (none today).
+
+**Gaps.** Only the first problem counts; `<bundle>.plan_check.json` lists every plan's problems, and a bundle can have
+several. The problem names map the wording of `_problems` in `app/src/benchmark/plan_check.py:190`; a new wording
+would land in "other plan-check problem" (0 today).
+
+**Files.** `check/failure_kinds.py`, `evidence/failures.json`. No page.
+
+**Rerun** (no model call, no training, from the repository root in `RM_RL_env`): `python
+docs/paper/armfm-failure-kinds/check/failure_kinds.py`. It reads the bundle list
+`docs/paper/reward-loops-and-rounds/evidence/bundles.json` (that entry's `bundle_list.py`) and each failed bundle's
+status and attempts files.
+
+**Code.** The plan check `app/src/benchmark/plan_check.py` (`_problems`, and `failure_reason` at line 91, which
+writes the first problem into the reason), called from `app/scripts/generate_suite.py:263`. Manifest stamps of the
+114: the freeze `809dfe3` 70, the earlier `68b904d` 4, and six later commits 40 (`029d82c` 23, `04fd146` 6,
+`03905e4` 4, `881b22d` 3, `e37dff9` 2, `2c267e1` 2). Counted on main `93b3ea0`.
+
+### Soft breaks against an agent that does not try (`soft-breaks-vs-idle/`), 2026-11-23
+
+**What it shows.** 20 of the 60 trained cards have a soft rule. Per card: the mean soft breaks per judged episode for
+FARM and no-RM, 3 seeds each, with a 95% t interval over seeds, and the idle plan's value (one fixed policy, so no
+interval). A break counts at every broken step, as the machine charges it (judge `mean_soft_break_count`, 100 test
+episodes per seed). The idle figure exists for the 8 soft-only cards only: the judge plays its idle plan only on a
+card with no goal and no hard rule.
+
+Soft-only cards, FARM / idle / no-RM:
+
+- `tpl-absence-soft-1-nogoal`: 18.74 [18.56, 18.92] / 26.18 / 10.52 [10.28, 10.76].
+- `tpl-not-co-existence-soft-1-nogoal`: 5.66 [4.56, 6.76] / 7.49 / 0.51 [0.21, 0.81].
+- `tpl-precedence-soft-1-nogoal`: 1.23 [0.51, 1.95] / 26.18 / 0.17 [0.15, 0.19].
+- `tpl-chain-response-soft-1-nogoal`: 0 / 1.00 / 0.
+- `keygift-soft`, `tpl-existence-soft-1-nogoal`, `tpl-existence-two-soft-1-nogoal`,
+  `tpl-responded-existence-soft-1-nogoal`: 0 / 0 / 0.
+
+On the 4 soft-only cards where the idle plan breaks the rule, FARM breaks it less than the idle plan, and no-RM less
+than FARM on 3 of them (both 0 on chain response). Cards with a goal or a hard rule, FARM / no-RM: `lanes-rules`
+15.55 [10.00, 21.10] / 10.63 [10.47, 10.78]; `tpl-precedence-soft-1-goal` 1.91 [0, 10.15] / 1.92 [0, 10.16] (one
+seed of three near 5.7 in each arm, the others 0); `tpl-precedence-soft-2-goal` 1.00 / 1.00 on every seed; the other
+9 cards 0 / 0.
+
+**Evidence.** `evidence/soft-breaks.json`, one row per soft-rule card: its soft rules, soft-only or not, FARM's
+machine, the idle value and its seeds, and per arm the seed count, mean, interval and each judged run folder with its
+value. `evidence/soft-breaks.txt`: the same as a plain table. Cross-check: the 48 FARM and no-RM runs on the soft-only
+cards equal the `runs` rows of `freeze-prep/no-train/soft_every_break.json`, the source of the idle figures.
+
+**Gaps.** On the 4 soft-only cards where all three show 0 breaks, the idle plan leaves the rule open instead (judge
+`soft_open` 1.0); this table counts breaks, not open rules (`mean_soft_open` in the judge files). With 3 seeds the t
+interval has 2 degrees of freedom and is wide; its low end is clipped at 0. The 12 cards with a goal or a hard rule
+have no idle figure; one would need the judge's idle plan played on them (no training, as `soft_every_break.py` does
+for the soft-only cards). ARM-FM is left out; it trained 8 of the 20.
+
+**Files.** `check/soft_breaks.py`, `evidence/soft-breaks.json`, `evidence/soft-breaks.txt`. No page.
+
+**Rerun** (no model call, no training, from the repository root in `RM_RL_env`): `env
+PYTHONPATH=app:.git/agent-memory/artifacts/final-results python -P docs/paper/soft-breaks-vs-idle/check/soft_breaks.py`.
+It needs `.git/agent-memory`, as `bundle_list.py` does: the final-results builder's `TRAINABLE`, `JUDGED` (from
+`RUN_FOLDERS`) and `IDLE_EVERY` (read from `freeze-prep/no-train/soft_every_break.json`).
+
+**Code.** The every-break count is `_break_count` in `app/src/benchmark/declare_judge.py`; the judge files are
+`outputs/runs/bench__<suite>__<card>__<arm>__ppo/seed*/judge.json`. Counted on main `93b3ea0`.
+
+### Reward farming during development (`dev-reward-farming/`), 2026-11-23
+
+**What it shows.** During development, before the final run's freeze, the testing program's hack register recorded
+ARM-FM runs whose agents collected machine reward through a loop instead of doing the task. In each case the machine
+pays for taking an object and steps back a state when the object is dropped, so taking it again pays again. Four rows
+are full farming (H3, H4, H6, H7); three are weaker or partial (H5, H9, H12). Per card: the NL task, the declared
+rules (all hard), the loop in the machine as trained (`evidence/machines/<card>.ecf6ca99.txt`, line numbers) and the
+numbers.
+
+- **H3 `base-doorkey`, DoorKey-8x8, 3 seeds.** "Use the key to open the door, then reach the goal."
+  `Precedence(has_key, door_open)`, `Precedence(door_open, at_goal)`, `Existence(at_goal)`. Loop: `(u0, has_key) ->
+  u1` pays +0.1, `(u1, key_lost) -> u0` (lines 6, 15, 9). Seeds 1 and 2 took the key 282.35 and 305.56 times per
+  episode on average and opened the door 0 times (hack audit E9, from saved traces). On all three seeds every episode
+  ran to the 640-step limit, machine return 28.24 / 30.56 / 29.87, judged and environment success 0. FARM on the same
+  card: judged 0.99 / 0.98 / 1 (E16).
+- **H4 `tpl-precedence-1-goal`, BlockedUnlockPickup, 3 seeds.** "Move the ball away from the door before you take
+  the key, then open the door and pick up the box." `Precedence(blocker_moved, has_door_key)`,
+  `Existence(target_picked_up)`. Loop: `(u1, has_door_key) -> u2` pays +0.15, `(u2, key_lost) -> u1` (lines 8, 18,
+  11). Seeds 1 and 2: 206.29 and 214.43 key pickups per episode, 0 door openings (E10). 576 of 576 steps, machine
+  return 30.62 / 32.28 / 33.91, judged 0. no-RM fails this card too (judged 0, E18).
+- **H6 `tpl-existence-two-1-nogoal`, DoorKey-8x8, seed 1.** "Be holding the key on at least two different moves."
+  `ExistenceTwo(has_key)`: `(F (has_key & (X (F has_key))))`. Loop: `(u0, has_key) -> u1` pays +0.1, `(u1,
+  key_lost) -> u0` (lines 6, 13, 9). The machine path cycled in 98% of the episodes of the last 300k training steps,
+  every final-eval episode ran the 640 steps, machine return 29.6 at the final eval and 30.89 in the re-judge, greedy
+  environment success 0.00. Judged 0.97: two pickups meet the card's only rule, so the judge passes a farming run.
+  Seeds 2 and 3, trained later: cycle share 0.81 and 1.00, machine return 18.1 and 29.0, judged 0.39 and 0.93.
+- **H7 `tpl-existence-two-1-goal`, UnlockPickup, seed 1.** "Be holding the key on at least two different moves, then
+  pick up the box in the other room." `ExistenceTwo(has_door_key)`, `Existence(target_picked_up)`. Loop: `(u0,
+  has_door_key) -> u1` pays +0.2, `(u1, key_lost) -> u0` (lines 6, 18, 9). Cycled in 100% of the episodes, every
+  final-eval episode ran the 288 steps, machine return 28.1 (re-judge 27.85), greedy and judged 0.00. Seeds 2 and 3:
+  cycle share 1.00, machine return 27.3 and 28.4, judged 0.
+
+Weaker or partial:
+
+- **H5 `tpl-chain-response-1-goal`, ServiceRoom, seed 1.** "Carry the box to the exit. Whenever the box falls, pick
+  it up again on your very next move." `ChainResponse(box_fell, holding_box)`, `Existence(at_exit)`,
+  `Response(at_exit, holding_box)`. Loop: `(u1, box_fell) -> u2`, `(u2, holding_box) -> u1` pays +0.3 (lines 8, 11,
+  18). 46% of the training episodes of the last 1.2M steps lapped it before exiting. The greedy policy looped for the
+  full 200 steps (judged 0.00); the sampled one solved the card (1.00). The loop needs `box_fell`, and the world
+  schedules one or two falls per episode, so its pay is capped (hack audit).
+- **H9 `tpl-responded-existence-1-nogoal`, UnlockPickup, seed 1.** "If you pick up the key, you must also open the
+  door." `RespondedExistence(has_door_key, door_open)`. The row is mainly about no-RM's empty pass. ARM-FM: loop
+  `(u0, has_door_key) -> u1` pays +0.2, `(u1, key_lost) -> u0` (lines 6, 15, 9), cycled in 100% of the episodes,
+  machine return 28.17 in the re-judge (26.5 at the final eval), judged 0.01. Seeds 2 and 3: cycle share 1.00,
+  machine return 28.4 and 27.6.
+- **H12 `shop-serve` and `shop-full`, Shop, seed 1.** A probe on unmerged code where final states do not end the
+  episode (`rm_ends_episode: false`), stopped at 2,400,256 and 2,158,592 of 3M steps, never judged. shop-serve:
+  "Whenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to
+  them; if the food falls, pick it up on your very next move." `Response(client_arrived, order_taken)`,
+  `Response(order_taken, food_prepared)`, `Response(food_prepared, order_served)`, `ChainResponse(food_fell,
+  holding_food)` (`experiments/benchmark/shop/tasks.json` at `ecf6ca99`). It never served: environment return -9.5,
+  the idle value, in every eval. In the last 200 training episodes the path alternated `u3` and `u5` for 600 steps,
+  machine return 5.9: drop the food, `(u3, food_fell) -> u5` +0.1, pick it up, `(u5, holding_food) -> u3` +0.2
+  (lines 13, 34, 18, 37). shop-full adds "whenever the siren rings, turn it off" and `Response(siren_ringing,
+  switch_toggled)`. Environment return 0.0 (siren off, no serve), machine return 3.5, path `u0 u5`: the ring moves
+  the machine to `u5`, and the switch pays +0.3 back to `u0` (lines 7, 26, 41). That loop is the siren part of the
+  task, capped by the rings.
+
+**Today's machines.** All eight frozen ARM-FM machines are different texts, generated again on the freeze
+(`e6c3acba`), and none has a paying loop under the final run's rule, where a final state ends the episode. Only
+`base-doorkey` was trained in the final run. `tpl-precedence-1-goal`, `shop-serve` and `shop-full` were not built,
+because their machines failed ARM-FM's own check (`armfm-failure-kinds/`), and the other four cards were not trained
+(`reward-loops-and-rounds/evidence/bundles.json`). If final states did not end the episode, today's shop machines
+would still loop (4 and 17,784 paying simple cycles), shop-serve's serve cycle `u0 -> u1 -> u3 -> u4 -> u0` among
+them.
+
+**Against the register.** Every register number equals its source after rounding (H3 282 / 306 and 28.2 / 30.6 /
+29.9, H4 206 / 214 and 30.6 / 32.3 / 33.9, H5 99.99%, 24.5 and 46%, H6 98% and 29.6, H7 100%, H9 28.2, H12 5.9 and
+3.5), and the rerun of the loop check gives the laps and pays of the register and of both slices' cycle lists. Five
+readings differ:
+
+- H6's "+0.1/+0.2": its lap pays +0.1; +0.2 is H7's (the train-all alarm line covers both cards).
+- H6's "Greedy 0.00" is environment success; the card itself was met (judged 0.97). Its "no-RM solves DoorKey,
+  1.00" is no-RM's sampled value; greedy 0.98.
+- H6's 29.6 is the final eval; the re-judge gives 30.89. H9's 28.2 is the re-judge; the final eval gives 26.5. H3
+  seed 1 is 28.24 in the audit, 28.23 in the re-judge.
+- The register gives seed 1 only for H6, H7 and H9; seeds 2 and 3 farm too (above).
+- "Found 2026-11-14" is the audit date; the H3 and H4 runs started on 2026-11-13 (run folder stamps, UTC).
+
+**The thesis sentence.** "Picked the key up and dropped it again, hundreds of times per episode, and never opened
+the door" is counted only for H3 and H4, seeds 1 and 2. H6 and H7 have no pickup or door count. Machine return over
+the lap's pay gives H3's counted pickups back (28.24 / 0.1 = 282.4, 30.56 / 0.1 = 305.6); the same ratio suggests
+about 310 laps per episode for H6 (30.89 / 0.1) and about 140 for H7 (27.85 / 0.2), an estimate, not a count. H7's
+288-step limit allows at most 144 pickups, so "hundreds" does not fit H7.
+
+**Evidence.** `evidence/register.md`: the register's header (rule, kinds, detection), table header, the seven rows
+and the H5 detection note, verbatim, after a short preface marking the weaker rows. `evidence/slice-excerpts.md`: the
+slice lines that hold the numbers (hack audit E9, E10, E16-E18; closed-set and train-all reports, tables and cycle
+lists; re-judge rows with the cards' NL task and LTL; the shop probe), each block naming its file and lines, home
+paths cut. `evidence/machines/<card>.ecf6ca99.txt`: the eight machines as trained; `<card>.today.txt`: today's frozen
+ones. `evidence/cycles.json`: per card and text, the paying-loop verdict, whether a loop pays without a world event,
+the lap count and the first ten laps, under both rules (final states end the episode or not).
+`evidence/same-as-today.txt`: the same as plain text. The runs read their bundles from the main checkout's working
+tree before the bundles were committed. `ecf6ca99` (2026-11-14 22:05) is the first commit holding them, and no
+commit changes them again until `e6c3acba` (2026-11-22). The saved texts match the register's line references
+(`base-doorkey/reward_machine.txt:6,9,15`, `tpl-precedence-1-goal/reward_machine.txt:8,11,18`) and the laps of both
+slices' `cycles.md`.
+
+**Gaps.**
+
+- The run folders are not in the repository; the main checkout's `outputs/runs/` holds none of them. The register's
+  runs survive only in side worktrees outside it (`tp-train-closed` for H3-H7 and H9, `tp-rm-end` for H12), which
+  may be cleaned up. The entry copies none of their files, so the numbers rest on the slice notes.
+- The machines came from the pipeline before the final run's freeze. The base and template ones were generated on
+  `a77709b` (2026-11-12, a merge whose subject calls it a pipeline freeze, earlier than the final one), the shop ones
+  on `ebe6874` (2026-11-14); generator deepseek-v4.1-flash, critic glm-5.3-flash, no thinking (manifest stamps). The
+  final run's machines were generated again on `809dfe3`.
+- The texts come from the first commit after training, not from the run folders. Git cannot show the working tree at
+  train time; the matching line references and laps are the check.
+- Pickup and door counts exist only for H3 and H4 (above). H12 is one seed of a stopped probe on unmerged code.
+- The loop check is static, as in `reward-loops-and-rounds/`; the world-event test is a label regex (`WORLD` in
+  `check/old_machines.py`).
+
+**Files.** `evidence/register.md`, `evidence/slice-excerpts.md`, `evidence/machines/` (16 texts),
+`evidence/cycles.json`, `evidence/same-as-today.txt`, `check/old_machines.py`. No page.
+
+**Rerun** (no model call, no training, from the repository root in `RM_RL_env`): for each bundle in `CARDS` of
+`check/old_machines.py`, `git show ecf6ca99:experiments/benchmark/<bundle>/reward_machine.txt >
+docs/paper/dev-reward-farming/evidence/machines/<card>.ecf6ca99.txt`; then `python
+docs/paper/dev-reward-farming/check/old_machines.py`. It writes the today texts, `cycles.json` and
+`same-as-today.txt`, and reads `docs/paper/reward-loops-and-rounds/evidence/bundles.json` for each frozen bundle's
+status. The two copies from `.git/agent-memory/plans/testing-program-20261111/` are cut by the line numbers each file
+names.
+
+**Code.** Machines as trained: `ecf6ca99`, generated on `a77709b` and `ebe6874`. Today's machines: `e6c3acba`,
+generated on the freeze `809dfe3`. Training code per the train-all table: `f2ed884` for seed 1, `b332ecf` for seeds
+2 and 3. `check/old_machines.py` copies `parse` and the Bellman-Ford test of
+`reward-loops-and-rounds/check/pay_cycles.py` (importing that file would rerun its check) and lists laps as the
+slices' cycle scripts did. Checked on main `93b3ea0`.
+
+### Figures of the Results chapter and the MONA panel (`results-figures/`), 2026-11-23
+
+**What it shows.** Five pgfplots and TikZ figures for the Results chapter, one light palette (FARM cyan, ARM-FM violet,
+no RM grey; solid = learned or built first time, light = built after a further round, open = built but not learned,
+hatched in the arm's colour = machine not built), plus the corrected MONA panel (c) and listing of the FARM chapter.
+`figures/preview.pdf` shows all of them at the thesis text width.
+
+1. `fig-res-built`: machines built of 266 asked per arm. FARM 265 (99.6%, 95% Wilson 97.9 to 99.9): 262 first time, 3
+   after a further round, 1 not built. ARM-FM 152 (57.1%, 51.1 to 62.9): 132 first try, 20 after further attempts (19
+   after a critic rejection, 1 after an invalid output), 114 not built.
+2. `fig-res-learned`: rows learned of 60 per arm, learned / trained-not-learned / not built. All 60: FARM 43 (71.7%
+   [59.2, 81.5]), ARM-FM 29 (48.3% [36.2, 60.7]; 4 trained and not learned, 27 not built), no RM 23 (38.3% [27.1,
+   51.0]). Step-by-step (11): 11 / 8 / 3. No goal (15): 14 / 4 / 9. With a goal (23): 15 / 17 / 10. Shop (11): 3 / 0 / 1.
+3. `fig-res-soft`: soft breaks per judged episode on the 20 soft-rule rows, every broken step; bar = mean of 3 seeds,
+   dots = seeds, error bar = 95% t interval over the 3 seeds (low end clipped at 0). The idle plan is a black mark on the 8
+   soft-only cards only (the 12 others have none). ARM-FM appears where it trained (8 of the 20, 1 of the 8
+   soft-only).
+4. `fig-res-thinking`: right machines of 138 runs against the median generation seconds, one point per thinking
+   level: none 105 at 3.9 s, low 134 at 12.05 s, medium 136 at 17.6 s, high 138 at 20.35 s, max 138 at 88.1 s (Wilson
+   intervals; log x axis).
+5. `fig-res-ex-machines`: the machines of the three example cards (DoorKey, Blocked box = `tpl-not-co-existence-soft-1-goal`,
+   Box carry = `cx-box-carry`), FARM beside ARM-FM, one arrow per pair of states with its reward, or `mixed` when its
+   transitions pay differently, and `(x n)` when it holds more than one transition. No propositions.
+
+MONA: `figures/mona-post2.tex` and `figures/mona.rm.txt` are panel (c) and the listing of Absence(`key_lost`) compiled
+with the frozen compiler: u0 an ordinary initial state, u1 the well, `key_lost` pays -10, no final or accepting state,
+no failed-reward lines, no pending promises. The thesis still shows the old text (see Gaps).
+
+**Evidence.** `data/built.csv`, `learned.csv`, `soft.csv`, `thinking.csv`, `machines.csv`: the numbers each figure
+draws. `make_figures.py` recomputes them from the records and stops unless 266 asked per arm, 265 FARM and 152 ARM-FM
+built, 60 rows and 43 / 29 / 23 learned hold, the four group counts equal the Results draft, and FARM, no-RM and idle
+values equal `soft-breaks-vs-idle/evidence/soft-breaks.json`. `figures/preview.pdf` was read page by page as PNG.
+
+**Gaps.** Colour of an arrow follows the reward sign (green pays, red only costs, grey pays nothing or holds both
+signs), so a caption must say so; `mixed` can be green when its rewards all pay. The count is shown only when an arrow
+holds more than one transition. Figure 3 has no idle mark on the 12 cards with a goal or a hard rule, and 3 seeds make
+the t interval wide. The 5th figure's layout is drawn by hand per card (`LAYOUT` in `draw_machines.py`). The two
+unsure cards `tpl-absence-soft-1-nogoal` and `tpl-not-co-existence-soft-1-nogoal` stay in the 60 rows and in the
+figures (ruling of 2026-11-23). The thesis preamble must `\input` `figures/fig-palette.tex` (it adds
+`\usetikzlibrary{patterns}` and the `res axis` style). Old MONA text still in `paper/plantillatfg.tex`: line 1373
+("the rejecting well u1 ... is entered with reward $-1$", now $-10$), line 1400 (`images/farm/mona-post2.tex`:
+u0 accepting, `-1`), line 1412 (`images/farm/mona.rm.txt` with `ACCEPTING_STATES`, failed-reward headers and
+`PENDING_PROMISES`).
+
+**Files.** `make_figures.py`, `records.py`, `draw.py`, `draw_machines.py`, `mona_listing.py`, `data/*.csv`,
+`figures/fig-palette.tex`, `figures/fig-res-*.tex`, `figures/mona-post2.tex`, `figures/mona.rm.txt`,
+`figures/preview.tex`, `figures/thesis-preamble.tex` (generated), `figures/preview.pdf`.
+
+**Rerun** (no model call, no training, from the repository root in `RM_RL_env`): `env CC_ROOT=$PWD
+PYTHONPATH=app:.git/agent-memory/artifacts/final-results:docs/paper/level-benchmark-freeze/check:docs/paper/results-figures
+python -P -W ignore docs/paper/results-figures/make_figures.py`, then `env PYTHONPATH=app python -P -W ignore
+docs/paper/results-figures/mona_listing.py` (MONA on PATH), then in the entry folder `latexmk -pdf -outdir=figures
+figures/preview.tex`. It needs `.git/agent-memory` for the final-results builder (`b.STATUS`, `TRAINABLE`, `JUDGED`),
+as `bundle_list.py` does.
+
+**Code.** Learned rule and Wilson interval are the builder's (`outcome`, `seed_learned`, `wilson_ci`); the thinking
+numbers come from `arm()` of `level-benchmark-freeze/check/arm_stats.py`; the merged arrows are `render-rm`'s
+(`parse_paper_reward_machine`, `paper_to_structure`, `_edge_class` colour rule). Counted on main `93b3ea0`.
+
+### ARM-FM baseline results: FARM, ARM-FM and no RM on ARM-FM's own tasks (`armfm-baseline-results/`), 2026-11-23
+
+**What it shows.** The ARM-FM baseline (option B): FARM, ARM-FM and no Reward Machine trained with PPO on the ARM-FM
+paper's MiniGrid tasks (suite `armfm-paper`) and on XLand-MiniGrid (suite `xland`), 3 seeds per cell, each run scored
+by its judge's `mean_judged_success`; the one exception is DoorKey 16x16 fixed, with 8 training runs per method
+(item 1). One table per test in `results.md`, one bar figure per test in `figures/`, and
+every card's task, LTL and both machines in `cards.md`. Means below are FARM / ARM-FM / no RM; `results.md` adds the
+seeds and the 95% Student t interval over the 3 seeds (n - 1 = 2, clipped to [0, 1]).
+
+1. ARM-FM paper tasks. The small maps (DoorKey 5x5, 5x5 fixed and 8x8 fixed, 1.5M steps) are solved by every arm, no
+   RM included: 1.00 / 1.00 / 1.00 on each. At 5M steps: DoorKey 16x16 0.95 / 0.89 / 0.00, DoorKey 16x16 fixed
+   0.75 [0.41, 0.93] / 0.75 [0.41, 0.93] / 0.00 [0.00, 0.56] (runs judged successful: 6 of 8 / 6 of 8 / 0 of 3,
+   95% Wilson interval), UnlockToUnlock 0.99 / 0.95 / 0.00.
+2. XLand single tasks (5M): X1 0.85 / 0.77 / 0.75, ZC 0.82 / 0.77 / 0.69.
+3. XLand mixes, one policy per mix and seed judged on each member card with its own arm's machine of that card.
+   3-task mix, X1 to X3: FARM 0.81 / 0.80 / 0.80, ARM-FM 0.61 / 0.52 / 0.55, no RM 0.15 / 0.14 / 0.22. 5-task mix,
+   X1 to X5: FARM 0.80 / 0.61 / 0.67 / 0.76 / 0.66, ARM-FM 0.29 / 0.09 / 0.28 / 0.31 / 0.14, no RM 0.02 / 0.01 /
+   0.08 / 0.06 / 0.04.
+4. Zero-shot: trained on ZA+ZB, judged on the unseen ZC: 0.69 [0.21, 1.00] / 0.58 [0.38, 0.78] / 0.02 [0.00, 0.05].
+   The figure puts the runs trained on ZC itself (test 2) beside it.
+5. ARM-FM ablations on the 5-task mix, X1 to X5. Default 0.29 / 0.09 / 0.28 / 0.31 / 0.14. No embeddings
+   (`rm_state_encoding: none`: the machine pays, the policy does not see its state) 0.16 / 0.14 / 0.25 / 0.23 / 0.10.
+   No RM reward (`reward_source: env_rm_state`: the environment alone pays, the machine only feeds its state and
+   ends no episode, `app/src/arm_fm/environments.py:306`; run folder `xland-mix5-normreward`) 0.08 / 0.02 / 0.16 /
+   0.14 / 0.06. No RM reward is below default on all 5 cards, no embeddings on 4 (X2 0.14 against 0.09); the
+   intervals overlap on 9 of the 10 pairs, not on X2 for no RM reward (0.02 [0.000, 0.055] against default 0.09
+   [0.058, 0.115]).
+
+DoorKey 16x16 fixed has 8 training runs per method for FARM and ARM-FM (no RM keeps its original 3). Its judge plays the
+one map once, so a run succeeds or not: FARM 6 of 8, ARM-FM 6 of 8, no RM 0 of 3. With the first 3 runs FARM looked
+worse on this map (2 of 3 against 3 of 3); with 8 runs both learn it 6 times, so the gap was run-to-run variance on a
+hard fixed layout. One failed FARM run, recounted from its `episodes.csv`: all 1952 training episodes ran to the
+2560-step limit without reaching the goal, 1949 ending in machine state u1 (key held) and 3 in u0 (no key); none
+opened the door. Other FARM runs of the card solve the same map on the same machine: an exploration failure of that
+run, not a machine fault. Every XLand run (ablations included), the three 5M no-RM `armfm-paper` runs (16x16, 16x16
+fixed, UnlockToUnlock) and the 10 extra DoorKey 16x16 fixed runs (5 per machine arm, suite `armfm-paper-rerun`)
+trained on the UPV cluster (`fetch-*.log` in the baseline plan folder; for the extra runs `fetch-1225.log` and
+`doorkey-submit.log` in its `morning-20261123` folder); the other `armfm-paper` runs trained locally. Training is the
+same either way.
+
+**Evidence.** `data/*.csv`, one per test: card, arm, steps, judged episodes, seed scores, mean and interval.
+`build.py` reads only the run folders under `outputs/runs/` and the bundles, and stops unless every cell has exactly
+seeds 1, 2 and 3 (one folder each; folders with a `.` in the name skipped), except the DoorKey 16x16 fixed row, which
+needs 8 runs for FARM and ARM-FM (suites `armfm-paper` and `armfm-paper-rerun`, one run config bar the experiment
+name) and 3 for no RM, each judge names its card and its arm's
+bundle (none for no RM), each own judge used the bundle its run trained on, each mix member was judged with that
+member's own machine, each ablation's run config differs from the default ARM-FM 5-task mix config only by its
+declared change, and the failed-run recount above holds. The 8-run counts of the fixed-map card were recounted
+independently from each run's `judge.json`, last `eval.csv` row and `summary.json`: FARM 6 of 8 and ARM-FM 6 of 8, as
+in `data/test1-armfm-paper.csv`. All 22 generated machines (11 FARM, 11 ARM-FM) passed the B4
+gate; `evidence/b4-gate.md` is a copy of that gate record, not redone here. `figures/preview.pdf` was read page by
+page as PNG (page 1, the changed test 1 figure, again after the 8-run update).
+
+**Gaps.** 3 seeds make the t interval wide (FARM zero-shot [0.21, 1.00]); the 8-run DoorKey 16x16 fixed interval is
+[0.41, 0.93] for FARM and ARM-FM, and no RM has only 3 runs there ([0.00, 0.56]). A
+fixed-map card's judge plays its one map once, so each run scores 0 or 1. DoorKey 8x8 fixed trains on the
+frozen-set machines `experiments/benchmark/base/bundles/{farm,arm-fm}/base-doorkey`, which are not among the 22 gated;
+DoorKey 5x5 fixed and 16x16 fixed reuse the 5x5 and 16x16 machines. Whether the ARM-FM paper ran UnlockToUnlock on
+one map or on new maps is open; here its judge plays 100 maps. The figures use the Results figures' one light palette
+and `draw.py`, so they compile only beside `results-figures/`. The captions in `figures/preview.tex` are placeholders.
+
+**Files.** `build.py`, `results.md`, `cards.md`, `data/test1-armfm-paper.csv`, `data/test2-xland-single.csv`,
+`data/test3-xland-mixes.csv`, `data/test4-zero-shot-zc.csv`, `data/test5-mix5-ablations.csv`,
+`figures/fig-armfm-paper.tex`, `figures/fig-xland-single.tex`, `figures/fig-xland-mixes.tex`,
+`figures/fig-xland-zero-shot.tex`, `figures/fig-mix5-ablations.tex`, `figures/preview.tex`, `figures/preview.pdf`,
+`evidence/b4-gate.md`. The DoorKey 16x16 fixed rows of `data/test1-armfm-paper.csv` also carry the run count, the
+successes, the successes of the first 3 runs and the per-run scores. The extra runs' runs file stays outside the
+entry: `experiments/benchmark/armfm-paper/runs-doorkey-fixed-seeds.yaml`.
+
+**Rerun** (no model call, no training, from the repository root in `RM_RL_env`): `env
+PYTHONPATH=app:docs/paper/results-figures python -P docs/paper/armfm-baseline-results/build.py`, then in the entry
+folder `latexmk -pdf -outdir=figures figures/preview.tex`. The 10 extra DoorKey 16x16 fixed runs train from the runs
+file with `python app/main.py run-suite --suite experiments/benchmark/armfm-paper/runs-doorkey-fixed-seeds.yaml`, or
+on the cluster with `experiments/benchmark/scripts/cluster/cluster_runs.py submit` on that file (one job per machine
+arm), fetched into `outputs/runs/` before `build.py` is rerun.
+
+**Code.** Built on main `93b3ea0`; the 10 extra runs were submitted at `b2e3550a`. Per the B4 gate, the ARM-FM bundles and the FARM `xland` bundles were generated at
+`52e8b35` and the 3 FARM `armfm-paper` bundles at `1f90d85`, all after the freeze `809dfe3`. LTL from `ltlf_of` and
+`pretty_ltlf` (`app/src/utils/presentation.py`); figure helpers and arm colours from `results-figures/draw.py`.
