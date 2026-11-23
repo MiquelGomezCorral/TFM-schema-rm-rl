@@ -5,8 +5,9 @@ pot that boils over). There is no goal: the episode ends only at the time limit.
 client arrives, a carried food portion slips out of the hands, and the pot boils, all at times drawn
 from the reset seed, so every card of the suite sees the same world and differs only in its rules.
 
-Eight options, all off by default (the default shop is unchanged): ``small=True`` puts the counter,
-the pantry and the stove close together in a 7 x 7 room, ``easy_start_prob`` makes a share of
+Nine options, all off by default (the default shop is unchanged): ``small=True`` puts the counter,
+the pantry and the stove close together in a 7 x 7 room, ``area`` (8, 7, 5 or 3; 5 is ``small``)
+sets the side of the square of floor the agent moves in, ``easy_start_prob`` makes a share of
 the episodes start at the counter with a client arriving on step 1, ``slip_chance`` lowers
 (or, at 0, removes) the chance that a carried food slips, ``siren=False`` and ``clients=False``
 take the siren or the clients out of the shop, ``client_patience=N`` makes a client who
@@ -79,6 +80,16 @@ class Layout(NamedTuple):
 
 NORMAL = Layout(10, (4, 4), (1, 4), (8, 4), (4, 0), (5, 9), ((1, 3), (1, 5), (8, 3), (8, 5)))
 SMALL = Layout(7, (3, 3), (1, 3), (5, 3), (3, 0), (4, 6), ((1, 2), (1, 4), (5, 2), (5, 4)))
+# The ``area`` option: the side of the square of floor the agent moves in (walls not counted). The
+# counter and the pantry are 3 cells in the outer floor columns, so at 3 they fill both columns and
+# the agent walks the 3 cells between them, the stove in the wall at one end and the switch at the other.
+NORMAL_AREA = 8
+LAYOUTS = {
+    NORMAL_AREA: NORMAL,
+    7: Layout(9, (4, 4), (1, 4), (7, 4), (4, 0), (5, 8), ((1, 3), (1, 5), (7, 3), (7, 5))),
+    5: SMALL,
+    3: Layout(5, (2, 2), (1, 2), (3, 2), (2, 0), (2, 4), ((1, 1), (1, 3), (3, 1), (3, 3))),
+}
 COUNTER_COLOR, STOVE_COLOR = "yellow", "purple"  # a boiling stove takes the ringing red
 WAITING_COLOR, ORDERED_COLOR = "green", "blue"  # a client before and after the order is taken
 RAW_COLOR, PREPARED_COLOR = "yellow", "green"  # the food portion
@@ -303,6 +314,10 @@ class ShopEnv(ServiceRoomEnv):
         cooking_needed (via kwargs, default True): False means raw food from the pantry counts as
             served; the stove still cooks. Neither option moves a draw or ``N_x``, so every card
             sees the same schedule.
+        area (via kwargs, default 8 = the shop as it is): the side of the square of floor the agent
+            moves in, one of ``LAYOUTS`` (8, 7, 5 or 3). The events, draws and rules are the same;
+            ``N_x``, the walk limits and the quiet end follow the layout. ``small=True`` is
+            ``area=5``, so setting both is an error.
     """
 
     def __init__(
@@ -324,7 +339,13 @@ class ShopEnv(ServiceRoomEnv):
             raise ValueError(f"easy_start_prob {easy_start_prob} is not between 0 and 1")
         if not 0.0 <= slip_chance <= 1.0:
             raise ValueError(f"slip_chance {slip_chance} is not between 0 and 1")
-        self.layout = SMALL if small else NORMAL
+        # area rides in kwargs too (the signature is at the argument limit)
+        area = kwargs.pop("area", NORMAL_AREA)
+        if area not in LAYOUTS:
+            raise ValueError(f"area {area} is not one of {sorted(LAYOUTS)}")
+        if small and area != NORMAL_AREA:
+            raise ValueError(f"small=True is area=5; do not also set area={area}")
+        self.layout = SMALL if small else LAYOUTS[area]
         self.size, self.switch_pos = self.layout.size, self.layout.switch  # read by the base class
         # siren and clients ride in kwargs (the signature is at the argument limit); the base class
         # takes siren itself and Shop builds its own grid, so for the Shop it only records the flag

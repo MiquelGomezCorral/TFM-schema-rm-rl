@@ -8,9 +8,10 @@ The world is the same for every card of a level: the siren, the clients and the 
 
 ## Options: a smaller shop, an easier start, fewer food slips, no siren or clients, a client who leaves
 
-Eight settings of the shop environment, all off by default (the default shop, its cards and every existing run are unchanged). Set them in a card's `env_kwargs`, next to `max_steps` and `agent_view_size`; they work on Shop and Shop-Pot.
+Nine settings of the shop environment, all off by default (the default shop, its cards and every existing run are unchanged). Set them in a card's `env_kwargs`, next to `max_steps` and `agent_view_size`; they work on Shop and Shop-Pot.
 
 - `small: true`: a 7 x 7 room with the counter, the pantry and the stove close together. The same objects, events and rules; the quiet end and the late-siren fine follow the shorter walks (`environment.md`, "Variants"). A scripted solver serves its first client about 35 steps after the client arrives, against about 49 in the default room. It is a constructor setting, not new gym ids, so one mechanism carries both options and no card or runs file needs a second id.
+- `area: n` (8, 7, 5 or 3, default 8): the side of the square of floor the agent walks in, walls not counted. 8 is the shop as it is (a 10 x 10 map), 5 is `small: true`, 7 and 3 are new. The same objects, events and rules, the same step limit (600) and the same event schedule on a seed; the walks, and with them the quiet end and the late-siren fine, follow the room. A smaller room means more orders served per episode. See "World size" below.
 - `easy_start_prob: p` (0 to 1): a share `p` of the episodes starts with the agent at the counter, facing the client spot, and the first client arrives on step 1 as the normal `client_arrived` event, so every machine and the labeling see it. The other events of the episode keep their seeded times. Not with `clients: false`: with no client to arrive there is no easy start.
 - `slip_chance: p` (0 to 1, default 0.5): the chance that a pickup is followed by a slip. The first pickup of an episode always slips while `p > 0`; `slip_chance: 0` means no slip ever (`food_fell` never true). The other events keep their seeded times. Built to test whether the risk of holding food is what blocks serving; `environment.md` is not changed, so the generated machines are the same.
 - `siren: false` / `clients: false`: the siren never rings / no client ever comes in. For a test that should run in a shop with only the parts its card uses (a serving card without the siren, a siren card without clients). With no clients, every ring is fined after the usual walk limit. The other events keep their seeded times.
@@ -91,6 +92,25 @@ Check, 2026-11-22: the trace bank passes 60 of 60 plans (solve, wrong and idle, 
 | 5 serve, no siren | 9.33 (8) | 9.86, 1.00 |
 
 Every rung's solving worker clears the shop's learned bar of 7.5 served per episode on average. `shop-serve`'s FARM machine passes the plan check in rung 5's world (solve, wrong and idle plans, event seeds 1 to 3; no plan fails to run).
+
+## World size: the same ladder in a smaller shop (2026-11-23)
+
+FARM does not learn the ladder in the 8 x 8 shop (rungs 1 and 2 serve 0 orders). User, 2026-11-23: "make the shop smaller? like 7x7 or 5x5? or even 3x3". The `area` option (see Options) shrinks the floor and nothing else: the objects, events, rules, step limit (600), event schedule and labels are the same, so a FARM machine made for the shop is the machine of every size.
+
+Cards: `<ladder card>-<n>x<n>` for rungs 1 to 3 (`shop-ladder-deliver`, `-deliver-siren`, `-order-deliver`) and n in 7, 5, 3. Each is its base card with `env_kwargs.area` set and `bundle_of` pointing at the base card, so it trains on the base card's FARM machine with no new generation; same task text and clauses, no paraphrases, `train` false. Rungs 4 and 5 were not built at the smaller sizes (the same script adds them). Every rung fits at every size: the counter and the pantry take the outer floor columns, the stove is in the north wall and the switch in the south wall, so at 3 x 3 the agent walks a corridor of 3 cells between them.
+
+| Floor | Map | Free cells | `N_x` ring / client | Ring fine after (`K`) | Quiet end, client / ring | Solving worker served, rungs 1 / 2 / 3 | Full shop, solving worker |
+|---|---|---|---|---|---|---|---|
+| 8 x 8 (default) | 10 x 10 | 58 | 15 / 37 | 30 | 489 / 555 | 12.11 / 10.42 / 11.69 | 7.19 |
+| 7 x 7 | 9 x 9 | 43 | 14 / 34 | 27 | 498 / 558 | 12.99 / 11.59 / 12.52 | 7.85 |
+| 5 x 5 (`small`) | 7 x 7 | 19 | 11 / 27 | 21 | 519 / 567 | 15.06 / 13.85 / 14.55 | 9.68 |
+| 3 x 3 | 5 x 5 | 3 | 5 / 16 | 6 | 552 / 585 | 18.21 / 17.20 / 17.51 | 13.58 |
+
+Check, 2026-11-23, no model call (reset seeds 1 to 100 of each card's own world): the layout has every station in place and reachable, the scripted worker's worst handling time from every start pose fits `N_x`, a ringing siren shows in the view from every pose, the recorded schedule, quiet end, replay, one-portion rule, label constraints and reward recount hold on every seed (`size_check.py`); the trace bank passes 99 of 99 plans (solve, wrong, idle; event seeds 1 to 3); the solving worker is judged 1.00 and the stock worker 1.00 on every card (`ladder_check.py`); the borrowed machines pass the gate in each size's world (pay order at step limit 600, plan trace, labeling, plan check, wrong plans: 9 of 9). The machine pays more for each extra served order at every size (0.03 to 0.10 per order, discounted at 0.995; `pricing_check.py`, seeds 1 to 40). On the 3 x 3 cards the wrong plan "leave fallen food one step" is written differently: the worker serves only 3 steps after a pickup and a slip comes 2 to 7 steps after it, so on some seeds the fall never comes before the next serve and the original plan breaks nothing; the card's plan holds the first portion until it slips.
+
+Reading the table: a smaller room serves more orders per episode, so a learned policy gets more reward signal per episode and the quiet end moves later. In the 3 x 3 shop `K` is 6 (3 times the shortest walk to the switch): the env reward fines 0.5 for every further 6 steps a waiting client hears the siren, against 30 in the 8 x 8 shop. A scripted worker still switches it off within 5 steps from any pose, so the solving worker is never fined.
+
+Runs files (suites `shop-size`, `shop-size-std`, `shop-size-reward`) are in the plan folder `freeze-prep/`, not here.
 
 ## Contents
 
