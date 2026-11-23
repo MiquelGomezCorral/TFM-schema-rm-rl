@@ -1,0 +1,21 @@
+# shop ladder, a world that grows while one agent learns, 2026-11-23 (user: "you can try to 3x3, then 5x5, then 7x7
+# (stop there, 7x7 the biggest)"). FARM learns the 3x3 shop but serves 0 at 5x5 and 7x7 (suites shop-size, shop-ladder),
+# so one run starts in the 3x3 shop, grows to 5x5 once the last 100 training episodes serve 10 orders on average, then to
+# 7x7 (README, "Curriculum"; `area` is read at every reset). Rungs 1 and 3 (deliver; order and deliver): cards
+# `<ladder card>-grow` of experiments/benchmark/shop/tasks.json, world copies of the 7x7 cards (`env_stages` in `env`)
+# that train on their base card's FARM machine through bundle_of. Evaluation and the judge play the final 7x7 world; the
+# switches are in the run folder's stages.csv. Not counted in the 60-card results.
+# Settings of runs-size-farm.yaml (the 3x3 runs that learned): PPO P1 (ppo-shop.yaml, one-hot RM state), 5M steps,
+# 3 seeds, RM reward only. 2 cards x 3 seeds = 6 runs.
+# Train: python app/main.py run-suite --suite <this file>
+suite: shop-grow
+tasks: experiments/benchmark/shop/tasks.json
+bundles: experiments/benchmark/shop/bundles   # <bundles>/farm/<card or bundle_of card>/
+learner: ppo
+learners:
+  ppo: {config: experiments/benchmark/configs/ppo-shop.yaml, ram_gb: 3}   # P1, the shop runs that learned
+arms: [farm]
+seeds: [1, 2, 3]
+total_timesteps: 5000000
+only: [shop-ladder-deliver-grow, shop-ladder-order-deliver-grow]
+variants: []
