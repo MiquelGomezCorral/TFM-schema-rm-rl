@@ -52,9 +52,10 @@
 \usetikzlibrary{positioning,arrows.meta,calc,babel,automata,fit,backgrounds,shadows,shapes.multipart}
 \input{images/results/fig-palette.tex}
 % Shared styles of the FARM pipeline diagrams: the overview figure and the diagram of each step.
-% Rounded boxes are processes, square boxes are data. One colour and one corner icon per kind of
+% Rectangles are processes, slanted boxes (images/farm/farm-slant.tex) are data. One colour and one corner icon per kind of
 % object, the same in every diagram. A stacked card stands for one item per clause.
 \usepackage{fontawesome5}
+\input{images/farm/farm-slant.tex}
 \colorlet{farmLLM}{violet!18}   % a language model: generator and critic
 \colorlet{farmTool}{blue!12}    % a deterministic step
 \colorlet{farmText}{gray!14}    % plain text: task, environment description, comments
@@ -67,10 +68,10 @@
     farm icon/.style={label={[farm badge, anchor=center]north east:#1}},
     farm number/.style={rectangle, rounded corners=1.5pt, fill=black!80, text=white, font=\tiny\bfseries, inner sep=1.2pt, minimum height=3.4mm, minimum width=4.4mm},
     farm step/.style={label={[farm number, anchor=center]north west:#1}},
-    farm box/.style={draw, rounded corners=2pt, align=center, text width=3.3cm, minimum height=8mm, inner sep=2pt},
+    farm box/.style={draw, align=center, text width=3.3cm, minimum height=8mm, inner sep=2pt},
     farm llm/.style={farm box, fill=farmLLM, farm icon={\textcolor{violet!75!black}{\faRobot}}},
     farm tool/.style={farm box, fill=farmTool, farm icon={\textcolor{blue!70!black}{\faCogs}}},
-    farm data/.style={draw, align=center, text width=2.5cm, minimum height=5mm, inner sep=1pt},
+    farm data/.style={shape=farm slant, draw, align=center, text width=2.5cm, minimum height=5mm, inner sep=1pt},
     farm text/.style={farm data, fill=farmText, farm icon={\textcolor{black!70}{\faFile}}},
     farm items/.style={farm data, fill=farmItem, double copy shadow={shadow xshift=2pt, shadow yshift=-2pt},
         farm icon={\textcolor{orange!70!black}{\faListUl}}},
@@ -265,7 +266,6 @@ The intended benefit is reward shaping and task definition open to people who ar
 The thesis starts with the concepts it builds on, where current methods stand and what they leave open (Chapters~\ref{chap:sota} and~\ref{chap:proposal}). It then presents the new method, FARM, and its limits (Chapters~\ref{chap:farm} and~\ref{chap:limitations}), tests it and shows the results (Chapters~\ref{chap:evaluation} and~\ref{chap:results}). It ends with the conclusions and the open work (Chapters~\ref{chap:conclusions} and~\ref{chap:future-work}). A glossary precedes this chapter, and the appendices hold further examples and the implementation details.
 
 \section{Scope and limits of the study}
-\enlargethispage{3\baselineskip}% keeps the last three lines of the chapter off a page of their own
 FARM changes only one step of ARM-FM, the generation of the Reward Machine. The labelling functions, the state descriptions and their embeddings follow ARM-FM and sit outside the main comparison, so the comparison with ARM-FM is isolated to the generation of the machine.
 
 The ARM-FM baseline is a reconstruction. It is rebuilt from the paper and from a public repository of its first author, so its results may differ from the original ones; Section~\ref{sec:critique} gives the details.
@@ -273,6 +273,8 @@ The ARM-FM baseline is a reconstruction. It is rebuilt from the paper and from a
 The models are small and cheap on purpose: they are not the strongest available, but they are enough to test the method and they keep it accessible. Both methods use deepseek-v4.1-flash as generator and glm-5.3-flash as critic, where the ARM-FM paper used GPT-4o. Whether the results hold for other models is not tested.
 
 FARM states tasks with the eight Declare templates of IBM nl2ltl, read as LTLf over finite traces. A task that these templates cannot state is outside its reach (Section~\ref{sec:lim-conditions}). A model that writes LTLf directly is future work (Section~\ref{sec:fw-ltlf}).
+
+The work does not cover tasks that ask to optimise a quantity, such as \textit{Kill as many zombies as you can} or \textit{Reach the goal by the shortest path}, nor behaviour that a person cannot put into words. A clause is met or broken over a whole run, so it cannot ask for as much of something as possible, and a behaviour with no words gives no clauses to write (Section~\ref{sec:lim-quantities}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                               STATE OF THE ART                              %
@@ -394,7 +396,9 @@ The ARM-FM paper releases no code. Its appendices print the generator and critic
 \label{chap:proposal}
 The methods of Chapter~\ref{chap:sota} leave three needs open: a reward that says everything a person means, machines that need no expert to check them, and the same kind of machine for the same kind of task.
 
-\section{Understanding human preferences and temporal relations}
+Chapter~\ref{chap:farm} presents a method built for these three aims and says how it meets each one.
+
+\section{Understanding preferences and temporal relations}
 An RL agent pursues whatever its reward pays for, so the reward is the way a person tells the agent what to achieve \cite{sutton2018reinforcement}. AI alignment aims to make AI systems behave in line with human intentions and values \cite{ji2025alignment}. For an RL agent, one part of this aim is a reward that says everything the person means: the goal, the order of the steps, the rules that must not be broken and the preferences to keep when possible.
 
 A task is rarely a single chain of steps. A person says, in plain language, what to do, in which order, what to do in response to an event and what must never happen. The first aim is to catch these relations of order, response and prohibition, together with the person's preferences, in a shape from which a reward can be built. That needs a translator from human intent into a language that encodes such relations exactly, a part that a foundation model can play.
@@ -408,22 +412,21 @@ ARM-FM relies on a human or on a second model to verify its machines, and its au
 \label{sec:schemas}
 A language model that writes a machine freely may write a different one on every run (Section~\ref{sec:critique}). The third aim is that tasks of one kind share a schema, the form of the task with its objects left open, and that one schema gives one kind of machine. ``Gather wood, then stone, then iron'' and ``attend the client, prepare the order, then serve it'' share the schema ``first $a$, then $b$, then $c$''; Table~\ref{tab:schemas} gives both with their clauses and formulas. Their machines should then have the same shape, with only the objects exchanged, so that the result is predictable and the variability of the language model is confined to how it reads the task. This is an aim, not a guarantee: tasks of one kind get one kind of machine only when the model reads them into the same schema. Chapter~\ref{chap:results} measures the closest case, whether the rewordings of one task get the same machine (Section~\ref{sec:res-machines}).
 
-Chapter~\ref{chap:farm} presents a method built for these three aims and says how it meets each one.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                     FARM                                    %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\chapter{FARM: A Formal Approach to Reward Machine Generation}
+\chapter{FARM}
 \label{chap:farm}
-\section{Introduction and motivation}
-This chapter describes the method by which FARM turns a task written in plain language into a Reward Machine; Appendix~\ref{app:implementation} holds the implementation. FARM replaces only the generation of the Reward Machine in ARM-FM (Section~\ref{sec:sota-armfm}); the rest of the ARM-FM pipeline stays as it is.
+% \section{Introduction and motivation}
+This chapter describes the process by which FARM (A Formal Approach to Reward Machine Generation) turns a task written in plain language into a Reward Machine. The implementation details, with the list of what FARM adds to the tools it builds on, are in Appendix~\ref{app:implementation}. FARM replaces only the generation of the Reward Machine in ARM-FM (Section~\ref{sec:sota-armfm}); the rest of the ARM-FM pipeline stays as it is.
 
 Each aim of Chapter~\ref{chap:proposal} rests on one tool:
 \begin{itemize}
     \item A language model reads the task and the environment description, and states what the person means: the goal, the order of the steps, the rules and the preferences.
-    \item LTLf encodes these statements as formulas over finite traces (Section~\ref{sec:sota-ltl}).
     \item The Declare templates of IBM nl2ltl guide the model: it picks a template and fills it, and the template writes the formula.
+    \item LTLf encodes these statements as formulas over finite traces (Section~\ref{sec:sota-ltl}).
     \item FL-AT and MONA convert each formula into an automaton and combine the automata into one machine.
     \item FARM's post-process builds the Reward Machine from the chosen clauses alone.
     \item A second language model, the critic, reviews the clauses against the task.
@@ -431,7 +434,11 @@ Each aim of Chapter~\ref{chap:proposal} rests on one tool:
 
 \section{Global overview of the pipeline}
 \label{sec:overview}
-FARM turns a natural-language task into a Reward Machine in five steps: task interpretation (Step~1), LTLf to DFA (Step~2), the product of the DFAs (Step~3), the post-process (Step~4) and the critic (Step~5). A language model chooses clauses, fixed tools compile them into automata, a post-process adds the rewards and the structure of the task, and a second model reviews the result. Steps 2 to 4 form the \textbf{compiler}: they call no language model and read only the chosen clauses and the run settings. The two language models of Steps 1 and 5 are therefore the only source of variability. Figure~\ref{fig:pipeline} draws the pipeline, and Table~\ref{tab:steps} gives the input, output and tool of each step.
+FARM turns a natural-language task into a Reward Machine in five steps: task interpretation (Step~1), LTLf to DFA (Step~2), the product of the DFAs (Step~3), the post-process (Step~4) and the critic (Step~5). A language model chooses clauses, fixed tools compile them into a reward machine, a post-process adds the rewards and the structure of the task, and a second model reviews the result. 
+
+Steps 2 to 4 form the \textbf{compiler}: they call no language model and read only the chosen clauses and the run settings, making it the deterministic part of the pipeline. The two language models of Steps 1 and 5 are therefore the only source of variability. 
+
+Figure~\ref{fig:pipeline} draws the pipeline: the data each step takes and returns, and the tool that runs it.
 
 \begin{figure}[H]
 \centering
@@ -455,8 +462,8 @@ FARM turns a natural-language task into a Reward Machine in five steps: task int
 \node[farm llm, farm step=5] (crit) at (5,-5.6) {Critic};
 \node[farm final, text width=3cm] (out) at (5,-6.9) {Final Reward Machine};
 % Inputs
-\node[farm text, text width=2.3cm, minimum height=7.5mm] (task) at (-1.25,1.55) {Task};
-\node[farm text, text width=2.3cm, minimum height=7.5mm] (env)  at (1.25,1.55)  {Environment description};
+\node[farm text, text width=2.1cm, minimum height=7.5mm] (task) at (-1.25,1.55) {Task};
+\node[farm text, text width=2.1cm, minimum height=7.5mm] (env)  at (1.25,1.55)  {Environment description};
 % Groups
 \begin{scope}[on background layer]
     \node[farm group, fit=(gen)(ltl)]    (g1) {};
@@ -486,37 +493,47 @@ FARM turns a natural-language task into a Reward Machine in five steps: task int
 \node[farm rm, text width=1.9cm, minimum height=7mm] at (8.7,-8.2) {Intermediate machine};
 \node[farm final, text width=1.9cm, minimum height=7mm] at (11.2,-8.2) {Final machine};
 \end{tikzpicture}
-\caption[The FARM pipeline]{The FARM pipeline. Rounded boxes are processes and square boxes are data. The colour and the corner icon give the kind of each box, as in the legend, and are the same in every diagram of this chapter. A stack stands for one item per clause.}
+\caption[The FARM pipeline]{The FARM pipeline. Rectangles are processes and slanted boxes are data. The colour and the corner icon give the kind of each box, as in the legend, and are the same in every diagram of this chapter. A stack stands for one item per clause.}
 \label{fig:pipeline}
 \end{figure}
 
-\begin{table}[H]
-\centering
-\footnotesize
-\renewcommand{\arraystretch}{1.2}
-\begin{tabularx}{\textwidth}{@{}l>{\raggedright\arraybackslash}p{2.6cm}>{\raggedright\arraybackslash}p{2.6cm}>{\raggedright\arraybackslash}p{2.6cm}>{\raggedright\arraybackslash}X@{}}
-\toprule
-\textbf{Step} & \textbf{Input} & \textbf{Output} & \textbf{Tool} & \textbf{Description} \\ \midrule
-1.1 & Task and environment description & Clauses: template, propositions, hard or soft & Language model & The model chooses clauses from eight Declare templates. \\
-1.2 & Clauses & One LTLf formula per clause & IBM nl2ltl templates & The template of each clause writes its LTLf formula. \\
-2 & LTLf formulas & One DFA per formula & FL-AT; MONA & FL-AT rewrites each formula for MONA, and MONA builds its DFA. \\
-3 & One DFA per formula & Product machine and clause states & FL-AT & The product follows all clauses at once and records where each one stands. \\
-4 & Product machine and clause states & Reward Machine & FARM post-process & Hard clauses set the final state and the well, the one rejecting state that ends the episode, the start state merges with the state that an idle step leads to, every edge gets a reward, and a check refuses any loop that pays. \\
-5 & Environment description, task, clauses, Reward Machine, compiler clues and warnings & Verdict and comments on the clauses & Critic model & The critic accepts the result or rejects it with comments, and the generator tries again. \\ \bottomrule
-\end{tabularx}
-\caption{The five steps of FARM.}
-\label{tab:steps}
-\end{table}
+% \begin{table}[H]
+% \centering
+% \footnotesize
+% \renewcommand{\arraystretch}{1.15}
+% % Each step takes two lines: its tool, input and output, then what it does, in grey.
+% \newcommand{\stepdoes}[1]{& \multicolumn{3}{>{\raggedright\arraybackslash}p{\dimexpr\textwidth-1.3cm\relax}@{}}{\leavevmode\color{black!70}#1} \\ \addlinespace[6pt]}
+% \begin{tabularx}{\textwidth}{@{}l>{\raggedright\arraybackslash}p{3cm}>{\raggedright\arraybackslash}p{6.2cm}>{\raggedright\arraybackslash}X@{}}
+% \toprule
+% \textbf{Step} & \textbf{Tool} & \textbf{Input} & \textbf{Output} \\ \midrule
+% 1.1 & Language model & Task, environment description & Clauses \\
+% % \stepdoes{The generator chooses each clause: a template, its propositions, hard or soft.}
+% 1.2 & IBM nl2ltl templates & Clauses & LTLf formulas \\
+% % \stepdoes{The template of each clause writes its formula.}
+% 2 & FL-AT, MONA & LTLf formulas & DFAs \\
+% % \stepdoes{FL-AT rewrites each formula for MONA, and MONA builds one DFA per clause.}
+% 3 & FL-AT & DFAs & Product machine \\
+% % \stepdoes{The product follows all clauses at once and records where each one stands.}
+% 4 & FARM post-process & Product machine & Reward Machine \\
+% % \stepdoes{FARM sets the goal and the well, the state where a broken hard rule ends the episode, merges the start state, rewards each edge and refuses loops that pay.}
+% 5 & Language model & Task, environment description, clauses, machine, compiler clues and warnings & Verdict and comments \\
+% % \stepdoes{The critic accepts the machine or rejects it with comments, and the generator tries again.}
+% \bottomrule
+% \end{tabularx}
+% \caption{The five steps of FARM.}
+% \label{tab:steps}
+% \end{table}
 
 \subsection{Running examples}
 \label{sec:running-examples}
-Three tasks in the DoorKey environment of ARM-FM, on its $8 \times 8$ grid, run through the chapter. The environment provides four propositions: \texttt{has\_key}, \texttt{door\_open}, \texttt{at\_goal} and \texttt{key\_lost}, the event of dropping the key while the door is still closed.
+Three tasks in the DoorKey environment of ARM-FM, run through the chapter as examples of what each step accomplishes. The environment provides four propositions: \texttt{has\_key}, \texttt{door\_open}, \texttt{at\_goal} and \texttt{key\_lost} (lost while the door is still closed). These are the tasks
 \begin{itemize}
     \item \textbf{Sequence}: \textit{Pick up the key, then open the door, then reach the goal.}
     \item \textbf{Dropped key}: \textit{Reach the goal, and if you drop the key, pick it up right away.}
     \item \textbf{Careful key}: \textit{Reach the goal, ideally without ever losing the key.}
 \end{itemize}
-Their final machines have 5 states and 11 transitions (sequence), 5 states and 10 transitions (dropped key), and 2 states and 3 transitions (careful key). Each step ends with the part of the examples it needs, and Appendix~\ref{app:running} gives the three machines in full.
+
+Each step ends with the part of the examples it needs, and Appendix~\ref{app:running} gives the three machines in full.
 
 \section{Step 1 · Task interpretation and formalisation}
 \label{sec:step1}
@@ -525,9 +542,9 @@ In the first step a language model, the \textbf{generator}, reads the task and t
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[farm, node distance=7mm,
-    field/.style={draw=orange!60!black, fill=orange!40, rounded corners=1pt, align=center, text width=1.9cm, minimum height=4mm, inner sep=1pt}]
-\node[farm text, text width=2.3cm, minimum height=7.5mm] (task) at (0,0.55) {Task};
-\node[farm text, text width=2.3cm, minimum height=7.5mm] (env) at (0,-0.55) {Environment description};
+    field/.style={shape=farm slant, draw=orange!60!black, fill=orange!40, align=center, text width=1.9cm, minimum height=4mm, inner sep=1pt}]
+\node[farm text, text width=2.1cm, minimum height=7.5mm] (task) at (0,0.55) {Task};
+\node[farm text, text width=2.1cm, minimum height=7.5mm] (env) at (0,-0.55) {Environment description};
 \node[farm llm, farm step=1.1, text width=2cm] (gen) at (3.3,0) {Language model};
 % one clause: a stacked card titled Clause that holds its three fields
 \node[font=\scriptsize\bfseries] (cltitle) at (6.2,0.66) {Clause};
@@ -535,7 +552,7 @@ In the first step a language model, the \textbf{generator}, reads the task and t
 \node[field] (f2) at (6.2,-0.2) {Propositions};
 \node[field] (f3) at (6.2,-0.64) {Hard or soft};
 \begin{scope}[on background layer]
-\node[farm items, text width=, fit=(cltitle) (f1) (f2) (f3), inner sep=3pt] (cl) {};
+\node[farm items, shape=rectangle, text width=, fit=(cltitle) (f1) (f2) (f3), inner sep=3pt] (cl) {};
 \end{scope}
 \node[farm tool, farm step=1.2, text width=2cm, right=of cl] (ibm) {IBM templates};
 \node[farm items, text width=1.8cm, right=of ibm] (ltl) {LTLf formula};
@@ -545,12 +562,16 @@ In the first step a language model, the \textbf{generator}, reads the task and t
 \draw[farm flow] (cl) -- (ibm);
 \draw[farm flow] (ibm) -- (ltl);
 \end{tikzpicture}
-\caption[Step 1 of FARM]{Step 1. The language model chooses the clauses, each a template with its propositions and a priority, and the template of each clause writes its LTLf formula. Each clause also carries a plain sentence that the compiler ignores.}
+\caption[Step 1 of FARM]{Step 1. The language model chooses the clauses, each a template with its propositions and a priority, and the template of each clause writes its LTLf formula.}
 \label{fig:step1}
 \end{figure}
 
 \subsection{IBM nl2ltl}
-IBM's nl2ltl \cite{fuggitti2023nl2ltl} goes from natural language to LTLf through templates. A language model chooses which templates to use and which propositions fill them, and each template maps to a fixed LTLf formula in which only the propositions change. All the work therefore lies in the choice: a template is a fixed pattern with holes, and the model only says which pattern to use and what goes in the holes. The choice is still hard, since the model has to understand the task, its order and the dependencies between its steps, rules and goals. FARM keeps the template classes of nl2ltl and replaces its engine (Appendix~\ref{app:implementation}).
+IBM's nl2ltl \cite{fuggitti2023nl2ltl} goes from natural language to LTLf through templates. A language model chooses which templates to use and which propositions fill them, and each template maps to a fixed LTLf formula in which only the propositions change. 
+
+All the work therefore lies in the choice: a template is a fixed pattern with holes, and the model only says \textbf{which pattern to use and what goes in the holes}. The choice is still hard, since the model has to understand the task, its order and the dependencies between its steps, rules and goals. 
+
+FARM keeps the template classes of nl2ltl, improves its performance with prompting, and replaces its engine (Appendix~\ref{app:implementation}) so other LLMs can be used.
 
 \subsection{Templates}
 Table~\ref{tab:templates} lists the eight templates with their LTLf definitions in IBM's library.
@@ -575,20 +596,43 @@ NotCoExistence$(a,b)$ & $\mathrm{F}\,a \rightarrow \neg\,\mathrm{F}\,b$ & if $a$
 \label{tab:templates}
 \end{table}
 
-The formulas use four operators (Section~\ref{sec:sota-ltl}): $\mathrm{F}\,a$ means that $a$ holds at some step from now on, $\mathrm{G}\,a$ that $a$ holds at every step from now on, $\mathrm{X}\,a$ that $a$ holds at the next step, and $a\ \mathrm{U}\ b$ that $b$ holds at some step and $a$ holds at every step before it.
+The formulas use four operators (Section~\ref{sec:sota-ltl}): $\textbf{F}\,a$ means that $a$ holds at some step from now on, $\textbf{G}\,a$ that $a$ holds at every step from now on, $\textbf{X}\,a$ that $a$ holds at the next step, and $a\ \textbf{U}\ b$ that $b$ holds at some step and $a$ holds at every step before it.
 
-Response and Precedence are easy to confuse, and both allow the same step. Response$(a,b)$ lets $b$ appear without $a$, but after an $a$ a $b$ must follow, at the same step or later. Precedence$(a,b)$ lets $a$ appear without $b$, but a $b$ needs an $a$ before it or at the same step.
+Response and Precedence are easy to confuse, and both allow the same step. Response$(a,b)$ lets $b$ appear without $a$, but \text{after} an $a$ a $b$ must follow, at the same step or later. Precedence$(a,b)$ lets $a$ appear without $b$, but a $b$ needs an $a$ \text{before} it or at the same step.
 
 \subsection{Goals and rules}
-A clause is a \textbf{goal} if a step in which no proposition holds leaves it unsatisfied, and a \textbf{rule} otherwise. Existence and ExistenceTwo are goals: they ask for something to happen. The other six templates are rules, Precedence included: they hold while nothing happens, and a later event may break them or make them wait for an answer. The compiler applies the test to the DFA of each clause, so it needs no list of templates. The difference shapes Step~4: only a hard goal gives the machine a final state, and progress counts the stages still needed to reach it.
+A clause is a \textbf{goal} if it asks for something to happen, and a \textbf{rule} if it only limits what may happen. One test tells them apart: after a step in which \textbf{nothing happens}, that is, no proposition holds, a goal is not satisfied yet, while a rule is. 
+
+For example, Existence and ExistenceTwo are goals since by doing nothing, they can not be satisfied. The other six templates are rules, Precedence included: they hold while nothing happens, and a later event may break them or make them wait for an answer. For example, if $b$ happens before $a$, Precedence$(a,b)$ is broken, but if nothing happens, it still holds.
+
+The compiler applies the test to the DFA of each clause, so it needs no list of templates. The difference shapes Step~4: only a hard goal gives the machine a final state, and progress counts the stages still needed to reach it.
 
 \subsection{The generator prompt}
-IBM's default prompt is a few-shot list that offers five of the eight templates, with examples from business applications such as Slack or Salesforce, no definitions and no description of the environment. FARM's prompt offers all eight, adding Absence, Precedence and NotCoExistence. It gives the model the catalogue with the meaning, kind and formula of each template, a table from typical wording to template, worked examples, the instructions for hard and soft, the environment description in Markdown, the task and, on a retry, the comments of the critic. The propositions come from the environment description, so the same prompt serves any environment.
+IBM's default prompt is a few-shot list that offers five of the eight templates, with examples from business applications such as Slack or Salesforce, no definitions and no description of the environment. \textbf{FARM's prompt offers all eight}, adding Absence, Precedence and NotCoExistence. It gives the model the catalogue with:
 
-Three instructions shape the answer. First, a commanded step that no hard order links to a later step, such as a single ``do $a$'' or the last step of an order, gets its own hard Existence: a rule holds while nothing happens, and only a goal makes the step happen. Second, an order that the task states is kept as a Precedence even when the environment already forces it, so the machine follows the instruction and not one layout of the world. Third, an order that the task does not state is never added. Appendix~\ref{app:implementation} gives the prompt text and the form of an ordered task.
+\begin{itemize}
+    \item The meaning, kind and formula of each template, 
+    \item A table from typical wording to template, 
+    \item Worked examples, 
+    \item The instructions for hard and soft, 
+    \item The \textbf{environment description} in Markdown, 
+    \item The \textbf{task} 
+    \item And, on a retry, the comments of the critic.
+\end{itemize}
+
+The propositions come from the environment description, so the same LLM prompt serves any environment.
+    
+Three instructions shape the answer. 
+\begin{enumerate}
+    \item A step the task asks for gets its own goal, a hard Existence, unless a hard order already puts it before a later step. A single ``do $a$'' gets one, and so does the last step of an order; the earlier steps need none, since the order makes them come first. Without that goal nothing makes the agent take the step, because a rule holds while nothing happens.
+    \item When the task states an order, the order stays as a Precedence even if the world already forces it, so the machine follows the instruction and not one layout of the world.
+    \item When the task states no order, none is added. Appendix~\ref{app:implementation} gives the prompt text and the form of an ordered task.
+\end{enumerate}
 
 \subsection{Hard and soft clauses}
-Each clause carries a \textbf{priority that the model chooses for that clause alone}. Clauses are hard by default. The model marks a clause soft only when the task uses a preference cue such as ``if possible'', ``ideally'' or ``try to'', and the cue covers the phrase it qualifies, not the whole sentence or the task. The priority never changes the formula. A hard clause must hold for the task to be completed. A soft clause is a preference: breaking it costs reward but never prevents finishing (Step~4). IBM's templates have no such notion, since ``never touch the lava'' and ``if possible, never touch the lava'' are the same Absence clause, so the priority has to come from the prompt.
+Each clause carries a \textbf{priority that the model chooses for that clause alone}. Clauses are hard by default. The model marks a clause soft only when the task uses a preference cue such as ``if possible'', ``ideally'' or ``try to'', and the cue covers the phrase it qualifies, not the whole sentence or the task. 
+
+The priority never changes the formula. A hard clause must hold for the task to be completed. A soft clause is a preference: breaking it costs reward but never prevents finishing (Step~4). IBM's templates have no such notion, since ``never touch the lava'' and ``if possible, never touch the lava'' are the same Absence clause, so the priority has to come from the prompt. For FARM, the first would be a hard Absence and the second a soft one.
 
 \subsection{Task schemas}
 \label{sec:task-schemas}
@@ -611,7 +655,7 @@ Precedence$(b,c)$ & Precedence(\texttt{has\_stone}, \texttt{has\_iron}) \newline
 \label{tab:schemas}
 \end{table}
 
-The priority belongs to the schema: the careful-key task with a hard Absence instead of a soft one gives a different machine, with a well. With a soft clause, the price of a hard break also depends on the step limit, the discount and the number of soft rules that can break in one step (Section~\ref{sec:well-charge}), so two such tasks share a machine only under the same settings. Two tasks of the same shape share a machine only when the generator gives them the same clauses.
+The priority belongs to the schema: the careful-key task with a hard Absence instead of a soft one gives a different machine    . With a soft clause, the price of a hard break also depends on the step limit, the discount and the number of soft rules that can break in one step (Section~\ref{sec:well-charge}), so two such tasks share a machine only under the same settings. Two tasks of the same shape share a machine only when the generator gives them the same clauses.
 
 \subsection{Running examples: from task to formulas}
 \label{sec:run-step1}
