@@ -944,7 +944,7 @@ Each step is paid first for its progress, measured by how much less it leaves to
 
 A \textbf{stage} is one event still needed, and every state owes a number of stages $\Phi(u)$. With a final state, $\Phi(u)$ counts the fewest events still needed to finish plus, for each soft clause (a soft goal included), the longest run of events its own automaton may still need; without one, every clause counts its own events (Appendix~\ref{app:implementation}). A step from $u$ to $u'$ pays
 \[ r_{\mathrm{progress}}(u,u') = \Phi(u) - \Phi(u'), \]
-\gain{one unit} for each stage it closes and \loss{minus one} for each stage it adds. This is potential-based shaping \cite{ng1999policy} with the potential $-\Phi$ and no discount, so around any loop the progress adds up to zero. A final state owes nothing, so the finishing edge pays every stage still owed. 
+\gain{one unit} for each stage it closes and \loss{minus one} for each stage it adds. This is potential-based shaping \cite{ng1999policy} with the potential $-\Phi$ and no discount, so around any loop the progress adds up to zero. The learner does discount its rewards, so the guarantee that shaping leaves the best behaviour unchanged holds only approximately. A final state owes nothing, so the finishing edge pays every stage still owed. 
 
 Two exceptions apply: a step that breaks a soft rule pays no progress for that rule, and an edge into the well takes progress back (see \emph{Taking progress back} below).
 
@@ -1211,11 +1211,16 @@ REWARD_FUNCTION:
 In the listing, u0 is the start, u1 holds the key, u3 holds the key with the door open, u4 is the final state and u2 the well. Each stage closed pays \gain{$+1$} and the goal adds \gain{$+10$}, so doing all three steps at once pays \gain{$+13$}. Every way to break the order costs \loss{$-10$}, or \loss{$-11$} from u1, which is one stage ahead of the start (Section~\ref{sec:reward-assignment}, \emph{Taking progress back}).
 
 \subsection{The machine in training}
-Two more rules decide how the machine meets training: when an episode ends, and which reward the agent is trained on.
+Two more rules decide how the machine meets training: when an episode ends, and which reward the agent is trained on. A machine ends an episode when: 
+\begin{itemize}
+    \item It enters its \textbf{final} state 
+    \item It enters the \textbf{rejecting well}.
+    \item Otherwise the \textbf{environment's own end} 
+    \item Its \textbf{time limit} ends the episode.
+\end{itemize}
 
-A machine ends an episode when it enters its final state or the well, both absorbing. Otherwise the environment's own end or its time limit ends the episode.
 
-The setting \texttt{reward\_source} picks the reward:
+\noindent The setting \texttt{reward\_source} picks the reward:
 \begin{itemize}
     \item \texttt{rm}, the default: the reward of the machine alone, plus a flat time-limit penalty (default \loss{$-5$}) on the last step of an episode that times out. The end-charge option of Table~\ref{tab:rewards} replaces that flat charge.
     \item \texttt{both}: the reward of the machine plus the reward of the environment.
@@ -1229,102 +1234,103 @@ The setting \texttt{reward\_source} picks the reward:
 \chapter{Limitations}
 \label{chap:limitations}
 
-A limit, in this chapter, is something FARM does not do or does not guarantee today. FARM's compiler knows the task only through the clauses the generator chooses and the world not at all; the generator and the critic know the world only through the environment description. Each limit below is given with a case, so that a person knows what to avoid when writing a task or describing an environment. The first two limits concern the machines the compiler builds, the next five what a task can state and how the generator reads it, and the last two how the machines meet training. Table~\ref{tab:lim-summary} says for each one whether later work could remove it.
+A limit, in this chapter, is something FARM does not do or does not guarantee today. FARM's compiler knows the task only through the clauses the generator chooses while it does not know the world at all; the generator and the critic know the world only through the environment description. 
+
+Each limit below is given with a case, so that a person knows what to avoid when writing a task or describing an environment. The first two limits concern the machines the compiler builds, the next five what a task can state and how the generator reads it, and the last two how the machines meet training. Table~\ref{tab:lim-summary} says for each one whether later work could remove it.
 
 \section{States the world rules out}
 \label{sec:lim-impossible}
-A machine can hold states that no run in its world ever visits. The compiler prunes the states that no path from the start reaches (Section~\ref{sec:step4}), but it knows nothing of the world, so it keeps the states and transitions that only the world rules out. This follows from a choice of the generator prompt: an order that the task states stays in the machine even when the world already forces it, so the machine follows the instruction and not one layout of the world (Section~\ref{sec:step1}). The \runex{sequence} machine of Listing~\ref{lst:farm-example1} shows the result. It has transitions out of u0 on an open door without the key and on the goal before the door, while in DoorKey only the key opens the locked door (Section~\ref{sec:step5}). Such a transition never fires, and a state that only such transitions enter is never visited. These states and transitions make the machine bigger and harder to read, and they do not make training worse.
+A machine can hold states that no run in its world ever visits. The compiler prunes the states that no path from the start reaches (Section~\ref{sec:step4}), but it knows nothing of the world, so it keeps the states and transitions that only the world rules out. 
+
+This follows from a choice of the generator prompt: an order that the task states stays in the machine even when the world already forces it, so the machine follows the instruction and not one layout of the world (Section~\ref{sec:step1}). The \runex{sequence} machine of Listing~\ref{lst:farm-example1} shows the result. It has transitions out of u0 on an open door without the key and on the goal before the door, while in DoorKey only the key opens the locked door (Section~\ref{sec:step5}). Such a transition never fires, and a state that only such transitions enter is never visited. These states and transitions make the machine bigger and harder to read, but they \textbf{do not make training worse}.
 
 FARM does not cut them, because a cut needs facts about the world that are certain. The constraints an environment description states rest on reading the code of the world and on random episodes, which can show a constraint false but never prove it. A wrong cut would also fail silently: if the world did take a cut transition, the machine would have no edge for it, so it would stay in its state and pay nothing.
 
 \section{Machines grow with the clauses}
 \label{sec:lim-size}
-A FARM machine is the product of one automaton per clause, so it can grow exponentially with the number of clauses: on the tasks of the shop, a benchmark world where the agent takes orders, cooks and serves (Table~\ref{tab:eval-suites}), each added rule that waits for an answer nearly doubles the states (Table~\ref{tab:res-shop}). On the trained tasks where both FARM and ARM-FM built a machine, FARM's machines are larger than ARM-FM's (Table~\ref{tab:res-size}), and the largest machine, that of a shop task with six hard rules, has more than ten thousand transitions (Section~\ref{sec:res-shop}). A machine of that size still follows its clauses exactly, but it is hard for a person to read. Section~\ref{sec:fw-size} takes it up.
+A FARM machine is the product of one automaton per clause, so it can grow exponentially with the number of clauses: on the tasks of the shop, a benchmark world where the agent takes orders, cooks and serves (Table~\ref{tab:eval-suites}), each added rule that waits for an answer nearly doubles the states (Table~\ref{tab:res-shop}). 
+
+On the trained tasks where both FARM and ARM-FM built a machine, FARM's machines are larger than ARM-FM's (Table~\ref{tab:res-size}), and the largest machine, that of a shop task with six hard rules, has more than ten thousand transitions (Section~\ref{sec:res-shop}). A machine of that size still follows its clauses exactly, but it is hard for a person to read. Section~\ref{sec:fw-size} takes it up.
 
 \section{A rule alone does not make the agent act}
 \label{sec:lim-rules}
-Whether an agent has a reason to act depends on the kind of clause its task holds. Of the eight templates, only Existence and ExistenceTwo ask for something to happen. The other six are rules, which hold while nothing happens (Section~\ref{sec:step1}): a Response, for instance, holds when its trigger never comes. A task made of rules alone is therefore kept by an agent that does nothing, unless the world sets the rules off by itself; apart from such a world, only a goal makes the agent act. This is intended, since a rule says what must not happen or how to answer an event, not that the agent must begin anything. It limits what such a task can test. The benchmark leaves out of training the tasks with no goal that an agent doing nothing passes (Section~\ref{sec:eval-cards}), and it adds worlds that keep setting the rules off: the zombie lanes, where zombies enter three lanes by themselves, and the shop.
+Whether an agent has a reason to act depends on the kind of clause its task holds. Of the eight templates, only Existence and ExistenceTwo ask for something to happen. The other six are rules, hold while nothing happens (Section~\ref{sec:step1}).
 
-\keyidea{A person who wants the agent to act has to state a goal.}
+A task made of rules alone is therefore kept by an agent that does nothing, unless the world sets the rules off by itself or produces some event the agent reacts to. Apart from such a world, only a goal makes the agent act. 
+
+\keyidea{A person who wants the agent to act has to state a goal, or make the world cause the agent to react.}
+
+This is intended, since a rule says what must not happen or how to answer an event, not that the agent must begin anything. It limits what such a task can test. The benchmark leaves out of training the tasks with no goal that an agent doing nothing passes (Section~\ref{sec:eval-cards}), and it adds worlds that keep setting the rules off: the zombie lanes, where zombies enter three lanes by themselves, and the shop, that for example rings a siren the agent has to turn off.
+
 
 \section{Ambiguous wording}
 \label{sec:lim-ambiguous}
-Everyday language is ambiguous: a sentence can read two ways, and the generator may take either. The task \textit{Try not to let zombies through both the top lane and the side lanes} can mean ``not the two together'', a soft NotCoExistence(\texttt{top\_\allowbreak breach}, \texttt{side\_\allowbreak breach}), $\mathrm{F}\,\texttt{top\_breach} \rightarrow \neg\,\mathrm{F}\,\texttt{side\_breach}$, or ``neither one nor the other'', a soft Absence(\texttt{top\_\allowbreak breach}), $\neg\,\mathrm{F}\,\texttt{top\_breach}$, and a soft Absence(\texttt{side\_\allowbreak breach}), $\neg\,\mathrm{F}\,\texttt{side\_breach}$. FARM's generator takes the second reading, which the benchmark accepts for this task. Its machine has a single state: a step with a breach in one kind of lane costs \loss{$-1$}, and a step with breaches in both costs \loss{$-2$} (Section~\ref{sec:res-farm-machines}).
+Everyday language is ambiguous: a sentence can read two ways, and the generator may take either. 
+
+The task \textit{Try not to let zombies through both the top lane and the side lanes} can mean 
+\begin{itemize}
+    \item ``not the two together'', a soft NotCoExistence(\texttt{top\_\allowbreak breach}, \texttt{side\_\allowbreak breach}), $\mathrm{F}\,\texttt{top\_breach} \rightarrow \neg\,\mathrm{F}\,\texttt{side\_breach}$, 
+    \item or ``neither one nor the other'', a soft Absence(\texttt{top\_\allowbreak breach}), $\neg\,\mathrm{F}\,\texttt{top\_breach}$, and a soft Absence(\texttt{side\_\allowbreak breach}), $\neg\,\mathrm{F}\,\texttt{side\_breach}$. 
+\end{itemize}
+
+\noindent FARM's generator takes the second reading, which the benchmark accepts for this task. 
 
 \keyidea{The compiler builds the reading the generator takes, so the wording decides the machine.}
-\noindent In the final run (the one pass of the evaluation on the frozen pipeline, Chapter~\ref{chap:evaluation}), the few clause sets that differed from the first accepted answer of their task were, all but one, judged afterwards to be fair readings of their wording (Section~\ref{sec:res-clauses}). They are cases, not a measure of how often the generator errs. The prompt tells the generator to refuse an ambiguous task, but its answer has no way to refuse (Section~\ref{sec:lim-anomalies}). The repository's guide to task wording (\texttt{docs/LTLF\_TASK\_LANGUAGE.md}) lists the readings found and how to write each one; its rewrites were not tested.
+\noindent In the final run, the few clause sets that differed from the first accepted answer of their task were, all but one, judged afterwards to be fair readings of their wording (Section~\ref{sec:res-clauses}). They are cases, not a measure of how often the generator errs. 
+
+The repository's guide to task wording (\texttt{docs/LTLF\_TASK\_LANGUAGE.md}) lists the readings found and how to write each one.
 
 \section{Anomalies the model does not detect or cannot report}
 \label{sec:lim-anomalies}
-A task can hold three kinds of anomaly:
+An anomaly is a fault in the task itself, which no choice of clauses can fix. The generator cannot report one. The prompt tells it to refuse a task that needs an undeclared fact, but its answer is a list of one to 25 clauses with no field for a refusal, so an answer that refuses is invalid and uses up an attempt, as a rejected candidate does (Section~\ref{sec:step5}). 
+
+An anomaly is therefore caught only when a later check rejects the candidate, and when every attempt is rejected the task fails with no machine. 
+
+Each of the three kinds of anomaly is caught only in part:
 \begin{itemize}
-    \item it may ask for something the world cannot do;
-    \item it needs a fact the environment does not declare;
-    \item its clauses contradict each other.
+    \item \textbf{A task that cannot be done}: the critic rejects a clause whose event can never occur. It checks each event alone, so a task whose events cannot happen the way it asks still gets a machine.
+    \item \textbf{A fact the environment does not declare}: a clause that names an undeclared fact is rejected. The generator can instead use the nearest declared facts and drop part of the task, and nothing in its answer says so.
+    \item \textbf{Clauses that contradict each other}: the compiler rejects hard clauses that leave no way to reach a hard goal. A task without a hard goal is not checked, so its rules can contradict each other and it still builds. Soft clauses that conflict build too.
 \end{itemize}
-\noindent The prompt tells the generator to refuse a task that needs an undeclared fact, but its answer is a list of one to 25 clauses with no field for a refusal. An answer that refuses is invalid, and an invalid answer uses up an attempt, as a rejected candidate does (Section~\ref{sec:step5}). The three anomalies end differently.
-
-\subsection{A task that cannot be done}
-A task may ask for something that no run of its world can do, and only part of such tasks is caught. FARM checks only whether single events can occur. The critic rejects a clause whose event can never occur, which sends the generator back for new clauses, and when every attempt is refused the task fails with no machine (Section~\ref{sec:step5}). A task whose events can each occur, but not in the way it asks, still gets a machine. On the benchmark, the scripted plan that solves each task shows that the task can be done; a task outside the benchmark has no such plan.
-
-\subsection{A fact the environment does not declare}
-A task may need a fact that the environment description leaves out, and the generator's answer can then fail or leave part of the task out. The generator may use only the propositions the environment declares. An answer that names another is rejected, uses up an attempt and is retried, and after the last attempt the task fails with no machine. When a task needs a fact the environment lacks, the generator can also answer with the nearest declared facts, although the prompt forbids leaving out part of a task, and nothing in its answer says so. The shop has no event for putting food down. Its boil task ends \textit{Whenever the pot boils over, put down what you hold next to the stove, turn the stove down, and pick your item up again}, and the generator turns that sentence into one hard Response(\texttt{pot\_boiling}, \texttt{stove\_fixed}), $\mathrm{G}\,(\texttt{pot\_boiling} \rightarrow \mathrm{F}\,\texttt{stove\_fixed})$, which leaves out the put-down and the pick-up, as the benchmark's expected answer does (Table~\ref{tab:res-shop}). On one rewording, \textit{pick the load back up} became a seventh clause, Response(\texttt{stove\_fixed}, \texttt{holding\_food}), $\mathrm{G}\,(\texttt{stove\_fixed} \rightarrow \mathrm{F}\,\texttt{holding\_food})$, which asks for food in hand after every stove fix, whether or not the agent carried any before. The plan check refused that machine, the one FARM did not build (Section~\ref{sec:res-farm-machines}).
-
-\subsection{Clauses that contradict each other}
-Clauses contradict each other when no run can keep them all, and the compiler sees this only in part. When the task has a hard goal and its hard clauses leave no way to reach it, the compiler stops with a conflicting-clauses error, the candidate is refused, and the generator tries again (Section~\ref{sec:step4}). The check needs a final state, so it applies only to tasks with a hard goal. A task made of rules alone can always be kept, as far as the compiler sees, by doing nothing, so it builds; whether the world lets the agent keep all its rules is what the compiler cannot know. Soft clauses that conflict also build, and each break costs its price.
 
 \section{Conditions the templates cannot state}
 \label{sec:lim-conditions}
-Some conditions cannot be written as clauses, because of what a template argument can hold. A template argument is always one declared fact, never a negated condition or a combination of facts. The clauses of a task all hold together: the generator cannot join them with ``or'', mark one as an optional branch, or nest conditions inside an argument. The prompt tells it to refuse a task that needs them, and how such a task fares at run time was not tested. Where a task needs such a condition, the environment has to declare a fact that carries it. The shop's quiet rule shows this: \textit{Never give a client their food while the siren is ringing} joins two facts, so the shop declares one event for it, \texttt{served\_while\_ringing}, and the rule becomes a hard Absence(\texttt{served\_while\_ringing}), $\neg\,\mathrm{F}\,\texttt{served\_while\_ringing}$ (Table~\ref{tab:res-shop}).
+Some conditions cannot be written as clauses. A template argument is always one declared fact, never a negated condition or a combination of facts, and all the clauses of a task hold together: the generator cannot join them with ``or'' or make one optional. 
+
+A condition such as \textit{serve no food while the siren rings} joins two facts, so it works only if the environment declares one event that carries both, \texttt{served\_while\_ringing}.
 
 \section{Tasks the machines are not meant for}
 \label{sec:lim-quantities}
-Some tasks ask for as much of something as possible, or as little: \textit{Kill as many zombies as you can}, or \textit{Reach the goal by the shortest path}. FARM leaves them out. An LTLf formula gives one verdict for a whole run, met or broken, so no clause can ask for more without end, and a model that wrote the LTLf itself (Section~\ref{sec:fw-ltlf}) would not change this. The shortest path is an optimisation problem rather than a preference, and algorithms built for it outside RL solve it.
-
-The templates that ask for something to happen count to a fixed number and then stop paying. The task \textit{Kill at least two zombies.} becomes a hard ExistenceTwo(\texttt{zombie\_killed}), $\mathrm{F}\,(\texttt{zombie\_killed} \land \mathrm{X}\,\mathrm{F}\,\texttt{zombie\_killed})$. Its machine is a chain of three states: the first kill pays \gain{$+1$}, and the second pays \gain{$+11$} and enters the final state, which ends the episode (Table~\ref{tab:res-lanes}). A broken soft rule is charged every time (Section~\ref{sec:recurrent}), but no template pays every time something is done. \textit{Whenever a zombie enters, kill it}, a Response, does not do it either: one kill answers every zombie that entered before it, and the lanes declare no event for a zombie entering. To pay each kill, a machine needs a loop on every state that pays the kill, and the loop check refuses any machine with a loop that pays (Section~\ref{sec:step4}).
-
-Such a reward is one event paid each time it happens, simple enough for any developer to write in the environment; the zombie lanes pay each kill this way (Section~\ref{sec:lim-lanes}). The gap is in what the machines can state, and a small change to the environment covers it.
-
-Two other kinds of task fit the machines badly. A behaviour that a person recognises but cannot put into words, such as a movement that looks natural, gives no clauses to write; it needs a reward learnt from human feedback \cite{christiano2017deep}. A behaviour close to single moves, such as \textit{Stay close to the obstacles on your way} or \textit{Prefer this sequence of moves}, can be stated only with a fact that the environment declares for it (Section~\ref{sec:lim-conditions}) or with clauses over single moves. That can be done, but the machine then works at the level of the MDP rather than at the level of the steps of the task, where it is meant to work.
-
-\section{Soft rules in the zombie lanes}
-\label{sec:lim-lanes}
-In the zombie lanes the world sets the rules off by itself: zombies walk along three lanes, the agent kills one by moving onto it, and the top lane is the one to protect (Section~\ref{sec:res-react}). Where the top lane is a hard rule, FARM's agents learn the task and agents trained on the world's own reward, one point per kill, do not. On the lane tasks with only soft rules, FARM's agents break fewer of the rules than an agent that does nothing, so they do try to keep them, but the agents trained on the world's reward break fewer still and keep the top lane nearly clean.
-
-FARM's machine charges a breach, which comes up to 27 steps after the move that let the zombie pass, and it charges both kinds of lane alike, while the world pays the kill itself. That this explains the gap is likely and not tested. A FARM machine cannot copy the world's reward, which pays every kill (Section~\ref{sec:lim-quantities}). A count of kills would pay each one up to a fixed number with no loop that pays (Section~\ref{sec:fw-counting}). These results count breaches and kills over whole episodes; no run measures how many steps an agent takes to answer an event.
-
-\section{Approximations in the rewards}
-\label{sec:lim-rewards}
-
-Three small approximations remain where the machine's rewards meet the learner, and no run measures what they change:
+Some tasks do not fit a Reward Machine at all:
 \begin{itemize}
-    \item \textbf{The step limit}: the learner treats the step limit as if the episode could go on, while FARM prices a hard break from that limit. A hard break, which the pay order (Section~\ref{sec:reward-assignment}) puts below a soft break at every step, can therefore cost slightly less in the learner's eyes: about \loss{$-96$} against \loss{$-100$} in the example of Section~\ref{sec:well-charge}.
-    \item \textbf{Progress without discount}: progress pays without the learner's discount, so the guarantee of potential-based shaping \cite{ng1999policy} holds only approximately, and a loop repeated for ever could gain at most about \gain{$+1$}, against \gain{$+10$} for finishing.
-    \item \textbf{The warning on soft clauses}: the warning about a soft clause that changes no reward is a shortcut rather than an exact comparison, so it can miss such a clause or flag one that does pay; it only informs the critic (Section~\ref{sec:step5}).
+    \item \textbf{As much or as little as possible}: a clause is met or broken over a whole run, so it cannot ask for as many items as possible or for the shortest path. The templates that count stop at a fixed number and LTLf can not express the unbounded counting. A machine that paid every time something happens would need a loop that pays, which the loop check refuses (Section~\ref{sec:step4}). 
+    
+    A reward paid for each event (such as \texttt{kill\_zombie}) is simple to write in the environment instead if needed.
+    \item \textbf{Behaviour no one can put into words}: something the user can not define with words, such a movement that looks natural, gives no clauses to write. It needs a reward learnt from human feedback \cite{christiano2017deep}.
+    \item \textbf{Behaviour close to single moves}: a task such as \textit{Stay close to the obstacles on your way} can be stated only with a fact declared for it or with clauses over single moves. The machine then works at the level of moves, not at the level of the steps of the task, where it is meant to work and therefore out of scope.
 \end{itemize}
 
-\begin{table}[H]
-\centering
-\footnotesize
-\renewcommand{\arraystretch}{1.2}
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{4.8cm}>{\raggedright\arraybackslash}X@{}}
-\toprule
-\textbf{Limit} & \textbf{Can later work remove it?} \\ \midrule
-States the world rules out (Section~\ref{sec:lim-impossible}) & Possibly, with facts about the world that can be trusted. These states do not make training worse. \\
-Machines grow with the clauses (Section~\ref{sec:lim-size}) & Open: how the size grows is the first thing to measure (Section~\ref{sec:fw-size}). \\
-A rule alone does not make the agent act (Section~\ref{sec:lim-rules}) & No. It follows from the design: a rule holds while nothing happens, and only a goal asks for action. \\
-Ambiguous wording (Section~\ref{sec:lim-ambiguous}) & In part: the guide to task wording gives a wording for each reading found, and a task in plain language can still read two ways. \\
-A task that cannot be done (Section~\ref{sec:lim-anomalies}) & In part: a refusal field would let the model say so (Section~\ref{sec:fw-refusal}). \\
-A fact the environment does not declare (Section~\ref{sec:lim-anomalies}) & In part: only declared facts are allowed, by design, and that stays; a refusal field would let the model report the missing fact (Section~\ref{sec:fw-refusal}). \\
-Clauses that contradict each other (Section~\ref{sec:lim-anomalies}) & No. Hard rules that leave the goal unreachable cannot make one machine; conflicting preferences still build, each with its price. \\
-Conditions the templates cannot state (Section~\ref{sec:lim-conditions}) & In part: a model that writes the LTLf itself could state them (Section~\ref{sec:fw-ltlf}). \\
-Tasks the machines are not meant for (Section~\ref{sec:lim-quantities}) & No, by design: a clause is met or broken over a whole run. The environment can pay a repeated event itself, with a reward any developer can write, and a behaviour no one can put into words needs a reward learnt from human feedback. \\
-Soft rules in the zombie lanes (Section~\ref{sec:lim-lanes}) & Open: a count of kills is one direction, not tested (Section~\ref{sec:fw-counting}). \\
-Approximations in the rewards (Section~\ref{sec:lim-rewards}) & Possibly, each by a small change to how the compiler prices or checks; not tried. \\ \bottomrule
-\end{tabularx}
-\caption[Limits and later work]{Two limits follow from the design and stay; later work could lift the others, at least in part, and none of that work was tried. Each row names a limit of this chapter and whether later work could remove it, with the section that takes it up.}
-\label{tab:lim-summary}
-\end{table}
+% \begin{table}[H]
+% \centering
+% \footnotesize
+% \renewcommand{\arraystretch}{1.2}
+% \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{4.8cm}>{\raggedright\arraybackslash}X@{}}
+% \toprule
+% \textbf{Limit} & \textbf{Can later work remove it?} \\ \midrule
+% States the world rules out (Section~\ref{sec:lim-impossible}) & Possibly, with facts about the world that can be trusted. These states do not make training worse. \\
+% Machines grow with the clauses (Section~\ref{sec:lim-size}) & Open: how the size grows is the first thing to measure (Section~\ref{sec:fw-size}). \\
+% A rule alone does not make the agent act (Section~\ref{sec:lim-rules}) & No. It follows from the design: a rule holds while nothing happens, and only a goal asks for action. \\
+% Ambiguous wording (Section~\ref{sec:lim-ambiguous}) & In part: the guide to task wording gives a wording for each reading found, and a task in plain language can still read two ways. \\
+% A task that cannot be done (Section~\ref{sec:lim-anomalies}) & In part: a refusal field would let the model say so (Section~\ref{sec:fw-refusal}). \\
+% A fact the environment does not declare (Section~\ref{sec:lim-anomalies}) & In part: only declared facts are allowed, by design, and that stays; a refusal field would let the model report the missing fact (Section~\ref{sec:fw-refusal}). \\
+% Clauses that contradict each other (Section~\ref{sec:lim-anomalies}) & No. Hard rules that leave the goal unreachable cannot make one machine; conflicting preferences still build, each with its price. \\
+% Conditions the templates cannot state (Section~\ref{sec:lim-conditions}) & In part: a model that writes the LTLf itself could state them (Section~\ref{sec:fw-ltlf}). \\
+% Tasks the machines are not meant for (Section~\ref{sec:lim-quantities}) & No, by design: a clause is met or broken over a whole run. The environment can pay a repeated event itself, with a reward any developer can write, and a behaviour no one can put into words needs a reward learnt from human feedback. \\
+% \bottomrule
+% \end{tabularx}
+% \caption[Limits and later work]{Two limits follow from the design and stay; later work could lift the others, at least in part, and none of that work was tried. Each row names a limit of this chapter and whether later work could remove it, with the section that takes it up.}
+% \label{tab:lim-summary}
+% \end{table}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                            EVALUATION METHODOLOGY                           %
@@ -1463,8 +1469,6 @@ The judged success of a seed is the share of its judged episodes that succeed, a
 
 \keyidea{A card counts as learned for an arm when at least two of its seeds pass: two of three, or both seeds of a pilot card, which trains only two.}
 
-The four shop cards with a rule about serving orders (\texttt{shop-serve}, \texttt{shop-full}, \texttt{shop-quiet-first} and \texttt{shop-boil}) also need 7.5 or more orders served per judged episode, on average, for a seed to pass (the served bar); the siren and pot cards have no serving rule and no such bar.
-
 A card with no goal and only soft rules needs another test, because with no hard rule every judged episode succeeds. Its seeds are compared with an idle agent that only waits, on the same layouts. A soft rule left unmet is one still waiting to be met when the episode ends. A seed passes when three things hold, per episode:
 \begin{itemize}
     \item its soft breaks and its soft rules left unmet are both no higher than the idle agent's;
@@ -1549,7 +1553,7 @@ The words of the evaluation keep the meaning Chapter~\ref{chap:evaluation} gives
     \item \textbf{Rewording}: the same card's task said in other words.
     \item \textbf{Plan check}: the run of a card's scripted plans through a built machine (Section~\ref{sec:eval-plan-check}).
     \item \textbf{Judged episode}: one evaluation episode after training, scored by the judge. Each seed of a row plays its own judged episodes, and its judged success is the share of them that succeed.
-    \item \textbf{Learned}: a row counts as learned for an arm when at least two of its seeds pass, which needs a judged success of 0.8 or more, with further tests for the shop cards that serve orders and for cards with only soft rules (Section~\ref{sec:eval-learned}). A card an arm could not train counts as not learned.
+    \item \textbf{Learned}: a row counts as learned for an arm when at least two of its seeds pass, which needs a judged success of 0.8 or more, with a further test for cards with only soft rules (Section~\ref{sec:eval-learned}). A card an arm could not train counts as not learned.
 \end{itemize}
 
 \section{Comparison between ARM-FM and FARM}
@@ -2079,11 +2083,10 @@ the clauses of \texttt{shop-full} and Response(\texttt{pot\_boiling}, \texttt{st
 
 % PICK SHOP: framing to confirm with the author
 % The net-0 sentence (RB36) is now in the text, as the experiments session's checked framing requires; the alt line below keeps the author's framing.
-No trained agent serves an order, with or without a Reward Machine: mean orders served per episode is 0.0 on each of the 66 judged seeds of the 11 rows, from 42 trained agents, 33 of FARM and 9 with no Reward Machine (0 of 42, 95\% Wilson interval 0\% to 8\%). The 13 of these seeds with judged success of 0.8 or more are all on the siren and pot cards, which have no serving rule. The world allows serving: the scripted plan serves orders on every card with a serving rule. Training with no Reward Machine runs on the world's reward alone and serves none either, so the Reward Machine is not the only obstacle. Whether an agent learns to serve depends on the world, the learner and how the machine pays each order, taken together: in the frozen pipeline an order nets nothing on FARM's shop machines, since the optional charges are off (Section~\ref{sec:step4}). These results do not separate the causes; Section~\ref{sec:res-curriculum} takes up a curriculum.
+No trained agent serves an order, with or without a Reward Machine: mean orders served per episode is 0.0 on each of the 66 judged seeds of the 11 rows, from 42 trained agents, 33 of FARM and 9 with no Reward Machine (0 of 42, 95\% Wilson interval 0\% to 8\%). The 13 of these seeds with judged success of 0.8 or more are all on the siren and pot cards, which have no serving rule. The world allows serving: the scripted plan serves 7.24 orders per episode on three of the four cards with a serving rule and 6.24 on the boil card. Training with no Reward Machine runs on the world's reward alone and serves none either, so the Reward Machine is not the only obstacle. Whether an agent learns to serve depends on the world, the learner and how the machine pays each order, taken together: in the frozen pipeline an order nets nothing on FARM's shop machines, since the optional charges are off (Section~\ref{sec:step4}). These results do not separate the causes; Section~\ref{sec:res-curriculum} takes up a curriculum.
 % alt (the author's framing; RB36 left out): ... so the Reward Machine is not the only obstacle, and the shop needs another technique, which Section~\ref{sec:res-curriculum} takes up.
 
-% PICK 12
-The scripted plan serves 7.24 orders per episode on three of the four cards with a serving rule and 6.24 on the boil card, below the bar of 7.5 (Section~\ref{sec:eval-learned}); the zero orders of the agents, not the bar, decide this result.
+% PICK 12: the scripted rates now sit in the paragraph above; the served bar of 7.5 was dropped (2026-11-24).
 
 \subsection{A curriculum for the shop}
 \label{sec:res-curriculum}
@@ -2189,7 +2192,7 @@ The generator's answer is a list of clauses with no way to refuse, so a task it 
 
 \section{Counting}
 \label{sec:fw-counting}
-The templates count only to two: ExistenceTwo asks for an event at least twice (Section~\ref{sec:step1}). ``At least $n$ times'' needs an LTLf formula that grows with $n$, and an unbounded count, such as one kill for each zombie that enters, cannot be stated in LTLf. A count would let a machine pay for each kill up to a fixed number, closer to the world's reward in the zombie lanes, with no loop that pays (Section~\ref{sec:lim-lanes}); whether that helps the agents there is untested. Counting beyond twice cannot be stated with these templates and needs investigation, starting with how a count would be written as a clause and priced.
+The templates count only to two: ExistenceTwo asks for an event at least twice (Section~\ref{sec:step1}). ``At least $n$ times'' needs an LTLf formula that grows with $n$, and an unbounded count, such as one kill for each zombie that enters, cannot be stated in LTLf. A count would let a machine pay for each kill up to a fixed number, closer to the world's reward in the zombie lanes, with no loop that pays (Section~\ref{sec:res-react}); whether that helps the agents there is untested. Counting beyond twice cannot be stated with these templates and needs investigation, starting with how a count would be written as a clause and priced.
 
 \section{The parts inherited from ARM-FM}
 \label{sec:fw-inherited}
