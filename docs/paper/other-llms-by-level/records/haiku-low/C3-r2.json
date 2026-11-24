@@ -1,0 +1,58 @@
+{
+ "suite": "shop",
+ "name": "shop-pot",
+ "task": "Whenever the pot boils over, turn the stove down.",
+ "gen": "claude-haiku-5-5",
+ "critic": "claude-haiku-5-5@critic",
+ "reasoning": "low",
+ "status": "accepted",
+ "error": null,
+ "wall_s": 14.7,
+ "attempts_used": 2,
+ "critic_rejections": 1,
+ "provider_reruns": 0,
+ "calls": 4,
+ "trace": [
+  {
+   "attempt": 1,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Whenever the pot boils over (pot_boiling), the agent turns the stove down (stove_fixed) at or after that step.\",\n    \"pattern\": \"Response\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"pot_boiling\",\n      \"stove_fixed\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 1,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: the task \"Whenever the pot boils over, turn the stove down\" is a condition-consequent rule, so Response(pot_boiling, stove_fixed) is the right template and priority. The clause is correct as written: the compiled machine enforces the every-boil-then-fix obligation, and the rule-only warning is valid. However, the clause and its compiler clue say the requirement is hard and owed until the end of the episode. Because the task contains no hard goal, the hard Response would fail any episode where the pot boils and the agent never turns the stove down before the cutoff, which is the intended reading. No change is needed to the clause set. If the intent is only to reward the fix without failing the episode, the priority should be soft; otherwise keep it hard."
+   }
+  },
+  {
+   "attempt": 2,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Whenever the pot boils over (pot_boiling), the agent turns the stove down (stove_fixed) at that step or later.\",\n    \"pattern\": \"Response\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"pot_boiling\",\n      \"stove_fixed\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 2,
+   "step": "critic",
+   "value": {
+    "accepted": true,
+    "feedback": "NO CHANGES NEEDED: the task 'Whenever the pot boils over, turn the stove down' is a condition-consequent rule, so a hard Response(pot_boiling, stove_fixed) is the right template. Nothing is commanded unconditionally, so the rule-only warning and the empty FINAL_STATES are valid, and the machine correctly makes each boil owe a stove_fixed on that step or later."
+   }
+  }
+ ],
+ "sends": [],
+ "clauses": [
+  [
+   "Response",
+   [
+    "pot_boiling",
+    "stove_fixed"
+   ],
+   "hard"
+  ]
+ ],
+ "texts": [
+  "Whenever the pot boils over (pot_boiling), the agent turns the stove down (stove_fixed) at that step or later."
+ ],
+ "machine": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, pot_boiling&!stove_fixed) -> u1\n(u1, stove_fixed) -> u0\nREWARD_FUNCTION:\n(u0, pot_boiling&!stove_fixed, u1) -> -1\n(u1, stove_fixed, u0) -> 1\n"
+}

@@ -1,0 +1,1832 @@
+{
+  "eyebrow": "Paper entry · zombie lanes · 2026-11-23",
+  "title": "FARM in the zombie lanes, with the lanes moved closer",
+  "subtitle": "With the lanes 2 or 1 rows apart, an agent paid by a reward machine holds the top lane better than one paid by the game's own reward. A third group adds the game's kill reward to the machine's pay: it does about as well on the top lane, except that on the rules card at spacing 4 two of its 3 runs fail every test episode. ARM-FM wrote no usable machine for the two cards.",
+  "sections": [
+    {
+      "id": "new",
+      "title": "What this version adds",
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            "**FARM + kill reward** is a third group: the machine's pay plus the world's +1 per kill (18 runs).",
+            "**Top lane:** within 8 points of FARM, except on the rules card at spacing 4, where 2 of its 3 runs fail every test episode.",
+            "**Side lanes:** fewer breaches on the guard card, not reliably on the rules card.",
+            "**ARM-FM:** no usable machine for guard and rules; it trained only on 'Kill at least two zombies'.",
+            "**Every card** now shows its task, its LTL and its machine."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "setting",
+      "title": "The setting in three lines",
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            "**The world.** Zombies walk down three lanes of a field; the agent kills one by stepping onto it, and a zombie that leaves the top lane is a breach.",
+            "**The three groups.** FARM: a language model reads the task and writes a reward machine, a small state machine that pays for keeping or breaking the rules, and the agent learns from that pay alone. FARM + kill reward: the same machine, and the agent is also paid the world's +1 per kill. No reward machine: the same agent, paid +1 per kill only, never reading the task.",
+            "**The test.** We moved the lanes closer, from 4 rows apart to 2 and then 1, trained 3 runs per group and checked each on 100 test episodes. The kill reward was added later, to see whether paying for kills also makes FARM defend the side lanes."
+          ]
+        },
+        {
+          "type": "list",
+          "heading": "Words used on this page",
+          "items": [
+            "**Card:** one task with its text, its rules and its world. **Guard** and **rules** are the two cards here: guard has one rule, keep zombies out of the top lane; rules adds two soft rules (keep the other lanes, keep the plants) that the judge does not count.",
+            "**Spacing 4, the counted card:** the lanes 4 rows apart, as in the earlier results. At spacing 2 and 1 they are 2 and 1 rows apart (at 1, no plant can sprout).",
+            "**Hard and soft rule:** breaking a hard \"never\" rule ends the episode with a penalty; breaking a soft one costs a penalty and play goes on.",
+            "**Judged success:** the share of 100 test episodes (300 steps each) in which no zombie gets through the top lane, as a program (the judge) reads it off the saved episode.",
+            "**LTL, LTLf:** a formal notation for a rule over an episode; `~(F top_breach)` reads \"a top-lane breach never happens\".",
+            "**95% t-interval:** the usual error bar for a mean of a few runs; with 3 runs it is wide.",
+            "**PPO:** the standard reinforcement-learning method all groups use.",
+            "**Kill reward:** the world's own +1 for each zombie the agent kills; FARM + kill reward adds it to the machine's pay.",
+            "**Plan check:** our check, before training, that a machine lets a sensible plan through.",
+            "**ARM-FM:** the pipeline of the ARM-FM paper, which also has a language model write a reward machine from the task text. It has its own section."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "summary",
+      "title": "In short",
+      "blocks": [
+        {
+          "type": "figure",
+          "src": "plots/success.svg",
+          "dark": "plots/success-dark.svg",
+          "title": "Top lane held: FARM, FARM + kill reward and no reward machine",
+          "alt": "Two panels, guard card and rules card. For lane spacing 4, 2 and 1, a blue bar for FARM, a green bar for FARM + kill reward and an orange bar for no reward machine show the share of the 100 test episodes with the top lane held, with a dot per training run and a 95% t-interval whisker.",
+          "source": "check/build_page.py",
+          "caption": "FARM's bar is above the no-reward-machine bar in every pair. The green bars sit close to the blue ones, except on the rules card at spacing 4, where 2 of the 3 FARM + kill reward runs scored 0%. Bars are the mean of 3 training runs, dots are the runs, whiskers are 95% t-intervals over the 3 runs, cut at 0 and 100%."
+        },
+        {
+          "type": "details",
+          "items": [
+            {
+              "title": "Judged success of every group, 18 rows",
+              "blocks": [
+                {
+                  "type": "table",
+                  "heading": "Judged success: share of the 100 test episodes with the top lane held",
+                  "columns": [
+                    "Card",
+                    "Spacing",
+                    "Method",
+                    "Runs 1 / 2 / 3",
+                    "Mean [95% t-interval]"
+                  ],
+                  "rows": [
+                    [
+                      "Guard",
+                      "4",
+                      "FARM",
+                      "99% / 98% / 85%",
+                      "94% [75%, 100%]"
+                    ],
+                    [
+                      "Guard",
+                      "4",
+                      "FARM + kill reward",
+                      "78% / 90% / 92%",
+                      "87% [68%, 100%]"
+                    ],
+                    [
+                      "Guard",
+                      "4",
+                      "No reward machine",
+                      "70% / 65% / 54%",
+                      "63% [43%, 83%]"
+                    ],
+                    [
+                      "Guard",
+                      "2",
+                      "FARM",
+                      "95% / 100% / 97%",
+                      "97% [91%, 100%]"
+                    ],
+                    [
+                      "Guard",
+                      "2",
+                      "FARM + kill reward",
+                      "95% / 95% / 93%",
+                      "94% [91%, 97%]"
+                    ],
+                    [
+                      "Guard",
+                      "2",
+                      "No reward machine",
+                      "62% / 33% / 43%",
+                      "46% [9%, 83%]"
+                    ],
+                    [
+                      "Guard",
+                      "1",
+                      "FARM",
+                      "98% / 99% / 98%",
+                      "98% [97%, 100%]"
+                    ],
+                    [
+                      "Guard",
+                      "1",
+                      "FARM + kill reward",
+                      "100% / 99% / 96%",
+                      "98% [93%, 100%]"
+                    ],
+                    [
+                      "Guard",
+                      "1",
+                      "No reward machine",
+                      "81% / 71% / 83%",
+                      "78% [62%, 94%]"
+                    ],
+                    [
+                      "Rules",
+                      "4",
+                      "FARM",
+                      "36% / 91% / 87%",
+                      "71% [0%, 100%]"
+                    ],
+                    [
+                      "Rules",
+                      "4",
+                      "FARM + kill reward",
+                      "0% / 88% / 0%",
+                      "29% [0%, 100%]"
+                    ],
+                    [
+                      "Rules",
+                      "4",
+                      "No reward machine",
+                      "70% / 65% / 54%",
+                      "63% [43%, 83%]"
+                    ],
+                    [
+                      "Rules",
+                      "2",
+                      "FARM",
+                      "88% / 95% / 95%",
+                      "93% [83%, 100%]"
+                    ],
+                    [
+                      "Rules",
+                      "2",
+                      "FARM + kill reward",
+                      "99% / 90% / 92%",
+                      "94% [82%, 100%]"
+                    ],
+                    [
+                      "Rules",
+                      "2",
+                      "No reward machine",
+                      "62% / 33% / 43%",
+                      "46% [9%, 83%]"
+                    ],
+                    [
+                      "Rules",
+                      "1",
+                      "FARM",
+                      "95% / 100% / 95%",
+                      "97% [89%, 100%]"
+                    ],
+                    [
+                      "Rules",
+                      "1",
+                      "FARM + kill reward",
+                      "100% / 99% / 100%",
+                      "100% [98%, 100%]"
+                    ],
+                    [
+                      "Rules",
+                      "1",
+                      "No reward machine",
+                      "81% / 71% / 83%",
+                      "78% [62%, 94%]"
+                    ]
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "items": [
+            "**FARM holds the top lane.** 17 of its 18 runs pass at least 85 of the 100 test episodes; the one weak run (36%) is on the rules card at spacing 4.",
+            "**With the lanes closer, FARM beats no reward machine every time.** At spacing 2 and 1, on both cards, all 3 FARM runs hold the top lane in more test episodes than all 3 runs with no reward machine.",
+            "**At the counted spacing 4: yes on the guard card, no on the rules card.** Guard: every FARM run above every no-reward-machine run (94% against 63%). Rules: 71% against 63%, so FARM is not shown to be better.",
+            "**Three runs per group is few.** Still, in 5 of the 6 comparisons all 3 FARM runs beat all 3 no-reward-machine runs, which two equal methods would do 1 time in 20. The 95% t-intervals are apart in 2, touch in 1 and overlap in 3; the two cards share their no-reward-machine runs.",
+            "**FARM does not keep the side lanes.** Its runs let zombies through a side lane in every test episode; the rules machine, which pays -1 per such breach, lets through only 13% fewer than guard at spacing 1. No reward machine kills more and lets fewer through, yet holds the top lane less often.",
+            "**Two cards left out.** FARM is not better on them: on the absence card every method scores 100%, on 'Kill at least two zombies' no reward machine does best. Neither tests learning (Limits)."
+          ]
+        },
+        {
+          "type": "list",
+          "heading": "What adding the world's kill reward to FARM changes",
+          "items": [
+            "**Top lane: about FARM's.** Apart from the rules card at spacing 4, the means are within 8 points of FARM's, and the 95% t-intervals overlap in all 6 cases. Against no reward machine the order is FARM's: all 3 runs beat all 3 in 5 of the 6 cases, and the intervals are apart in 2.",
+            "**Rules card at spacing 4: 2 of the 3 runs collapse.** They let a zombie through the top lane in all 100 test episodes (0%); the third scores 88%. FARM alone has one weak run there (36%), not two.",
+            "**Guard card, side lanes: fewer breaches at every spacing.** Each kill-reward run is below each FARM run, and kills more zombies. They still let through more than no reward machine and kill fewer.",
+            "**Rules card, side lanes: not reliably fewer.** No change at spacing 2; at spacing 1 two of the 3 runs drop and the third does not; at spacing 4 only the two collapsed runs show fewer, on episodes cut short. The machine's -1 per side-lane breach does not make the kill reward defend them."
+          ]
+        },
+        {
+          "type": "text",
+          "text": "Counts per run: [Side lanes and kills, per run](#lanes). Task text, LTL and machine of each card: [the two tasks](#task)."
+        }
+      ]
+    },
+    {
+      "id": "task",
+      "title": "The two tasks, their LTL and their machines",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "The two cards, shown once here; open a fold for its LTL clauses and its machine. The cards at spacing 2 and 1 copy them with only the lane spacing changed: the same task text, the same clauses and the same machine, so no machine was generated again. The two cards left out are shown under ARM-FM (kill-two) and Limits (absence)."
+        },
+        {
+          "type": "text",
+          "heading": "Guard card",
+          "text": "**Task:** Never let a zombie through the top lane."
+        },
+        {
+          "type": "details",
+          "items": [
+            {
+              "title": "Guard card: LTL clauses and machine",
+              "blocks": [
+                {
+                  "type": "table",
+                  "columns": [
+                    "Clause (the card's answer)",
+                    "LTLf"
+                  ],
+                  "rows": [
+                    [
+                      "Absence(top_breach) hard",
+                      "`(~(F top_breach))`"
+                    ]
+                  ]
+                },
+                {
+                  "type": "figure",
+                  "src": "graphs/lanes-guard.html",
+                  "height": 340,
+                  "title": "Guard card: the FARM machine",
+                  "caption": "`lanes-guard`: 2 states, 1 transition. `u1` (red) is the failure state: a top-lane breach sends the machine there, pays -10 and ends the episode. Drag a state, click an edge for its cases.",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, top_breach) -> u1\nREWARD_FUNCTION:\n(u0, top_breach, u1) -> -10\n"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "heading": "Rules card",
+          "text": "**Task:** Never let a zombie through the top lane. Try not to let zombies through the other lanes, and try not to step on plants."
+        },
+        {
+          "type": "details",
+          "items": [
+            {
+              "title": "Rules card: LTL clauses and machine",
+              "blocks": [
+                {
+                  "type": "table",
+                  "columns": [
+                    "Clause (the card's answer)",
+                    "LTLf"
+                  ],
+                  "rows": [
+                    [
+                      "Absence(top_breach) hard",
+                      "`(~(F top_breach))`"
+                    ],
+                    [
+                      "Absence(side_breach) soft",
+                      "`(~(F side_breach))`"
+                    ],
+                    [
+                      "Absence(plant_trampled) soft",
+                      "`(~(F plant_trampled))`"
+                    ]
+                  ]
+                },
+                {
+                  "type": "figure",
+                  "src": "graphs/lanes-rules.html",
+                  "height": 340,
+                  "title": "Rules card: the FARM machine",
+                  "caption": "`lanes-rules`: 2 states, 7 transitions. `u1` (red) is the failure state: a top-lane breach sends the machine there, pays -96.0959 and ends the episode. The other transitions stay in `u0` and pay -1 for a side-lane breach or a trampled plant, -2 for both on one step. Drag a state, click an edge for its cases.",
+                  "details": {
+                    "title": "RM text",
+                    "code": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !plant_trampled&!side_breach&top_breach) -> u1\n(u0, !plant_trampled&side_breach&!top_breach) -> u0\n(u0, !plant_trampled&side_breach&top_breach) -> u1\n(u0, plant_trampled&!side_breach&!top_breach) -> u0\n(u0, plant_trampled&!side_breach&top_breach) -> u1\n(u0, plant_trampled&side_breach&!top_breach) -> u0\n(u0, plant_trampled&side_breach&top_breach) -> u1\nREWARD_FUNCTION:\n(u0, !plant_trampled&!side_breach&top_breach, u1) -> -96.0959\n(u0, !plant_trampled&side_breach&!top_breach, u0) -> -1\n(u0, !plant_trampled&side_breach&top_breach, u1) -> -96.0959\n(u0, plant_trampled&!side_breach&!top_breach, u0) -> -1\n(u0, plant_trampled&!side_breach&top_breach, u1) -> -96.0959\n(u0, plant_trampled&side_breach&!top_breach, u0) -> -2\n(u0, plant_trampled&side_breach&top_breach, u1) -> -96.0959\n"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "setup",
+      "title": "What was run",
+      "blocks": [
+        {
+          "type": "table",
+          "columns": [
+            "Method",
+            "Trains on",
+            "Pay and runs"
+          ],
+          "rows": [
+            [
+              "FARM",
+              "The machine's reward only (`reward_source: rm`), written by the language model from the task text.",
+              "Guard machine: -10 for a top-lane breach, which ends the episode, 0 otherwise. Rules machine: -96.1 for it (ends the episode), -1 for a side-lane breach or a trampled plant, -2 for both on one step, 0 otherwise. Nothing for kills. 3 runs per card and spacing: 18 runs."
+            ],
+            [
+              "FARM + kill reward",
+              "The machine's reward plus the world's +1 per zombie killed (`reward_source: both`).",
+              "The same two machines and pays as FARM, and +1 for each kill on top. The suite is `lanes-both` (`experiments/benchmark/lanes-spacing/runs-farm-both.yaml`). 3 runs per card and spacing: 18 runs."
+            ],
+            [
+              "No reward machine",
+              "The world's reward only (`reward_source: env`): +1 per zombie killed.",
+              "No machine, and the agent never reads the task text, so one set of 3 runs per spacing serves both cards; each card judges it with its own clauses. 9 runs trained, 18 judged."
+            ]
+          ]
+        },
+        {
+          "type": "details",
+          "items": [
+            {
+              "title": "Where the no-reward-machine numbers come from",
+              "blocks": [
+                {
+                  "type": "table",
+                  "columns": [
+                    "Spacing",
+                    "Run folders of the 3 runs",
+                    "Code point",
+                    "Shared with"
+                  ],
+                  "rows": [
+                    [
+                      "4",
+                      "`outputs/runs/bench__templates__tpl-existence-two-5-nogoal__no-rm__ppo/<run folder>`",
+                      "68b904da-dirty",
+                      "Trained under the left-out card `tpl-existence-two-5-nogoal`, which does not matter for a run that ignores the task text. The folders `bench__forcing__lanes-guard__no-rm__ppo` and `bench__forcing__lanes-rules__no-rm__ppo` link to them and hold their own judge files."
+                    ],
+                    [
+                      "2",
+                      "`outputs/runs/bench__lanes-spacing__lanes-guard-spacing2__no-rm__ppo/<run folder>`",
+                      "5f9674ea-dirty",
+                      "`bench__lanes-spacing__lanes-rules-spacing2__no-rm__ppo` links to them and holds its own judge file."
+                    ],
+                    [
+                      "1",
+                      "`outputs/runs/bench__lanes-spacing__lanes-guard-spacing1__no-rm__ppo/<run folder>`",
+                      "5f9674ea-dirty",
+                      "`bench__lanes-spacing__lanes-rules-spacing1__no-rm__ppo` links to them and holds its own judge file."
+                    ]
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lanes",
+      "title": "Side lanes and kills, per run",
+      "intro": "The judge counts the top lane only. This table counts what it leaves out, side-lane breaches and zombies killed per test episode, for each run (cells read run 1 / run 2 / run 3).",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "The counts come from the saved step-by-step test episodes; nothing was replayed. Top-lane breaches are not listed: the failed test episodes are exactly those with a top-lane breach, so they equal 100 minus the judged success."
+        },
+        {
+          "type": "text",
+          "text": "A FARM episode ends at its first top-lane breach, so it can be shorter than 300 steps and its counts cover fewer steps (last column; see Limits). A no-reward-machine episode always runs all 300. The two cards share their no-reward-machine runs, so those rows repeat."
+        },
+        {
+          "type": "table",
+          "columns": [
+            "Card",
+            "Spacing",
+            "Method",
+            "Test episodes with a side-lane breach, of 100",
+            "Side-lane breaches per episode",
+            "Zombies killed per episode",
+            "Mean steps per episode, of 300"
+          ],
+          "rows": [
+            [
+              "Guard",
+              "4",
+              "FARM",
+              "100 / 100 / 100",
+              "17.4 / 17.3 / 16.8",
+              "9.5 / 9.2 / 8.6",
+              "299 / 297 / 290"
+            ],
+            [
+              "Guard",
+              "4",
+              "FARM + kill reward",
+              "100 / 100 / 99",
+              "10.2 / 11.0 / 14.2",
+              "14.9 / 15.0 / 11.4",
+              "286 / 290 / 289"
+            ],
+            [
+              "Guard",
+              "4",
+              "No reward machine",
+              "100 / 100 / 100",
+              "10.0 / 10.0 / 10.0",
+              "17.7 / 17.7 / 17.5",
+              "300 / 300 / 300"
+            ],
+            [
+              "Guard",
+              "2",
+              "FARM",
+              "100 / 100 / 100",
+              "17.3 / 17.5 / 17.4",
+              "9.2 / 9.4 / 9.5",
+              "297 / 300 / 298"
+            ],
+            [
+              "Guard",
+              "2",
+              "FARM + kill reward",
+              "100 / 100 / 100",
+              "9.2 / 9.9 / 9.2",
+              "17.9 / 17.1 / 17.7",
+              "296 / 297 / 295"
+            ],
+            [
+              "Guard",
+              "2",
+              "No reward machine",
+              "82 / 93 / 85",
+              "2.3 / 3.3 / 2.2",
+              "26.3 / 24.4 / 26.1",
+              "300 / 300 / 300"
+            ],
+            [
+              "Guard",
+              "1",
+              "FARM",
+              "100 / 100 / 100",
+              "17.4 / 17.3 / 17.4",
+              "9.5 / 9.6 / 9.3",
+              "300 / 299 / 299"
+            ],
+            [
+              "Guard",
+              "1",
+              "FARM + kill reward",
+              "77 / 52 / 67",
+              "1.6 / 1.0 / 1.5",
+              "26.8 / 27.3 / 27.0",
+              "300 / 300 / 299"
+            ],
+            [
+              "Guard",
+              "1",
+              "No reward machine",
+              "25 / 43 / 19",
+              "0.4 / 0.7 / 0.3",
+              "28.8 / 27.8 / 28.9",
+              "300 / 300 / 300"
+            ],
+            [
+              "Rules",
+              "4",
+              "FARM",
+              "100 / 100 / 100",
+              "12.8 / 16.8 / 16.8",
+              "5.6 / 9.0 / 8.7",
+              "237 / 291 / 289"
+            ],
+            [
+              "Rules",
+              "4",
+              "FARM + kill reward",
+              "95 / 100 / 64",
+              "4.7 / 17.0 / 1.9",
+              "1.4 / 9.0 / 0.2",
+              "129 / 292 / 80"
+            ],
+            [
+              "Rules",
+              "4",
+              "No reward machine",
+              "100 / 100 / 100",
+              "10.0 / 10.0 / 10.0",
+              "17.7 / 17.7 / 17.5",
+              "300 / 300 / 300"
+            ],
+            [
+              "Rules",
+              "2",
+              "FARM",
+              "100 / 100 / 100",
+              "16.4 / 17.1 / 17.2",
+              "8.7 / 9.1 / 9.3",
+              "284 / 296 / 296"
+            ],
+            [
+              "Rules",
+              "2",
+              "FARM + kill reward",
+              "100 / 100 / 100",
+              "17.4 / 17.0 / 16.7",
+              "9.5 / 8.9 / 9.5",
+              "299 / 294 / 294"
+            ],
+            [
+              "Rules",
+              "2",
+              "No reward machine",
+              "82 / 93 / 85",
+              "2.3 / 3.3 / 2.2",
+              "26.3 / 24.4 / 26.1",
+              "300 / 300 / 300"
+            ],
+            [
+              "Rules",
+              "1",
+              "FARM",
+              "100 / 100 / 100",
+              "16.4 / 14.7 / 13.9",
+              "10.3 / 12.5 / 12.6",
+              "298 / 300 / 297"
+            ],
+            [
+              "Rules",
+              "1",
+              "FARM + kill reward",
+              "100 / 97 / 98",
+              "17.2 / 3.6 / 4.6",
+              "9.7 / 24.1 / 23.0",
+              "300 / 300 / 300"
+            ],
+            [
+              "Rules",
+              "1",
+              "No reward machine",
+              "25 / 43 / 19",
+              "0.4 / 0.7 / 0.3",
+              "28.8 / 27.8 / 28.9",
+              "300 / 300 / 300"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "armfm",
+      "title": "ARM-FM: no usable machine for guard and rules; trained only on 'Kill at least two zombies'",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "ARM-FM is the method of the ARM-FM paper, which also has a language model write a reward machine from the task text. It needs a task that ends on a goal: every mission in its authors' prompts ends on a +1 goal. 'Kill at least two zombies' ends at the second kill. The guard and rules cards never end on a goal, and for each ARM-FM wrote a machine whose start state is already final: an episode would end before the agent acts."
+        },
+        {
+          "type": "text",
+          "text": "Our plan check rejected both machines. Each card had 4 ARM-FM attempts, the main one and 3 paraphrases of the task, and all 8 failed the same way: `pipeline-failed`, `plan-check-failed: solve-s1: ends the episode before the agent acts`. Both cards count as not learned and no ARM-FM agent was trained on them (user decision, 2026-11-23, recorded at the end of `docs/decisions/benchmark/thesis-benchmark.md`)."
+        },
+        {
+          "type": "details",
+          "items": [
+            {
+              "title": "The 8 attempts: calls and wall time",
+              "blocks": [
+                {
+                  "type": "table",
+                  "columns": [
+                    "Card",
+                    "Attempt",
+                    "Calls",
+                    "Wall time (s)"
+                  ],
+                  "rows": [
+                    [
+                      "Guard",
+                      "main",
+                      "7",
+                      "556.7"
+                    ],
+                    [
+                      "Guard",
+                      "paraphrase 1",
+                      "5",
+                      "280.7"
+                    ],
+                    [
+                      "Guard",
+                      "paraphrase 2",
+                      "5",
+                      "340.9"
+                    ],
+                    [
+                      "Guard",
+                      "paraphrase 3",
+                      "5",
+                      "324.0"
+                    ],
+                    [
+                      "Rules",
+                      "main",
+                      "5",
+                      "273.0"
+                    ],
+                    [
+                      "Rules",
+                      "paraphrase 1",
+                      "7",
+                      "951.8"
+                    ],
+                    [
+                      "Rules",
+                      "paraphrase 2",
+                      "5",
+                      "329.3"
+                    ],
+                    [
+                      "Rules",
+                      "paraphrase 3",
+                      "5",
+                      "293.5"
+                    ]
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "details",
+          "items": [
+            {
+              "title": "The two rejected machines, in full",
+              "blocks": [
+                {
+                  "type": "gallery",
+                  "width": 480,
+                  "items": [
+                    {
+                      "src": "graphs/lanes-guard-arm-fm.html",
+                      "height": 340,
+                      "alt": "Guard card: the ARM-FM machine",
+                      "caption": "**Guard card: the ARM-FM machine**\nARM-FM's machine: 2 states, 4 transitions. The start state `u0` is also final, so an episode would end before the agent acts.",
+                      "details": {
+                        "title": "RM text",
+                        "code": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES: u0\nTRANSITION_FUNCTION:\n(u0, top_breach) -> u1\n(u0, zombie_killed) -> u0\n(u0, else) -> u0\n(u1, else) -> u1\nREWARD_FUNCTION:\n(u0, top_breach, u1) -> -100\n(u0, zombie_killed, u0) -> 1\n"
+                      }
+                    },
+                    {
+                      "src": "graphs/lanes-rules-arm-fm.html",
+                      "height": 340,
+                      "alt": "Rules card: the ARM-FM machine",
+                      "caption": "**Rules card: the ARM-FM machine**\nARM-FM's machine: 2 states, 6 transitions. The start state `u0` is also final, so an episode would end before the agent acts.",
+                      "details": {
+                        "title": "RM text",
+                        "code": "REWARD_MACHINE:\nSTATES: u0, u1\nINITIAL_STATE: u0\nFINAL_STATES: u0\nTRANSITION_FUNCTION:\n(u0, top_breach) -> u1\n(u0, !top_breach & side_breach) -> u0\n(u0, !top_breach & !side_breach & plant_trampled) -> u0\n(u0, !top_breach & !side_breach & !plant_trampled & zombie_killed) -> u0\n(u0, else) -> u0\n(u1, else) -> u1\nREWARD_FUNCTION:\n(u0, top_breach, u1) -> -100\n(u0, !top_breach & side_breach, u0) -> -0.5\n(u0, !top_breach & !side_breach & plant_trampled, u0) -> -0.1\n(u0, !top_breach & !side_breach & !plant_trampled & zombie_killed, u0) -> 0.2\n"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": "**One card did train: 'Kill at least two zombies'.** The second kill ends the task, so ARM-FM's machine has a final state that is not the start. It trained 3 runs at spacing 4 and 3 at spacing 2 (none at spacing 1), next to FARM and no reward machine on the same card."
+        },
+        {
+          "type": "table",
+          "heading": "Judged success on the kill-two card, by method",
+          "columns": [
+            "Spacing",
+            "Method",
+            "Runs 1 / 2 / 3",
+            "Mean [95% t-interval]"
+          ],
+          "rows": [
+            [
+              "4",
+              "FARM",
+              "90% / 89% / 90%",
+              "90% [88%, 91%]"
+            ],
+            [
+              "4",
+              "ARM-FM",
+              "96% / 81% / 88%",
+              "88% [70%, 100%]"
+            ],
+            [
+              "4",
+              "No reward machine",
+              "100% / 100% / 100%",
+              "100% [100%, 100%]"
+            ],
+            [
+              "2",
+              "FARM",
+              "75% / 78% / 71%",
+              "75% [66%, 83%]"
+            ],
+            [
+              "2",
+              "ARM-FM",
+              "70% / 71% / 69%",
+              "70% [68%, 72%]"
+            ],
+            [
+              "2",
+              "No reward machine",
+              "100% / 100% / 100%",
+              "100% [100%, 100%]"
+            ]
+          ]
+        },
+        {
+          "type": "text",
+          "text": "ARM-FM scores 88% and 70%, FARM 90% and 75%: within 5 points of each other, with overlapping intervals, and both below no reward machine, whose +1 per kill already pays for this task. The card is not a fair test of learning (Limits)."
+        },
+        {
+          "type": "details",
+          "items": [
+            {
+              "title": "Kill-two card: task, LTL clause and both machines",
+              "blocks": [
+                {
+                  "type": "text",
+                  "text": "**Task:** Kill at least two zombies."
+                },
+                {
+                  "type": "table",
+                  "columns": [
+                    "Clause (the card's answer)",
+                    "LTLf"
+                  ],
+                  "rows": [
+                    [
+                      "ExistenceTwo(zombie_killed) hard",
+                      "`(F (zombie_killed & (X (F zombie_killed))))`"
+                    ]
+                  ]
+                },
+                {
+                  "type": "gallery",
+                  "width": 480,
+                  "items": [
+                    {
+                      "src": "graphs/tpl-existence-two-5-nogoal-farm.html",
+                      "height": 340,
+                      "alt": "Kill-two card: the FARM machine",
+                      "caption": "**Kill-two card: the FARM machine**\nFARM's machine for the card: 3 states, 2 transitions. `u2` is final: the second kill reaches it, pays 11 and ends the episode; the first kill pays 1. Drag a state, click an edge for its cases.",
+                      "details": {
+                        "title": "RM text",
+                        "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, zombie_killed) -> u1\n(u1, zombie_killed) -> u2\nREWARD_FUNCTION:\n(u0, zombie_killed, u1) -> 1\n(u1, zombie_killed, u2) -> 11\n"
+                      }
+                    },
+                    {
+                      "src": "graphs/tpl-existence-two-5-nogoal-arm-fm.html",
+                      "height": 340,
+                      "alt": "Kill-two card: the ARM-FM machine",
+                      "caption": "**Kill-two card: the ARM-FM machine**\nARM-FM's machine for the card: 3 states, 5 transitions. `u2` is final: the second kill reaches it, pays 1 and ends the episode; the first kill pays 0.1. Drag a state, click an edge for its cases.",
+                      "details": {
+                        "title": "RM text",
+                        "code": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES: u2\nTRANSITION_FUNCTION:\n(u0, zombie_killed) -> u1\n(u0, else) -> u0\n(u1, zombie_killed) -> u2\n(u1, else) -> u1\n(u2, else) -> u2\nREWARD_FUNCTION:\n(u0, zombie_killed, u1) -> 0.1\n(u1, zombie_killed, u2) -> 1\n"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "runs",
+      "title": "Every run",
+      "intro": "The 54 finished runs of the two cards, recounted in `evidence/runs.json`; every one trained 1,503,232 steps. The Run folder column is the time part of the folder's name under `outputs/runs/bench__<suite>__<card>__<method>__ppo/`; the last column names the folder that trained the agent, which is the owner folder for a shared no-reward-machine run.",
+      "collapsed": true,
+      "blocks": [
+        {
+          "type": "table",
+          "columns": [
+            "Card",
+            "Spacing",
+            "Method",
+            "Run",
+            "Run folder",
+            "Test episodes passed",
+            "Side-lane breaches per episode",
+            "Kills per episode",
+            "Code point",
+            "Trained in"
+          ],
+          "rows": [
+            [
+              "Guard",
+              "4",
+              "FARM",
+              "1",
+              "20261122T041837-646117",
+              "99 of 100",
+              "17.4",
+              "9.5",
+              "809dfe3f-dirty",
+              "`forcing__lanes-guard__farm__ppo`"
+            ],
+            [
+              "Guard",
+              "4",
+              "FARM",
+              "2",
+              "20261122T041837-646122",
+              "98 of 100",
+              "17.3",
+              "9.2",
+              "809dfe3f-dirty",
+              "`forcing__lanes-guard__farm__ppo`"
+            ],
+            [
+              "Guard",
+              "4",
+              "FARM",
+              "3",
+              "20261122T041837-646124",
+              "85 of 100",
+              "16.8",
+              "8.6",
+              "809dfe3f-dirty",
+              "`forcing__lanes-guard__farm__ppo`"
+            ],
+            [
+              "Guard",
+              "4",
+              "FARM + kill reward",
+              "1",
+              "20261123T191923-111115",
+              "78 of 100",
+              "10.2",
+              "14.9",
+              "f1f5aefd-dirty",
+              "`lanes-both__lanes-guard__farm__ppo`"
+            ],
+            [
+              "Guard",
+              "4",
+              "FARM + kill reward",
+              "2",
+              "20261123T191923-111116",
+              "90 of 100",
+              "11.0",
+              "15.0",
+              "f1f5aefd-dirty",
+              "`lanes-both__lanes-guard__farm__ppo`"
+            ],
+            [
+              "Guard",
+              "4",
+              "FARM + kill reward",
+              "3",
+              "20261123T191924-111118",
+              "92 of 100",
+              "14.2",
+              "11.4",
+              "f1f5aefd-dirty",
+              "`lanes-both__lanes-guard__farm__ppo`"
+            ],
+            [
+              "Guard",
+              "4",
+              "No reward machine",
+              "1",
+              "20261121T231535-453265",
+              "70 of 100",
+              "10.0",
+              "17.7",
+              "68b904da-dirty",
+              "`templates__tpl-existence-two-5-nogoal__no-rm__ppo`"
+            ],
+            [
+              "Guard",
+              "4",
+              "No reward machine",
+              "2",
+              "20261121T231559-453740",
+              "65 of 100",
+              "10.0",
+              "17.7",
+              "68b904da-dirty",
+              "`templates__tpl-existence-two-5-nogoal__no-rm__ppo`"
+            ],
+            [
+              "Guard",
+              "4",
+              "No reward machine",
+              "3",
+              "20261121T231704-454970",
+              "54 of 100",
+              "10.0",
+              "17.5",
+              "68b904da-dirty",
+              "`templates__tpl-existence-two-5-nogoal__no-rm__ppo`"
+            ],
+            [
+              "Guard",
+              "2",
+              "FARM",
+              "1",
+              "20261123T110209-2767477",
+              "95 of 100",
+              "17.3",
+              "9.2",
+              "ed42365f-dirty",
+              "`lanes-spacing__lanes-guard-spacing2__farm__ppo`"
+            ],
+            [
+              "Guard",
+              "2",
+              "FARM",
+              "2",
+              "20261123T110209-2767478",
+              "100 of 100",
+              "17.5",
+              "9.4",
+              "ed42365f-dirty",
+              "`lanes-spacing__lanes-guard-spacing2__farm__ppo`"
+            ],
+            [
+              "Guard",
+              "2",
+              "FARM",
+              "3",
+              "20261123T110208-2767480",
+              "97 of 100",
+              "17.4",
+              "9.5",
+              "ed42365f-dirty",
+              "`lanes-spacing__lanes-guard-spacing2__farm__ppo`"
+            ],
+            [
+              "Guard",
+              "2",
+              "FARM + kill reward",
+              "1",
+              "20261123T194645-164281",
+              "95 of 100",
+              "9.2",
+              "17.9",
+              "f1f5aefd-dirty",
+              "`lanes-both__lanes-guard-spacing2__farm__ppo`"
+            ],
+            [
+              "Guard",
+              "2",
+              "FARM + kill reward",
+              "2",
+              "20261123T194723-164925",
+              "95 of 100",
+              "9.9",
+              "17.1",
+              "f1f5aefd-dirty",
+              "`lanes-both__lanes-guard-spacing2__farm__ppo`"
+            ],
+            [
+              "Guard",
+              "2",
+              "FARM + kill reward",
+              "3",
+              "20261123T195318-172404",
+              "93 of 100",
+              "9.2",
+              "17.7",
+              "f1f5aefd-dirty",
+              "`lanes-both__lanes-guard-spacing2__farm__ppo`"
+            ],
+            [
+              "Guard",
+              "2",
+              "No reward machine",
+              "1",
+              "20261123T154317-3723362",
+              "62 of 100",
+              "2.3",
+              "26.3",
+              "5f9674ea-dirty",
+              "`lanes-spacing__lanes-guard-spacing2__no-rm__ppo`"
+            ],
+            [
+              "Guard",
+              "2",
+              "No reward machine",
+              "2",
+              "20261123T154317-3723363",
+              "33 of 100",
+              "3.3",
+              "24.4",
+              "5f9674ea-dirty",
+              "`lanes-spacing__lanes-guard-spacing2__no-rm__ppo`"
+            ],
+            [
+              "Guard",
+              "2",
+              "No reward machine",
+              "3",
+              "20261123T154317-3723364",
+              "43 of 100",
+              "2.2",
+              "26.1",
+              "5f9674ea-dirty",
+              "`lanes-spacing__lanes-guard-spacing2__no-rm__ppo`"
+            ],
+            [
+              "Guard",
+              "1",
+              "FARM",
+              "1",
+              "20261123T133312-3256047",
+              "98 of 100",
+              "17.4",
+              "9.5",
+              "462cfde3-dirty",
+              "`lanes-spacing__lanes-guard-spacing1__farm__ppo`"
+            ],
+            [
+              "Guard",
+              "1",
+              "FARM",
+              "2",
+              "20261123T133322-3256275",
+              "99 of 100",
+              "17.3",
+              "9.6",
+              "462cfde3-dirty",
+              "`lanes-spacing__lanes-guard-spacing1__farm__ppo`"
+            ],
+            [
+              "Guard",
+              "1",
+              "FARM",
+              "3",
+              "20261123T133346-3256778",
+              "98 of 100",
+              "17.4",
+              "9.3",
+              "462cfde3-dirty",
+              "`lanes-spacing__lanes-guard-spacing1__farm__ppo`"
+            ],
+            [
+              "Guard",
+              "1",
+              "FARM + kill reward",
+              "1",
+              "20261123T201954-237533",
+              "100 of 100",
+              "1.6",
+              "26.8",
+              "f1f5aefd-dirty",
+              "`lanes-both__lanes-guard-spacing1__farm__ppo`"
+            ],
+            [
+              "Guard",
+              "1",
+              "FARM + kill reward",
+              "2",
+              "20261123T202027-240602",
+              "99 of 100",
+              "1.0",
+              "27.3",
+              "f1f5aefd-dirty",
+              "`lanes-both__lanes-guard-spacing1__farm__ppo`"
+            ],
+            [
+              "Guard",
+              "1",
+              "FARM + kill reward",
+              "3",
+              "20261123T202553-255721",
+              "96 of 100",
+              "1.5",
+              "27.0",
+              "f1f5aefd-dirty",
+              "`lanes-both__lanes-guard-spacing1__farm__ppo`"
+            ],
+            [
+              "Guard",
+              "1",
+              "No reward machine",
+              "1",
+              "20261123T154317-3723367",
+              "81 of 100",
+              "0.4",
+              "28.8",
+              "5f9674ea-dirty",
+              "`lanes-spacing__lanes-guard-spacing1__no-rm__ppo`"
+            ],
+            [
+              "Guard",
+              "1",
+              "No reward machine",
+              "2",
+              "20261123T154316-3723369",
+              "71 of 100",
+              "0.7",
+              "27.8",
+              "5f9674ea-dirty",
+              "`lanes-spacing__lanes-guard-spacing1__no-rm__ppo`"
+            ],
+            [
+              "Guard",
+              "1",
+              "No reward machine",
+              "3",
+              "20261123T154317-3723371",
+              "83 of 100",
+              "0.3",
+              "28.9",
+              "5f9674ea-dirty",
+              "`lanes-spacing__lanes-guard-spacing1__no-rm__ppo`"
+            ],
+            [
+              "Rules",
+              "4",
+              "FARM",
+              "1",
+              "20261122T041837-646126",
+              "36 of 100",
+              "12.8",
+              "5.6",
+              "809dfe3f-dirty",
+              "`forcing__lanes-rules__farm__ppo`"
+            ],
+            [
+              "Rules",
+              "4",
+              "FARM",
+              "2",
+              "20261122T052325-662860",
+              "91 of 100",
+              "16.8",
+              "9.0",
+              "809dfe3f-dirty",
+              "`forcing__lanes-rules__farm__ppo`"
+            ],
+            [
+              "Rules",
+              "4",
+              "FARM",
+              "3",
+              "20261122T052416-663213",
+              "87 of 100",
+              "16.8",
+              "8.7",
+              "809dfe3f-dirty",
+              "`forcing__lanes-rules__farm__ppo`"
+            ],
+            [
+              "Rules",
+              "4",
+              "FARM + kill reward",
+              "1",
+              "20261123T191923-111119",
+              "0 of 100",
+              "4.7",
+              "1.4",
+              "f1f5aefd-dirty",
+              "`lanes-both__lanes-rules__farm__ppo`"
+            ],
+            [
+              "Rules",
+              "4",
+              "FARM + kill reward",
+              "2",
+              "20261123T191924-111121",
+              "88 of 100",
+              "17.0",
+              "9.0",
+              "f1f5aefd-dirty",
+              "`lanes-both__lanes-rules__farm__ppo`"
+            ],
+            [
+              "Rules",
+              "4",
+              "FARM + kill reward",
+              "3",
+              "20261123T191924-111124",
+              "0 of 100",
+              "1.9",
+              "0.2",
+              "f1f5aefd-dirty",
+              "`lanes-both__lanes-rules__farm__ppo`"
+            ],
+            [
+              "Rules",
+              "4",
+              "No reward machine",
+              "1",
+              "20261121T231535-453265",
+              "70 of 100",
+              "10.0",
+              "17.7",
+              "68b904da-dirty",
+              "`templates__tpl-existence-two-5-nogoal__no-rm__ppo`"
+            ],
+            [
+              "Rules",
+              "4",
+              "No reward machine",
+              "2",
+              "20261121T231559-453740",
+              "65 of 100",
+              "10.0",
+              "17.7",
+              "68b904da-dirty",
+              "`templates__tpl-existence-two-5-nogoal__no-rm__ppo`"
+            ],
+            [
+              "Rules",
+              "4",
+              "No reward machine",
+              "3",
+              "20261121T231704-454970",
+              "54 of 100",
+              "10.0",
+              "17.5",
+              "68b904da-dirty",
+              "`templates__tpl-existence-two-5-nogoal__no-rm__ppo`"
+            ],
+            [
+              "Rules",
+              "2",
+              "FARM",
+              "1",
+              "20261123T114836-2832404",
+              "88 of 100",
+              "16.4",
+              "8.7",
+              "ed42365f-dirty",
+              "`lanes-spacing__lanes-rules-spacing2__farm__ppo`"
+            ],
+            [
+              "Rules",
+              "2",
+              "FARM",
+              "2",
+              "20261123T114840-2832571",
+              "95 of 100",
+              "17.1",
+              "9.1",
+              "ed42365f-dirty",
+              "`lanes-spacing__lanes-rules-spacing2__farm__ppo`"
+            ],
+            [
+              "Rules",
+              "2",
+              "FARM",
+              "3",
+              "20261123T114845-2832735",
+              "95 of 100",
+              "17.2",
+              "9.3",
+              "ed42365f-dirty",
+              "`lanes-spacing__lanes-rules-spacing2__farm__ppo`"
+            ],
+            [
+              "Rules",
+              "2",
+              "FARM + kill reward",
+              "1",
+              "20261123T195328-172666",
+              "99 of 100",
+              "17.4",
+              "9.5",
+              "f1f5aefd-dirty",
+              "`lanes-both__lanes-rules-spacing2__farm__ppo`"
+            ],
+            [
+              "Rules",
+              "2",
+              "FARM + kill reward",
+              "2",
+              "20261123T195414-173905",
+              "90 of 100",
+              "17.0",
+              "8.9",
+              "f1f5aefd-dirty",
+              "`lanes-both__lanes-rules-spacing2__farm__ppo`"
+            ],
+            [
+              "Rules",
+              "2",
+              "FARM + kill reward",
+              "3",
+              "20261123T195421-174147",
+              "92 of 100",
+              "16.7",
+              "9.5",
+              "f1f5aefd-dirty",
+              "`lanes-both__lanes-rules-spacing2__farm__ppo`"
+            ],
+            [
+              "Rules",
+              "2",
+              "No reward machine",
+              "1",
+              "20261123T154317-3723362",
+              "62 of 100",
+              "2.3",
+              "26.3",
+              "5f9674ea-dirty",
+              "`lanes-spacing__lanes-guard-spacing2__no-rm__ppo`"
+            ],
+            [
+              "Rules",
+              "2",
+              "No reward machine",
+              "2",
+              "20261123T154317-3723363",
+              "33 of 100",
+              "3.3",
+              "24.4",
+              "5f9674ea-dirty",
+              "`lanes-spacing__lanes-guard-spacing2__no-rm__ppo`"
+            ],
+            [
+              "Rules",
+              "2",
+              "No reward machine",
+              "3",
+              "20261123T154317-3723364",
+              "43 of 100",
+              "2.2",
+              "26.1",
+              "5f9674ea-dirty",
+              "`lanes-spacing__lanes-guard-spacing2__no-rm__ppo`"
+            ],
+            [
+              "Rules",
+              "1",
+              "FARM",
+              "1",
+              "20261123T141949-3418808",
+              "95 of 100",
+              "16.4",
+              "10.3",
+              "919c166d-dirty",
+              "`lanes-spacing__lanes-rules-spacing1__farm__ppo`"
+            ],
+            [
+              "Rules",
+              "1",
+              "FARM",
+              "2",
+              "20261123T141953-3419240",
+              "100 of 100",
+              "14.7",
+              "12.5",
+              "919c166d-dirty",
+              "`lanes-spacing__lanes-rules-spacing1__farm__ppo`"
+            ],
+            [
+              "Rules",
+              "1",
+              "FARM",
+              "3",
+              "20261123T142009-3420159",
+              "95 of 100",
+              "13.9",
+              "12.6",
+              "919c166d-dirty",
+              "`lanes-spacing__lanes-rules-spacing1__farm__ppo`"
+            ],
+            [
+              "Rules",
+              "1",
+              "FARM + kill reward",
+              "1",
+              "20261123T202609-256230",
+              "100 of 100",
+              "17.2",
+              "9.7",
+              "f1f5aefd-dirty",
+              "`lanes-both__lanes-rules-spacing1__farm__ppo`"
+            ],
+            [
+              "Rules",
+              "1",
+              "FARM + kill reward",
+              "2",
+              "20261123T202613-256435",
+              "99 of 100",
+              "3.6",
+              "24.1",
+              "f1f5aefd-dirty",
+              "`lanes-both__lanes-rules-spacing1__farm__ppo`"
+            ],
+            [
+              "Rules",
+              "1",
+              "FARM + kill reward",
+              "3",
+              "20261123T202623-256677",
+              "100 of 100",
+              "4.6",
+              "23.0",
+              "f1f5aefd-dirty",
+              "`lanes-both__lanes-rules-spacing1__farm__ppo`"
+            ],
+            [
+              "Rules",
+              "1",
+              "No reward machine",
+              "1",
+              "20261123T154317-3723367",
+              "81 of 100",
+              "0.4",
+              "28.8",
+              "5f9674ea-dirty",
+              "`lanes-spacing__lanes-guard-spacing1__no-rm__ppo`"
+            ],
+            [
+              "Rules",
+              "1",
+              "No reward machine",
+              "2",
+              "20261123T154316-3723369",
+              "71 of 100",
+              "0.7",
+              "27.8",
+              "5f9674ea-dirty",
+              "`lanes-spacing__lanes-guard-spacing1__no-rm__ppo`"
+            ],
+            [
+              "Rules",
+              "1",
+              "No reward machine",
+              "3",
+              "20261123T154317-3723371",
+              "83 of 100",
+              "0.3",
+              "28.9",
+              "5f9674ea-dirty",
+              "`lanes-spacing__lanes-guard-spacing1__no-rm__ppo`"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "checks",
+      "title": "Checks",
+      "collapsed": true,
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            "**Recount from raw folders.** `check/collect.py` reads every `judge.json` (100 test episodes each) of the two cards and of the two left-out cards, 90 runs (54 on the two cards, 36 on the left-out ones, 6 of them ARM-FM), and recounts the passes from the per-episode records; every count equals the stored mean. Folders with a dot in their name are skipped; none lacked a judge file.",
+            "**Breaches per lane.** The events are counted from the saved per-step labels of the 54 runs of the two cards (5,400 episodes). Every judge verdict equals the first top-lane breach found in the labels, and each run's failed episodes equal its episodes with a top-lane breach. Each FARM episode, with or without the kill reward, that has a breach ends at its first one.",
+            "**Rewards.** Every `config.yaml` says `reward_source: rm` for FARM, `both` for FARM + kill reward and `env` for no reward machine; FARM and FARM + kill reward runs trained on, and were judged with, the same committed machine; no-reward-machine runs have no bundle. A FARM + kill reward run and the FARM run with the same number have the same card, world, machine and steps.",
+            "**Machines.** The `.rm` files in `graphs/` are copies of the committed bundles' `reward_machine.txt`: FARM's machines of the two cards, of the kill-two card and of the absence card, and ARM-FM's machines of the kill-two card and of the guard and rules cards. The pays the text quotes are read back from them.",
+            "**ARM-FM on the two cards.** Each card had 4 attempts, the main one and 3 paraphrases (`<card>~p1..p3.status.json`). All 8 say `pipeline-failed` with the plan-check reason, each machine ARM-FM wrote has its start state among its final states, and no ARM-FM run folder exists for either card.",
+            "**Cards.** The spacing cards have the counted cards' task text and clauses and differ only in `env_kwargs`; spacing 4 is the default value of `lane_spacing`.",
+            "**Statements.** The build asserts every comparison and count the text states (the 5 of 6 orderings for FARM and for FARM + kill reward, the 8-point bound, the intervals that do and do not overlap, the 17 of 18 FARM runs, the two collapsed runs, the side-lane and kill comparisons of the kill-reward list)."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "limits",
+      "title": "Limits",
+      "collapsed": true,
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            "3 runs per group, card and spacing. The best an exact order test can say for 3 against 3 is 1 in 20 per comparison, and the two cards at one spacing share their no-reward-machine runs. The comparison of FARM + kill reward with FARM rests on the same 3 runs, so a difference of a few points between them is not evidence of an effect.",
+            "FARM's win is on the hard top-lane rule only. Soft rules do not enter judged success, and FARM breaks the side-lane rule in every test episode, with or without the soft rule in its machine. With the kill reward added, runs still break it in 52 to 100 of the 100 test episodes. The rules card at spacing 4 does not show FARM better, and with the kill reward 2 of its 3 runs fail every test episode.",
+            "A FARM episode, with or without the kill reward, ends at the first top-lane breach, so the per-episode side-lane and kill counts of runs that breached cover fewer steps than 300. This matters most for the two collapsed runs of the rules card at spacing 4 (80 and 129 steps); the kill-reward episodes of the guard card average more than 285 steps.",
+            "ARM-FM has no usable machine for the guard and rules cards, so it has no runs on them (section ARM-FM), and on the kill-two card none at spacing 1; its two spacings there have 3 runs each.",
+            "The figure is static SVG, not Plotly: plotly.js embedded is 4.8 MB, over the repository's 1 MB file limit. The machines are interactive."
+          ]
+        },
+        {
+          "type": "list",
+          "heading": "Two cards left out of the comparison",
+          "items": [
+            "**Absence card** (`tpl-absence-soft-1-nogoal`, 'Try not to let zombies through any lane': two soft rules). All 18 runs, FARM and no reward machine at all three spacings, pass every test episode, so judged success cannot tell the methods apart. At spacing 4 FARM breaks the soft rules 18.7 times per episode against 26.2 for an idle agent and 10.5 for no reward machine (from the `soft-breaks-vs-idle/` entry, not recounted here).",
+            "**Kill-two card** (`tpl-existence-two-5-nogoal`, 'Kill at least two zombies': a hard rule). A random agent passes this world in 68 of 100 episodes at spacing 1 (a note in `experiments/benchmark/lanes-spacing/runs-farm.yaml`, not recounted), so spacing 1 was dropped and the card is not a fair test. At spacing 4 and 2 FARM passes 90% and 75% of the test episodes on average, ARM-FM 88% and 70% (3 runs each), and no reward machine all of them: the world's +1 per kill already pays for exactly this task. Its task, LTL and both machines are under ARM-FM."
+          ]
+        },
+        {
+          "type": "details",
+          "items": [
+            {
+              "title": "Absence card: task, LTL clauses and FARM machine",
+              "blocks": [
+                {
+                  "type": "text",
+                  "text": "**Task:** Try not to let zombies through any lane."
+                },
+                {
+                  "type": "table",
+                  "columns": [
+                    "Clause (the card's answer)",
+                    "LTLf"
+                  ],
+                  "rows": [
+                    [
+                      "Absence(top_breach) soft",
+                      "`(~(F top_breach))`"
+                    ],
+                    [
+                      "Absence(side_breach) soft",
+                      "`(~(F side_breach))`"
+                    ]
+                  ]
+                },
+                {
+                  "type": "gallery",
+                  "width": 480,
+                  "items": [
+                    {
+                      "src": "graphs/tpl-absence-soft-1-nogoal-farm.html",
+                      "height": 340,
+                      "alt": "Absence card: the FARM machine",
+                      "caption": "**Absence card: the FARM machine**\nFARM's machine for the card: 1 state, 3 transitions, all staying in `u0`. A top-lane breach alone pays -1, a side-lane breach alone -1, both on one step -2; nothing ends the episode. Drag a state, click an edge for its cases.",
+                      "details": {
+                        "title": "RM text",
+                        "code": "REWARD_MACHINE:\nSTATES: u0\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !side_breach&top_breach) -> u0\n(u0, side_breach&!top_breach) -> u0\n(u0, side_breach&top_breach) -> u0\nREWARD_FUNCTION:\n(u0, !side_breach&top_breach, u0) -> -1\n(u0, side_breach&!top_breach, u0) -> -1\n(u0, side_breach&top_breach, u0) -> -2\n"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "details",
+          "items": [
+            {
+              "title": "Judged success of the left-out runs",
+              "blocks": [
+                {
+                  "type": "table",
+                  "columns": [
+                    "Card",
+                    "Spacing",
+                    "Method",
+                    "Runs 1 / 2 / 3"
+                  ],
+                  "rows": [
+                    [
+                      "tpl-absence-soft-1-nogoal",
+                      "4",
+                      "FARM",
+                      "100% / 100% / 100%"
+                    ],
+                    [
+                      "tpl-absence-soft-1-nogoal",
+                      "4",
+                      "No reward machine",
+                      "100% / 100% / 100%"
+                    ],
+                    [
+                      "tpl-absence-soft-1-nogoal",
+                      "2",
+                      "FARM",
+                      "100% / 100% / 100%"
+                    ],
+                    [
+                      "tpl-absence-soft-1-nogoal",
+                      "2",
+                      "No reward machine",
+                      "100% / 100% / 100%"
+                    ],
+                    [
+                      "tpl-absence-soft-1-nogoal",
+                      "1",
+                      "FARM",
+                      "100% / 100% / 100%"
+                    ],
+                    [
+                      "tpl-absence-soft-1-nogoal",
+                      "1",
+                      "No reward machine",
+                      "100% / 100% / 100%"
+                    ],
+                    [
+                      "tpl-existence-two-5-nogoal",
+                      "4",
+                      "FARM",
+                      "90% / 89% / 90%"
+                    ],
+                    [
+                      "tpl-existence-two-5-nogoal",
+                      "4",
+                      "ARM-FM",
+                      "96% / 81% / 88%"
+                    ],
+                    [
+                      "tpl-existence-two-5-nogoal",
+                      "4",
+                      "No reward machine",
+                      "100% / 100% / 100%"
+                    ],
+                    [
+                      "tpl-existence-two-5-nogoal",
+                      "2",
+                      "FARM",
+                      "75% / 78% / 71%"
+                    ],
+                    [
+                      "tpl-existence-two-5-nogoal",
+                      "2",
+                      "ARM-FM",
+                      "70% / 71% / 69%"
+                    ],
+                    [
+                      "tpl-existence-two-5-nogoal",
+                      "2",
+                      "No reward machine",
+                      "100% / 100% / 100%"
+                    ]
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "files",
+      "title": "Files and rerun",
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            "This page is `index.html`, built from `data.json`. `check/` has `collect.py` (the recount) and `build_page.py` (the page, the figure and the machine graphs); `evidence/runs.json` is the recount; `graphs/` has the machines (`.rm`, `.svg`, interactive `.html`); `plots/` has the figure, light and dark.",
+            "The README note in `docs/paper/README.md` holds the detail."
+          ]
+        },
+        {
+          "type": "details",
+          "items": [
+            {
+              "title": "Config keys that differ between groups of runs",
+              "blocks": [
+                {
+                  "type": "text",
+                  "text": "In `config.yaml` the keys `exp_name`, `yaml_config_name`, `seed`, `layout_seed`, `env_kwargs` (the lane spacing) and `bundle` (the machine) name each run; the four below differ between groups; every other key is equal in all 90 runs."
+                },
+                {
+                  "type": "table",
+                  "columns": [
+                    "Group",
+                    "Spacing",
+                    "`reward_source`",
+                    "`time_limit_penalty`",
+                    "`device`",
+                    "Code point (`git_head`)"
+                  ],
+                  "rows": [
+                    [
+                      "FARM",
+                      "4",
+                      "rm",
+                      "0.0",
+                      "cpu",
+                      "809dfe3f-dirty"
+                    ],
+                    [
+                      "FARM",
+                      "2",
+                      "rm",
+                      "0.0",
+                      "cuda",
+                      "ed42365f-dirty"
+                    ],
+                    [
+                      "FARM",
+                      "1",
+                      "rm",
+                      "0.0",
+                      "cuda",
+                      "462cfde3-dirty / 919c166d-dirty"
+                    ],
+                    [
+                      "FARM + kill reward",
+                      "4",
+                      "both",
+                      "0.0",
+                      "cuda",
+                      "f1f5aefd-dirty"
+                    ],
+                    [
+                      "FARM + kill reward",
+                      "2",
+                      "both",
+                      "0.0",
+                      "cuda",
+                      "f1f5aefd-dirty"
+                    ],
+                    [
+                      "FARM + kill reward",
+                      "1",
+                      "both",
+                      "0.0",
+                      "cuda",
+                      "f1f5aefd-dirty"
+                    ],
+                    [
+                      "No reward machine",
+                      "4",
+                      "env",
+                      "-5.0",
+                      "cuda",
+                      "68b904da-dirty"
+                    ],
+                    [
+                      "No reward machine",
+                      "2",
+                      "env",
+                      "-5.0",
+                      "cuda",
+                      "5f9674ea-dirty"
+                    ],
+                    [
+                      "No reward machine",
+                      "1",
+                      "env",
+                      "-5.0",
+                      "cuda",
+                      "5f9674ea-dirty"
+                    ],
+                    [
+                      "FARM, kill-two card",
+                      "4",
+                      "rm",
+                      "0.0",
+                      "cuda",
+                      "809dfe3f-dirty"
+                    ],
+                    [
+                      "FARM, kill-two card",
+                      "2",
+                      "rm",
+                      "0.0",
+                      "cuda",
+                      "462cfde3-dirty"
+                    ],
+                    [
+                      "ARM-FM, kill-two card",
+                      "4",
+                      "rm",
+                      "0.0",
+                      "cpu",
+                      "e6c3acba-dirty"
+                    ],
+                    [
+                      "ARM-FM, kill-two card",
+                      "2",
+                      "rm",
+                      "0.0",
+                      "cuda",
+                      "f1f5aefd-dirty"
+                    ]
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "code",
+          "text": "# from the repository root, RM_RL_env active; fill.py is the agent-artifacts skill's script\npython -I docs/paper/lanes-spacing/check/collect.py\nPYTHONPATH=app python -W ignore docs/paper/lanes-spacing/check/build_page.py\npython3 ~/.claude/skills/agent-artifacts/scripts/fill.py \\\n  docs/paper/lanes-spacing/data.json docs/paper/lanes-spacing/index.html"
+        }
+      ]
+    }
+  ]
+}

@@ -3,7 +3,8 @@
 Every number comes from ``evidence/tables.md``, the full output of ``check/clause_choice.py``; the
 95% Wilson intervals are computed again here and checked against the printed ones. The per-card
 fold-outs take the task, the answers in LTLf, the picks and the chosen machines from the same file
-and ``evidence/rm/``.
+and ``evidence/rm/``. The learning section takes its rows and counts from
+``evidence/learning-by-level.json`` (``check/learning_by_level.py``).
 
 Usage, from the repository root inside RM_RL_env:
     PYTHONPATH=app python -W ignore docs/paper/clause-choice/check/build_page.py
@@ -13,6 +14,7 @@ import io
 import json
 import math
 import re
+from collections import Counter
 from pathlib import Path
 
 import matplotlib as mpl
@@ -22,6 +24,7 @@ from matplotlib.ticker import PercentFormatter
 
 ENTRY = Path(__file__).resolve().parents[1]
 TABLES = (ENTRY / "evidence/tables.md").read_text()
+LEARNING = json.loads((ENTRY / "evidence/learning-by-level.json").read_text())
 # Static SVGs, not a Plotly file: plotly.js embedded is 4.8 MB, over the repo's 1 MB file limit.
 PLOT = ENTRY / "plots/choice-shares"
 Z95 = 1.959964
@@ -328,6 +331,106 @@ def card_items() -> tuple[list[dict], list[dict]]:
 
 
 # ======================================================================================
+#                                  LEARNING BY LEVEL
+# ======================================================================================
+def learning_blocks() -> list[dict]:
+    """The learning table, its two splits and the caveats, from ``evidence/learning-by-level.json``."""
+    rows, counts = LEARNING["rows"], LEARNING["summary"]
+    blocked, other = counts["by_level"]["in"], counts["by_level"]["out"]
+    assert blocked[0] == 0 and other[1] == 0, counts["by_level"]  # the text says none and all
+    table = [
+        [
+            f"`{row['card']}`",
+            row["level"],
+            row["letter"] + (" (added after)" if row["added_after"] else ""),
+            ", ".join(f"{value:.2f}" for value in row["judged_success"])
+            + (" (soft only)" if row["soft_only"] else ""),
+            {
+                "text": "learned" if row["learned"] else "not learned",
+                "tone": "ok" if row["learned"] else "bad",
+            },
+            row["arm_fm"],
+            "Ordered cards" if row["card"].split("/")[1] in PROMPT_FORM else "Wording cards",
+        ]
+        for row in sorted(rows, key=lambda row: (row["blocked"], row["card"]))
+    ]
+    without = counts["by_level_without_soft_only"]
+    arms = counts["not_learned_other_arms"]
+
+    def commits(learned: bool) -> str:
+        found = Counter(
+            head for row in rows if row["learned"] == learned for head in row["trained_on"]
+        )
+        return ", ".join(f"`{head}` ({n})" for head, n in sorted(found.items()))
+
+    return [
+        {
+            "type": "table",
+            "columns": [
+                "Card",
+                "Level",
+                "Answer",
+                "Judged success per seed",
+                "FARM",
+                "ARM-FM",
+                "Task, LTLf, RM in",
+            ],
+            "rows": table,
+        },
+        {
+            "type": "text",
+            "text": f"**By level.** On other levels {other[0]} of {sum(other)} rows learned; on BlockedUnlockPickup "
+            f"{blocked[0]} of {sum(blocked)} did (Fisher's exact p = {counts['by_level']['p']:.3f}). "
+            f"**By answer.** {counts['later_listed_learned']} of the {counts['later_listed']} rows whose RM matched a "
+            f"later-listed answer learned, {counts['first_listed_learned']} of the "
+            f"{counts['trained_rows'] - counts['later_listed']} that matched the first-listed one "
+            f"(p = {counts['by_answer']['p']:.2f}): no pattern.",
+        },
+        {
+            "type": "callout",
+            "tone": "warn",
+            "title": "One learned row rests on the idle agent",
+            "text": f"`{counts['soft_only_learned_rows'][0]}` (soft not-both, no goal) has only soft rules, so its "
+            "verdict compares the agents' soft-rule breaks with an idle plan's instead of a goal "
+            "(`docs/paper/soft-breaks-vs-idle/`). Without it the split is "
+            f"{without['out'][0]} of {sum(without['out'])} against {without['in'][0]} of "
+            f"{sum(without['in'])}, p = {without['p']:.3f}.",
+        },
+        {
+            "type": "callout",
+            "tone": "warn",
+            "title": "The study is not independent",
+            "text": f"{counts['cards_with_added_answer']} of the {counts['card_entries']} cards "
+            f"({counts['trained_cards_with_added_answer']} of them trained) got an accepted answer only after their "
+            f"RMs were read (see Gaps); {counts['rows_matching_added_answer']} of the {counts['trained_rows']} rows "
+            "match one of those answers (marked in the table).",
+        },
+        {
+            "type": "callout",
+            "tone": "warn",
+            "title": f"Only {counts['trained_rows']} of the {counts['trained_rows'] + counts['trained_rows_outside']} "
+            "trained rows",
+            "text": f"The other {counts['trained_rows_outside']} trained rows are outside the study: their cards list "
+            "one answer. The statement holds for these rows only.",
+        },
+        {
+            "type": "callout",
+            "tone": "info",
+            "title": "A pattern over nine rows, not a cause",
+            "text": f"Across all 60 rows FARM learned {counts['blocked_level_farm_rows']['learned']} of "
+            f"{sum(counts['blocked_level_farm_rows'].values())} on BlockedUnlockPickup, so the level does not block "
+            f"learning by itself. For the {sum(not row['learned'] for row in rows)} not-learned rows, ARM-FM learned "
+            f"{arms['arm_fm']} of them and no-RM {arms['no_rm']}. The level is also tangled with the code the runs "
+            f"trained on (`config.yaml` `git_head`): the not-learned rows on {commits(False)}, the learned rows on "
+            f"{commits(True)}. `app/` is the same at `809dfe3` and `e6c3acb`; `029d82c` differs only in "
+            "`app/src/benchmark/plan_check.py` and `traces.py` (`git diff --stat`; the runs' trees were marked "
+            "dirty, so this is the commit, not the exact files). The runs do not say which part of the level or "
+            "the machine stops FARM there.",
+        },
+    ]
+
+
+# ======================================================================================
 #                                        PAGE
 # ======================================================================================
 def build() -> dict:
@@ -339,8 +442,9 @@ def build() -> dict:
     agree_k, agree_n, agree_chance = numbers["agree"]["levels, one case at one level (3 runs)"]
     (form_k, form_n), _ = numbers["form"]["FARM final run"]
     (form_low_k, form_low_n), _ = numbers["form"]["levels: low to max"]
+    learning = LEARNING["summary"]
     return {
-        "eyebrow": "Paper entry · FARM clause choice · 2026-11-22",
+        "eyebrow": "Paper entry · FARM clause choice · 2026-11-22, learning section 2026-11-24",
         "title": "Two right answers: the wording picks, not chance",
         "subtitle": "Some task cards accept more than one set of rules. We looked at which one the generator "
         "writes. Runs of one wording write the same answer, ordered tasks get the form the prompt teaches, and "
@@ -367,6 +471,15 @@ def build() -> dict:
                             "bundles, one run each. Low, medium, high and max pick the same on every right run.",
                             "**Pricing barely enters.** The generator never sees rewards. The critic does, and once "
                             "moved a pick partly over reward (`tpl-precedence-soft-1-goal~p2`).",
+                            f"**Learning follows the level, not the answer.** Of the {learning['trained_rows']} "
+                            "trained rows on these cards, "
+                            f"{learning['by_level']['out'][0]} of {sum(learning['by_level']['out'])} learned on "
+                            f"other levels and {learning['by_level']['in'][0]} of {sum(learning['by_level']['in'])} "
+                            "on BlockedUnlockPickup; the answer the RM matched splits them "
+                            f"{learning['later_listed_learned']} of {learning['later_listed']} (later-listed) and "
+                            f"{learning['first_listed_learned']} of "
+                            f"{learning['trained_rows'] - learning['later_listed']} (first-listed). Three caveats "
+                            "below.",
                         ],
                     },
                     {
@@ -471,6 +584,17 @@ def build() -> dict:
                 ],
             },
             {
+                "id": "learning",
+                "title": "Learning follows the level, not the answer",
+                "intro": "The 9 trained rows of the cards above that list more than one answer (the final run, FARM, "
+                "PPO). A row is learned when at least 2 of its seeds pass at 0.8 judged success (the final "
+                'results\' rule). E = `expect`, A = `also_ok[0]`; "added after" marks an answer listed only after the '
+                "RMs were read. The answer is the one `check/clause_choice.py` matched for the bundle the runs "
+                "trained on. Each card's task, its answers in LTLf and the machines the runs wrote are in the "
+                "fold-out named in the last column, below.",
+                "blocks": learning_blocks(),
+            },
+            {
                 "id": "ordered",
                 "title": "Ordered cards: the prompt's form wins",
                 "collapsed": True,
@@ -497,7 +621,10 @@ def build() -> dict:
                         "text": "# from the repository root, inside RM_RL_env (no model call)\n"
                         "# 1. the analysis again (rewrites evidence/; MONA on PATH for the same-task check)\n"
                         "PYTHONPATH=app python -W ignore docs/paper/clause-choice/check/clause_choice.py\n"
-                        "# 2. the page and its plot from evidence/tables.md and evidence/rm/\n"
+                        "# 1b. learning by level (evidence/learning-by-level.json, .md); reads outputs/runs\n"
+                        "env PYTHONPATH=app:.git/agent-memory/artifacts/final-results python -W ignore "
+                        "docs/paper/clause-choice/check/learning_by_level.py\n"
+                        "# 2. the page and its plot from evidence/tables.md, evidence/rm/ and the learning json\n"
                         "PYTHONPATH=app python -W ignore docs/paper/clause-choice/check/build_page.py\n"
                         "python3 <agent-artifacts skill>/scripts/fill.py docs/paper/clause-choice/data.json "
                         "docs/paper/clause-choice/index.html\n"

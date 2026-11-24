@@ -1,0 +1,1811 @@
+{
+  "eyebrow": "Paper entry · shop ladder curriculum · 2026-11-23",
+  "title": "Teaching the shop task: slips turned on later, a shop that grows",
+  "subtitle": "In the full 8x8 shop, the FARM machine for serving clients never learned to serve (0 of 3 training runs per card). The same machine learned it in 3 of 3 runs when a run started with no food slips and turned them on once the last 100 training episodes averaged 10 orders served per episode. With a quarter of slips landing behind the agent, no run serves, and the machine itself pays idling more. A shop that grows from 3x3 to 7x7 inside one run learns in 3 of 6 runs, against 0 of 6 for plain FARM at 7x7 and 5 of 6 with no reward machine.",
+  "sections": [
+    {
+      "id": "setting",
+      "title": "The setting in three lines",
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            "**The shop.** A worker agent fetches food from the pantry and gives it to clients who come in. The food can slip out of its hands, and the task says to pick it up on the very next move.",
+            "**FARM.** A language model reads the task text and writes a reward machine: a small state machine that pays the agent as the task's clauses are kept or broken. Breaking a hard clause sends the machine to its *well*, a dead-end state that charges -10. The agent then learns from that pay with PPO, a standard reinforcement-learning method.",
+            "**A rung** is one task of the shop ladder, a series of tasks that grow harder. This page uses two: rung 1, *deliver* (serve every client), and rung 3, *order and deliver* (take the client's order first)."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "summary",
+      "title": "In short",
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            "**The plain runs never serve.** In the full 8x8 shop, 3 training runs per card learned nothing on either rung (0 of 3 [0%, 56%] on rung 1, 0 of 3 [0%, 56%] on rung 3), and again 0 of 3 on both rungs with the second learner preset. In the standard-preset runs, more than 99.8% of the training episodes of the last million steps end in one machine state, with nothing served.",
+            "**A curriculum makes them serve.** Same machine, same learner, same 5M steps. The run starts with no food slips and turns slips on once the last 100 training episodes average 10 orders served per episode. Rung 1: 3 of 3 [44%, 100%], 18.7 orders per test episode. Rung 3: 3 of 3 [44%, 100%], 11.6 orders per test episode. Over both rungs that is 6 of 6 against 0 of 6 ([61%, 100%] against [0%, 39%]).",
+            "**The machine's pay makes idling the trap.** The first pickup of every episode always slips, and a scripted server that misses one slip falls into the -10 well and scores -12 on rung 1, while idling scores -1. Two runs back this: one 1M-step run in a world without slips serves 18.85 orders per test episode (a different world from the 18.7 above, which has slips, and a single run), and the curriculum learns under the same pay once serving is learned before the slips come in. It is the best-supported cause, not a proof.",
+            "**With back falls, no run serves, and the machine prefers idling.** When a quarter of the slips land the food behind the agent, nothing can pick it up on the very next move. 0 of 3 [0%, 56%] and 0 of 3 [0%, 56%] learned; the machine pays idling -1.0 against -9.3 for its scripted solving plan on rung 1 (-2.0 against -9.0 on rung 3).",
+            "**Smaller shops: only 3x3 learns.** On both rungs, with either learner preset, 3x3 learned in 12 of 12 runs [76%, 100%]; 5x5 and 7x7 in 0 of 24 runs [0%, 14%].",
+            "**A shop that grows inside one run: 3 of 6 learn at 7x7 [19%, 81%].** A run starts in a 3x3 shop and grows to 5x5, then 7x7, each time the last 100 episodes average 10 orders served; 4 of 6 runs reached 7x7. Plain FARM at 7x7 with the same learner: 0 of 6 [0%, 39%]. The shop's own reward with no machine: 5 of 6 [44%, 97%], so the machine's runs are not ahead of it here. See [growing the shop](#grow)."
+          ]
+        },
+        {
+          "type": "figure",
+          "src": "plots/learned-runs.svg",
+          "dark": "plots/learned-runs-dark.svg",
+          "title": "Runs that learned to serve",
+          "alt": "Bars of the share of 3 training runs that learned, per rung and condition, with 95% Wilson intervals.",
+          "source": "check/build_page.py",
+          "caption": "Only the curriculum learns: 3 of 3 runs on each rung, against 0 of 3 for plain runs and for the back-fall curriculum. Whiskers are 95% Wilson intervals (the range of shares the 3 runs allow); with 3 runs a 3 of 3 still spans 44% to 100%, and the two rungs together (6 of 6 against 0 of 6) separate cleanly."
+        },
+        {
+          "type": "text",
+          "text": "Task text, LTL and machine of each rung: see [the two tasks](#task)."
+        },
+        {
+          "type": "table",
+          "heading": "Learned runs, 8x8 shop",
+          "columns": [
+            "Rung and condition",
+            "Learned runs [95% CI]",
+            "Served per test episode: mean (runs 1 / 2 / 3)",
+            "Served per training episode, last 1M steps: mean [95% interval over runs]"
+          ],
+          "rows": [
+            [
+              "Rung 1, deliver: no curriculum",
+              "0 of 3 [0%, 56%]",
+              "0.0 (0 / 0 / 0)",
+              "0.0 [0.0, 0.0]"
+            ],
+            [
+              "Rung 1, deliver: curriculum",
+              "3 of 3 [44%, 100%]",
+              "18.7 (18.7 / 18.7 / 18.7)",
+              "17.9 [17.7, 18.1]"
+            ],
+            [
+              "Rung 1, deliver: curriculum, back falls",
+              "0 of 3 [0%, 56%]",
+              "0.0 (0 / 0 / 0)",
+              "0.0 [0.0, 0.0]"
+            ],
+            [
+              "Rung 3, order and deliver: no curriculum",
+              "0 of 3 [0%, 56%]",
+              "0.0 (0 / 0 / 0)",
+              "0.0 [0.0, 0.0]"
+            ],
+            [
+              "Rung 3, order and deliver: curriculum",
+              "3 of 3 [44%, 100%]",
+              "11.6 (10.9 / 11.88 / 11.88)",
+              "11.2 [9.8, 12.6]"
+            ],
+            [
+              "Rung 3, order and deliver: curriculum, back falls",
+              "0 of 3 [0%, 56%]",
+              "0.0 (0 / 0 / 0)",
+              "0.0 [0.0, 0.0]"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "task",
+      "title": "The two tasks, their LTL and their machines",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "Two task cards of the shop ladder, shown once here. Every other card on this page is a copy of one of them in another world (slips that start later, back falls, a smaller floor): the same task text, the same clauses and the same machine, so no machine was generated again."
+        },
+        {
+          "type": "text",
+          "heading": "Rung 1, deliver",
+          "text": "**Task:** Whenever a client comes in, fetch food from the pantry and give it to them; if the food falls, pick it up on your very next move."
+        },
+        {
+          "type": "table",
+          "columns": [
+            "Clause (the card's answer)",
+            "LTLf"
+          ],
+          "rows": [
+            [
+              "Response(client_arrived, order_served) hard",
+              "`(G (client_arrived -> (F order_served)))`"
+            ],
+            [
+              "ChainResponse(food_fell, holding_food) hard",
+              "`(G (food_fell -> (X holding_food)))`"
+            ]
+          ]
+        },
+        {
+          "type": "figure",
+          "src": "graphs/rung1-deliver.html",
+          "height": 490,
+          "title": "Rung 1, deliver: the FARM machine",
+          "caption": "`shop-ladder-deliver`: 5 states, 24 transitions. `u4` (red) is the well: reaching it pays -10. Drag a state, click an edge for its cases."
+        },
+        {
+          "type": "details",
+          "items": [
+            {
+              "title": "RM text",
+              "blocks": [
+                {
+                  "type": "code",
+                  "text": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u4\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !client_arrived&food_fell) -> u1\n(u0, client_arrived&!food_fell&!order_served) -> u2\n(u0, client_arrived&food_fell&!order_served) -> u3\n(u0, client_arrived&food_fell&order_served) -> u1\n(u1, !client_arrived&!food_fell&!holding_food) -> u4\n(u1, !client_arrived&!food_fell&holding_food) -> u0\n(u1, !client_arrived&food_fell&!holding_food) -> u4\n(u1, client_arrived&!food_fell&!holding_food&!order_served) -> u4\n(u1, client_arrived&!food_fell&!holding_food&order_served) -> u4\n(u1, client_arrived&!food_fell&holding_food&!order_served) -> u2\n(u1, client_arrived&!food_fell&holding_food&order_served) -> u0\n(u1, client_arrived&food_fell&!holding_food&!order_served) -> u4\n(u1, client_arrived&food_fell&!holding_food&order_served) -> u4\n(u1, client_arrived&food_fell&holding_food&!order_served) -> u3\n(u2, !food_fell&order_served) -> u0\n(u2, food_fell&!order_served) -> u3\n(u2, food_fell&order_served) -> u1\n(u3, !food_fell&!holding_food&!order_served) -> u4\n(u3, !food_fell&!holding_food&order_served) -> u4\n(u3, !food_fell&holding_food&!order_served) -> u2\n(u3, !food_fell&holding_food&order_served) -> u0\n(u3, food_fell&!holding_food&!order_served) -> u4\n(u3, food_fell&!holding_food&order_served) -> u4\n(u3, food_fell&holding_food&order_served) -> u1\nREWARD_FUNCTION:\n(u0, !client_arrived&food_fell, u1) -> -1\n(u0, client_arrived&!food_fell&!order_served, u2) -> -1\n(u0, client_arrived&food_fell&!order_served, u3) -> -2\n(u0, client_arrived&food_fell&order_served, u1) -> -1\n(u1, !client_arrived&!food_fell&!holding_food, u4) -> -10\n(u1, !client_arrived&!food_fell&holding_food, u0) -> 1\n(u1, !client_arrived&food_fell&!holding_food, u4) -> -10\n(u1, client_arrived&!food_fell&!holding_food&!order_served, u4) -> -10\n(u1, client_arrived&!food_fell&!holding_food&order_served, u4) -> -10\n(u1, client_arrived&!food_fell&holding_food&order_served, u0) -> 1\n(u1, client_arrived&food_fell&!holding_food&!order_served, u4) -> -10\n(u1, client_arrived&food_fell&!holding_food&order_served, u4) -> -10\n(u1, client_arrived&food_fell&holding_food&!order_served, u3) -> -1\n(u2, !food_fell&order_served, u0) -> 1\n(u2, food_fell&!order_served, u3) -> -1\n(u3, !food_fell&!holding_food&!order_served, u4) -> -10\n(u3, !food_fell&!holding_food&order_served, u4) -> -10\n(u3, !food_fell&holding_food&!order_served, u2) -> 1\n(u3, !food_fell&holding_food&order_served, u0) -> 2\n(u3, food_fell&!holding_food&!order_served, u4) -> -10\n(u3, food_fell&!holding_food&order_served, u4) -> -10\n(u3, food_fell&holding_food&order_served, u1) -> 1\n"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "heading": "Rung 3, order and deliver",
+          "text": "**Task:** Whenever a client comes in, take their order, fetch food from the pantry and give it to them; if the food falls, pick it up on your very next move."
+        },
+        {
+          "type": "table",
+          "columns": [
+            "Clause (the card's answer)",
+            "LTLf"
+          ],
+          "rows": [
+            [
+              "Response(client_arrived, order_taken) hard",
+              "`(G (client_arrived -> (F order_taken)))`"
+            ],
+            [
+              "Response(order_taken, order_served) hard",
+              "`(G (order_taken -> (F order_served)))`"
+            ],
+            [
+              "ChainResponse(food_fell, holding_food) hard",
+              "`(G (food_fell -> (X holding_food)))`"
+            ]
+          ]
+        },
+        {
+          "type": "figure",
+          "src": "graphs/rung3-order-deliver.html",
+          "height": 490,
+          "title": "Rung 3, order and deliver: the FARM machine",
+          "caption": "`shop-ladder-order-deliver`: 9 states, 110 transitions. `u8` (red) is the well: reaching it pays -10. Drag a state, click an edge for its cases."
+        },
+        {
+          "type": "details",
+          "items": [
+            {
+              "title": "RM text",
+              "blocks": [
+                {
+                  "type": "code",
+                  "text": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6, u7, u8\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u8\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !client_arrived&!food_fell&!order_served&order_taken) -> u1\n(u0, !client_arrived&food_fell&!order_served&!order_taken) -> u2\n(u0, !client_arrived&food_fell&!order_served&order_taken) -> u3\n(u0, !client_arrived&food_fell&order_served) -> u2\n(u0, client_arrived&!food_fell&!order_served&!order_taken) -> u4\n(u0, client_arrived&!food_fell&!order_served&order_taken) -> u1\n(u0, client_arrived&!food_fell&order_served&!order_taken) -> u4\n(u0, client_arrived&food_fell&!order_served&!order_taken) -> u5\n(u0, client_arrived&food_fell&!order_served&order_taken) -> u3\n(u0, client_arrived&food_fell&order_served&!order_taken) -> u5\n(u0, client_arrived&food_fell&order_served&order_taken) -> u2\n(u1, !client_arrived&!food_fell&order_served) -> u0\n(u1, !client_arrived&food_fell&!order_served) -> u3\n(u1, !client_arrived&food_fell&order_served) -> u2\n(u1, client_arrived&!food_fell&!order_served&!order_taken) -> u6\n(u1, client_arrived&!food_fell&order_served&!order_taken) -> u4\n(u1, client_arrived&!food_fell&order_served&order_taken) -> u0\n(u1, client_arrived&food_fell&!order_served&!order_taken) -> u7\n(u1, client_arrived&food_fell&!order_served&order_taken) -> u3\n(u1, client_arrived&food_fell&order_served&!order_taken) -> u5\n(u1, client_arrived&food_fell&order_served&order_taken) -> u2\n(u2, !client_arrived&!food_fell&!holding_food&!order_served&!order_taken) -> u8\n(u2, !client_arrived&!food_fell&!holding_food&!order_served&order_taken) -> u8\n(u2, !client_arrived&!food_fell&!holding_food&order_served) -> u8\n(u2, !client_arrived&!food_fell&holding_food&!order_served&!order_taken) -> u0\n(u2, !client_arrived&!food_fell&holding_food&!order_served&order_taken) -> u1\n(u2, !client_arrived&!food_fell&holding_food&order_served) -> u0\n(u2, !client_arrived&food_fell&!holding_food&!order_served&!order_taken) -> u8\n(u2, !client_arrived&food_fell&!holding_food&!order_served&order_taken) -> u8\n(u2, !client_arrived&food_fell&!holding_food&order_served) -> u8\n(u2, !client_arrived&food_fell&holding_food&!order_served&order_taken) -> u3\n(u2, client_arrived&!food_fell&!holding_food&!order_served&!order_taken) -> u8\n(u2, client_arrived&!food_fell&!holding_food&!order_served&order_taken) -> u8\n(u2, client_arrived&!food_fell&!holding_food&order_served&!order_taken) -> u8\n(u2, client_arrived&!food_fell&!holding_food&order_served&order_taken) -> u8\n(u2, client_arrived&!food_fell&holding_food&!order_served&!order_taken) -> u4\n(u2, client_arrived&!food_fell&holding_food&!order_served&order_taken) -> u1\n(u2, client_arrived&!food_fell&holding_food&order_served&!order_taken) -> u4\n(u2, client_arrived&!food_fell&holding_food&order_served&order_taken) -> u0\n(u2, client_arrived&food_fell&!holding_food&!order_served&!order_taken) -> u8\n(u2, client_arrived&food_fell&!holding_food&!order_served&order_taken) -> u8\n(u2, client_arrived&food_fell&!holding_food&order_served&!order_taken) -> u8\n(u2, client_arrived&food_fell&!holding_food&order_served&order_taken) -> u8\n(u2, client_arrived&food_fell&holding_food&!order_served&!order_taken) -> u5\n(u2, client_arrived&food_fell&holding_food&!order_served&order_taken) -> u3\n(u2, client_arrived&food_fell&holding_food&order_served&!order_taken) -> u5\n(u3, !client_arrived&!food_fell&!holding_food&!order_served) -> u8\n(u3, !client_arrived&!food_fell&!holding_food&order_served) -> u8\n(u3, !client_arrived&!food_fell&holding_food&!order_served) -> u1\n(u3, !client_arrived&!food_fell&holding_food&order_served) -> u0\n(u3, !client_arrived&food_fell&!holding_food&!order_served) -> u8\n(u3, !client_arrived&food_fell&!holding_food&order_served) -> u8\n(u3, !client_arrived&food_fell&holding_food&order_served) -> u2\n(u3, client_arrived&!food_fell&!holding_food&!order_served&!order_taken) -> u8\n(u3, client_arrived&!food_fell&!holding_food&!order_served&order_taken) -> u8\n(u3, client_arrived&!food_fell&!holding_food&order_served&!order_taken) -> u8\n(u3, client_arrived&!food_fell&!holding_food&order_served&order_taken) -> u8\n(u3, client_arrived&!food_fell&holding_food&!order_served&!order_taken) -> u6\n(u3, client_arrived&!food_fell&holding_food&!order_served&order_taken) -> u1\n(u3, client_arrived&!food_fell&holding_food&order_served&!order_taken) -> u4\n(u3, client_arrived&!food_fell&holding_food&order_served&order_taken) -> u0\n(u3, client_arrived&food_fell&!holding_food&!order_served&!order_taken) -> u8\n(u3, client_arrived&food_fell&!holding_food&!order_served&order_taken) -> u8\n(u3, client_arrived&food_fell&!holding_food&order_served&!order_taken) -> u8\n(u3, client_arrived&food_fell&!holding_food&order_served&order_taken) -> u8\n(u3, client_arrived&food_fell&holding_food&!order_served&!order_taken) -> u7\n(u3, client_arrived&food_fell&holding_food&order_served&!order_taken) -> u5\n(u3, client_arrived&food_fell&holding_food&order_served&order_taken) -> u2\n(u4, !food_fell&!order_served&order_taken) -> u1\n(u4, !food_fell&order_served&order_taken) -> u0\n(u4, food_fell&!order_served&!order_taken) -> u5\n(u4, food_fell&!order_served&order_taken) -> u3\n(u4, food_fell&order_served&!order_taken) -> u5\n(u4, food_fell&order_served&order_taken) -> u2\n(u5, !food_fell&!holding_food&!order_served&!order_taken) -> u8\n(u5, !food_fell&!holding_food&!order_served&order_taken) -> u8\n(u5, !food_fell&!holding_food&order_served&!order_taken) -> u8\n(u5, !food_fell&!holding_food&order_served&order_taken) -> u8\n(u5, !food_fell&holding_food&!order_served&!order_taken) -> u4\n(u5, !food_fell&holding_food&!order_served&order_taken) -> u1\n(u5, !food_fell&holding_food&order_served&!order_taken) -> u4\n(u5, !food_fell&holding_food&order_served&order_taken) -> u0\n(u5, food_fell&!holding_food&!order_served&!order_taken) -> u8\n(u5, food_fell&!holding_food&!order_served&order_taken) -> u8\n(u5, food_fell&!holding_food&order_served&!order_taken) -> u8\n(u5, food_fell&!holding_food&order_served&order_taken) -> u8\n(u5, food_fell&holding_food&!order_served&order_taken) -> u3\n(u5, food_fell&holding_food&order_served&order_taken) -> u2\n(u6, !food_fell&!order_served&order_taken) -> u1\n(u6, !food_fell&order_served&!order_taken) -> u4\n(u6, !food_fell&order_served&order_taken) -> u0\n(u6, food_fell&!order_served&!order_taken) -> u7\n(u6, food_fell&!order_served&order_taken) -> u3\n(u6, food_fell&order_served&!order_taken) -> u5\n(u6, food_fell&order_served&order_taken) -> u2\n(u7, !food_fell&!holding_food&!order_served&!order_taken) -> u8\n(u7, !food_fell&!holding_food&!order_served&order_taken) -> u8\n(u7, !food_fell&!holding_food&order_served&!order_taken) -> u8\n(u7, !food_fell&!holding_food&order_served&order_taken) -> u8\n(u7, !food_fell&holding_food&!order_served&!order_taken) -> u6\n(u7, !food_fell&holding_food&!order_served&order_taken) -> u1\n(u7, !food_fell&holding_food&order_served&!order_taken) -> u4\n(u7, !food_fell&holding_food&order_served&order_taken) -> u0\n(u7, food_fell&!holding_food&!order_served&!order_taken) -> u8\n(u7, food_fell&!holding_food&!order_served&order_taken) -> u8\n(u7, food_fell&!holding_food&order_served&!order_taken) -> u8\n(u7, food_fell&!holding_food&order_served&order_taken) -> u8\n(u7, food_fell&holding_food&!order_served&order_taken) -> u3\n(u7, food_fell&holding_food&order_served&!order_taken) -> u5\n(u7, food_fell&holding_food&order_served&order_taken) -> u2\nREWARD_FUNCTION:\n(u0, !client_arrived&!food_fell&!order_served&order_taken, u1) -> -1\n(u0, !client_arrived&food_fell&!order_served&!order_taken, u2) -> -1\n(u0, !client_arrived&food_fell&!order_served&order_taken, u3) -> -2\n(u0, !client_arrived&food_fell&order_served, u2) -> -1\n(u0, client_arrived&!food_fell&!order_served&!order_taken, u4) -> -2\n(u0, client_arrived&!food_fell&!order_served&order_taken, u1) -> -1\n(u0, client_arrived&!food_fell&order_served&!order_taken, u4) -> -2\n(u0, client_arrived&food_fell&!order_served&!order_taken, u5) -> -3\n(u0, client_arrived&food_fell&!order_served&order_taken, u3) -> -2\n(u0, client_arrived&food_fell&order_served&!order_taken, u5) -> -3\n(u0, client_arrived&food_fell&order_served&order_taken, u2) -> -1\n(u1, !client_arrived&!food_fell&order_served, u0) -> 1\n(u1, !client_arrived&food_fell&!order_served, u3) -> -1\n(u1, client_arrived&!food_fell&!order_served&!order_taken, u6) -> -2\n(u1, client_arrived&!food_fell&order_served&!order_taken, u4) -> -1\n(u1, client_arrived&!food_fell&order_served&order_taken, u0) -> 1\n(u1, client_arrived&food_fell&!order_served&!order_taken, u7) -> -3\n(u1, client_arrived&food_fell&!order_served&order_taken, u3) -> -1\n(u1, client_arrived&food_fell&order_served&!order_taken, u5) -> -2\n(u2, !client_arrived&!food_fell&!holding_food&!order_served&!order_taken, u8) -> -10\n(u2, !client_arrived&!food_fell&!holding_food&!order_served&order_taken, u8) -> -10\n(u2, !client_arrived&!food_fell&!holding_food&order_served, u8) -> -10\n(u2, !client_arrived&!food_fell&holding_food&!order_served&!order_taken, u0) -> 1\n(u2, !client_arrived&!food_fell&holding_food&order_served, u0) -> 1\n(u2, !client_arrived&food_fell&!holding_food&!order_served&!order_taken, u8) -> -10\n(u2, !client_arrived&food_fell&!holding_food&!order_served&order_taken, u8) -> -10\n(u2, !client_arrived&food_fell&!holding_food&order_served, u8) -> -10\n(u2, !client_arrived&food_fell&holding_food&!order_served&order_taken, u3) -> -1\n(u2, client_arrived&!food_fell&!holding_food&!order_served&!order_taken, u8) -> -10\n(u2, client_arrived&!food_fell&!holding_food&!order_served&order_taken, u8) -> -10\n(u2, client_arrived&!food_fell&!holding_food&order_served&!order_taken, u8) -> -10\n(u2, client_arrived&!food_fell&!holding_food&order_served&order_taken, u8) -> -10\n(u2, client_arrived&!food_fell&holding_food&!order_served&!order_taken, u4) -> -1\n(u2, client_arrived&!food_fell&holding_food&order_served&!order_taken, u4) -> -1\n(u2, client_arrived&!food_fell&holding_food&order_served&order_taken, u0) -> 1\n(u2, client_arrived&food_fell&!holding_food&!order_served&!order_taken, u8) -> -10\n(u2, client_arrived&food_fell&!holding_food&!order_served&order_taken, u8) -> -10\n(u2, client_arrived&food_fell&!holding_food&order_served&!order_taken, u8) -> -10\n(u2, client_arrived&food_fell&!holding_food&order_served&order_taken, u8) -> -10\n(u2, client_arrived&food_fell&holding_food&!order_served&!order_taken, u5) -> -2\n(u2, client_arrived&food_fell&holding_food&!order_served&order_taken, u3) -> -1\n(u2, client_arrived&food_fell&holding_food&order_served&!order_taken, u5) -> -2\n(u3, !client_arrived&!food_fell&!holding_food&!order_served, u8) -> -10\n(u3, !client_arrived&!food_fell&!holding_food&order_served, u8) -> -10\n(u3, !client_arrived&!food_fell&holding_food&!order_served, u1) -> 1\n(u3, !client_arrived&!food_fell&holding_food&order_served, u0) -> 2\n(u3, !client_arrived&food_fell&!holding_food&!order_served, u8) -> -10\n(u3, !client_arrived&food_fell&!holding_food&order_served, u8) -> -10\n(u3, !client_arrived&food_fell&holding_food&order_served, u2) -> 1\n(u3, client_arrived&!food_fell&!holding_food&!order_served&!order_taken, u8) -> -10\n(u3, client_arrived&!food_fell&!holding_food&!order_served&order_taken, u8) -> -10\n(u3, client_arrived&!food_fell&!holding_food&order_served&!order_taken, u8) -> -10\n(u3, client_arrived&!food_fell&!holding_food&order_served&order_taken, u8) -> -10\n(u3, client_arrived&!food_fell&holding_food&!order_served&!order_taken, u6) -> -1\n(u3, client_arrived&!food_fell&holding_food&!order_served&order_taken, u1) -> 1\n(u3, client_arrived&!food_fell&holding_food&order_served&order_taken, u0) -> 2\n(u3, client_arrived&food_fell&!holding_food&!order_served&!order_taken, u8) -> -10\n(u3, client_arrived&food_fell&!holding_food&!order_served&order_taken, u8) -> -10\n(u3, client_arrived&food_fell&!holding_food&order_served&!order_taken, u8) -> -10\n(u3, client_arrived&food_fell&!holding_food&order_served&order_taken, u8) -> -10\n(u3, client_arrived&food_fell&holding_food&!order_served&!order_taken, u7) -> -2\n(u3, client_arrived&food_fell&holding_food&order_served&!order_taken, u5) -> -1\n(u3, client_arrived&food_fell&holding_food&order_served&order_taken, u2) -> 1\n(u4, !food_fell&!order_served&order_taken, u1) -> 1\n(u4, !food_fell&order_served&order_taken, u0) -> 2\n(u4, food_fell&!order_served&!order_taken, u5) -> -1\n(u4, food_fell&order_served&!order_taken, u5) -> -1\n(u4, food_fell&order_served&order_taken, u2) -> 1\n(u5, !food_fell&!holding_food&!order_served&!order_taken, u8) -> -10\n(u5, !food_fell&!holding_food&!order_served&order_taken, u8) -> -10\n(u5, !food_fell&!holding_food&order_served&!order_taken, u8) -> -10\n(u5, !food_fell&!holding_food&order_served&order_taken, u8) -> -10\n(u5, !food_fell&holding_food&!order_served&!order_taken, u4) -> 1\n(u5, !food_fell&holding_food&!order_served&order_taken, u1) -> 2\n(u5, !food_fell&holding_food&order_served&!order_taken, u4) -> 1\n(u5, !food_fell&holding_food&order_served&order_taken, u0) -> 3\n(u5, food_fell&!holding_food&!order_served&!order_taken, u8) -> -10\n(u5, food_fell&!holding_food&!order_served&order_taken, u8) -> -10\n(u5, food_fell&!holding_food&order_served&!order_taken, u8) -> -10\n(u5, food_fell&!holding_food&order_served&order_taken, u8) -> -10\n(u5, food_fell&holding_food&!order_served&order_taken, u3) -> 1\n(u5, food_fell&holding_food&order_served&order_taken, u2) -> 2\n(u6, !food_fell&!order_served&order_taken, u1) -> 2\n(u6, !food_fell&order_served&!order_taken, u4) -> 1\n(u6, !food_fell&order_served&order_taken, u0) -> 3\n(u6, food_fell&!order_served&!order_taken, u7) -> -1\n(u6, food_fell&!order_served&order_taken, u3) -> 1\n(u6, food_fell&order_served&order_taken, u2) -> 2\n(u7, !food_fell&!holding_food&!order_served&!order_taken, u8) -> -10\n(u7, !food_fell&!holding_food&!order_served&order_taken, u8) -> -10\n(u7, !food_fell&!holding_food&order_served&!order_taken, u8) -> -10\n(u7, !food_fell&!holding_food&order_served&order_taken, u8) -> -10\n(u7, !food_fell&holding_food&!order_served&!order_taken, u6) -> 1\n(u7, !food_fell&holding_food&!order_served&order_taken, u1) -> 3\n(u7, !food_fell&holding_food&order_served&!order_taken, u4) -> 2\n(u7, !food_fell&holding_food&order_served&order_taken, u0) -> 4\n(u7, food_fell&!holding_food&!order_served&!order_taken, u8) -> -10\n(u7, food_fell&!holding_food&!order_served&order_taken, u8) -> -10\n(u7, food_fell&!holding_food&order_served&!order_taken, u8) -> -10\n(u7, food_fell&!holding_food&order_served&order_taken, u8) -> -10\n(u7, food_fell&holding_food&!order_served&order_taken, u3) -> 2\n(u7, food_fell&holding_food&order_served&!order_taken, u5) -> 1\n(u7, food_fell&holding_food&order_served&order_taken, u2) -> 3\n"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "setup",
+      "title": "What was run",
+      "blocks": [
+        {
+          "type": "table",
+          "columns": [
+            "Condition",
+            "World during training",
+            "Learner preset and cards"
+          ],
+          "rows": [
+            [
+              "No curriculum",
+              "The card's own world from step 0: food slips by the card's default chance, and the first pickup of every episode always slips.",
+              "`shop-ladder-std` (standard preset) and `shop-ladder` (shop preset); cards `shop-ladder-deliver`, `shop-ladder-order-deliver`"
+            ],
+            [
+              "Curriculum",
+              "No slips until the last 100 finished training episodes average 10 orders served per episode; then the card's own world.",
+              "`shop-curriculum` (standard preset); cards `...-curriculum`"
+            ],
+            [
+              "Curriculum, back falls",
+              "Three worlds: no slips; slips with no back falls, until the last 100 episodes average 10 orders served and 90% of falls are caught on the next move; then slips with 25% back falls (the food lands behind the agent).",
+              "`shop-curriculum` (standard preset); cards `...-curriculum-back`"
+            ],
+            [
+              "No slips throughout",
+              "No slips for the whole run; 1 run, 1M steps. Judged in that no-slip world.",
+              "`shop-ladder-noslip` (standard preset); card `shop-ladder-deliver`"
+            ],
+            [
+              "Smaller shop",
+              "The card's own world on a 3x3, 5x5 or 7x7 floor instead of 8x8.",
+              "`shop-size` (shop preset) and `shop-size-std` (standard preset); cards `...-3x3`, `-5x5`, `-7x7`"
+            ],
+            [
+              "World grows",
+              "A 3x3 shop until the last 100 finished training episodes average 10 orders served, then 5x5 until the same holds, then 7x7, the world the test and the judge play.",
+              "`shop-grow` (shop preset); cards `...-grow`"
+            ],
+            [
+              "No reward machine",
+              "The 7x7 shop's own reward (one per order served), no machine; judged on the same clauses.",
+              "`shop-size-reward`; cards `...-7x7`"
+            ]
+          ]
+        },
+        {
+          "type": "list",
+          "items": [
+            "**Learner presets.** PPO ran with one of two presets: the *standard* preset (`ppo-onehot`: gamma, the discount, 0.99; clip, the size limit of one update, 0.1) or the *shop* preset (`ppo-shop`: gamma 0.995, clip 0.2). Every run lasts 5M steps (1M for the no-slip run), and the agent sees the machine's current state as a one-hot input.",
+            "**Same machine in every condition.** Each copy card reuses its base card's machine, so the machine, the learner preset and the 5M steps are those of the plain runs. The page's build stops unless each curriculum, back-fall and size run has the learner settings of its plain run; only the world differs.",
+            "**3 runs per card.** Each run is one agent trained from scratch.",
+            "**Learned.** All 100 test episodes pass the judge; the number of orders served does not enter. Every judged run scores 0 or 1 except two: rung 1, run 3 of the grow runs (0.21) and rung 1, run 3 of the no-machine runs (0.22). Any pass bar above 0.22 gives the same counts.",
+            "**The judge** is the test: the trained agent plays 100 episodes in the card's own final world (slips on, and back falls on the back cards), and the judge checks each episode against the task's clauses.",
+            "**Left out.** The siren rung (rung 2, which adds \"turn the siren off\") and the other ladder rungs: each has its own task and machine, and the curriculum was not run on them.",
+            "**Code.** Plain runs trained at commit `93b3ea06` (dirty tree), the no-slip run at `ed42365f` (dirty tree), the size runs at `ed42365f`, and the curriculum and back-fall runs at `462cfde3` (`merge: shop world curriculum and back falls`). The grow runs and the no-reward-machine runs trained at `f1f5aefd` (dirty tree), which contains the size curriculum's merge `919c166d`. The build checks each run's recorded commit. The runs file is `experiments/benchmark/shop/runs-curriculum.yaml` (grow runs: `runs-grow.yaml`; no machine: `runs-size-no-rm.yaml`); the stage rule is the list of world stages (`env_stages`) on each curriculum or grow card."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "plain",
+      "title": "Why the plain runs never serve",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "Task text, LTL and machine of each rung: see [the two tasks](#task)."
+        },
+        {
+          "type": "text",
+          "text": "Every plain run (no curriculum, 8x8 shop, standard preset) ends the same way. Early on, 2.45% to 7.69% of training episodes end in the well, because an agent that touches food misses the first slip. By the last million steps at most 0.18% do, and more than 99.8% end in one machine state with nothing served: `u2` on rung 1 (a client arrived) and `u1` on rung 3 (the order is taken). The diagnosis note's traces of the earlier shop-preset runs on rung 1 show the agents never pick food up. The shop-preset runs on both cards serve 0 as well (see every run)."
+        },
+        {
+          "type": "details",
+          "items": [
+            {
+              "title": "Where the plain runs' training episodes end, per run",
+              "blocks": [
+                {
+                  "type": "table",
+                  "columns": [
+                    "Run",
+                    "Episodes ending in the well: first 100k / last 1M steps",
+                    "Commonest end state, last 1M steps",
+                    "Served per test episode; RM return of the final evaluation"
+                  ],
+                  "rows": [
+                    [
+                      "Rung 1, run 1",
+                      "4.9% / 0.1%",
+                      "`u2`, 99.9%",
+                      "0; -1"
+                    ],
+                    [
+                      "Rung 1, run 2",
+                      "3.1% / 0.1%",
+                      "`u2`, 99.9%",
+                      "0; -1"
+                    ],
+                    [
+                      "Rung 1, run 3",
+                      "2.5% / 0.1%",
+                      "`u2`, 99.9%",
+                      "0; -1"
+                    ],
+                    [
+                      "Rung 3, run 1",
+                      "2.5% / 0.1%",
+                      "`u1`, 99.9%",
+                      "0; -1"
+                    ],
+                    [
+                      "Rung 3, run 2",
+                      "3.1% / 0.0%",
+                      "`u1`, 100.0%",
+                      "0; -1"
+                    ],
+                    [
+                      "Rung 3, run 3",
+                      "7.7% / 0.2%",
+                      "`u1`, 99.8%",
+                      "0; -1"
+                    ]
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "details",
+          "items": [
+            {
+              "title": "Scripted players on rung 1: what the machine pays (copied from the plan notes, not recounted)",
+              "blocks": [
+                {
+                  "type": "table",
+                  "columns": [
+                    "Player on rung 1",
+                    "Machine return",
+                    "Discounted return"
+                  ],
+                  "rows": [
+                    [
+                      "Solving worker: catches every slip on the next move",
+                      "0",
+                      "-0.38"
+                    ],
+                    [
+                      "Catches a slip with chance 0.5",
+                      "-12",
+                      "-8.5"
+                    ],
+                    [
+                      "Catches a slip with chance 1/7 (random pickups)",
+                      "-12",
+                      "-10.4"
+                    ],
+                    [
+                      "Never catches a slip",
+                      "-12",
+                      "-10.8"
+                    ],
+                    [
+                      "Uniform random play (8 of 30 episodes end in the well)",
+                      "-3.9",
+                      "-2.37"
+                    ],
+                    [
+                      "Idle",
+                      "-1",
+                      "-0.94"
+                    ]
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "items": [
+            "**Fear valley.** The first pickup of every episode always slips (about 7.5 slips per episode), and a missed catch is the -10 well. A server must catch nearly every slip before serving beats idling; a learner that has not found the catch reflex is better off never touching food.",
+            "**Little pay for serving.** A served order refunds the charge of the client's arrival, so the whole gain from idling to perfect play is +1 per episode (+0.57 discounted), and about 0.04 discounted per extra order. The diagnosis note lists a third cause, that a legal serve is rare by chance (a difficulty of the learning itself), and rules out the training setup, the labeling and the language-model machine.",
+            "**No slips, one run.** With slips off for the whole run (1M steps, standard preset), the agent serves 18.85 orders per test episode and passes 100 of 100, judged in its own world without slips. That is a different world from the curriculum's final one (slips on) and a single run, so it is not comparable with the 18.7 of the curriculum. Its training episodes first average 10 orders at 0.27M; the rung 1 curriculum runs take 1.46M to 2.75M (see the curriculum section).",
+            "Source: `evidence/notes/ladder-noserve.md`. Its numbers are copied, not recounted from the run folders; the run tables are recounted."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "curriculum",
+      "title": "The curriculum learns",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "Task text, LTL and machine of each rung: see [the two tasks](#task)."
+        },
+        {
+          "type": "list",
+          "items": [
+            "**6 of 6 runs learned**, all with 100 of 100 test episodes passed, no broken hard or soft clause and no hard clause left open, in the full slip world.",
+            "**Each run switched at its own step** (0.64M to 2.75M): the rule waits until the last 100 training episodes average 10 orders served per episode. Serving had started earlier, from 0.23M to 1.15M.",
+            "**After the switch the agents keep serving.** Over the last 1M steps they serve 17.9 [17.7, 18.1] orders per training episode on rung 1 and 11.2 [9.8, 12.6] on rung 3 (mean over 3 runs [95% interval over runs]; the agent still explores in training)."
+          ]
+        },
+        {
+          "type": "figure",
+          "src": "plots/curves.svg",
+          "dark": "plots/curves-dark.svg",
+          "title": "Orders served per training episode, curriculum runs",
+          "alt": "Two panels, one per rung, with one line per run of the orders served per training episode against training steps, for the curriculum runs and the plain runs.",
+          "source": "check/build_page.py",
+          "caption": "Plain runs stay at 0 for all 5M steps. Each curriculum run starts serving with no slips; the marker on its line shows where its slips turn on, and it keeps serving afterwards. One line per run, because the runs switch at different steps and a mean would blur them. Left of a run's marker its world has no slips, so those points are not comparable with the ones to its right. Each point is a 100,000-step average, so a marker can sit below the 10 orders the switch rule needs."
+        },
+        {
+          "type": "table",
+          "columns": [
+            "Run",
+            "First order served at step",
+            "Slips turn on at step",
+            "Test episodes passed; served per test episode"
+          ],
+          "rows": [
+            [
+              "Rung 1, run 1",
+              "0.86M",
+              "2.75M (the last 100 episodes averaged 10.7)",
+              "100 of 100; 18.7"
+            ],
+            [
+              "Rung 1, run 2",
+              "1.15M",
+              "1.48M (the last 100 episodes averaged 10.03)",
+              "100 of 100; 18.7"
+            ],
+            [
+              "Rung 1, run 3",
+              "0.68M",
+              "1.46M (the last 100 episodes averaged 10.44)",
+              "100 of 100; 18.7"
+            ],
+            [
+              "Rung 3, run 1",
+              "0.23M",
+              "1.40M (the last 100 episodes averaged 10.02)",
+              "100 of 100; 10.9"
+            ],
+            [
+              "Rung 3, run 2",
+              "0.45M",
+              "0.64M (the last 100 episodes averaged 10.05)",
+              "100 of 100; 11.88"
+            ],
+            [
+              "Rung 3, run 3",
+              "0.85M",
+              "1.19M (the last 100 episodes averaged 10.06)",
+              "100 of 100; 11.88"
+            ]
+          ]
+        },
+        {
+          "type": "text",
+          "heading": "The same world, with and without the curriculum",
+          "text": "The curriculum's first stage is the world of the no-slip run: the build checks that the machine, the learner preset and the world settings match, and only the step budget differs (5M against 1M). Yet the no-slip run served its first order at 0.16M and reached an average of 10 at 0.27M, while the three rung 1 curriculum runs took 4 to 7 times as long for the first order and 5 to 10 times as long for the average. The cause is not explained. The only setting tied to the step budget is the learning-rate decay (`ppo_anneal_lr`, `app/src/arm_fm/ppo.py:774`), and it gives the 1M run a lower rate at equal steps, so it does not favour that run. With 1 no-slip run against 3 curriculum runs, run-to-run variation cannot be ruled out."
+        },
+        {
+          "type": "table",
+          "columns": [
+            "Run",
+            "First order served at step",
+            "Last 100 episodes first average 10 at step"
+          ],
+          "rows": [
+            [
+              "No-slip run (1 run, 1M steps)",
+              "0.16M",
+              "0.27M"
+            ],
+            [
+              "Curriculum, rung 1, run 1, before its switch (5M steps)",
+              "0.86M",
+              "2.75M"
+            ],
+            [
+              "Curriculum, rung 1, run 2, before its switch (5M steps)",
+              "1.15M",
+              "1.48M"
+            ],
+            [
+              "Curriculum, rung 1, run 3, before its switch (5M steps)",
+              "0.68M",
+              "1.46M"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "back",
+      "title": "With back falls, no run serves",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "Task text, LTL and machine of each rung: see [the two tasks](#task)."
+        },
+        {
+          "type": "list",
+          "items": [
+            "**0 of 3 on both rungs.** Every run first meets the stage rule twice: 10 orders per episode with no slips, then 10 again with slips and 99.2% to 100.0% of falls caught on the next move. Once 25% of slips land behind the agent, served orders per training episode drop below 0.5 within 0.25M steps of the switch in all 6 runs and stay below it (at most 0.43); over the last 1M steps they average 0.003 or less.",
+            "**The machine pays idling more.** A back fall cannot be caught on the next move. The scripted solving plan misses about 22% of its falls, ends in the -10 well early (5.5 orders served instead of 12.1 on rung 1) and scores -9.3 on rung 1 and -9.0 on rung 3, against -1.0 and -2.0 for idle. The trained agents end where the machine pays best of the plans priced: on rung 1 idle with a client waiting (-1.0), on rung 3 with the order taken and nothing served (-1.0, better than idle's -2.0).",
+            "**So this is the pay, not a training failure.** Whether another pay would let a server beat idling with back falls is not tested here. The two back cards' plan check fails by design for the same reason."
+          ]
+        },
+        {
+          "type": "figure",
+          "src": "plots/back-curves.svg",
+          "dark": "plots/back-curves-dark.svg",
+          "title": "Orders served per training episode, back-fall runs",
+          "alt": "Two panels, one per rung, with one line per run of the orders served per training episode against training steps, for the back-fall curriculum runs and the plain runs.",
+          "source": "check/build_page.py",
+          "caption": "Each run serves in the first worlds, then drops to about 0 soon after the diamond, where back falls start. Circle: slips turn on; diamond: back falls turn on. One line per run; each point is a 100,000-step average."
+        },
+        {
+          "type": "table",
+          "columns": [
+            "Run",
+            "Slips on / back falls on at step",
+            "Falls caught on the next move before back falls",
+            "Served per test episode; commonest end state in the last 1M steps; RM return of the final evaluation"
+          ],
+          "rows": [
+            [
+              "Rung 1, run 1",
+              "2.75M / 2.94M",
+              "99.2%",
+              "0; `u2`, 99.8%; -1"
+            ],
+            [
+              "Rung 1, run 2",
+              "1.48M / 1.64M",
+              "99.3%",
+              "0; `u2`, 99.9%; -1"
+            ],
+            [
+              "Rung 1, run 3",
+              "1.46M / 1.56M",
+              "99.4%",
+              "0; `u2`, 99.9%; -1"
+            ],
+            [
+              "Rung 3, run 1",
+              "1.40M / 1.53M",
+              "100.0%",
+              "0; `u1`, 99.8%; -1"
+            ],
+            [
+              "Rung 3, run 2",
+              "0.64M / 0.89M",
+              "99.9%",
+              "0; `u1`, 99.9%; -1"
+            ],
+            [
+              "Rung 3, run 3",
+              "1.19M / 1.33M",
+              "99.7%",
+              "0; `u1`, 99.9%; -1"
+            ]
+          ]
+        },
+        {
+          "type": "details",
+          "items": [
+            {
+              "title": "What the machine pays scripted plans (copied from the plan notes, not recounted; 40 episodes)",
+              "blocks": [
+                {
+                  "type": "table",
+                  "columns": [
+                    "Rung and world",
+                    "Plan",
+                    "Orders served",
+                    "Machine return / discounted"
+                  ],
+                  "rows": [
+                    [
+                      "Rung 1, no back falls",
+                      "solving plan",
+                      "12.125",
+                      "0 / -0.375"
+                    ],
+                    [
+                      "Rung 1, no back falls",
+                      "serves one order, then stops",
+                      "1",
+                      "-1 / -0.841"
+                    ],
+                    [
+                      "Rung 1, no back falls",
+                      "idle",
+                      "0",
+                      "-1 / -0.936"
+                    ],
+                    [
+                      "Rung 1, 25% back falls",
+                      "solving plan",
+                      "5.5",
+                      "-9.3 / -5.069"
+                    ],
+                    [
+                      "Rung 1, 25% back falls",
+                      "serves one order, then stops",
+                      "0.775",
+                      "-3.475 / -3.092"
+                    ],
+                    [
+                      "Rung 1, 25% back falls",
+                      "idle",
+                      "0",
+                      "-1 / -0.936"
+                    ],
+                    [
+                      "Rung 3, no back falls",
+                      "solving plan",
+                      "11.675",
+                      "0 / -0.449"
+                    ],
+                    [
+                      "Rung 3, no back falls",
+                      "serves one order, then stops",
+                      "1",
+                      "-2 / -1.609"
+                    ],
+                    [
+                      "Rung 3, no back falls",
+                      "idle",
+                      "0",
+                      "-2 / -1.872"
+                    ],
+                    [
+                      "Rung 3, 25% back falls",
+                      "solving plan",
+                      "5.375",
+                      "-9 / -4.862"
+                    ],
+                    [
+                      "Rung 3, 25% back falls",
+                      "serves one order, then stops",
+                      "0.775",
+                      "-4.25 / -3.594"
+                    ],
+                    [
+                      "Rung 3, 25% back falls",
+                      "idle",
+                      "0",
+                      "-2 / -1.872"
+                    ]
+                  ]
+                },
+                {
+                  "type": "text",
+                  "text": "The pricing numbers are copied from `evidence/notes/pricing-check.json` (`freeze-prep/shop-curriculum/` in the plan folder), not recomputed here. The discount is 0.995; the runs used 0.99, which changes the discounted column, not the plain one."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "size",
+      "title": "Smaller shops",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "Task text, LTL and machine of each rung: see [the two tasks](#task)."
+        },
+        {
+          "type": "text",
+          "text": "The same machine and instruction in a smaller room, plain runs without a curriculum. Only the 3x3 room learns: 12 of 12 runs [76%, 100%] over both rungs and both learner presets, against 0 of 24 runs [0%, 14%] for 5x5 and 7x7. The 8x8 rows are the plain runs of the first table."
+        },
+        {
+          "type": "table",
+          "columns": [
+            "Rung and floor",
+            "Shop preset: learned runs [95% CI]",
+            "Standard preset: learned runs [95% CI]",
+            "Served per test episode, runs 1 / 2 / 3 (shop preset; standard preset)"
+          ],
+          "rows": [
+            [
+              "Rung 1, 3x3",
+              "3 of 3 [44%, 100%]",
+              "3 of 3 [44%, 100%]",
+              "21.59 / 18.25 / 21.59; 21.59 / 21.59 / 21.59"
+            ],
+            [
+              "Rung 1, 5x5",
+              "0 of 3 [0%, 56%]",
+              "0 of 3 [0%, 56%]",
+              "0 / 0 / 0; 0 / 0 / 0"
+            ],
+            [
+              "Rung 1, 7x7",
+              "0 of 3 [0%, 56%]",
+              "0 of 3 [0%, 56%]",
+              "0 / 0 / 0; 0 / 0 / 0"
+            ],
+            [
+              "Rung 1, 8x8",
+              "0 of 3 [0%, 56%]",
+              "0 of 3 [0%, 56%]",
+              "0 / 0 / 0; 0 / 0 / 0"
+            ],
+            [
+              "Rung 3, 3x3",
+              "3 of 3 [44%, 100%]",
+              "3 of 3 [44%, 100%]",
+              "17.65 / 17.56 / 17.56; 17.65 / 17.65 / 17.56"
+            ],
+            [
+              "Rung 3, 5x5",
+              "0 of 3 [0%, 56%]",
+              "0 of 3 [0%, 56%]",
+              "0 / 0 / 0; 0 / 0 / 0"
+            ],
+            [
+              "Rung 3, 7x7",
+              "0 of 3 [0%, 56%]",
+              "0 of 3 [0%, 56%]",
+              "0 / 0 / 0; 0 / 0 / 0"
+            ],
+            [
+              "Rung 3, 8x8",
+              "0 of 3 [0%, 56%]",
+              "0 of 3 [0%, 56%]",
+              "0 / 0 / 0; 0 / 0 / 0"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "grow",
+      "title": "Growing the shop inside one run",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "Plain FARM runs learn only in the 3x3 shop: 0 of 24 above it. A new agent acts almost at random, and in a bigger shop that serves almost nothing: over the first 100 training episodes the plain 5x5 and 7x7 runs serve 0.00 orders per episode, the 3x3 runs 0.01 to 0.09. Less pay to learn from is the likely reason. This section asks whether a run still learns the combined task when its shop grows inside the run, from 3x3 to 5x5 to 7x7. The task is to serve every client and pick up fallen food on the very next move; rung 3 also takes the client's order first."
+        },
+        {
+          "type": "text",
+          "text": "Task text, LTL and machine of each rung: see [the two tasks](#task)."
+        },
+        {
+          "type": "list",
+          "items": [
+            "**3 of 6 runs learned in the 7x7 shop [19%, 81%].** Rung 1: 1 of 3 [6%, 79%]; rung 3: 2 of 3 [21%, 94%]. Plain FARM runs at 7x7 with the same learner preset: 0 of 6 [0%, 39%] (0 of 6 again with the standard preset). The intervals overlap: the counts point to growth helping, but six runs per condition do not settle it.",
+            "**4 of 6 runs reached 7x7.** The other two stayed in 5x5 to the end of their 5M steps (rung 1, run 2, from 3.62M; rung 3, run 2, from 0.51M) and served on average 0.12 and 0.03 orders per training episode there. The plain 5x5 runs learned 0 of 12 [0%, 24%] too.",
+            "**The shop's own reward, with no machine, learned 5 of 6 [44%, 97%] at 7x7** with no growth (rung 1: 2 of 3; rung 3: 3 of 3). The machine's runs are not ahead of it here. The one reward run that did not learn serves 18.57 per test episode but breaks the pick-up clause in 78 of its 100 test episodes.",
+            "**One run serves in training and not in the judge's test** (rung 1, run 3, details below).",
+            "**For reference, FARM in a 3x3 shop** learns in 12 of 12 [76%, 100%] (both rungs, both learner presets): the machine works when the world is small."
+          ]
+        },
+        {
+          "type": "figure",
+          "src": "plots/grow-learned.svg",
+          "dark": "plots/grow-learned-dark.svg",
+          "title": "Runs that learned: 7x7 shop and 3x3 reference",
+          "alt": "Bars of the share of 3 training runs that learned, per rung and condition at 7x7, and FARM in a 3x3 shop, with 95% Wilson intervals.",
+          "source": "check/build_page.py",
+          "caption": "Growing helps only in the counts (3 of 6 against 0 of 6 for plain FARM at 7x7), the runs with no reward machine learn 5 of 6, and the intervals overlap. The 3x3 bars are the same machine in a smaller shop, as a reference. Whiskers are 95% Wilson intervals, wide with 3 runs per bar."
+        },
+        {
+          "type": "table",
+          "heading": "Learned runs, judged in 7x7 except the 3x3 rows",
+          "columns": [
+            "Rung and condition",
+            "Learned runs [95% CI]",
+            "Served per test episode: mean (runs 1 / 2 / 3)"
+          ],
+          "rows": [
+            [
+              "Rung 1: FARM, no curriculum, 7x7, shop preset",
+              "0 of 3 [0%, 56%]",
+              "0.0 (0 / 0 / 0)"
+            ],
+            [
+              "Rung 1: FARM, no curriculum, 7x7, standard preset",
+              "0 of 3 [0%, 56%]",
+              "0.0 (0 / 0 / 0)"
+            ],
+            [
+              "Rung 1: FARM, world grows to 7x7",
+              "1 of 3 [6%, 79%]",
+              "7.4 (19.25 / 0 / 2.89)"
+            ],
+            [
+              "Rung 1: No reward machine, 7x7",
+              "2 of 3 [21%, 94%]",
+              "18.8 (18.7 / 19.27 / 18.57)"
+            ],
+            [
+              "Rung 1: FARM, no curriculum, 3x3 shop, shop preset",
+              "3 of 3 [44%, 100%]",
+              "20.5 (21.59 / 18.25 / 21.59)"
+            ],
+            [
+              "Rung 1: FARM, no curriculum, 3x3 shop, standard preset",
+              "3 of 3 [44%, 100%]",
+              "21.6 (21.59 / 21.59 / 21.59)"
+            ],
+            [
+              "Rung 3: FARM, no curriculum, 7x7, shop preset",
+              "0 of 3 [0%, 56%]",
+              "0.0 (0 / 0 / 0)"
+            ],
+            [
+              "Rung 3: FARM, no curriculum, 7x7, standard preset",
+              "0 of 3 [0%, 56%]",
+              "0.0 (0 / 0 / 0)"
+            ],
+            [
+              "Rung 3: FARM, world grows to 7x7",
+              "2 of 3 [21%, 94%]",
+              "8.4 (12.64 / 0 / 12.64)"
+            ],
+            [
+              "Rung 3: No reward machine, 7x7",
+              "3 of 3 [44%, 100%]",
+              "18.1 (18.53 / 17.91 / 17.91)"
+            ],
+            [
+              "Rung 3: FARM, no curriculum, 3x3 shop, shop preset",
+              "3 of 3 [44%, 100%]",
+              "17.6 (17.65 / 17.56 / 17.56)"
+            ],
+            [
+              "Rung 3: FARM, no curriculum, 3x3 shop, standard preset",
+              "3 of 3 [44%, 100%]",
+              "17.6 (17.65 / 17.65 / 17.56)"
+            ]
+          ]
+        },
+        {
+          "type": "figure",
+          "src": "plots/grow-curves.svg",
+          "dark": "plots/grow-curves-dark.svg",
+          "title": "Orders served per training episode, growing world",
+          "alt": "Two panels, one per rung, with one line per grow run of the orders served per training episode against training steps, named run 1 to run 3 at its end, with a marker where its world grows.",
+          "source": "check/build_page.py",
+          "caption": "Two runs never get past 5x5: in each panel the line of run 2 falls to about 0 after its circle and stays there. The circle is where a run's world grows from 3x3 to 5x5 and the diamond where it grows to 7x7; the dotted line is the 10 orders the rule asks for. Most markers sit below it because each point is a 100,000-step average, while the rule reads the last 100 episodes. Left of a marker the world is smaller, so levels on the two sides of a marker are not comparable."
+        },
+        {
+          "type": "table",
+          "columns": [
+            "Run",
+            "Switch to 5x5: step (served)",
+            "Switch to 7x7: step (served)",
+            "World at the end",
+            "Test episodes passed in 7x7; served per test episode"
+          ],
+          "rows": [
+            [
+              "Rung 1, run 1",
+              "1.32M (10.14)",
+              "2.43M (10.07)",
+              "7x7",
+              "100 of 100; 19.25"
+            ],
+            [
+              "Rung 1, run 2",
+              "3.62M (10.03)",
+              "not reached",
+              "5x5",
+              "0 of 100; 0"
+            ],
+            [
+              "Rung 1, run 3",
+              "1.14M (10.03)",
+              "1.21M (10.07)",
+              "7x7",
+              "21 of 100; 2.89"
+            ],
+            [
+              "Rung 3, run 1",
+              "2.64M (10.08)",
+              "3.14M (10.06)",
+              "7x7",
+              "100 of 100; 12.64"
+            ],
+            [
+              "Rung 3, run 2",
+              "0.51M (10.01)",
+              "not reached",
+              "5x5",
+              "0 of 100; 0"
+            ],
+            [
+              "Rung 3, run 3",
+              "1.55M (10.03)",
+              "1.95M (10.05)",
+              "7x7",
+              "100 of 100; 12.64"
+            ]
+          ]
+        },
+        {
+          "type": "text",
+          "text": "Served is the mean orders served per episode over the last 100 training episodes before the switch."
+        },
+        {
+          "type": "text",
+          "heading": "Rung 1, run 3: it serves in training, not in the judge's test",
+          "text": "**It counts as not learned.** In training the agent picks each action at random by its learned odds; the judge always plays the most likely action. This run reached 7x7 at 1.21M steps with the same machine and learner as the others, and the two ways of picking give very different results."
+        },
+        {
+          "type": "list",
+          "items": [
+            "**Training, sampled actions.** From 7x7 on: 6,439 training episodes, 12.6 orders served per episode, 1.5% of the episodes serving nothing.",
+            "**The run's own evaluation at the end, 100 layouts.** Sampled actions serve 13.49 orders per episode; the most likely action at every step (greedy) serves 3.5. For the five other grow runs the two differ by 0.2 at most.",
+            "**The judge, 100 test layouts, most likely action** (`app/scripts/test_rl.py:445`, `eval_greedy`). 21 episodes serve (13.8 orders on average) and pass; 79 serve nothing and leave the clause *serve every client* open at the end. No clause is broken. The run's own greedy evaluation (3.5) and the judge's (2.89) are separate draws of 100 layouts.",
+            "**Not shown:** why the most likely action serves nothing in those 79 layouts."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "runs",
+      "title": "Every run",
+      "intro": "73 finished runs of the suites recounted in `evidence/runs.json`. The Run folder column is the time part of the folder's name under `outputs/runs/bench__<suite>__<card>__<arm>__ppo/` (arm `farm`, or `no-rm` for `shop-size-reward`).",
+      "collapsed": true,
+      "blocks": [
+        {
+          "type": "table",
+          "columns": [
+            "Suite",
+            "Card",
+            "Task",
+            "Gamma / clip",
+            "Run folder",
+            "Steps",
+            "Test episodes passed",
+            "Served per test episode",
+            "Learned"
+          ],
+          "rows": [
+            [
+              "`shop-curriculum`",
+              "`shop-ladder-deliver-curriculum`",
+              "Rung 1, deliver",
+              "0.99 / 0.1",
+              "20261123T135313-1206638",
+              "5,001,216",
+              "100 of 100",
+              "18.7",
+              "yes"
+            ],
+            [
+              "`shop-curriculum`",
+              "`shop-ladder-deliver-curriculum`",
+              "Rung 1, deliver",
+              "0.99 / 0.1",
+              "20261123T135313-1206639",
+              "5,001,216",
+              "100 of 100",
+              "18.7",
+              "yes"
+            ],
+            [
+              "`shop-curriculum`",
+              "`shop-ladder-deliver-curriculum`",
+              "Rung 1, deliver",
+              "0.99 / 0.1",
+              "20261123T135313-1206641",
+              "5,001,216",
+              "100 of 100",
+              "18.7",
+              "yes"
+            ],
+            [
+              "`shop-curriculum`",
+              "`shop-ladder-deliver-curriculum-back`",
+              "Rung 1, deliver",
+              "0.99 / 0.1",
+              "20261123T135313-1206644",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-curriculum`",
+              "`shop-ladder-deliver-curriculum-back`",
+              "Rung 1, deliver",
+              "0.99 / 0.1",
+              "20261123T135313-1206681",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-curriculum`",
+              "`shop-ladder-deliver-curriculum-back`",
+              "Rung 1, deliver",
+              "0.99 / 0.1",
+              "20261123T135313-1206687",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-curriculum`",
+              "`shop-ladder-order-deliver-curriculum`",
+              "Rung 3, order and deliver",
+              "0.99 / 0.1",
+              "20261123T150314-1225601",
+              "5,001,216",
+              "100 of 100",
+              "10.9",
+              "yes"
+            ],
+            [
+              "`shop-curriculum`",
+              "`shop-ladder-order-deliver-curriculum`",
+              "Rung 3, order and deliver",
+              "0.99 / 0.1",
+              "20261123T150314-1225736",
+              "5,001,216",
+              "100 of 100",
+              "11.88",
+              "yes"
+            ],
+            [
+              "`shop-curriculum`",
+              "`shop-ladder-order-deliver-curriculum`",
+              "Rung 3, order and deliver",
+              "0.99 / 0.1",
+              "20261123T150314-1225838",
+              "5,001,216",
+              "100 of 100",
+              "11.88",
+              "yes"
+            ],
+            [
+              "`shop-curriculum`",
+              "`shop-ladder-order-deliver-curriculum-back`",
+              "Rung 3, order and deliver",
+              "0.99 / 0.1",
+              "20261123T150314-1225846",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-curriculum`",
+              "`shop-ladder-order-deliver-curriculum-back`",
+              "Rung 3, order and deliver",
+              "0.99 / 0.1",
+              "20261123T150314-1225850",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-curriculum`",
+              "`shop-ladder-order-deliver-curriculum-back`",
+              "Rung 3, order and deliver",
+              "0.99 / 0.1",
+              "20261123T150314-1225883",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-grow`",
+              "`shop-ladder-deliver-grow`",
+              "Rung 1, deliver",
+              "0.995 / 0.2",
+              "20261123T185700-70533",
+              "5,001,216",
+              "100 of 100",
+              "19.25",
+              "yes"
+            ],
+            [
+              "`shop-grow`",
+              "`shop-ladder-deliver-grow`",
+              "Rung 1, deliver",
+              "0.995 / 0.2",
+              "20261123T185701-70542",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-grow`",
+              "`shop-ladder-deliver-grow`",
+              "Rung 1, deliver",
+              "0.995 / 0.2",
+              "20261123T185701-70544",
+              "5,001,216",
+              "21 of 100",
+              "2.89",
+              "no"
+            ],
+            [
+              "`shop-grow`",
+              "`shop-ladder-order-deliver-grow`",
+              "Rung 3, order and deliver",
+              "0.995 / 0.2",
+              "20261123T185700-70545",
+              "5,001,216",
+              "100 of 100",
+              "12.64",
+              "yes"
+            ],
+            [
+              "`shop-grow`",
+              "`shop-ladder-order-deliver-grow`",
+              "Rung 3, order and deliver",
+              "0.995 / 0.2",
+              "20261123T185700-70547",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-grow`",
+              "`shop-ladder-order-deliver-grow`",
+              "Rung 3, order and deliver",
+              "0.995 / 0.2",
+              "20261123T185701-70549",
+              "5,001,216",
+              "100 of 100",
+              "12.64",
+              "yes"
+            ],
+            [
+              "`shop-ladder`",
+              "`shop-ladder-deliver`",
+              "Rung 1, deliver",
+              "0.995 / 0.2",
+              "20261123T023543-2135001",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-ladder`",
+              "`shop-ladder-deliver`",
+              "Rung 1, deliver",
+              "0.995 / 0.2",
+              "20261123T023543-2135002",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-ladder`",
+              "`shop-ladder-deliver`",
+              "Rung 1, deliver",
+              "0.995 / 0.2",
+              "20261123T023543-2135004",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-ladder`",
+              "`shop-ladder-order-deliver`",
+              "Rung 3, order and deliver",
+              "0.995 / 0.2",
+              "20261123T071726-2254962",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-ladder`",
+              "`shop-ladder-order-deliver`",
+              "Rung 3, order and deliver",
+              "0.995 / 0.2",
+              "20261123T071726-2254963",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-ladder`",
+              "`shop-ladder-order-deliver`",
+              "Rung 3, order and deliver",
+              "0.995 / 0.2",
+              "20261123T071729-2255130",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-ladder-noslip`",
+              "`shop-ladder-deliver`",
+              "Rung 1, deliver",
+              "0.99 / 0.1",
+              "20261123T101242-2633500",
+              "1,003,520",
+              "100 of 100",
+              "18.85",
+              "yes"
+            ],
+            [
+              "`shop-ladder-std`",
+              "`shop-ladder-deliver`",
+              "Rung 1, deliver",
+              "0.99 / 0.1",
+              "20261123T082413-2358518",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-ladder-std`",
+              "`shop-ladder-deliver`",
+              "Rung 1, deliver",
+              "0.99 / 0.1",
+              "20261123T082412-2358519",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-ladder-std`",
+              "`shop-ladder-deliver`",
+              "Rung 1, deliver",
+              "0.99 / 0.1",
+              "20261123T082412-2358520",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-ladder-std`",
+              "`shop-ladder-order-deliver`",
+              "Rung 3, order and deliver",
+              "0.99 / 0.1",
+              "20261123T082413-2358522",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-ladder-std`",
+              "`shop-ladder-order-deliver`",
+              "Rung 3, order and deliver",
+              "0.99 / 0.1",
+              "20261123T082412-2358525",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-ladder-std`",
+              "`shop-ladder-order-deliver`",
+              "Rung 3, order and deliver",
+              "0.99 / 0.1",
+              "20261123T082413-2358526",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size`",
+              "`shop-ladder-deliver-3x3`",
+              "Rung 1, deliver",
+              "0.995 / 0.2",
+              "20261123T091012-1085099",
+              "5,001,216",
+              "100 of 100",
+              "21.59",
+              "yes"
+            ],
+            [
+              "`shop-size`",
+              "`shop-ladder-deliver-3x3`",
+              "Rung 1, deliver",
+              "0.995 / 0.2",
+              "20261123T091012-1085100",
+              "5,001,216",
+              "100 of 100",
+              "18.25",
+              "yes"
+            ],
+            [
+              "`shop-size`",
+              "`shop-ladder-deliver-3x3`",
+              "Rung 1, deliver",
+              "0.995 / 0.2",
+              "20261123T091013-1085101",
+              "5,001,216",
+              "100 of 100",
+              "21.59",
+              "yes"
+            ],
+            [
+              "`shop-size`",
+              "`shop-ladder-deliver-5x5`",
+              "Rung 1, deliver",
+              "0.995 / 0.2",
+              "20261123T091013-1085116",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size`",
+              "`shop-ladder-deliver-5x5`",
+              "Rung 1, deliver",
+              "0.995 / 0.2",
+              "20261123T091013-1085118",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size`",
+              "`shop-ladder-deliver-5x5`",
+              "Rung 1, deliver",
+              "0.995 / 0.2",
+              "20261123T091013-1085120",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size`",
+              "`shop-ladder-deliver-7x7`",
+              "Rung 1, deliver",
+              "0.995 / 0.2",
+              "20261123T111543-1115783",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size`",
+              "`shop-ladder-deliver-7x7`",
+              "Rung 1, deliver",
+              "0.995 / 0.2",
+              "20261123T111543-1115785",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size`",
+              "`shop-ladder-deliver-7x7`",
+              "Rung 1, deliver",
+              "0.995 / 0.2",
+              "20261123T111543-1115787",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size`",
+              "`shop-ladder-order-deliver-3x3`",
+              "Rung 3, order and deliver",
+              "0.995 / 0.2",
+              "20261123T091012-1085110",
+              "5,001,216",
+              "100 of 100",
+              "17.65",
+              "yes"
+            ],
+            [
+              "`shop-size`",
+              "`shop-ladder-order-deliver-3x3`",
+              "Rung 3, order and deliver",
+              "0.995 / 0.2",
+              "20261123T091013-1085112",
+              "5,001,216",
+              "100 of 100",
+              "17.56",
+              "yes"
+            ],
+            [
+              "`shop-size`",
+              "`shop-ladder-order-deliver-3x3`",
+              "Rung 3, order and deliver",
+              "0.995 / 0.2",
+              "20261123T091013-1085114",
+              "5,001,216",
+              "100 of 100",
+              "17.56",
+              "yes"
+            ],
+            [
+              "`shop-size`",
+              "`shop-ladder-order-deliver-5x5`",
+              "Rung 3, order and deliver",
+              "0.995 / 0.2",
+              "20261123T111543-1115777",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size`",
+              "`shop-ladder-order-deliver-5x5`",
+              "Rung 3, order and deliver",
+              "0.995 / 0.2",
+              "20261123T111543-1115779",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size`",
+              "`shop-ladder-order-deliver-5x5`",
+              "Rung 3, order and deliver",
+              "0.995 / 0.2",
+              "20261123T111543-1115781",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size`",
+              "`shop-ladder-order-deliver-7x7`",
+              "Rung 3, order and deliver",
+              "0.995 / 0.2",
+              "20261123T114742-1120557",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size`",
+              "`shop-ladder-order-deliver-7x7`",
+              "Rung 3, order and deliver",
+              "0.995 / 0.2",
+              "20261123T114742-1120558",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size`",
+              "`shop-ladder-order-deliver-7x7`",
+              "Rung 3, order and deliver",
+              "0.995 / 0.2",
+              "20261123T114742-1120560",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size-reward`",
+              "`shop-ladder-deliver-7x7`",
+              "Rung 1, deliver",
+              "0.99 / 0.1",
+              "20261123T174024-4095024",
+              "5,001,216",
+              "100 of 100",
+              "18.7",
+              "yes"
+            ],
+            [
+              "`shop-size-reward`",
+              "`shop-ladder-deliver-7x7`",
+              "Rung 1, deliver",
+              "0.99 / 0.1",
+              "20261123T174034-4096440",
+              "5,001,216",
+              "100 of 100",
+              "19.27",
+              "yes"
+            ],
+            [
+              "`shop-size-reward`",
+              "`shop-ladder-deliver-7x7`",
+              "Rung 1, deliver",
+              "0.99 / 0.1",
+              "20261123T174038-4096718",
+              "5,001,216",
+              "22 of 100",
+              "18.57",
+              "no"
+            ],
+            [
+              "`shop-size-reward`",
+              "`shop-ladder-order-deliver-7x7`",
+              "Rung 3, order and deliver",
+              "0.99 / 0.1",
+              "20261123T174116-4100599",
+              "5,001,216",
+              "100 of 100",
+              "18.53",
+              "yes"
+            ],
+            [
+              "`shop-size-reward`",
+              "`shop-ladder-order-deliver-7x7`",
+              "Rung 3, order and deliver",
+              "0.99 / 0.1",
+              "20261123T174121-4101018",
+              "5,001,216",
+              "100 of 100",
+              "17.91",
+              "yes"
+            ],
+            [
+              "`shop-size-reward`",
+              "`shop-ladder-order-deliver-7x7`",
+              "Rung 3, order and deliver",
+              "0.99 / 0.1",
+              "20261123T174128-4101796",
+              "5,001,216",
+              "100 of 100",
+              "17.91",
+              "yes"
+            ],
+            [
+              "`shop-size-std`",
+              "`shop-ladder-deliver-3x3`",
+              "Rung 1, deliver",
+              "0.99 / 0.1",
+              "20261123T122643-1197263",
+              "5,001,216",
+              "100 of 100",
+              "21.59",
+              "yes"
+            ],
+            [
+              "`shop-size-std`",
+              "`shop-ladder-deliver-3x3`",
+              "Rung 1, deliver",
+              "0.99 / 0.1",
+              "20261123T122643-1197264",
+              "5,001,216",
+              "100 of 100",
+              "21.59",
+              "yes"
+            ],
+            [
+              "`shop-size-std`",
+              "`shop-ladder-deliver-3x3`",
+              "Rung 1, deliver",
+              "0.99 / 0.1",
+              "20261123T122645-1197266",
+              "5,001,216",
+              "100 of 100",
+              "21.59",
+              "yes"
+            ],
+            [
+              "`shop-size-std`",
+              "`shop-ladder-deliver-5x5`",
+              "Rung 1, deliver",
+              "0.99 / 0.1",
+              "20261123T122645-1197282",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size-std`",
+              "`shop-ladder-deliver-5x5`",
+              "Rung 1, deliver",
+              "0.99 / 0.1",
+              "20261123T122645-1197287",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size-std`",
+              "`shop-ladder-deliver-5x5`",
+              "Rung 1, deliver",
+              "0.99 / 0.1",
+              "20261123T122644-1197290",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size-std`",
+              "`shop-ladder-deliver-7x7`",
+              "Rung 1, deliver",
+              "0.99 / 0.1",
+              "20261123T122643-1197267",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size-std`",
+              "`shop-ladder-deliver-7x7`",
+              "Rung 1, deliver",
+              "0.99 / 0.1",
+              "20261123T122644-1197270",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size-std`",
+              "`shop-ladder-deliver-7x7`",
+              "Rung 1, deliver",
+              "0.99 / 0.1",
+              "20261123T122643-1197271",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size-std`",
+              "`shop-ladder-order-deliver-3x3`",
+              "Rung 3, order and deliver",
+              "0.99 / 0.1",
+              "20261123T122643-1197269",
+              "5,001,216",
+              "100 of 100",
+              "17.65",
+              "yes"
+            ],
+            [
+              "`shop-size-std`",
+              "`shop-ladder-order-deliver-3x3`",
+              "Rung 3, order and deliver",
+              "0.99 / 0.1",
+              "20261123T122645-1197274",
+              "5,001,216",
+              "100 of 100",
+              "17.65",
+              "yes"
+            ],
+            [
+              "`shop-size-std`",
+              "`shop-ladder-order-deliver-3x3`",
+              "Rung 3, order and deliver",
+              "0.99 / 0.1",
+              "20261123T122645-1197278",
+              "5,001,216",
+              "100 of 100",
+              "17.56",
+              "yes"
+            ],
+            [
+              "`shop-size-std`",
+              "`shop-ladder-order-deliver-5x5`",
+              "Rung 3, order and deliver",
+              "0.99 / 0.1",
+              "20261123T122645-1197292",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size-std`",
+              "`shop-ladder-order-deliver-5x5`",
+              "Rung 3, order and deliver",
+              "0.99 / 0.1",
+              "20261123T122645-1197294",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size-std`",
+              "`shop-ladder-order-deliver-5x5`",
+              "Rung 3, order and deliver",
+              "0.99 / 0.1",
+              "20261123T122645-1197296",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size-std`",
+              "`shop-ladder-order-deliver-7x7`",
+              "Rung 3, order and deliver",
+              "0.99 / 0.1",
+              "20261123T122644-1197276",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size-std`",
+              "`shop-ladder-order-deliver-7x7`",
+              "Rung 3, order and deliver",
+              "0.99 / 0.1",
+              "20261123T122645-1197280",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ],
+            [
+              "`shop-size-std`",
+              "`shop-ladder-order-deliver-7x7`",
+              "Rung 3, order and deliver",
+              "0.99 / 0.1",
+              "20261123T122645-1197283",
+              "5,001,216",
+              "0 of 100",
+              "0",
+              "no"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "checks",
+      "title": "Checks",
+      "collapsed": true,
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            "**Recount from raw folders.** `check/collect.py` reads every `judge.json` (100 test episodes each) and recounts passes and served orders from the per-episode records; both match the stored means. Folders with a dot in their name are skipped, and only the cards of the two rungs are kept.",
+            "**Machines.** `graphs/rung1-deliver.rm` and `graphs/rung3-order-deliver.rm` equal the committed bundles' `reward_machine.txt`; every headline run trained on, and was judged with, that bundle.",
+            "**Runs differ only in the world.** The build asserts that curriculum, back-fall and size runs have the plain runs' learner settings, steps and machine, that each run's world settings equal its card's, and that the no-slip run's world equals the curriculum's first stage.",
+            "**Counts and code.** The build asserts every learned count the text states (3 of 3 and 0 of 3 per rung and condition, 12 of 12 at 3x3, 0 of 24 above it; at 7x7 the grow, no-machine and plain runs per rung), that every judged run scores 0 or 1 except the two the page names, the commit each suite trained on, and the bounds the back-fall text quotes (below 0.5 orders per episode within the stated steps).",
+            "**Grow and no-machine runs.** The build asserts that the grow cards copy the 7x7 card's task, clauses and world with the two stages, that each grow run has the learner settings, machine and steps of the plain 7x7 run, that every switch happened at 10 or more orders over the last 100 episodes, that the no-machine runs have no bundle and the 7x7 card's world, and that the plain 5x5 and 7x7 runs served nothing in their first 100 training episodes (`first_100_served` in `evidence/runs.json`)."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "limits",
+      "title": "Limits",
+      "collapsed": true,
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            "3 runs per card, so one rung alone gives 3 of 3 [44%, 100%] against 0 of 3 [0%, 56%], which overlap; the two rungs pooled (6 of 6 against 0 of 6) do not.",
+            "The curriculum switch rule (10 orders over 100 episodes) was set once and not tuned; the runs show it works, not that it is the best rule.",
+            "The back-fall result says what this machine pays, not that no pay could teach a server. The pricing and diagnosis numbers are copied from plan notes, not recomputed.",
+            "The no-slip check is 1 run of 1M steps, and why it serves earlier than the curriculum's first stage is not explained.",
+            "The grow section has 3 runs per card, 6 per condition, so its intervals are wide: grow (3 of 6) is not separated from plain 7x7 (0 of 6) or from no machine (5 of 6). The grow rule (3x3, then 5x5, then 7x7, each switch at 10 orders over 100 episodes) was set once and not tuned.",
+            "Rung 1, run 3 counts as not learned because the judge plays the most likely action; it serves when sampling, and why its most likely action serves nothing is not shown.",
+            "The plain runs and the no-slip run trained on a dirty working tree; the commits above are the nearest recorded code.",
+            "The plots are static SVG, not Plotly: plotly.js embedded is 4.8 MB, over the repository's 1 MB file limit. The machines are interactive."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "files",
+      "title": "Files and rerun",
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            "This page is `index.html`, built from `data.json`. `check/` has `collect.py` (the recount) and `build_page.py` (the page and its plots); `evidence/` the recount and copies of three plan notes; `graphs/` the two machines; `plots/` the five figures, light and dark.",
+            "The README note in `docs/paper/README.md` holds the detail."
+          ]
+        },
+        {
+          "type": "code",
+          "text": "# from the repository root, RM_RL_env active; fill.py is the agent-artifacts skill's script\npython -I docs/paper/shop-curriculum/check/collect.py\nPYTHONPATH=app python -W ignore docs/paper/shop-curriculum/check/build_page.py\npython3 ~/.claude/skills/agent-artifacts/scripts/fill.py \\\n  docs/paper/shop-curriculum/data.json docs/paper/shop-curriculum/index.html"
+        }
+      ]
+    }
+  ]
+}

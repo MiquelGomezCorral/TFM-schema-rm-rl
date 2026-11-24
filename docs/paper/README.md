@@ -1475,6 +1475,29 @@ writes `data.json` and the plot, then the artifacts skill's `fill.py`.
 **Code.** Final-run bundles generated on the freeze `809dfe3`; level runs with the cards of main `e6c3acb` (the
 snapshot in `level-benchmark-freeze/evidence/cards`); final-run scoring with the cards and scorer of main `881b22d`.
 
+**Update 2026-11-24: learning follows the level, not the answer.** Among the 9 trained rows (FARM, final run) of the 15
+card entries, whether a row is learned follows its level, not the answer its RM matched. The 4 not-learned rows are all
+on BlockedUnlockPickup: `cx-goal-one-rule` and `tpl-not-co-existence-1-goal` matched `expect`,
+`tpl-not-co-existence-soft-1-goal` and `tpl-precedence-soft-1-goal` matched `also_ok[0]`, judged success 0.00 on every
+seed. The 5 elsewhere all learned: KeyCorridorS4R3, UnlockPickup (base and pilot), DoorKey-8x8 and Lanes. Learned / not
+learned is 5/0 off the Blocked level and 0/4 on it, Fisher's exact p = 0.008; split by the matched answer it is 4/2 for
+a later-listed answer and 1/2 for the first-listed one, p = 0.52. Three caveats stay. (1) One learned row,
+`tpl-not-co-existence-soft-1-nogoal` (soft not-both, Lanes), counts as learned under the idle-agent rule for soft-only
+cards (`soft-breaks-vs-idle/`); without it the split is 4/0 against 0/4, p = 0.029. (2) 6 of the 15 cards (4 of them
+trained) got an accepted answer only after their RMs were read, and 3 of the 9 rows match one, so the study is not
+independent. (3) Only these 9 of the 60 trained rows are studied; the other 51 are outside. The recount adds limits.
+Across all 60 rows FARM learned 3 of 10 on BlockedUnlockPickup, so the level does not block learning by itself. For the 4
+not-learned rows ARM-FM learned all 4 and no-RM none. The 4 not-learned rows trained on `e6c3acb` (2) and `029d82c` (2);
+the learned ones on the freeze `809dfe3` (4) and `e6c3acb` (1). `app/` is the same at `809dfe3` and `e6c3acb`, and
+`029d82c` differs only in `app/src/benchmark/plan_check.py` and `traces.py`, but the runs' trees were marked dirty. Read
+it as a pattern over nine rows, not as a cause. The page has a new section with the table; each card's task, LTLf and RM
+stay in the per-card fold-outs, and the last column names which. Evidence: `evidence/learning-by-level.json` and
+`.md`; script `check/learning_by_level.py`; `check/build_page.py` builds the section (`learning_blocks`). Rerun (no
+model call, no training, from the repository root in `RM_RL_env`): `env
+PYTHONPATH=app:.git/agent-memory/artifacts/final-results python -W ignore
+docs/paper/clause-choice/check/learning_by_level.py`, then `build_page.py` and `fill.py` as above. Code: the runs'
+commits above; recount on main `7a005656`.
+
 ### How often the next move can pick up a fallen box (`fall-rate/`), 2026-11-22
 
 **What it shows.** The box-carry rule "whenever the box falls, pick it up on your very next move" can only be met when
@@ -1577,6 +1600,31 @@ reads only `evidence/bundles.json` and the bundles it names. Rerun from the repo
 docs/paper/reward-loops-and-rounds/check/gen_rounds_armfm.py`. The FARM count reran on main `93b3ea0` byte-identical.
 Gap: only built bundles count. The 114 unbuilt ones passed generation too and failed the plan check
 (`armfm-failure-kinds/`); they are left out, as the FARM count leaves out `shop-boil~p2`.
+
+**Update 2026-11-24: what the trained agents earned from a paying loop.** `check/trained_loops.py` recounts it from the
+judged runs (`evidence/trained-loops.txt`). It reads 275 PPO runs (178 FARM, 97 ARM-FM; 267 with 100 judged episodes and
+8 pilot runs with 1), 26,708 episodes. Each episode's `rm_return` (the plain sum of what its RM paid) is set against the
+best scripted plan of the RM the run trained on (the largest plain-sum pay of a `solve` run in
+`<bundle>.plan_check.json`): 0 episodes above it, 17,558 at it, 9,150 below it. The 4 FARM DQN pilot runs (1 episode
+each) are outside the 275 and also 0 above. Three of the 24 looping ARM-FM RMs trained, all box-carry (`cx-box-carry`,
+`tpl-chain-response-1-goal-carry`, `tpl-chain-response-1-nogoal-carry`; best scripted plan 1.2 on each). The 9 runs on
+their own cards (3 seeds each, 900 episodes) return exactly 1.1 (517 episodes) or 1.2 (383) with judged success 1.0:
+the world dropped the box once or twice, each time the agent picked it up again, the loop paid 0.1 per pick-up and the
+exit paid 1. Never more than 2 falls, never more rounds paid than falls, no drop action. Three points are weaker than
+the thesis claim. (1) The agents do use the loop, but only as often as the world drops the box; "no trained agent used a
+loop that pays" holds only in that sense (capped by the environment, nothing repeated on their own, none above the best
+scripted plan). (2) 15 judged runs trained on those three RMs, not 9: the side cards
+`tpl-chain-response-1-goal-carry-backturn` and `-noturn` reuse the goal-carry RM (6 runs, trained on `029d82c`). Their
+return is 0.0 to 0.2 per episode, the exit never reached, except `-noturn` seed 3 (22 episodes at 0.0, 78 at 1.1,
+judged success 0.78; it drops the box in all 100 episodes, which is not a fall and pays nothing). So "1.1 to 1.2 per
+judged episode" holds for the 9 own-card runs only, and no run is above 1.2. (3) "Not above the best scripted plan"
+is against the solving plans the plan check holds; a plan it does not hold could earn more. The own-card runs trained
+on the freeze `809dfe3`; the recount runs on main `7a005656`. Rerun (no model call, no training, from the repository
+root in `RM_RL_env`, after `bundle_list.py` and `pay_cycles.py`; both reran with the stored results, 24 of 152 and 0
+of 265): `env PYTHONPATH=app:.git/agent-memory/artifacts/final-results python -P
+docs/paper/reward-loops-and-rounds/check/trained_loops.py`. It reads `evidence/bundles.json`,
+`evidence/pay_cycles.json`, the judged runs under `outputs/runs/` and the plan checks, and writes
+`evidence/trained-loops.txt`.
 
 ### ARM-FM failures by kind: all 114 fail the plan check (`armfm-failure-kinds/`), 2026-11-23
 
@@ -1850,7 +1898,8 @@ figures/preview.tex`. It needs `.git/agent-memory` for the final-results builder
 as `bundle_list.py` does.
 
 **Code.** Learned rule and Wilson interval are the builder's (`outcome`, `seed_learned`, `wilson_ci`); the thinking
-numbers come from `arm()` of `level-benchmark-freeze/check/arm_stats.py`; the merged arrows are `render-rm`'s
+numbers come from `arm()` of `level-benchmark-freeze/check/arm_stats.py` and the other models' points from the `final`
+rows of `other-llms-by-level/data/levels.csv` (read only); the merged arrows are `render-rm`'s
 (`parse_paper_reward_machine`, `paper_to_structure`, `_edge_class` colour rule). Counted on main `93b3ea0`.
 
 ### ARM-FM baseline results: FARM, ARM-FM and no RM on ARM-FM's own tasks (`armfm-baseline-results/`), 2026-11-23
@@ -1932,3 +1981,323 @@ arm), fetched into `outputs/runs/` before `build.py` is rerun.
 **Code.** Built on main `93b3ea0`; the 10 extra runs were submitted at `b2e3550a`. Per the B4 gate, the ARM-FM bundles and the FARM `xland` bundles were generated at
 `52e8b35` and the 3 FARM `armfm-paper` bundles at `1f90d85`, all after the freeze `809dfe3`. LTL from `ltlf_of` and
 `pretty_ltlf` (`app/src/utils/presentation.py`); figure helpers and arm colours from `results-figures/draw.py`.
+
+### Single-template machines, hard and soft (`template-machines/`), 2026-11-23
+
+**What it shows.** The eight IBM templates the generator can choose (Absence, ChainResponse, Existence,
+ExistenceTwo, NotCoExistence, Precedence, RespondedExistence, Response), each compiled alone by the current pipeline
+(no model call), once hard and once soft: 16 Reward Machines for the appendix "IBM template examples", drawn hard
+beside soft with the task, the clause and its LTLf formula in each row's caption. Only Absence, Precedence,
+ChainResponse and NotCoExistence have a well when hard; RespondedExistence and Response give the same machine
+hard and soft; soft machines never have a well. Soft is the frozen default (`recurrent_soft_penalty=True`,
+`fold_soft_absence=True`, `soft_break_cost=1`).
+
+**Evidence.** `build.py` stops before writing unless each machine passes: rewards are config values (0, +-1, -1,
++10/+11, -10), edges into the well pay the well charge, a hard machine has a well exactly when its clause can be
+broken for good, a soft one has none, final states exist only for hard goal templates, and the caption's formula
+equals the pipeline's LTLf. All 16 passed. `preview.pdf` was read page by page as PNG and in zoomed crops: no
+overlap, no overfull box. The thesis build check ran on a copy of `paper/` with the figures included.
+
+**Gaps.** The tasks are hand-written illustrations; the layout is by hand, so a new template needs a `LAYOUT`
+entry; soft ChainResponse re-arms in `u0`, so a break on a step that also has `has_key` does not owe the door
+again (the pipeline's design, drawn as is).
+
+**Files.** `build.py`, `data/machines.json`, `preview.tex`, `preview.pdf`, `README.md`; it writes
+`paper/images/templates/<Template>-hard.tex`, `-soft.tex` (16) and `all.tex`.
+
+**Rerun** (no model call, from the repository root in `RM_RL_env`): `env PYTHONPATH=app:docs/paper/results-figures
+python -P docs/paper/template-machines/build.py`, then in the entry folder `TEXINPUTS=../../../paper: latexmk -pdf
+preview.tex`.
+
+**Code.** Built on main `5f9674ea`, `app/` unchanged. Drawing helpers `arrow_colour` and `reward_text` from
+`results-figures/draw_machines.py`; palette `paper/images/results/fig-palette.tex`; LTL from `ltlf_of` and
+`pretty_ltlf`.
+
+### Shop: slips turned on later (`shop-curriculum/`), 2026-11-23
+
+**What it shows.** The same FARM machine never serves in the 8x8 shop (0 of 3 training runs per card), and learns it
+(3 of 3) when a run starts with no food slips and turns them on once the training episodes average 10 served per
+episode over the last 100. Rung 1 `shop-ladder-deliver`: 3 of 3 [44%, 100%], 18.7 served per test episode; rung 3
+`shop-ladder-order-deliver`: 3 of 3, 11.6 served; pooled 6 of 6 [61%, 100%] against 0 of 6 [0%, 39%]. With 25% of
+slips landing behind the agent, 0 of 3 on both rungs, and the machine pays idling more (-1.0 against -9.3 for the
+scripted solving plan on rung 1). Smaller floors: 3x3 learns in 12 of 12 runs [76%, 100%], 5x5 and 7x7 in 0 of 24
+[0%, 14%]. One run without slips (1M steps) serves 18.85 per test episode, in a world without slips, so it is not
+comparable with the 18.7. The pay makes idling the trap; the support is the scripted-plan pricing, that one no-slip
+run and the curriculum learning under the same pay. Each task, LTL and machine is shown once near the top (interactive
+`render-rm --html` graphs with an "RM text" fold-out) and linked from the other sections; learned-run bars have
+Wilson 95% whiskers; the training curves are one line per run with its switch marked. Paper candidate: the 0-to-3
+contrast.
+
+The section "Growing the shop inside one run" (id `grow`, after the size section) asks whether the same machine
+learns the 7x7 shop when the world grows inside one run, 3x3 then 5x5 then 7x7, each switch once the last 100 training
+episodes average 10 served; the judge plays 7x7. It opens with the measured reason to try it: plain FARM learns only
+at 3x3 (0 of 24 above it), and over the first 100 training episodes the plain 5x5 and 7x7 runs serve 0.00 orders per
+episode against 0.01 to 0.09 at 3x3, so less pay to learn from is the likely reason. Suite `shop-grow`, cards
+`shop-ladder-deliver-grow` and `shop-ladder-order-deliver-grow` (copies of the base cards, same task and machine),
+3 runs each, shop preset. Learned at 7x7 (the judge passes all 100 test episodes; no bar on served orders), Wilson 95%: growing world
+rung 1 1 of 3 [6%, 79%], rung 3 2 of 3 [21%, 94%], pooled 3 of 6 [19%, 81%]; the same machine at 7x7 with no growth
+0 of 6 [0%, 39%] (shop preset and standard preset alike); no reward machine (the shop's own reward, suite
+`shop-size-reward`) 5 of 6 [44%, 97%]; FARM at 3x3 12 of 12 [76%, 100%]. So growing helps in the counts (3 of 6
+against 0 of 6) but the intervals overlap, and the machine's runs are not ahead of the no-machine runs at 7x7 here.
+4 of the 6 grow runs reached 7x7; the other two (run 2 of each rung) stayed at 5x5 to the end (from 3.62M and 0.51M
+steps) and served on average 0.12 and 0.03 orders per training episode there. The page also holds the per-run curves
+(each line named run 1 to run 3, the two switches marked) and a table of the switch steps (served is the mean over
+the 100 training episodes before the switch). Paper candidate: the growing-world contrast, with its caveats.
+
+The odd run (rung 1 run 3) counts as not learned. It reached 7x7 at 1.21M steps and serves 98.5% of its later
+training episodes (12.6 orders served per episode), where the agent picks actions at random by its learned odds, and
+13.49 in the run's own sampled final evaluation. The judge always plays the most likely action and it serves 2.89: 79
+of its 100 layouts serve nothing and leave the clause "serve every client" open, with no clause broken. The run's own
+greedy evaluation (3.5) and the judge's (2.89) are separate 100-layout draws. Why the most likely action serves
+nothing there is not shown.
+
+**Evidence.** `check/collect.py` recounts 73 finished runs of the two rungs (the plain card and its curriculum,
+back-fall, size and grow copies, plus the 7x7 no-reward-machine runs) from the raw run folders (`judge.json` episodes, the stage switches in `stages.csv`, the
+settings in `config.yaml`, the curve, the first serve and the mean served over the first 100 training episodes from
+`episodes.csv`). `check/build_page.py` stops unless each
+curriculum, back-fall and size run has the settings of its plain run apart from the world, each card is a `bundle_of`
+copy of its base card with the same task and clauses, every judged run scores 0 or 1 except two (rung 1 run 3 of the
+grow runs, 0.21, and of the no-machine runs, 0.22, so any pass bar above 0.22 gives the same counts), the counts are
+0 / 3 / 0, each run's recorded commit is the one the page cites, each curriculum run first averages 10 served at its own switch
+step, and each back-fall run drops below 0.5 served within 0.25M steps of the switch (measured up to 0.43, largest gap
+0.244M) and stays at or below 0.003 over the last 1M steps. For the grow runs it also stops unless each grow card
+copies its 7x7 card (task, clauses, world) plus the stages, each grow run has the settings of the plain 7x7 shop-preset
+run, every run ends in the world its stage list says, every switch happens with 10 or more served, no clause is broken,
+the no-reward-machine runs have no bundle, the plain 5x5 and 7x7 runs served nothing in their first 100 training
+episodes, the learned counts are the ones the page quotes, and
+the odd run's 79 no-serve episodes equal its open "serve every client" clauses. All passed. The page was read in light
+and dark, at desktop width (the grow section is 2,744 px tall at 1,280 px) and at 390 px (4,596 px tall, no sideways
+scroll).
+
+**Gaps.** One rung alone is 3 of 3 against 0 of 3 and the intervals overlap; only the pooled rungs separate. The
+pricing table (40 episodes per scripted player), the diagnosis and the no-slip run (1 run) are copied from plan notes,
+not recounted from run folders (`evidence/notes/`). The no-slip run serves its first order at 0.16M and averages 10 at
+0.27M, while the rung 1 curriculum runs take 0.68M to 1.15M and 1.46M to 2.75M in their first stage, which has the same
+world; this is not explained (the only schedule tied to the step budget is the learning-rate decay at
+`app/src/arm_fm/ppo.py:774`, which would favour the 5M runs). The back-fall verdict is about this pay; another pay is
+not tested. The siren rung (rung 2) is left out: it has its own task and machine and the curriculum was not run on it.
+The figures are static matplotlib SVG, not Plotly (the 4.8 MB `plotly.js` is over the 1 MB large-file hook). 3 runs per
+card. The grow section has 3 runs per rung, so its intervals are wide and overlap those of the plain 7x7 and the
+no-machine bars. The cause of the odd run is not shown. The grow cards are not in
+the counted 60-card set.
+
+**Files.** `index.html` and `data.json` (the page), `check/collect.py`, `check/build_page.py`, `evidence/runs.json`,
+`evidence/notes/` (3 copied notes), `graphs/` (`.rm`, `.svg` and interactive `.html` for the two machines),
+`plots/` (five plots in light and dark SVG, two of them for the grow section: `grow-learned` and `grow-curves`).
+
+**Rerun** (no training, no model call, from the repository root in `RM_RL_env`): `python -I
+docs/paper/shop-curriculum/check/collect.py`, then `PYTHONPATH=app python -W ignore
+docs/paper/shop-curriculum/check/build_page.py`, then the `agent-artifacts` skill's script
+`python3 ~/.claude/skills/agent-artifacts/scripts/fill.py docs/paper/shop-curriculum/data.json
+docs/paper/shop-curriculum/index.html`. Delete `index.html` first to start again at v1 with no "changes since" banner.
+The machines are redrawn with `render-rm --html`.
+
+**Code.** Plain runs trained at `93b3ea06` (dirty tree), the no-slip run at `ed42365f` (dirty tree), the size runs at
+`ed42365f`, curriculum and back-fall runs at `462cfde3` (`merge: shop world curriculum and back falls`), the grow and
+no-reward-machine runs at `f1f5aefd` with a dirty tree (it contains `919c166d`, `merge: shop size curriculum 3x3 to
+7x7`, with the grow cards and the stage rule); the build checks each run's recorded commit. Runs files
+`experiments/benchmark/shop/runs-curriculum.yaml`, `runs-grow.yaml` (suite `shop-grow`) and `runs-size-no-rm.yaml`
+(suite `shop-size-reward`); the stage rule is `env_stages` on each card and each switch is recorded in the run's
+`stages.csv`.
+
+### Zombie lanes: FARM against no reward machine, lanes moved closer (`lanes-spacing/`), 2026-11-23
+
+**What it shows.**
+
+- FARM (trains on its machine's reward only, `reward_source: rm`) holds the top lane better than no reward machine (the
+  world's +1 per zombie killed only, `env`), most clearly with the lanes moved closer (`lane_spacing` 2 and 1; 4 is the
+  counted card).
+- Judged success is the share of 100 test episodes with no zombie through the top lane: mean of 3 training runs, 95% t
+  interval (4.303 x sd / sqrt(3), cut to 0 and 100%). FARM / no reward machine, `lanes-guard`: spacing 4 94% [75%, 100%]
+  / 63% [43%, 83%], spacing 2 97% [91%, 100%] / 46% [9%, 83%], spacing 1 98% [97%, 100%] / 78% [62%, 94%].
+- `lanes-rules` (the same plus two soft rules): spacing 4 71% [0%, 100%] / 63% [43%, 83%], spacing 2 93% [83%, 100%] /
+  46% [9%, 83%], spacing 1 97% [89%, 100%] / 78% [62%, 94%].
+- In 5 of the 6 card and spacing cases each of the 3 FARM runs is above each of the 3 no-reward-machine runs; the
+  exception is `lanes-rules` at spacing 4, where one FARM run scores 36%. The intervals do not overlap in 2 of the 6
+  (guard at 2 and 1), meet at 83% in a third (rules at 2) and overlap in the other 3.
+- Side lanes, counted from the saved test traces: FARM runs let 12.8 to 17.5 zombies per episode through a side lane (no
+  reward machine 0.3 to 10.0); the rules machine charges -1 for each, yet at spacing 1 its runs let through 13.9 to 16.4
+  per episode against 17.3 to 17.4 for the guard machine. A FARM episode ends at a top-lane breach (as short as 237 of
+  300 steps on average), so these counts are not a clean comparison.
+- No reward machine kills more zombies (17.5 to 28.9 per episode against 5.6 to 12.6) and holds the top lane less often.
+- So "FARM holds the top lane and beats no reward machine" is true for the hard top-lane rule at spacing 2 and 1 and for
+  the guard card at spacing 4, not for the soft rules and not for the rules card at spacing 4.
+- Two cards left out: on `tpl-absence-soft-1-nogoal` all 18 runs pass every test episode (a tie at 100%); on
+  `tpl-existence-two-5-nogoal` (kill at least two zombies) FARM scores 90% at spacing 4 and 75% at spacing 2 against 100%
+  for no reward machine. A random agent passes the second in 68 of 100 episodes at spacing 1 and the first has only soft
+  rules. Both are under Limits.
+- The page shows each card's task, LTL and machine once, in a fold per card (interactive `render-rm --html` graph, "RM
+  text" fold-out); the figure is bars with a dot per run and t-interval whiskers, one panel per card; a plain-words list
+  defines card, guard, rules, counted card, judged success, LTL and t-interval.
+- Paper candidate: `plots/success.svg` and the 5-of-6 ordering.
+
+**What v2 adds (2026-11-23, later).**
+
+- A third group, FARM + kill reward: the same machine and the world's +1 per kill (`reward_source: both`, suite
+  `lanes-both`, `experiments/benchmark/lanes-spacing/runs-farm-both.yaml`), 3 training runs on each of the two cards at
+  each of the 3 spacings (18 runs).
+- Judged success, FARM + kill reward at spacing 4 / 2 / 1: guard 87% [68%, 100%] / 94% [91%, 97%] / 98% [93%, 100%];
+  rules 29% [0%, 100%] / 94% [82%, 100%] / 100% [98%, 100%] (FARM: guard 94% / 97% / 98%, rules 71% / 93% / 97%).
+- Top lane: apart from `lanes-rules` at spacing 4 the means are within 8 points of FARM's and the intervals of the two
+  overlap in all 6 cases; against no reward machine the order is FARM's (all 3 runs above all 3 in 5 of 6 cases, not
+  rules at 4; intervals apart in guard at 2 and rules at 1).
+- `lanes-rules` at spacing 4 collapses: runs 0%, 88%, 0%. The two failed runs let a zombie through the top lane in all
+  100 test episodes, their episodes last 80 and 129 steps on average (a top-lane breach ends an episode), with 0.2 and
+  1.4 kills per episode against 9.0 for the third. FARM alone has one weak run there (36%).
+- Side lanes, guard card: the kill reward lowers breaches per episode at every spacing (FARM 16.8 to 17.5; with the kill
+  reward 10.2 to 14.2 at spacing 4, 9.2 to 9.9 at 2, 1.0 to 1.6 at 1; each run below each of FARM's 3), still above no
+  reward machine (10.0, 2.2 to 3.3, 0.3 to 0.7), and kills rise (to 11.4 to 15.0, 17.1 to 17.9, 26.8 to 27.3 per
+  episode).
+- Side lanes, rules card: not reliably. Spacing 2 16.7 to 17.4 against FARM's 16.4 to 17.2; spacing 1 3.6, 4.6 and 17.2
+  against 13.9 to 16.4; spacing 4 17.0 for the run that kept the top lane (FARM 12.8 to 16.8; the collapsed runs' 1.9 and
+  4.7 come from 80 and 129 steps). With the kill reward, runs still breach a side lane in 52 to 100 of 100 test episodes.
+- Every card shows its task, LTL and machine: FARM's kill-two machine beside ARM-FM's, an absence-card fold, and the two
+  rejected ARM-FM machines in full (`graphs/`).
+- ARM-FM needs a task that ends on a goal. 'Kill at least two zombies' ends at the second kill; the guard and rules cards
+  never end on a goal, and for each ARM-FM wrote a machine whose start state is final (the machine files are 12 and 16
+  lines). Each card had 4 attempts, the main one and 3 paraphrases
+  (`experiments/benchmark/forcing/bundles/arm-fm/lanes-{guard,rules}[~p1..p3].status.json`); all 8 say
+  `pipeline-failed`, `plan-check-failed: solve-s1: ends the episode before the agent acts`. Calls and wall time of the
+  main attempts: guard 7 and 556.7 s, rules 5 and 273.0 s (the page tables all 8). Both cards count as not learned (user
+  decision, end of `docs/decisions/benchmark/thesis-benchmark.md`); no ARM-FM run exists for them.
+- On `tpl-existence-two-5-nogoal` ARM-FM trained 3 runs at spacing 4 and 3 at spacing 2: 88% [70%, 100%] and 70% [68%,
+  72%], against FARM 90% [88%, 91%] and 75% [66%, 83%] and no reward machine 100%; the intervals of ARM-FM and FARM
+  overlap, and the random-agent caveat stands (68 of 100 at spacing 1, copied).
+- Layout: a "What this version adds" section of at most 5 lines first; "In short" is the figure, the 18-row table in a
+  fold and one line per finding; "Limits" owns the statements repeated elsewhere ("Every run", "Checks" and "Limits"
+  open folded); the figure is drawn for a 390 px screen (11 px text, 0% dots whole); decimals are rounded half up.
+- Paper candidate: the three-group bars in `plots/success.svg` and the rules-at-4 collapse.
+
+**Evidence.** `check/collect.py` recounts 90 finished runs (the two cards and the two left-out cards, 3 spacings, FARM,
+FARM + kill reward on the two cards only, no reward machine, and ARM-FM on the kill-two card at spacing 4 and 2; none
+lacked a judge file) from `outputs/runs/bench__<suite>__<card>__<method>__ppo/seed*-*/`: the `judge.json` episodes,
+`config.yaml`, `summary.json` and, for the 54 runs of the two cards, the per-step labels of `agent-traces/ep*.json`. It
+stops unless each stored judge mean equals its recount, each verdict `broken@k` equals the first top-lane breach step in
+the labels, and every `config.yaml` key other than the ones listed under Code below is equal in all 90 runs.
+`check/build_page.py` stops unless every `config.yaml` says `reward_source: rm` (FARM, ARM-FM), `both` (FARM + kill
+reward) or `env` (no reward machine); FARM and FARM + kill reward runs trained on and were judged with the committed
+machine, no reward machine with none; a FARM + kill reward run and the FARM run with the same number share card, world,
+machine, time-limit pay and steps; the 8 ARM-FM status files and the two rejected machines are as quoted and no ARM-FM
+run folder exists for the two cards; each run's world has the card's `lane_spacing`; the spacing cards copy the counted
+cards' task and clauses; each run's recorded commit is the one below; each run's failed episodes equal its top-lane
+breach episodes; each FARM episode, with or without the kill reward, with a breach ends at its first one; every FARM run
+has a side-lane breach in 100 of 100 episodes; and every comparison and count the text states holds. All passed. The
+no-reward-machine agents ignore the task text, so one set of 3 runs per spacing is judged on both cards
+(`shared-run.json`); their owner folders are `bench__templates__tpl-existence-two-5-nogoal__no-rm__ppo` (spacing 4; the
+`forcing` folders of both cards link to it), `bench__lanes-spacing__lanes-guard-spacing2__no-rm__ppo` and
+`bench__lanes-spacing__lanes-guard-spacing1__no-rm__ppo`. The page (v2) was read in light and dark, at desktop width and
+at 390 px, with the machine folds opened to check the graphs draw. At 1280 px it is 6,588 px long as it opens (highlight
+off, folds closed; v1: 4,648 px) and 18,217 px with every fold open; at 390 px 11,118 px.
+
+**Gaps.** 3 runs per group: the best an exact order test says for 3 against 3 is 1 in 20 per comparison, and the two
+cards share their no-reward-machine runs at each spacing; the comparison of FARM + kill reward with FARM rests on the
+same 3 runs. The win is on the hard top-lane rule only; soft rules are not part of judged success. `lanes-rules` at
+spacing 4 is not shown better. FARM episodes, with or without the kill reward, end at the first top-lane breach, so
+their per-episode counts cover fewer steps (80 and 129 steps for the two collapsed rules-at-4 runs). ARM-FM has no runs
+on the guard and rules cards and none at spacing 1 on the kill-two card. The random-agent figure (a note in
+`experiments/benchmark/lanes-spacing/runs-farm.yaml`) and the soft-break numbers of the absence card
+(`soft-breaks-vs-idle/`) are copied, not recounted. Nothing here shows ARM-FM or FARM above chance on the kill-two card
+(the random-agent figure exists only for spacing 1). The figure is static matplotlib SVG, not Plotly (the 4.8 MB
+`plotly.js` is over the 1 MB large-file hook).
+
+**Files.** `index.html` and `data.json` (the page), `check/collect.py`, `check/build_page.py`, `evidence/runs.json`,
+`graphs/` (`.rm`, `.svg` and interactive `.html` for FARM's machines of the two cards, the kill-two card and the absence
+card, and ARM-FM's machines of the kill-two, guard and rules cards), `plots/` (light and dark SVG).
+
+**Rerun** (no training, no model call, from the repository root in `RM_RL_env`): `python -I
+docs/paper/lanes-spacing/check/collect.py`, then `PYTHONPATH=app python -W ignore
+docs/paper/lanes-spacing/check/build_page.py`, then the `agent-artifacts` skill's script
+`python3 ~/.claude/skills/agent-artifacts/scripts/fill.py docs/paper/lanes-spacing/data.json
+docs/paper/lanes-spacing/index.html`. Run on an existing `index.html`, `fill.py` raises the version and keeps the old
+page for the "Changed since" list (v2 was made this way from the v1 file; `--keep-baseline` re-renders v2 against v1, a
+second run without it would list v2 against v3, so restore the v1 copy first to redo v2). Delete `index.html` first to
+start again at v1 with no "changes since" banner. The build redraws the machines with the repository renderer
+(`render_file`, as `render-rm --html`).
+
+**Code.** All runs trained on a dirty tree. FARM at spacing 4 on `809dfe3f` (`merge: minimization on by default`), at
+spacing 2 on `ed42365f`, at spacing 1 on `462cfde3` (guard) and `919c166d` (rules, `merge: shop size curriculum 3x3 to
+7x7`); no reward machine at spacing 4 on `68b904da` (`merge: Lanes soft-order bans, critic count exception`), at
+spacing 2 and 1 on `5f9674ea`; FARM + kill reward, all 18 runs, on `f1f5aefd`, ARM-FM on the kill-two card at spacing 4
+on `e6c3acba` and at spacing 2 on `f1f5aefd`; the build checks each run's recorded commit. Runs files
+`experiments/benchmark/lanes-spacing/runs-farm.yaml`, `runs-farm-both.yaml` (suite `lanes-both`, all three spacings)
+and `runs-no-rm.yaml` (spacing 4 comes from the `forcing` suite). The world option is `LanesEnv(lane_spacing=k)` in
+`app/src/arm_fm/forcing_envs.py`.
+
+Config keys that differ between runs, as the page's "Files and rerun" fold lists them per group and spacing: `bundle`
+(the machine), `env_kwargs` (the lane spacing), `reward_source` (`rm` for FARM and ARM-FM, `both` for FARM + kill reward,
+`env` for no reward machine), `time_limit_penalty` (0.0 for FARM, FARM + kill reward and ARM-FM, -5.0 for no reward
+machine), `device` (`cpu` for FARM at spacing 4 on the two cards and for ARM-FM at spacing 4, `cuda` for the other runs)
+and `git_head` (the commits above); the run names (`exp_name`, `yaml_config_name`, `seed`, `layout_seed`) differ too.
+
+### Card list: the task of every card the thesis names (`card-list/`), 2026-11-24
+
+**What it shows.** The thesis names a card by its ID alone (`\card{<id>}`, typewriter type, a link) and leaves the task
+to one appendix table, "The cards named in the thesis" (`tab:app-cards`), grouped by environment, a rewording
+(`<id>~p<n>`) right after its card. The table is written from the card files, so it cannot drift from them. In the
+thesis build of 2026-11-24 it lists 27 cards in 6 environments; the count follows the thesis text.
+
+**Evidence.** `build.py` reads every `\card{..}` and `\texttt{..}` ID of the thesis and stops, writing nothing, when a
+`\card` ID is no card or rewording or when a named card's environment has no name in its `ENVIRONMENTS` table. A test
+document with the real class built with no error, no overfull box and no link-target warning; IDs break after hyphens,
+a click on a `\card` (also one inside a `\caption`) lands on the row, and the head row repeats on each page. The whole
+thesis built with 0 errors, no undefined reference and only the two overfull boxes it already had.
+
+**Gaps.** Only the environments in the `ENVIRONMENTS` table are named (ARM-FM paper, XLand, BabyAI and smoke cards would
+stop the build until a name is added). Link colour is black, as the thesis sets it. A `\card` in a `\caption` without a
+short title puts a link into the list of tables.
+
+**Files.** `build.py`. The LaTeX pieces (`\card`, `\cardrow`, the appendix section) are `preamble.tex` and
+`appendix-cards.tex` in the plan folder `r11-results/`, inserted into the thesis by its round tool.
+
+**Rerun** (standard library only, from the repository root): `python3 docs/paper/card-list/build.py --thesis
+paper/plantillatfg.tex --out paper/images/cards/list.tex`; the thesis then `\input`s `images/cards/list`.
+
+**Code.** Card files `experiments/benchmark/*/tasks.json` (the first suite in the order base, complex, templates,
+box-carry, forced-start, forcing, shop, then the rest by name owns a repeated ID); built on main `7a005656`.
+
+### State-embedding similarity: how close the states of one machine are (`state-embedding-similarity/`), 2026-11-24
+
+**What it shows.** The mean cosine between the embedding of a state and that of its nearest other state in the same
+Reward Machine (`nomic-embed-text`, 768 values), per arm over three machine sets. FARM: 0.891 over all 288 built
+machines with 2 or more states, 0.891 over the 260 of the frozen set, 0.890 over the 51 that trained. ARM-FM: 0.844
+over 182, 0.845 over the 152 of the frozen set, 0.845 over the 31 that trained. The mean over all state pairs is
+0.78 to 0.86. The baseline is the cosine between states of different machines of the same arm: 0.64 to 0.70 on
+average, the lowest pair 0.36 to 0.48. So the states of one machine are close, but the model scores states of other
+machines high too (they describe tasks in the same few environments, so this is not a floor for unrelated text).
+A PCA of the distinct state vectors (FARM and ARM-FM pooled) says how many of the 768 dimensions are used: 32
+components hold 80% and 70 hold 90% over the frozen set (2,141 vectors; all built 34 and 74; bootstrap stable), the
+same as the 17 November study. The `trained` set (471 vectors, rank 470) is too small for a stable fit: 25 and 52.
+
+**Evidence.** `check/state_similarity.py` reads every bundle's `embeddings.json` (all pairs, no sampling) and the run
+folders of the final runs for the `trained` set; the 288 and 182 of the thesis figure (0.89 and 0.84) are the `all
+built` rows. `check/state_pca.py` does the PCA on the same sets (`check/rm_sets.py` builds them), with a 200-resample
+bootstrap over the machines and a stable flag.
+
+**Gaps.** Median machine: 4 states, so the nearest-other figure is largely a pair cosine and rises with state count;
+5 FARM machines with one state are left out; `outputs/runs` is not in git, so the `trained` set reruns only in the
+checkout that holds the runs (its list is in the evidence JSON).
+
+**Files.** `README.md`, `check/rm_sets.py`, `check/state_similarity.py`, `check/state_pca.py`,
+`evidence/state-similarity.json` and `.md`, `evidence/state-pca.json`, `.md` and `.png`. No page.
+
+**Rerun** (numpy, matplotlib for the PCA plot, no model call, from the repository root in `RM_RL_env`, without `-I`
+because the scripts import `rm_sets.py`): `python docs/paper/state-embedding-similarity/check/state_similarity.py`
+and `env OMP_NUM_THREADS=4 python docs/paper/state-embedding-similarity/check/state_pca.py` (about 23 s).
+
+**Code.** The vectors are read by `RewardMachineObservation` in `app/src/arm_fm/environments.py`; bundles stamped with
+the freeze `809dfe3` (260 of 260 FARM, 143 of 152 ARM-FM machines of the frozen set), measured on main `7a005656`.
+
+### Other LLMs by thinking level (`other-llms-by-level/`), 2026-11-24
+
+First cut of the level benchmark for Haiku 5.5 and GPT-6 Luna beside the production pair: right of 138 with 95% Wilson
+bars against median seconds per RM, one row per (model, level) in `data/levels.csv`, and how each model's time was
+measured. See `other-llms-by-level/README.md`; rerun: `check/build.py`, then `check/figure.py`.
+
+### A rule-only task end to end (`rule-only-example/`), 2026-11-24
+
+Worked example for the thesis section "Reward assignment" (`sec:rule-only`): card `cx-rules-only` (no goal; hard
+`Absence(target_picked_up)`, soft `Absence(key_lost)`, soft `Response(has_door_key, door_open)`), its LTLf, the 3-state
+machine with no final state and its `render-rm --html` graph, the pay of every case split into progress and break or
+well charge (a hard break -100.694, a soft break -1, a promise opened -1 and kept +1), one 6-step trace and the four
+recorded plan traces. Rebuilt from the bundle's clauses on the frozen code (`809dfe3`); no model call. See
+`rule-only-example/README.md`; rerun: `check/rule_only_example.py` (`PYTHONPATH` on a `git archive 809dfe3 app` copy).

@@ -1,0 +1,58 @@
+{
+ "suite": "templates",
+ "name": "tpl-responded-existence-1-nogoal",
+ "task": "If you pick up the key, you must also open the door.",
+ "gen": "claude-haiku-5-5",
+ "critic": "claude-haiku-5-5@critic",
+ "reasoning": "medium",
+ "status": "accepted",
+ "error": null,
+ "wall_s": 16.6,
+ "attempts_used": 2,
+ "critic_rejections": 1,
+ "provider_reruns": 0,
+ "calls": 4,
+ "trace": [
+  {
+   "attempt": 1,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"If the agent picks up the key (carries the matching key), the agent must also open the door, at some point before, with, or after that moment.\",\n    \"pattern\": \"RespondedExistence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 1,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The task says picking up the key requires also opening the door, which is an order-free consequent of a condition, so RespondedExistence(has_door_key, door_open) is the right template and priority. However, the compiled machine does not match the clause. R1 is hard, so a run that picks up the key and never opens the door should fail for good, yet the machine has no rejecting state: u1 only waits for door_open and the remaining transitions never lead anywhere bad. Also, the (u0, !door_open&has_door_key) -> u1 transition fires on the pickup step, which is consistent with the clause, but the machine never returns to a failing state when the key is dropped unopened. Verify that the hard failure is recorded (via PENDING_PROMISES or the charge at episode end) so that a hard unmet promise costs the task. If the machine already encodes this through the pending-promise charge, the clause is correct and this feedback can be ignored; otherwise no clause change is needed, only confirmation that the hard-failure charge applies at the environment's end."
+   }
+  },
+  {
+   "attempt": 2,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"If the agent picks up the key (carries the matching key), the agent must also open the door, at some point before, with, or after that moment.\",\n    \"pattern\": \"RespondedExistence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 2,
+   "step": "critic",
+   "value": {
+    "accepted": true,
+    "feedback": "NO CHANGES NEEDED: The task's \"also\" is a no-timing cue, so RespondedExistence(has_door_key, door_open) is the right template, and the hard priority matches the categorical \"must\". The clause adds no requirement beyond the task, and the rule-only warning is valid because the task commands no goal."
+   }
+  }
+ ],
+ "sends": [],
+ "clauses": [
+  [
+   "RespondedExistence",
+   [
+    "has_door_key",
+    "door_open"
+   ],
+   "hard"
+  ]
+ ],
+ "texts": [
+  "If the agent picks up the key (carries the matching key), the agent must also open the door, at some point before, with, or after that moment."
+ ],
+ "machine": "REWARD_MACHINE:\nSTATES: u0, u1, u2\nINITIAL_STATE: u0\nFINAL_STATES:\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&has_door_key) -> u1\n(u0, door_open) -> u2\n(u1, door_open) -> u2\nREWARD_FUNCTION:\n(u0, !door_open&has_door_key, u1) -> -1\n(u1, door_open, u2) -> 1\n"
+}
