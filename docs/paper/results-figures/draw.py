@@ -6,6 +6,8 @@ shades and hatches are the palette's one scheme: solid = learned or built at the
 light = built after a further round, open = built but not learned, hatched = not built.
 """
 
+from math import ceil
+
 ARM_COLOR = {"farm": "plotFarm", "arm-fm": "plotArm", "no-rm": "plotNoRm"}
 ARM_LIGHT = {"farm": "plotFarmLight", "arm-fm": "plotArmLight", "no-rm": "plotNoRmLight"}
 ARM_NAME = {"farm": "FARM", "arm-fm": "ARM-FM", "no-rm": "no RM"}
@@ -196,7 +198,7 @@ def fig_built(rows):
         f"height=5.8cm, xmin=0, xmax={asked + 8}, ymin=-0.8, ymax=2.5, "
         "ytick={0,1.6}, yticklabels={ARM-FM,FARM}, ytick style={draw=none}, "
         f"xtick={{0,50,100,150,200,250}}, extra x ticks={{{asked}}}, "
-        f"xlabel={{machines built, of {asked} asked per arm}}, "
+        f"xlabel={{RMs built, of {asked} asked per arm}}, "
         "legend style={at={(0.5,-0.25)}, anchor=north, legend columns=1}"
     )
     return picture(options, body, left=2.0)
@@ -217,7 +219,7 @@ def fig_learned(rows, groups, names):
     status = {
         "learned": lambda base: f"fill={base}, draw={FILL_OUTLINE}",
         "trained, not learned": lambda base: f"fill=white, draw={base}, line width=0.3pt",
-        "machine not built": lambda base: f"{HATCH.format(base)}, draw={base}, line width=0.3pt",
+        "RM not built": lambda base: f"{HATCH.format(base)}, draw={base}, line width=0.3pt",
     }
     for meaning, style in status.items():
         body += [
@@ -349,39 +351,148 @@ def fig_soft(panels, xmax):
     return picture(options, body, left=4.6, right=1.5)
 
 
-# ========= Figure 4: right machines per thinking level =========
-def fig_thinking(rows, labels):
-    """rows: dicts level, runs, right, median_s, low, high.
+# ========= Figure 4: right machines per thinking level, per model =========
+def mark_size(mark):
+    """A triangle of the circle's radius looks smaller, so it gets a larger one."""
+    return {"triangle*": "3.2pt"}.get(mark, "2.6pt")
 
-    labels: {level: (node anchor, (x, y) of the node or None for the point itself, lines in the text)};
-    each label sits beside its own point, on the side the curve and the interval bars leave free.
+
+def fig_thinking(rows, labels):
+    """rows: dicts series, colour, mark, level, runs, right, median_s, low, high (0 to 1), beaten.
+
+    One colour and one mark per series; whiskers and level labels take the series colour. A point no
+    other point beats is filled, a beaten one hollow, and a thin grey line joins the filled points in
+    order of time. The axes reach every point and whisker. labels: {(series, level): (node anchor, "point", "low" or "high" (the end of the
+    interval the node hangs on), (dx, dy) shift of the node from there, in pt)}; each label sits
+    beside its own point, where the neighbouring points, whiskers and grey line leave room.
     """
-    body = [
-        "\\addplot[plotFarm, line width=0.9pt] coordinates {"
-        + " ".join(f"({r['median_s']:.3f},{100 * r['right'] / r['runs']:.3f})" for r in rows)
-        + "};"
-    ]
-    for row in rows:
-        x, share = row["median_s"], 100 * row["right"] / row["runs"]
-        low, high = 100 * row["low"], 100 * row["high"]
-        anchor, place, lines = labels[row["level"]]
-        lx, ly = place or (x, share)
-        text = (
-            f"{row['level']} {row['right']}/{row['runs']}"
-            if lines == 1
-            else f"{row['level']}\\\\{row['right']}/{row['runs']}"
-        )
+    body = []
+    for name, colour, mark in dict.fromkeys((r["series"], r["colour"], r["mark"]) for r in rows):
         body += [
-            line([(x, low), (x, high)], "black, line width=0.6pt"),
-            line([(x * 0.96, low), (x * 1.04, low)], "black, line width=0.6pt"),
-            line([(x * 0.96, high), (x * 1.04, high)], "black, line width=0.6pt"),
-            f"\\filldraw[fill=plotFarm, draw=white, line width=0.4pt] {cs(x, share)} circle (2.6pt);",
-            node(lx, ly, text, f"anchor={anchor}, font=\\scriptsize, align=center, inner sep=3pt"),
+            f"\\addlegendimage{{only marks, mark={mark}, mark size={mark_size(mark)}, color={colour}, "
+            f"mark options={{fill={colour}, draw=white, line width=0.4pt}}}}",
+            f"\\addlegendentry{{{name}}}",
         ]
+    frontier = sorted((r for r in rows if not r["beaten"]), key=lambda r: r["median_s"])
+    points = [(r["median_s"], 100 * r["right"] / r["runs"]) for r in frontier]
+    body.append(line(points, "black!35, line width=0.4pt"))
+    for row in rows:
+        x, y = row["median_s"], 100 * row["right"] / row["runs"]
+        low, high = 100 * row["low"], 100 * row["high"]
+        colour = row["colour"]
+        whisker = f"{colour}, line width=0.6pt"
+        if row["beaten"]:
+            mark_options = f"fill=white, draw={colour}, line width=0.9pt"
+        else:
+            mark_options = f"fill={colour}, draw=white, line width=0.4pt"
+        anchor, hang, (dx, dy) = labels[row["series"], row["level"]]
+        body += [
+            line([(x, low), (x, high)], whisker),
+            line([(x * 0.98, low), (x * 1.02, low)], whisker),
+            line([(x * 0.98, high), (x * 1.02, high)], whisker),
+            f"\\addplot[only marks, forget plot, mark={row['mark']}, mark size={mark_size(row['mark'])}, "
+            f"color={colour}, mark options={{{mark_options}}}] coordinates {{({x:.3f},{y:.3f})}};",
+            node(
+                x,
+                {"point": y, "low": low, "high": high}[hang],
+                row["level"],
+                f"anchor={anchor}, xshift={dx}pt, yshift={dy}pt, text={colour}, font=\\scriptsize, "
+                "inner sep=1pt",
+            ),
+        ]
+    xmin, xmax = 0.87 * min(r["median_s"] for r in rows), 1.15 * max(r["median_s"] for r in rows)
+    ymin = 100 * min(r["low"] for r in rows) - 2.5
+    yticks = ",".join(str(v) for v in range(5 * ceil(ymin / 5), 101, 5))
     options = (
-        "height=7cm, xmode=log, log ticks with fixed point, xmin=3, xmax=130, ymin=62, ymax=104, "
-        "xtick={4,10,20,50,100}, ytick={65,70,75,80,85,90,95,100}, yticklabel={\\pgfmathprintnumber{\\tick}\\%}, "
-        "xlabel={median seconds to generate one machine}, ylabel={right machines, of 138 runs (95\\% Wilson interval)}, "
-        "ymajorgrids, xmajorgrids, major grid style={black!12}"
+        f"height=8cm, xmode=log, log ticks with fixed point, xmin={xmin:.2f}, xmax={xmax:.2f}, "
+        f"ymin={ymin:.1f}, ymax=104, xtick={{4,10,20,50,100}}, ytick={{{yticks}}}, "
+        "yticklabel={\\pgfmathprintnumber{\\tick}\\%}, "
+        "xlabel={median seconds to generate one RM}, ylabel={share of right RMs, of 138 runs (95\\% Wilson interval)}, "
+        "ymajorgrids, xmajorgrids, major grid style={black!12}, "
+        "legend style={at={(0.5,1.04)}, anchor=south, legend columns=3}"
     )
     return picture(options, body, left=2.0)
+
+
+# ========= Figures 6 and 7: judged success per task on the ARM-FM paper's tasks =========
+def fig_armfm(groups, sections):
+    """groups: [(tick label, {arm: cell})]; sections: [(first group, last group, heading)], 1-based.
+
+    A cell has mean, low, high and either ``runs`` (the judged success of each run, drawn as dots,
+    interval over runs) or ``count`` = (runs judged successful, runs), a share drawn as a light bar
+    with a dashed interval and its count above.
+    """
+    step, half, cap = 0.27, 0.11, 0.04
+    arms = ("farm", "arm-fm", "no-rm")
+    offsets = {arm: (i - 1) * step for i, arm in enumerate(arms)}
+    whisker = "black, line width=0.6pt"
+    body = []
+    for arm in arms:
+        body += [
+            swatch(f"fill={ARM_COLOR[arm]}, draw={FILL_OUTLINE}"),
+            f"\\addlegendentry{{{ARM_NAME[arm]}}}",
+        ]
+    body += [
+        "\\addlegendimage{only marks, mark=*, mark size=1.4pt, mark options={fill=black, draw=white, line width=0.3pt}}",
+        "\\addlegendentry{one run}",
+        f"\\addlegendimage{{{whisker}}}",
+        "\\addlegendentry{95\\% $t$ interval}",
+    ]
+    if any("count" in cell for _, cells in groups for cell in cells.values()):
+        share = (
+            "\\draw[fill=black!15, draw=black!55, line width=0.3pt] (0.15cm,-0.1cm) rectangle (0.45cm,0.1cm);"
+            "\\draw[black, dashed, line width=0.6pt] (0.3cm,-0.15cm) -- (0.3cm,0.15cm);"
+        )
+        body += [
+            f"\\addlegendimage{{legend image code/.code={{{share}}}}}",
+            "\\addlegendentry{share of runs judged successful, 95\\% Wilson interval}",
+        ]
+    for gx, (_, cells) in enumerate(groups, start=1):
+        for arm, cell in cells.items():
+            x = gx + offsets[arm]
+            counted = "count" in cell
+            fill = ARM_LIGHT[arm] if counted else ARM_COLOR[arm]
+            body.append(
+                box(x - half, 0, x + half, cell["mean"], f"fill={fill}, draw={FILL_OUTLINE}")
+            )
+            if cell["high"] > cell["low"]:
+                body += [
+                    line(
+                        [(x, cell["low"]), (x, cell["high"])],
+                        whisker + (", dashed" if counted else ""),
+                    ),
+                    line([(x - cap, cell["low"]), (x + cap, cell["low"])], whisker),
+                    line([(x - cap, cell["high"]), (x + cap, cell["high"])], whisker),
+                ]
+            if counted:
+                successes, runs = cell["count"]
+                body.append(
+                    node(
+                        x,
+                        cell["high"] + 0.01,
+                        f"{successes}/{runs}",
+                        "anchor=south, font=\\scriptsize",
+                    )
+                )
+                continue
+            body += [
+                f"\\filldraw[fill=black, draw=white, line width=0.3pt] {cs(x + dx, value)} circle (1.4pt);"
+                for dx, value in zip((-0.06, 0.0, 0.06), cell["runs"], strict=True)
+            ]
+    for first, last, heading in sections:
+        body.append(node((first + last) / 2, 1.03, heading, "anchor=south, font=\\scriptsize"))
+        if first > 1:
+            body.append(
+                line([(first - 0.5, 0), (first - 0.5, 1.16)], "black!40, dashed, line width=0.4pt")
+            )
+    n = len(groups)
+    labels = ",".join(f"{{{label}}}" for label, _ in groups)
+    options = (
+        f"height=6cm, xmin=0.45, xmax={n + 0.55}, ymin=0, ymax=1.16, "
+        f"xtick={{{','.join(str(i) for i in range(1, n + 1))}}}, xticklabels={{{labels}}}, "
+        "xticklabel style={align=center, font=\\scriptsize}, xtick style={draw=none}, "
+        "ytick={0,0.2,0.4,0.6,0.8,1}, yticklabel style={/pgf/number format/fixed, /pgf/number format/precision=1}, "
+        "ylabel={judged success}, ymajorgrids, major grid style={black!12}, "
+        "legend style={at={(0.5,1.03)}, anchor=south, legend columns=3}"
+    )
+    return picture(options, body, left=1.6)

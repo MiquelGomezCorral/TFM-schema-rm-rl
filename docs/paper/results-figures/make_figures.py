@@ -12,6 +12,7 @@ env CC_ROOT=$PWD PYTHONPATH=app:.git/agent-memory/artifacts/final-results:docs/p
 """
 
 import csv
+from itertools import groupby
 from pathlib import Path
 
 import draw
@@ -29,12 +30,25 @@ EXAMPLES = {  # the Results chapter's three example cards: (suite, card id)
     "Blocked box": ("templates", "tpl-not-co-existence-soft-1-goal"),
     "Box carry": ("box-carry", "cx-box-carry"),
 }
-THINKING_LABELS = {  # level: (anchor, label position in axis units or None, text lines); see draw.fig_thinking
-    "none": ("north west", None, 2),
-    "low": ("south east", (11.0, 97.8), 1),
-    "medium": ("north", (17.6, 94.0), 2),
-    "high": ("south west", (21.5, 100.0), 1),
-    "max": ("north", (88.1, 96.4), 2),
+THINKING_SERIES = {  # model of levels.csv: (name in the legend, colour, pgfplots mark); one each per model
+    "DeepSeek V4.1 Flash + GLM 5.3 Flash": ("Frozen pipeline pair", draw.ARM_COLOR["farm"], "*"),
+    "Haiku 5.5": ("Haiku 5.5", "plotModelB", "square*"),
+    "GPT-6 Luna": ("GPT-6 Luna", "plotModelC", "triangle*"),
+}
+THINKING_LABELS = {  # (series, level): (anchor, hang, shift in pt); see draw.fig_thinking
+    ("Frozen pipeline pair", "none"): ("north west", "point", (3, -1)),
+    ("Frozen pipeline pair", "low"): ("north", "low", (5, -2)),
+    ("Frozen pipeline pair", "medium"): ("north", "low", (0, -2)),
+    ("Frozen pipeline pair", "high"): ("south", "point", (0, 5)),
+    ("Frozen pipeline pair", "max"): ("east", "point", (-6, 0)),
+    ("Haiku 5.5", "low"): ("south east", "point", (-3, 3)),
+    ("Haiku 5.5", "medium"): ("south", "high", (0, 2)),
+    ("Haiku 5.5", "high"): ("south", "high", (8, 2)),
+    ("GPT-6 Luna", "none"): ("east", "point", (-8, 0)),
+    ("GPT-6 Luna", "low"): ("east", "point", (-5, 0)),
+    ("GPT-6 Luna", "medium"): ("west", "point", (6, 0)),
+    ("GPT-6 Luna", "high"): ("west", "point", (6, 0)),
+    ("GPT-6 Luna", "max"): ("west", "point", (6, 0)),
 }
 # leads of the writer (results-notes.md section 9), printed against the recomputed values, never asserted
 LEADS_RIGHT, LEADS_MEDIAN = (105, 134, 136, 138, 138), (4, 12, 18, 20, 88)
@@ -43,6 +57,21 @@ DRAFT_GROUPS = {  # learned FARM / ARM-FM / no RM per group, as the Results draf
     "no goal": (14, 4, 9),
     "with a goal": (15, 17, 10),
     "shop": (3, 0, 1),
+}
+ARMFM_DATA = records.REPO / "docs/paper/armfm-baseline-results/data"  # the CSVs of its build.py
+ARMFM_LABELS = {  # task labels of Figures 6 and 7, the same as the baseline entry's previews
+    "armfm-doorkey-5x5": "DoorKey\\\\5$\\times$5",
+    "armfm-doorkey-5x5-fixed": "DoorKey\\\\5$\\times$5 fixed",
+    "armfm-doorkey-8x8-fixed": "DoorKey\\\\8$\\times$8 fixed",
+    "armfm-doorkey-16x16": "DoorKey\\\\16$\\times$16",
+    "armfm-doorkey-16x16-fixed": "DoorKey\\\\16$\\times$16 fixed",
+    "armfm-unlock-to-unlock": "UnlockToUnlock",
+    "xland-x1-197": "X1\\\\(197)",
+    "xland-x2-212": "X2\\\\(212)",
+    "xland-x3-260": "X3\\\\(260)",
+    "xland-x4-859": "X4\\\\(859)",
+    "xland-x5-594": "X5\\\\(594)",
+    "xland-zc": "ZC",
 }
 GROUP_LABEL = {
     "all": "all rows",
@@ -267,30 +296,51 @@ def build_fig_soft():
     figure("fig-res-soft", draw.fig_soft(panels, xmax))
 
 
-# ========= Figure 4: right machines per thinking level =========
+# ========= Figure 4: right machines per thinking level, per model =========
+def is_beaten(row, rows):
+    """Another row is no slower, has no fewer right RMs, and is better in at least one of the two."""
+    return any(
+        other["median_s"] <= row["median_s"]
+        and other["right"] >= row["right"]
+        and (other["median_s"] < row["median_s"] or other["right"] > row["right"])
+        for other in rows
+    )
+
+
 def build_fig_thinking():
     levels = records.thinking_levels()
+    print("thinking, right:", [r["right"] for r in levels], "leads", LEADS_RIGHT)
+    print("thinking, median s:", [r["median_s"] for r in levels], "leads", LEADS_MEDIAN)
+    rows = records.final_model_levels()
+    assert all(r["runs"] == 138 for r in levels + rows), "every drawn level has all 138 runs"
+    pipeline = [r for r in rows if THINKING_SERIES[r["model"]][0] == "Frozen pipeline pair"]
+    assert [(r["level"], r["right"], r["median_s"]) for r in pipeline] == [
+        (r["level"], r["right"], round(r["median_s"], 2)) for r in levels
+    ], "levels.csv and the records disagree on the frozen pipeline"
     table = []
-    for row in levels:
-        assert row["runs"] == 138, row
-        row["low"], row["high"] = b.wilson_ci(row["right"], row["runs"])
+    for row in rows:
+        row["series"], row["colour"], row["mark"] = THINKING_SERIES[row["model"]]
+        row["beaten"] = is_beaten(row, rows)
         table.append(
             rounded(
                 {
+                    "model": row["series"],
                     "level": row["level"],
-                    "runs": row["runs"],
                     "right": row["right"],
-                    "share": row["right"] / row["runs"],
+                    "n": row["runs"],
                     "wilson_low": row["low"],
                     "wilson_high": row["high"],
                     "median_seconds": row["median_s"],
+                    "beaten": row["beaten"],
                 }
             )
         )
-    print("thinking, right:", [r["right"] for r in levels], "leads", LEADS_RIGHT)
-    print("thinking, median s:", [r["median_s"] for r in levels], "leads", LEADS_MEDIAN)
+    unbeaten = sorted((r for r in rows if not r["beaten"]), key=lambda r: r["median_s"])
+    print(f"thinking, {len(rows)} points drawn; not beaten, by time:")
+    for r in unbeaten:
+        print(f"  {r['series']}, {r['level']}: {r['right']}/{r['runs']} at {r['median_s']} s")
     write_csv("thinking", table)
-    figure("fig-res-thinking", draw.fig_thinking(levels, THINKING_LABELS))
+    figure("fig-res-thinking", draw.fig_thinking(rows, THINKING_LABELS))
 
 
 # ========= Figure 5: the example machines =========
@@ -315,6 +365,53 @@ def build_fig_machines():
     figure("fig-res-ex-machines", draw_machines.fig_machines(machines))
 
 
+# ========= Figures 6 and 7: the ARM-FM paper's tasks =========
+def armfm_groups(csv_name):
+    """[(first row of the group, {arm: cell})] of one baseline CSV, a group per card (and mix)."""
+    groups = {}
+    with (ARMFM_DATA / f"{csv_name}.csv").open(newline="", encoding="utf-8") as handle:
+        for row in csv.DictReader(handle):
+            cell = {
+                "mean": float(row["mean"]),
+                "low": float(row["ci_low"]),
+                "high": float(row["ci_high"]),
+            }
+            if row.get("runs"):  # the counted DoorKey 16x16 fixed rows
+                cell["count"] = (int(row["successes"]), int(row["runs"]))
+            else:
+                cell["runs"] = [float(row[f"seed{seed}"]) for seed in (1, 2, 3)]
+            groups.setdefault((row.get("mix"), row["card"]), (row, {}))[1][row["arm"]] = cell
+    return list(groups.values())
+
+
+def sections_of(headings):
+    """[(first, last, heading)], 1-based, over runs of groups that share a heading."""
+    sections, first = [], 1
+    for heading, same in groupby(headings):
+        last = first + len(list(same)) - 1
+        sections.append((first, last, heading))
+        first = last + 1
+    return sections
+
+
+def build_fig_armfm():
+    paper = armfm_groups("test1-armfm-paper")
+    xland = armfm_groups("test2-xland-single") + armfm_groups("test3-xland-mixes")
+    assert [len(paper), len(xland)] == [6, 10], (len(paper), len(xland))
+    assert all(len(cells) == 3 for _, cells in paper + xland), "three arms per task"
+    steps = [f"{int(row['steps']) / 1e6:g}M steps" for row, _ in paper]
+    mixes = [
+        f"{row['mix'].removeprefix('xland-mix')}-task mix" if row.get("mix") else "single tasks"
+        for row, _ in xland
+    ]
+    for name, groups, headings in (
+        ("fig-res-armfm-paper", paper, steps),
+        ("fig-res-armfm-xland", xland, mixes),
+    ):
+        labelled = [(ARMFM_LABELS[row["card"]], cells) for row, cells in groups]
+        figure(name, draw.fig_armfm(labelled, sections_of(headings)))
+
+
 # ========= The preview's lines of the thesis preamble =========
 def write_thesis_preamble():
     thesis = THESIS.read_text(encoding="utf-8").splitlines()
@@ -337,6 +434,7 @@ build_fig_learned()
 build_fig_soft()
 build_fig_thinking()
 build_fig_machines()
+build_fig_armfm()
 write_thesis_preamble()
 print(
     "built",

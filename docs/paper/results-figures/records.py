@@ -7,6 +7,7 @@ never restates it.
 """
 
 import contextlib
+import csv
 import io
 import json
 import statistics
@@ -24,6 +25,7 @@ with contextlib.redirect_stdout(io.StringIO()):  # the builder prints its report
 REPO = Path(__file__).resolve().parents[3]
 LEVELS = ("none", "low", "medium", "high", "max")
 LEVEL_RECORDS = REPO / "docs/paper/level-benchmark-freeze/records"
+MODEL_LEVELS = REPO / "docs/paper/other-llms-by-level/data/levels.csv"
 SOFT_RECORD = REPO / "docs/paper/soft-breaks-vs-idle/evidence/soft-breaks.json"
 BENCH = REPO / "experiments/benchmark"
 SHOP = ("shop", "shop-reward")
@@ -168,6 +170,27 @@ def thinking_levels():
             }
         )
     return rows
+
+
+def final_model_levels():
+    """The ``final`` rows of the other-llms-by-level entry's levels.csv: one per model and level.
+
+    Keys: model, level, runs, right, low, high (Wilson interval, shares 0 to 1) and median_s.
+    """
+    with MODEL_LEVELS.open(newline="", encoding="utf-8") as handle:
+        return [
+            {
+                "model": row["model"],
+                "level": row["level"],
+                "runs": int(row["n"]),
+                "right": int(row["right"]),
+                "low": float(row["wilson_low"]),
+                "high": float(row["wilson_high"]),
+                "median_s": float(row["median_s_per_rm"]),
+            }
+            for row in csv.DictReader(handle)
+            if row["final"] == "true"
+        ]
 
 
 # ========= Figure 5: the example machines, one arrow per pair of states =========
