@@ -5,7 +5,7 @@ import os
 import subprocess
 from collections.abc import Iterable, Iterator
 from functools import partial
-from typing import Any
+from typing import Any, NamedTuple
 from uuid import uuid4
 
 import httpx2
@@ -25,6 +25,8 @@ OPENCODE_GO_MODEL = "opencode-go/mimo-v2.5"
 # Longest silence allowed between two streamed OpenCode chunks, not a limit on the whole reply.
 # Streamed W5a replays at max reasoning (2026-11-20) never went 2 s without a chunk.
 OPENCODE_IDLE_TIMEOUT_SECONDS = 120
+# A local server stays silent while it reads the prompt; the longest prompt is about 25K tokens.
+LOCAL_IDLE_TIMEOUT_SECONDS = 600
 PI_TIMEOUT_SECONDS = 305
 # Levels a provider names differently; every other level is sent as is.
 _OPENAI_EFFORT = {"max": "xhigh"}
@@ -109,7 +111,76 @@ class OpenAIEngine(GenericEngine):
         return responses_text(response)
 
 
-class OpenCodeEngine(GenericEngine):
+class _ChatCompletionsEngine(GenericEngine):
+    """Streamed chat-completions requests to an OpenAI-compatible server.
+
+    A subclass sets ``_client`` and ``reasoning`` and says in ``_with_thinking`` how its
+    provider takes the reasoning level.
+    """
+
+    _client: OpenAI
+    reasoning: str
+    # Longest silence allowed between two streamed chunks, not a limit on the whole reply.
+    idle_timeout = OPENCODE_IDLE_TIMEOUT_SECONDS
+
+    def _request_chat_completions(
+        self, model: str, system: str, user: str, schema: dict, name: str
+    ) -> str:
+        response = self._create_completion(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {"name": name, "strict": True, "schema": schema},
+            },
+        )
+        self.reported_model = getattr(response, "model", None)
+        return completion_text(response)
+
+    def _request_chat_completions_text(self, model: str, system: str, user: str) -> str:
+        response = self._create_completion(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        self.reported_model = getattr(response, "model", None)
+        return completion_text(response)
+
+    def _create_completion(self, **request: Any) -> ChatCompletion:
+        return self._stream_completion(request)
+
+    def _with_thinking(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Return ``request`` with the provider's own form of ``self.reasoning`` added."""
+        raise NotImplementedError
+
+    def _stream_completion(self, request: dict[str, Any]) -> ChatCompletion:
+        """Stream one chat completion and return it joined, as a non-streamed request would.
+
+        OpenCode never answers a non-streamed request that runs past about 300 s, and a long
+        reasoning run does. Streamed, the read timeout bounds the silence between two chunks.
+        A stall or a dropped connection mid-stream raises the SDK error a non-streamed request
+        raises, so it stays retryable.
+        """
+        stream = self._client.chat.completions.create(
+            **self._with_thinking(request),
+            stream=True,
+            stream_options={"include_usage": True},
+            timeout=self.idle_timeout,
+        )
+        try:
+            return _joined_completion(stream)
+        except httpx2.TimeoutException as error:
+            raise APITimeoutError(request=stream.response.request) from error
+        except httpx2.TransportError as error:
+            raise APIConnectionError(request=stream.response.request) from error
+
+
+class OpenCodeEngine(_ChatCompletionsEngine):
     """Backend using OpenCode's OpenAI-compatible API."""
 
     def __init__(
@@ -150,33 +221,8 @@ class OpenCodeEngine(GenericEngine):
             default_headers={"x-opencode-session": str(uuid4())}
         )
 
-    def _request_chat_completions(
-        self, model: str, system: str, user: str, schema: dict, name: str
-    ) -> str:
-        response = self._create_completion(
-            model=model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {"name": name, "strict": True, "schema": schema},
-            },
-        )
-        self.reported_model = getattr(response, "model", None)
-        return completion_text(response)
-
-    def _request_chat_completions_text(self, model: str, system: str, user: str) -> str:
-        response = self._create_completion(
-            model=model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-        )
-        self.reported_model = getattr(response, "model", None)
-        return completion_text(response)
+    def _with_thinking(self, request: dict[str, Any]) -> dict[str, Any]:
+        return {**request, "reasoning_effort": self.reasoning}
 
     def _create_completion(self, **request: Any) -> ChatCompletion:
         """Send one chat completion, resending at once with ``low`` if the model refuses ``none``.
@@ -211,28 +257,6 @@ class OpenCodeEngine(GenericEngine):
             )
         return self._stream_completion(request)
 
-    def _stream_completion(self, request: dict[str, Any]) -> ChatCompletion:
-        """Stream one chat completion and return it joined, as a non-streamed request would.
-
-        OpenCode never answers a non-streamed request that runs past about 300 s, and a long
-        reasoning run does. Streamed, the read timeout bounds the silence between two chunks.
-        A stall or a dropped connection mid-stream raises the SDK error a non-streamed request
-        raises, so it stays retryable.
-        """
-        stream = self._client.chat.completions.create(
-            **request,
-            reasoning_effort=self.reasoning,
-            stream=True,
-            stream_options={"include_usage": True},
-            timeout=OPENCODE_IDLE_TIMEOUT_SECONDS,
-        )
-        try:
-            return _joined_completion(stream)
-        except httpx2.TimeoutException as error:
-            raise APITimeoutError(request=stream.response.request) from error
-        except httpx2.TransportError as error:
-            raise APIConnectionError(request=stream.response.request) from error
-
 
 def _joined_completion(chunks: Iterable[ChatCompletionChunk]) -> ChatCompletion:
     """Join streamed chunks into the reply a non-streamed request returns.
@@ -259,6 +283,144 @@ def _joined_completion(chunks: Iterable[ChatCompletionChunk]) -> ChatCompletion:
     return ChatCompletion.model_construct(
         **head, object="chat.completion", choices=[choice], usage=usage
     )
+
+
+# ======================================================================================
+#                          PROVIDER LOCAL (OPEN-WEIGHT MODEL SERVERS)
+# ======================================================================================
+
+
+class _Thinking(NamedTuple):
+    """What one app level sends to a model: thinking on or off, an effort name, a system line."""
+
+    on: bool | None = None
+    effort: str | None = None
+    system: str | None = None
+
+
+_OFF, _ON = _Thinking(on=False), _Thinking(on=True)
+# Per model family, the app levels it supports and what each sends; a level not listed is an
+# error, never another level. The family key must appear in the served model id, lowercase and
+# without "-" and "_". Controls checked on the model cards on 2026-11-24.
+_LOCAL_LEVELS: dict[str, dict[str, _Thinking]] = {
+    # Qwen3.8 card: enable_thinking, and reasoning_effort xhigh (default), medium or low.
+    "qwen3.8": {
+        "none": _OFF,
+        "low": _Thinking(True, "low"),
+        "medium": _Thinking(True, "medium"),
+        "max": _Thinking(True, "xhigh"),
+    },
+    # Qwen3.5 and Gemma 4 cards: enable_thinking is the only control; "high" stands for "on".
+    "qwen3.5": {"none": _OFF, "high": _ON},
+    "gemma4": {"none": _OFF, "high": _ON},
+    # gpt-oss card: effort low, medium or high; thinking cannot be turned off.
+    "gptoss": {level: _Thinking(effort=level) for level in ("low", "medium", "high")},
+    # Muse Glimmer card: the system line "Reasoning strength: <value>", value low, medium, high
+    # or xhigh ("max" here); thinking cannot be turned off. The line ends the system prompt.
+    "museglimmer": {
+        level: _Thinking(system=f"Reasoning strength: {strength}")
+        for level, strength in (
+            ("low", "low"),
+            ("medium", "medium"),
+            ("high", "high"),
+            ("max", "xhigh"),
+        )
+    },
+    # Llama 3.1 does not think.
+    "llama3.1": {"none": _Thinking()},
+}
+LOCAL_SERVERS = ("vllm", "ollama")
+# The app refuses equal generator and critic model ids, so one model playing both roles names the
+# critic "<model>@critic" (the convention of experiments/dev/model-compare/cli_engine.py); the
+# server is asked for "<model>".
+LOCAL_CRITIC_SUFFIX = "@critic"
+
+
+def _local_control(model: str, level: str) -> _Thinking:
+    """Return what ``level`` sends to ``model``; an unknown family or level raises."""
+    key = model.lower().replace("-", "").replace("_", "")
+    for family, levels in _LOCAL_LEVELS.items():
+        if family in key:
+            if level not in levels:
+                supported = ", ".join(levels)
+                raise ValueError(f"{model} supports the reasoning levels {supported}, not {level}")
+            return levels[level]
+    raise ValueError(f"No thinking control is known for the local model {model}; see _LOCAL_LEVELS")
+
+
+def _thinking_body(control: _Thinking, server: str) -> dict[str, Any]:
+    """The request fields that carry ``control`` to a vLLM or an Ollama server."""
+    if control.on is None and control.effort is None:
+        return {}  # a model with no control, or one set by its system line
+    if server == "ollama":
+        # Ollama's /v1 has one field: "none" turns thinking off, any effort name turns it on.
+        return {"reasoning_effort": "none" if control.on is False else control.effort or "medium"}
+    body: dict[str, Any] = {"reasoning_effort": control.effort} if control.effort else {}
+    if control.on is not None:
+        body["chat_template_kwargs"] = {"enable_thinking": control.on}
+    return body
+
+
+class LocalEngine(_ChatCompletionsEngine):
+    """Backend using an OpenAI-compatible model server: vLLM on the cluster, Ollama locally."""
+
+    idle_timeout = LOCAL_IDLE_TIMEOUT_SECONDS
+
+    def __init__(
+        self,
+        environment: EnvironmentDescription,
+        model: str | None,
+        reasoning: str = Configuration.reasoning,
+    ) -> None:
+        model = _required_model(model, "Local")
+        self._control = _local_control(model, reasoning)
+        self._server = os.environ.get("LOCAL_LLM_SERVER") or LOCAL_SERVERS[0]
+        if self._server not in LOCAL_SERVERS:
+            raise ValueError(f"LOCAL_LLM_SERVER must be one of {', '.join(LOCAL_SERVERS)}")
+        self._client = OpenAI(
+            api_key=os.environ.get("LOCAL_LLM_API_KEY") or "none",
+            base_url=_required_env("LOCAL_LLM_BASE_URL"),
+            max_retries=0,
+        )
+        self.reasoning = reasoning
+        super().__init__(
+            environment,
+            model,
+            "Local",
+            self._request_chat_completions,
+            self._request_chat_completions_text,
+        )
+
+    def _with_thinking(self, request: dict[str, Any]) -> dict[str, Any]:
+        request = {
+            **request,
+            "model": request["model"].removesuffix(LOCAL_CRITIC_SUFFIX),
+            "extra_body": _thinking_body(self._control, self._server),
+        }
+        if self._control.system:
+            first, *rest = request["messages"]
+            first = {**first, "content": f"{first['content']}\n\n{self._control.system}"}
+            request["messages"] = [first, *rest]
+        return request
+
+    def _create_completion(self, **request: Any) -> ChatCompletion:
+        """Send one chat completion and refuse a reply that thinks at level ``none``.
+
+        A server that ignored the control would label a thinking run ``none``, so the run ends.
+        The thinking text arrives in a non-standard message field whose name varies by server.
+        """
+        response = super()._create_completion(**request)
+        message = response.choices[0].message if response.choices else None
+        extra = (message.model_extra or {}) if message is not None else {}
+        thinks = any(
+            "reason" in key and isinstance(value, str) and value.strip()
+            for key, value in extra.items()
+        )
+        if self.reasoning == "none" and thinks:
+            raise ImmediateEngineError(
+                f"{self.model} thought at level none: the {self._server} server ignored the control"
+            )
+        return response
 
 
 class AntigravityEngine(GenericEngine):

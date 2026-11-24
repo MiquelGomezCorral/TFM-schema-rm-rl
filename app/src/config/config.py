@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 import yaml
 from maikol_utils.file_utils import make_dirs
 
-LLM_PROVIDERS = ("openai", "opencode", "antigravity")
+LLM_PROVIDERS = ("openai", "opencode", "antigravity", "local")
 # One level for the generator and the critic; each provider adapter maps it to its own option.
 REASONING_LEVELS = ("none", "low", "medium", "high", "max")
 DEFAULT_LLAMA_SERVER_PORT = "8934"
