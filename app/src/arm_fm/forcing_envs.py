@@ -61,6 +61,7 @@ ZOMBIE_PERIOD = 3  # a zombie steps one cell left every 3 env steps, counted fro
 SPAWN_CHANCE = (0.04, 0.17)  # chance per step of a spawn, rising linearly over the episode
 PLANT_GAP = (20, 60)  # steps between two sprout attempts
 MAX_PLANTS = 3
+FIXED_PLANTS_PER_FREE_ROW = 3  # ``fixed_plants``: this many plants per free row between two lanes
 LANES_EVENTS = ("top_breach", "side_breach", "plant_trampled", "zombie_killed")
 IGNORABLE = ("top", "plants")
 
@@ -85,7 +86,9 @@ class ForcingEnv(MiniGridEnv):
     the step just taken and ``event_counts`` counts them over the episode.
     """
 
-    def __init__(self, size: int, max_steps: int, height: int | None = None, **kwargs) -> None:
+    def __init__(
+        self, size: int, max_steps: int = MAX_STEPS, height: int | None = None, **kwargs
+    ) -> None:
         super().__init__(
             mission_space=MissionSpace(mission_func=self._gen_mission),
             width=size,
@@ -150,7 +153,8 @@ class LanesEnv(ForcingEnv):
 
     Plants sprout on random free cells off the lanes, at most 3 alive; a plant the agent steps on
     dies. The state that labeling reads is listed under ``## Labeling API`` in
-    ``environment-code.md``. The env reward is +1 per zombie killed. ``success`` is true while no
+    ``environment-code.md``. The env reward is +1 per zombie killed (``kill_reward``) and 0 per
+    zombie that gets through any lane (``breach_reward``). ``success`` is true while no
     zombie has got through the top lane. The observation is the whole grid, as MiniGrid's
     ``FullyObsWrapper`` gives it (the agent's cell and facing included).
 
@@ -158,18 +162,49 @@ class LanesEnv(ForcingEnv):
     schedule, the rhythm and the rules stay the same. With touching lanes (1) the field has no cell
     off the lanes, so no plant ever sprouts.
 
+    Every option below defaults to the world every stored card, bundle and run used.
+
     Args:
-        max_steps: Episode length.
-        lane_spacing: Grid rows from one lane to the next, 1 to 4. The default 4 is the world every
-            stored card, bundle and run used (an 11 x 11 grid); 2 gives 11 x 7 and 1 gives 11 x 5.
+        lane_spacing: Grid rows from one lane to the next, 1 to 4. The default 4 is an 11 x 11
+            grid; 2 gives 11 x 7 and 1 gives 11 x 5.
+        kill_reward: Env reward per zombie killed (default 1.0).
+        breach_reward: Env reward per zombie that gets through, top or side lane (default 0.0; give
+            a negative value for a penalty). Play goes on after a breach.
+        fixed_plants: Off, plants sprout during the episode. On, no plant ever sprouts: at each
+            reset ``3 * (lane_spacing - 1)`` plants (9, 6, 3 for spacing 4, 3, 2) stand on random
+            cells off the lanes, drawn from the episode's seed after the zombie schedule (so a seed
+            keeps its zombies), placed again until a route between the lanes steps on no plant. A
+            trampled plant stays dead.
+        end_on_top_breach: On, the step with a ``top_breach`` event returns ``terminated=True``
+            (its reward and events still count).
+        **kwargs: ``plant_stun_steps`` (default 0, read from here because ruff allows five named
+            arguments): after the agent steps onto a plant (the step with ``plant_trampled``), its
+            next that many steps change neither its cell nor its facing, whatever the action; the
+            plant still dies, and the zombies, the spawns, the step counter, the rewards and the
+            events go on as usual. ``max_steps`` (episode length, default ``MAX_STEPS``) and other
+            ``MiniGridEnv`` arguments.
     """
 
     def __init__(
-        self, max_steps: int = MAX_STEPS, lane_spacing: int = LANE_SPACING, **kwargs
+        self,
+        lane_spacing: int = LANE_SPACING,
+        kill_reward: float = 1.0,
+        breach_reward: float = 0.0,
+        fixed_plants: bool = False,
+        end_on_top_breach: bool = False,
+        **kwargs,
     ) -> None:
         if not 1 <= lane_spacing <= LANE_SPACING:
             raise ValueError(f"lane_spacing must be 1 to {LANE_SPACING}, got {lane_spacing!r}")
-        super().__init__(LANES_SIZE, max_steps, height=2 * lane_spacing + 3, **kwargs)
+        stun_steps = kwargs.pop("plant_stun_steps", 0)
+        if stun_steps < 0:
+            raise ValueError(f"plant_stun_steps must be 0 or more, got {stun_steps!r}")
+        super().__init__(LANES_SIZE, height=2 * lane_spacing + 3, **kwargs)
+        self.plant_stun_steps = stun_steps
+        self.kill_reward = kill_reward
+        self.breach_reward = breach_reward
+        self.fixed_plants = fixed_plants
+        self.end_on_top_breach = end_on_top_breach
         self.lane_rows = lane_rows(lane_spacing)
         self.field_rows = range(1, self.height - 1)
         self.observation_space = spaces.Dict(
@@ -223,10 +258,47 @@ class LanesEnv(ForcingEnv):
         )
         self.zombies, self.plants = [], []
         self.breaches, self.trampled = [], []
+        self.stun_left = 0
         self.event_counts = dict.fromkeys((*LANES_EVENTS, "zombie_spawned", "plant_sprouted"), 0)
+        if self.fixed_plants:
+            self._sprouts = {}
+            self._place_plants(rng)
+
+    def _place_plants(self, rng: np.random.Generator) -> None:
+        """Stand the episode's plants on random cells off the lanes.
+
+        A draw that leaves no plant-free route between the lanes is drawn again (only many plants
+        can wall a lane off).
+        """
+        free = [(x, y) for x in FIELD for y in self.field_rows if y not in self.lane_rows]
+        count = FIXED_PLANTS_PER_FREE_ROW * (self.lane_rows[1] - self.lane_rows[0] - 1)
+        while True:
+            cells = [free[i] for i in rng.permutation(len(free))[:count]]
+            if self._lanes_connected(set(cells)):
+                break
+        for cell in cells:
+            plant = Plant()
+            self._put(plant, *cell)
+            self.plants.append(plant)
+
+    def _lanes_connected(self, plants: set[tuple[int, int]]) -> bool:
+        """Whether a walk over the field, on no plant, joins the left ends of the three lanes."""
+        start = (LEFT_END, self.lane_rows[0])
+        seen, stack = {start}, [start]
+        while stack:
+            x, y = stack.pop()
+            for cell in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                inside = cell[0] in FIELD and cell[1] in self.field_rows
+                if inside and cell not in plants and cell not in seen:
+                    seen.add(cell)
+                    stack.append(cell)
+        return all((LEFT_END, row) in seen for row in self.lane_rows)
 
     def step(self, action):
         self.events_this_step = []
+        if self.stun_left:
+            self.stun_left -= 1
+            action = self.actions.done  # stunned: nothing the agent does moves or turns it
         before = tuple(self.agent_pos)
         _, _, terminated, truncated, _ = super().step(action)
         if tuple(self.agent_pos) != before:
@@ -234,7 +306,12 @@ class LanesEnv(ForcingEnv):
         self._advance_zombies()
         self._spawn_zombie()
         self._sprout_plant()
-        reward = float(self.events_this_step.count("zombie_killed"))
+        events = self.events_this_step
+        breaches = events.count("top_breach") + events.count("side_breach")
+        reward = float(
+            self.kill_reward * events.count("zombie_killed") + self.breach_reward * breaches
+        )
+        terminated = terminated or (self.end_on_top_breach and "top_breach" in events)
         return (
             self.gen_obs(),
             reward,
@@ -252,6 +329,7 @@ class LanesEnv(ForcingEnv):
         elif isinstance(cell, Plant):
             self.plants.remove(cell)
             self.trampled.append(tuple(self.agent_pos))
+            self.stun_left = self.plant_stun_steps
             self._emit("plant_trampled")
         else:
             return

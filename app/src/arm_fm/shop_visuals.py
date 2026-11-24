@@ -232,8 +232,14 @@ def _switch(c: Canvas, layout, ringing: bool) -> None:
     c.circle((x + 0.28, y + 0.24), 0.06, color, INK, 1)
 
 
+def _lamp_x(layout) -> int:
+    """Column of the lamp in the top wall: next to the stove, one cell right if it would sit on it (3x3)."""
+    x = layout.size - 3
+    return x + 1 if (x, 0) == tuple(layout.stove) else x
+
+
 def _lamp(c: Canvas, layout, ringing: bool) -> None:
-    x, y = layout.size - 3, 0
+    x, y = _lamp_x(layout), 0
     c.rrect((x + 0.2, y + 0.62, x + 0.8, y + 0.9), 0.05, IRON, INK, 1)
     if ringing:
         with c.translucent(0.45) as glow:
@@ -245,7 +251,7 @@ def _lamp(c: Canvas, layout, ringing: bool) -> None:
 def _alarm(c: Canvas, layout, step: int) -> None:
     """The siren: red tint, rays turning out of the lamp over the whole room, a flashing border."""
     n = layout.size
-    lamp = (n - 2.5, 0.48)
+    lamp = (_lamp_x(layout) + 0.5, 0.48)
     c.tint(ALARM, 0.12)
     with c.translucent(0.2) as rays:
         for k in range(12):

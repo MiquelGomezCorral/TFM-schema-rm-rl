@@ -43,6 +43,7 @@ import random
 import shutil
 import subprocess
 import time
+from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -180,6 +181,11 @@ CSV_COLUMNS = {
     ),
     "train.csv": ("global_step", "td_loss", "q_mean", "epsilon", "sps"),
 }
+
+# eval.csv gains one column per world event the env reports in ``info["events"]``, named
+# ``events_<name>``: the mean count per evaluation episode. The names come from the env, so the
+# columns join the header when the event first fires (``RunRecorder._fit_event_columns``).
+EVENT_PREFIX = "events_"
 
 
 # ======================================================================================
@@ -547,6 +553,7 @@ class EpisodeTracker:
     rm_accept: bool | None = None
     task: str | None = None  # set by a multi-task env
     seed: int | None = None  # the reset seed of an evaluation episode
+    events: Counter[str] = field(default_factory=Counter)  # world events from ``info["events"]``
 
     def record(self, step: tuple, is_success: Callable[[bool, float], bool]) -> None:
         _, reward, terminated, _, info = step
@@ -556,6 +563,7 @@ class EpisodeTracker:
         self.length += 1
         self.exited = is_success(terminated, env_reward)
         self.task = info.get("task")
+        self.events.update(info.get("events", ()))
         if "rm_reward" in info:
             self.rm_return = (self.rm_return or 0.0) + info["rm_reward"]
             self.rm_state = info["rm_state"]
@@ -617,7 +625,10 @@ def evaluation_resets(
 
 
 def evaluation_row(episodes: list[EpisodeTracker]) -> dict[str, object]:
-    """Summarize evaluation episodes as one ``eval.csv`` row (RM columns only with an RM)."""
+    """Summarize evaluation episodes as one ``eval.csv`` row.
+
+    RM columns only with an RM; one ``events_<name>`` column per event that fired in them.
+    """
     row: dict[str, object] = {
         "episodes": len(episodes),
         "exit_rate": _mean(episode.exited for episode in episodes),
@@ -632,6 +643,8 @@ def evaluation_row(episodes: list[EpisodeTracker]) -> dict[str, object]:
         row["accept_exit_agreement"] = _mean(
             episode.rm_accept == episode.exited for episode in episodes
         )
+    for name in sorted({name for episode in episodes for name in episode.events}):
+        row[EVENT_PREFIX + name] = _mean(episode.events[name] for episode in episodes)
     return row
 
 
@@ -816,8 +829,29 @@ class RunRecorder:
         return {"success": next(iter(labels.values())) if len(labels) == 1 else labels}
 
     def _append(self, name: str, row: dict[str, object]) -> None:
+        if name == "eval.csv":
+            row = self._fit_event_columns(row)
         with (self.directory / name).open("a", newline="", encoding="utf-8") as file:
             csv.DictWriter(file, self.columns[name]).writerow(row)
+
+    def _fit_event_columns(self, row: dict[str, object]) -> dict[str, object]:
+        """Add the row's new ``events_<name>`` columns to ``eval.csv``; an absent event counts 0.
+
+        A new column rewrites the file: the earlier rows get 0, for the event had not fired in
+        them. The file holds one row per evaluation, so the rewrite is cheap and rare.
+        """
+        columns = self.columns["eval.csv"]
+        new = [key for key in row if key.startswith(EVENT_PREFIX) and key not in columns]
+        if new:
+            path = self.directory / "eval.csv"
+            with path.open(newline="", encoding="utf-8") as file:
+                earlier = list(csv.DictReader(file))
+            columns = self.columns["eval.csv"] = (*columns, *new)
+            with path.open("w", newline="", encoding="utf-8") as file:
+                writer = csv.DictWriter(file, columns, restval=0)
+                writer.writeheader()
+                writer.writerows(earlier)
+        return {**dict.fromkeys((c for c in columns if c.startswith(EVENT_PREFIX)), 0), **row}
 
 
 def _success_modes(CONFIG: Configuration) -> dict[str, str]:

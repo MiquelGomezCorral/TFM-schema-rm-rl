@@ -57,7 +57,7 @@ RM_STATE_ENCODINGS = ("embedding", "one_hot", "none")
 TASK_BUNDLE_KEYS = ("bundle", "name", "labeling_bundle", "env_kwargs", "success")
 TASK_DRAWS = ("alternate",)
 ENV_STAGE_KEYS = ("env_kwargs", "until")
-STAGE_UNTIL_KEYS = ("served", "caught", "episodes")
+STAGE_UNTIL_KEYS = ("served", "caught", "silenced", "episodes")
 PPO_POSITIVE = (
     "ppo_num_envs",
     "ppo_num_steps",
@@ -116,9 +116,15 @@ def _check_env_stages(stages: object) -> None:
         if not all(_is_finite_number(value) and value >= 0 for value in until.values()):
             raise ValueError(f"{where}.until values must be finite numbers, 0 or more")
         episodes = until.get("episodes", 1)
-        if not 0 <= until.get("caught", 0) <= 1 or not isinstance(episodes, int) or episodes < 1:
+        shares = (until.get("caught", 0), until.get("silenced", 0))
+        if (
+            not all(0 <= share <= 1 for share in shares)
+            or not isinstance(episodes, int)
+            or episodes < 1
+        ):
             raise ValueError(
-                f"{where}.until: caught is a share (0 to 1), episodes a whole number, 1 or more"
+                f"{where}.until: caught and silenced are shares (0 to 1), episodes a whole number, "
+                "1 or more"
             )
 
 

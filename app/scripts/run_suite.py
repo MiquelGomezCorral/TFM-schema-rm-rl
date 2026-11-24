@@ -515,6 +515,8 @@ class Owner:
 def settings_key(settings: dict) -> str:
     """The training settings a run records in its ``config.yaml`` (minus its name), comparable."""
     wanted = {name: settings.get(name) for name in RUN_SETTINGS if name not in SHARE_IGNORED}
+    if settings.get("env_stages"):  # a config.yaml extra, set only with stages: old keys hold
+        wanted["env_stages"] = settings["env_stages"]
     return json.dumps(wanted, sort_keys=True, default=str)
 
 
@@ -526,6 +528,7 @@ def requested_key(run: Run, spec: dict) -> str:
         config = Configuration(yaml_config_name=str(path), seed=run.seed)
     settings = {name: getattr(config, name) for name in RUN_SETTINGS}
     settings["layout_seed"] = layout_seed(config)
+    settings["env_stages"] = config.env_stages
     return settings_key(settings)
 
 

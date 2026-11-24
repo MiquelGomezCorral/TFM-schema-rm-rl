@@ -7,8 +7,9 @@ run moves on). The machine, policy, optimizer and step count carry on; only the 
 Stages only move forward.
 
 ``until`` is measured over the last ``episodes`` (default 100) finished training episodes of the
-stage, across all envs: ``served`` is the least mean number of served orders per episode, and
-``caught`` the least share of food falls whose very next move picked the food up.
+stage, across all envs: ``served`` is the least mean number of served orders per episode,
+``caught`` the least share of food falls whose very next move picked the food up, and ``silenced``
+the least share of sirens rung that were switched off before the episode ended.
 """
 
 import csv
@@ -21,18 +22,27 @@ import gymnasium as gym
 from src.config import Configuration
 
 STAGE_LOG = "stages.csv"
-STAGE_COLUMNS = ("global_step", "stage", "episodes", "mean_served", "caught_share")
+STAGE_COLUMNS = (
+    "global_step",
+    "stage",
+    "episodes",
+    "mean_served",
+    "caught_share",
+    "silenced_share",
+)
 WINDOW_EPISODES = 100
 
 
 @dataclass(frozen=True)
 class EpisodeWorld:
-    """What one finished training episode did: its stage, orders served, food falls and catches."""
+    """What one finished training episode did: its stage, served, falls, catches, rings, switch-offs."""
 
     stage: int
     served: int
     falls: int
     caught: int
+    rings: int = 0
+    silenced: int = 0
 
 
 class WorldCurriculum:
@@ -71,11 +81,14 @@ class WorldCurriculum:
         served = sum(episode.served for episode in self.window) / len(self.window)
         falls = sum(episode.falls for episode in self.window)
         caught = sum(episode.caught for episode in self.window) / falls if falls else None
+        rings = sum(episode.rings for episode in self.window)
+        silenced = sum(episode.silenced for episode in self.window) / rings if rings else None
         if served < until["served"]:
             return
-        if "caught" in until and (caught is None or caught < until["caught"]):
-            return
-        measured = (len(self.window), served, caught)
+        for key, share in (("caught", caught), ("silenced", silenced)):
+            if key in until and (share is None or share < until[key]):
+                return
+        measured = (len(self.window), served, caught, silenced)
         self.stage += 1
         self.window = self._new_window()
         self._log(directory, global_step, measured)
@@ -96,7 +109,8 @@ class WorldCurriculum:
             writer.writerow((global_step, self.stage, *measured))
         print(
             f"step {global_step}: world stage {self.stage - 1} -> {self.stage} "
-            f"({measured[0]} episodes, mean served {measured[1]:.2f}, caught share {measured[2]})",
+            f"({measured[0]} episodes, mean served {measured[1]:.2f}, caught share {measured[2]}, "
+            f"silenced share {measured[3]})",
             flush=True,
         )
 
@@ -107,7 +121,8 @@ class WorldStage(gym.Wrapper):
     At every reset it sets the current stage's ``env_kwargs`` as attributes of the shop env (the
     shop reads them when it plans the episode), and the values the card built the env with for
     every other key a stage touches. It counts served orders, food falls and falls caught on the
-    very next move from the shop's own events, before the vector env resets a finished episode.
+    very next move, sirens rung and sirens switched off, from the shop's own events, before the
+    vector env resets a finished episode.
     """
 
     def __init__(self, env: gym.Env, curriculum: WorldCurriculum) -> None:
@@ -120,7 +135,7 @@ class WorldStage(gym.Wrapper):
             raise ValueError(f"env_stages set {unknown}, which the env does not have")
         self.card_world = {key: getattr(base, key) for key in keys}
         self.stage = curriculum.stage
-        self.served = self.falls = self.caught = 0
+        self.served = self.falls = self.caught = self.rings = self.silenced = 0
         self.fell = False  # food fell on the last step: this step is its catch
 
     def reset(self, **kwargs):
@@ -128,20 +143,25 @@ class WorldStage(gym.Wrapper):
         base = self.env.unwrapped
         for key, value in {**self.card_world, **self.curriculum.world}.items():
             setattr(base, key, value)
-        self.served = self.falls = self.caught = 0
+        self.served = self.falls = self.caught = self.rings = self.silenced = 0
         self.fell = False
         return super().reset(**kwargs)
 
     def step(self, action):
-        observation, reward, terminated, truncated, info = super().step(action)
         base = self.env.unwrapped
+        was_ringing = base.siren_ringing
+        observation, reward, terminated, truncated, info = super().step(action)
         events = base.events_this_step
         holding = base.carrying is not None and base.carrying.type == "box"
         self.served += events.count("serve")
         self.caught += int(self.fell and holding)
         self.fell = "fall" in events
         self.falls += int(self.fell)
+        self.rings += events.count("ring")
+        self.silenced += int(was_ringing and not base.siren_ringing)
         if terminated or truncated:
-            episode = EpisodeWorld(self.stage, self.served, self.falls, self.caught)
+            episode = EpisodeWorld(
+                self.stage, self.served, self.falls, self.caught, self.rings, self.silenced
+            )
             self.curriculum.finished.append(episode)
         return observation, reward, terminated, truncated, info
