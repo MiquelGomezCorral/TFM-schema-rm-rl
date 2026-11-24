@@ -31,6 +31,7 @@ from src.engines import (
     ContextExceededError,
     GenericEngine,
     ImmediateEngineError,
+    LocalEngine,
     OpenAIEngine,
     OpenCodeEngine,
     RetryableEngineError,
@@ -808,6 +809,88 @@ class EngineTests(unittest.TestCase):
         run.return_value = subprocess.CompletedProcess(["pi"], 0, stdout="{}\n", stderr="")
         with self.assertRaises(ImmediateEngineError):
             engine.request_text("system", "user")
+
+    def _local_text_request(self, model, level, server="vllm", delta=None) -> dict:
+        """Send one text request through a LocalEngine on a fake server; return the body sent."""
+        sent = {}
+        chunk = {
+            "id": "reply",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": model,
+            "choices": [{"index": 0, "delta": delta or {"content": "ok"}}],
+        }
+
+        def reply(request):
+            sent.update(json.loads(request.content))
+            headers = {"content-type": "text/event-stream"}
+            return httpx2.Response(200, headers=headers, content=f"data: {json.dumps(chunk)}\n\n")
+
+        client = httpx2.Client(transport=httpx2.MockTransport(reply))
+        environment = {"LOCAL_LLM_BASE_URL": "http://server.test/v1", "LOCAL_LLM_SERVER": server}
+        with (
+            patch.dict(os.environ, environment, clear=True),
+            patch("src.engines.provider_engines.OpenAI", partial(OpenAI, http_client=client)),
+        ):
+            LocalEngine(ENVIRONMENT, model, level).request_text("system", "user")
+        return sent
+
+    def test_local_levels_reach_the_server_as_the_model_card_says(self) -> None:
+        off = {"chat_template_kwargs": {"enable_thinking": False}}
+        on = {"chat_template_kwargs": {"enable_thinking": True}}
+        muse_line = "system\n\nReasoning strength: xhigh"
+        cases = [
+            # (model, level, server, thinking fields sent, system prompt sent)
+            ("Qwen/Qwen3.8-27B", "none", "vllm", off, "system"),
+            ("Qwen/Qwen3.8-27B", "max", "vllm", on | {"reasoning_effort": "xhigh"}, "system"),
+            ("Qwen/Qwen3.5-9B", "high", "vllm", on, "system"),
+            ("google/gemma-4-12B-it", "none", "vllm", off, "system"),
+            ("openai/gpt-oss-20b", "medium", "vllm", {"reasoning_effort": "medium"}, "system"),
+            ("meta-models/Muse-Glimmer-30B", "max", "vllm", {}, muse_line),
+            ("meta-llama/Llama-3.1-8B-Instruct", "none", "vllm", {}, "system"),
+            ("qwen3.5:4b", "none", "ollama", {"reasoning_effort": "none"}, "system"),
+            ("qwen3.5:4b", "high", "ollama", {"reasoning_effort": "medium"}, "system"),
+        ]
+        for model, level, server, thinking, system in cases:
+            with self.subTest(model=model, level=level, server=server):
+                body = self._local_text_request(model, level, server)
+                fields = {
+                    key: value
+                    for key, value in body.items()
+                    if key in ("reasoning_effort", "chat_template_kwargs")
+                }
+                self.assertEqual(fields, thinking)
+                self.assertEqual(body["messages"][0]["content"], system)
+                self.assertEqual(body["messages"][1]["content"], "user")
+
+    def test_local_engine_refuses_a_level_its_model_lacks(self) -> None:
+        refused = [
+            ("openai/gpt-oss-20b", "none"),  # thinking cannot be turned off
+            ("openai/gpt-oss-20b", "max"),
+            ("meta-models/Muse-Glimmer-30B", "none"),
+            ("Qwen/Qwen3.5-9B", "low"),  # on or off only: no effort levels to map onto
+            ("Qwen/Qwen3.8-27B", "high"),  # low, medium, xhigh only
+            ("meta-llama/Llama-3.1-8B-Instruct", "high"),
+            ("mistralai/Ministral-3-14B-Reasoning-2512", "high"),  # family not in the table
+        ]
+        environment = {"LOCAL_LLM_BASE_URL": "http://server.test/v1"}
+        for model, level in refused:
+            with (
+                self.subTest(model=model, level=level),
+                patch.dict(os.environ, environment, clear=True),
+                self.assertRaises(ValueError),
+            ):
+                LocalEngine(ENVIRONMENT, model, level)
+
+    def test_local_engine_asks_the_server_for_the_model_behind_a_critic_name(self) -> None:
+        body = self._local_text_request("qwen3.5:4b@critic", "none", "ollama")
+        self.assertEqual(body["model"], "qwen3.5:4b")
+
+    def test_local_engine_ends_the_run_when_a_reply_thinks_at_none(self) -> None:
+        thinking = {"reasoning_content": "let me think", "content": "ok"}
+        with self.assertRaises(ImmediateEngineError):
+            self._local_text_request("qwen3.5:4b", "none", delta=thinking)
+        self._local_text_request("qwen3.5:4b", "high", delta=thinking)
 
 
 if __name__ == "__main__":

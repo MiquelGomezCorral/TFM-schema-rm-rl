@@ -12,7 +12,7 @@ from .errors import (
     retry_critic,
 )
 from .generic_engine import GenericEngine
-from .provider_engines import AntigravityEngine, OpenAIEngine, OpenCodeEngine
+from .provider_engines import AntigravityEngine, LocalEngine, OpenAIEngine, OpenCodeEngine
 from .structured import (
     STATE_FINAL,
     STATE_IN_PROGRESS,

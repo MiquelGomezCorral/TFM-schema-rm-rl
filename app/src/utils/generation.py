@@ -8,6 +8,7 @@ from src.config import Configuration
 from src.engines import (
     AntigravityEngine,
     GenericEngine,
+    LocalEngine,
     OpenAIEngine,
     OpenCodeEngine,
     RetryableEngineError,
@@ -147,6 +148,7 @@ def get_engine(
         "openai": OpenAIEngine,
         "opencode": OpenCodeEngine,
         "antigravity": AntigravityEngine,
+        "local": LocalEngine,
     }
     engine = engine_types[CONFIG.llm_provider](
         environment, model if model is not None else CONFIG.model, CONFIG.reasoning
