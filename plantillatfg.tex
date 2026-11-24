@@ -1236,7 +1236,7 @@ Two more rules decide how the machine meets training: when an episode ends, and 
 
 A limit, in this chapter, is something FARM does not do or does not guarantee today. FARM's compiler knows the task only through the clauses the generator chooses while it does not know the world at all; the generator and the critic know the world only through the environment description. 
 
-Each limit below is given with a case, so that a person knows what to avoid when writing a task or describing an environment. The first two limits concern the machines the compiler builds, the next five what a task can state and how the generator reads it, and the last two how the machines meet training. Table~\ref{tab:lim-summary} says for each one whether later work could remove it.
+Each limit below is given with a case, so that a person knows what to avoid when writing a task or describing an environment. The first two limits concern the machines the compiler builds, and the other five what a task can state and how the generator reads it.
 
 \section{States the world rules out}
 \label{sec:lim-impossible}
@@ -1338,10 +1338,12 @@ Some tasks do not fit a Reward Machine at all:
 
 \chapter{Evaluation methodology}
 \label{chap:evaluation}
-The evaluation tests two claims: FARM builds a right Reward Machine from a plain-language task, and an agent trained on that machine learns the task. Two tests check them on one benchmark of test cases, the cards (Section~\ref{sec:eval-cards}). The generation test builds machines and checks them without training an agent (Section~\ref{sec:eval-machines}). The training test trains agents on the machines and judges what the agents do (Section~\ref{sec:eval-learning}). The final run is one pass of both tests, on the version of FARM frozen before it. Every result belongs to one test and one set of cards, and numbers from different sets are never added or averaged.
+The evaluation tests two claims: FARM builds a right Reward Machine from a plain-language task, and an agent trained on that machine learns the task. Two tests check them on one benchmark of test cases, the cards (Section~\ref{sec:eval-cards}). The generation test builds machines and checks them without training an agent (Section~\ref{sec:eval-machines}). The training test trains agents on the machines and judges what the agents do (Section~\ref{sec:eval-learning}). The final run is one pass of both tests, on the version of FARM frozen before it.
 
-Counts are given as $x$ of $n$ ($p$\%) and, where the record gives one, with a 95\% Wilson score interval for a proportion. The number of rows learned, out of 60, is one such count. A row is one card trained in one world under one setting (Section~\ref{sec:eval-cards}). A seed is one training run of a row with its own random start, and every row but the two pilot rows has three seeds (Section~\ref{sec:eval-cards}). A training measure is given as the mean over the seeds of a row, with a 95\% Student $t$ interval over those seeds. Judged success is one such measure. It is the share of judged episodes that succeed (Section~\ref{sec:eval-learned}). With so few seeds the $t$ interval is wide.
+Every result belongs to one test and one set of cards, and numbers from different sets are never added or averaged. Counts are given as $x$ of $n$ ($p$\%) and, where the record gives one, with a 95\% Wilson score interval for a proportion.
 % NOTE-OPEN: cite the Wilson score interval (Wilson 1927); no key in bib-keys.md.
+
+A row is one card trained in one world under one setting (Section~\ref{sec:eval-cards}). A seed is one training run of a row with its own random start. Every row but the two pilot rows has three seeds (Section~\ref{sec:eval-cards}). A training measure is given as the mean over the seeds of a row, with a 95\% Student $t$ interval over those seeds. With so few seeds the $t$ interval is wide.
 
 \section{Empirical evaluation in a real environment}
 \label{sec:eval-learning}
@@ -1357,22 +1359,26 @@ Three arms, the ways of training that the evaluation compares, train the same le
 \end{itemize}
 \noindent FARM and ARM-FM are the \textbf{machine arms}.
 
-The ARM-FM arm is a reconstruction, built without access to official ARM-FM code. It follows the appendices of the paper and, for the MiniGrid tasks, the prompts and machines of the first author's public repository \cite{armfm_code}. Parts that neither source documents, such as the framing of later generator and critic rounds, are reconstructed. The rebuilt baseline may therefore differ from the original, and the results compare FARM with this reconstruction.
+The ARM-FM arm is a reconstruction, built without access to official ARM-FM code. It follows the appendices of the paper and, for the MiniGrid tasks, the prompts and machines of the first author's public repository \cite{armfm_code}. Parts that neither source documents, such as the framing of later generator and critic rounds, are reconstructed. The rebuilt baseline may therefore differ from the original. The results compare FARM with this reconstruction.
 
-FARM changes only how the machine is built. In FARM the generator model chooses clauses and the compiler builds the machine from them (Chapter~\ref{chap:farm}); in ARM-FM the generator writes the machine as text. In both arms the critic model accepts or rejects the machine. A second generator and critic phase then writes the labelling function, which reads the world and returns the propositions the machine follows, and every machine state gets a plain-language description. Both arms use the same models: \texttt{deepseek-v4.1-flash} as generator and \texttt{glm-5.3-flash} as critic.
+FARM changes only how the machine is built. In FARM the generator model chooses clauses and the compiler builds the machine from them (Chapter~\ref{chap:farm}). In ARM-FM the generator writes the machine as text. In both arms the critic model accepts or rejects the machine. A second generator and critic phase then writes the labelling function, and every machine state gets a plain-language description. Both arms use the same models: \texttt{deepseek-v4.1-flash} as generator and \texttt{glm-5.3-flash} as critic.
 
-Each machine arm has up to 10 attempts to build each machine, and every new candidate machine uses one attempt. A machine is built when a candidate passes every check of its arm and then the plan check (Section~\ref{sec:eval-plan-check}). A machine that runs out of attempts or fails the plan check is not built.
+Both machine arms build a machine in rounds, in the same way. In a round the generator proposes a candidate and the critic accepts or rejects it. A rejection, or a candidate that fails the arm's own checks, starts a new round. The phase that builds the machine, the machine phase, has up to 10 rounds. The phase that writes the labelling function has up to three. A machine is built when a candidate passes every check of its arm and then the plan check (Section~\ref{sec:eval-plan-check}). A machine that runs out of rounds or fails the plan check is not built.
 
 \subsection{The benchmark cards}
 \label{sec:eval-cards}
-The benchmark is a set of cards. A card is one test case: a task written in plain language, together with the answers accepted for it. The benchmark needs them because a machine can only be called right or wrong against stated answers, and an agent can only be judged against stated rules. Each answer is a list of clauses: the clauses the task is expected to give, and other lists that are also right. A card also holds:
+The benchmark is a set of cards. A card is one test case: a task written in plain language, together with the answers accepted for it. The benchmark needs them because a machine can only be called right or wrong against stated answers, and an agent can only be judged against stated rules.
+
+Each answer is a list of clauses: the clauses the task is expected to give, and other lists that are also right. A card also holds:
 \begin{itemize}
     \item \textbf{World}: the world the task runs in.
     \item \textbf{Rewordings}: the same task said in other words.
     \item \textbf{Goal flag}: whether the task has a goal.
     \item \textbf{Scripted plans}: one that solves the task, wrong ones that each break a named rule, and an idle one that only waits.
 \end{itemize}
-\noindent A scripted plan is a program of commands written in advance for the card's world, such as going to the key or picking it up. A command may find an object or call a fixed scripted policy of the world, so the actions a plan takes depend on the layout and on world events. Table~\ref{tab:eval-card} shows one card of the templates suite, one of the groups of cards in Table~\ref{tab:eval-suites}, and the machine FARM builds for it.
+\noindent A scripted plan is a program of commands written in advance for the card's world, such as going to the key or picking it up. A command may find an object or call a fixed scripted policy of the world. The actions a plan takes therefore depend on the layout and on world events.
+
+Table~\ref{tab:eval-card} shows one card of the templates suite, one of the groups of cards in Table~\ref{tab:eval-suites}, and the machine FARM builds for it.
 
 \begin{table}[H]
 \centering
@@ -1391,15 +1397,22 @@ Rewordings & Three, such as ``Grab the key first, then make your way to the goal
 Scripted plans & One that solves the task: pick up the key, open the door, go to the goal. Two wrong ones that break Existence(\texttt{at\_goal}): ``Takes the key and opens the door, then waits and never reaches the goal.'' and ``Never takes the key and never reaches the goal.'' \\
 Reward Machine & Built by FARM in the final run, from the expected clauses. States u0 (initial), u1, u2 (the well) and u3 (final): \newline u0 $\to$ u1, key picked up, goal not reached: $+1$ \newline u0 $\to$ u2, goal reached without the key: $-10$ \newline u0 $\to$ u3, goal reached with the key: $+12$ \newline u1 $\to$ u3, goal reached: $+11$ \\ \bottomrule
 \end{tabularx}
-\caption[One card of the templates suite and its Reward Machine]{One card of the templates suite, copied from its card file, with the Reward Machine that FARM built for it in the final run: its states, and one arrow per pair of states with its reward.}
+\caption[One card of the templates suite and its Reward Machine]{A card holds a task, the answers accepted for it and its scripted plans. This card of the templates suite is copied from its card file, with the Reward Machine that FARM built for it in the final run: its states, and one arrow per pair of states with its reward.}
 \label{tab:eval-card}
 \end{table}
 
-Six accepted answers were added to the cards after the outputs of the final run had been seen, so the final-run result on which answer FARM chooses is reported in two versions: with the original answers alone and with the six added. Whether the generator favours the answer listed first is checked by comparing how often it picks that answer with a choice at random among the card's accepted answers (Appendix~\ref{app:res-choice}).
+Six accepted answers were added to the cards after the outputs of the final run had been seen. The final-run result on which answer FARM chooses is therefore reported in two versions: with the original answers alone and with the six added. Whether the generator favours the answer listed first is checked by comparing how often it picks that answer with a choice at random among the card's accepted answers (Appendix~\ref{app:res-choice}).
 
-The task files hold 126 cards, grouped in the suites of Table~\ref{tab:eval-suites}. Cards kept for the generation test, and cards passed by an idle agent (one that only waits), are not trained, and the training test has 60 rows. A row is one trained case: one card, in one world, under one setting. Seven rows repeat a card already in the set: the two pilot rows train two base cards again on one fixed layout with a smaller budget, and five shop rows train shop cards again with the world's reward added to the machine's. The 60 rows therefore hold 53 different cards, with 50 different task texts. Counts of learned cards (Section~\ref{sec:eval-learned}) are counts of rows, so a card in two rows counts in both.
+The rows of the training test come from the cards:
+\begin{itemize}
+    \item \textbf{Cards}: the task files hold 126 cards, grouped in the suites of Table~\ref{tab:eval-suites}. Cards kept for the generation test, and cards passed by an idle agent (one that only waits), are not trained.
+    \item \textbf{Rows}: the training test has 60 rows. Seven rows repeat a card already in the set, so the 60 rows hold 53 different cards.
+    \item \textbf{Pilot rows}: the two pilot rows train two base cards again on one fixed layout with a smaller budget.
+    \item \textbf{Shop rows}: five shop rows train shop cards again with the world's reward added to the machine's.
+\end{itemize}
+\noindent Counts of learned cards (Section~\ref{sec:eval-learned}) are counts of rows, so a card in two rows counts in both.
 
-A card that reuses another card's machine gets no machine of its own but can still train, as two box-carry cards do in a changed world. With these two cards and the five repeated shop rows, which train on the machines of their shop cards, the 60 rows run on 53 of the 265 machines that FARM builds. The other 212, 154 machines of rewordings and 58 for the task texts of cards that do not train, are built and checked but not trained.
+A card that reuses another card's machine gets no machine of its own but can still train, as two box-carry cards do in a changed world. With these two cards and the five repeated shop rows, which train on the machines of their shop cards, the 60 rows run on 53 FARM machines.
 
 \begin{table}[H]
 \centering
@@ -1421,11 +1434,11 @@ Shop & A shop: take orders, cook at the stove, serve at the counter, pick up fal
 \label{tab:eval-suites}
 \end{table}
 
-A card that an idle agent passes tests nothing in training. The 18 no-goal cards whose hard rules an idle agent keeps, 17 template cards and one complex card, are never trained and are scored on their machine alone. A card with only soft rules stays in training when an idle agent breaks one of its rules or leaves one unmet. The worlds of the forcing suite and the shop exist for the same reason: they keep triggering the rules, so an agent that waits does not pass. On every card with only soft rules, the idle plan is the reference for the trained agents' soft breaks and soft rules left unmet, since it shows what an agent that does not try to keep the rules does on the same card.
+A card that an idle agent passes tests nothing in training. The 18 no-goal cards whose hard rules an idle agent keeps, 17 template cards and one complex card, are never trained and are scored on their machine alone. A card with only soft rules stays in training when an idle agent breaks one of its rules or leaves one unmet. The worlds of the forcing suite and the shop exist for the same reason. They keep triggering the rules, so an agent that waits does not pass.
 
-The template cards make up 28 of the 60 rows. Each takes one of the eight Declare templates of Table~\ref{tab:templates}, as a hard or as a soft rule, and tests that it becomes a machine an agent can learn. Five of the six complex cards train: a long sequence, a goal with one rule, a goal with several rules, and two cards whose rules react to events in the service room. The sixth holds only rules that an idle agent keeps, so it does not train.
+The template cards make up 28 of the 60 rows. Each takes one of the eight Declare templates of Table~\ref{tab:templates}, as a hard or as a soft rule, and tests that it becomes a machine an agent can learn. Five of the six complex cards train: a long sequence, a goal with one rule, a goal with several rules, and two cards whose rules react to events in the service room.
 
-Six rows use the task text of the ARM-FM paper: the four base cards and the two pilot rows that repeat two of them. Five more cards are tasks of the same kind that name every step in order. These 11 rows are the step-by-step cards and hold ARM-FM's own kind of task; the other 49 rows hold new kinds. KeyCorridor runs at size S4R3, smaller than the paper's S6R3, and the paper's UnlockToUnlock task is left to Section~\ref{sec:eval-armfm-paper}.
+Six rows use the task text of the ARM-FM paper: the four base cards and the two pilot rows that repeat two of them. Five more cards are tasks of the same kind that name every step in order. These 11 rows are the step-by-step cards and hold ARM-FM's own kind of task. The other 49 rows hold new kinds.
 
 \subsection{Training}
 \label{sec:eval-training}
@@ -1437,10 +1450,10 @@ In the two machine arms the machine takes part in training in three ways:
     \item \textbf{End of the episode}: the episode also ends when the machine enters a final state or a rejecting state, such as FARM's well.
     \item \textbf{Input}: the agent sees the world's observation together with its current machine state, given in most groups as a text embedding of that state's description, as in ARM-FM (Section~\ref{sec:sota-armfm}).
 \end{itemize}
-\noindent These arms train on the machine's reward alone, and the arm with no Reward Machine trains on the world's reward. The five repeated shop rows add the world's reward to the machine's. The pilot rows play a single judged episode (an evaluation episode after training, Section~\ref{sec:eval-learned}), because on their one fixed layout every judged episode would be the same.
+\noindent These arms train on the machine's reward alone. The five repeated shop rows add the world's reward to the machine's. The pilot rows play a single judged episode (an evaluation episode after training, Section~\ref{sec:eval-learned}), because on their one fixed layout every judged episode would be the same.
 
 % PICK RB24 (accepted by the author, 23 November, about 01:10)
-Runs with no Reward Machine whose whole setting matches, from the world and its layout to every hyperparameter, are one training judged on each of its cards. The 60 rows of this arm therefore rest on 19 trainings, and the arm's intervals over rows are narrower than 19 trainings justify.
+In training with no Reward Machine, several cards share one training, judged on each card, when the world, the layout and every hyperparameter match. The 60 rows of this arm therefore rest on 19 trainings. The arm's intervals over rows are narrower than 19 trainings justify.
 
 \begin{table}[H]
 \centering
@@ -1461,28 +1474,30 @@ Table~\ref{tab:app-ppo} in Appendix~\ref{app:training-settings} lists the traini
 
 \subsection{When a card counts as learned}
 \label{sec:eval-learned}
-Learned is the measure that the training results count for each arm. After training, each seed plays judged episodes in which the agent takes its most likely action at every step. A judge reads each judged episode through the benchmark's reference labelling, written with each world and separate from both machine arms, and checks the card's expected clauses on the trace. The judge is the same for every arm and never uses an arm's labelling function or machine, so a wrong machine cannot turn a failed episode into a pass.
+Learned is the measure that the training results count for each arm. After training, each seed plays judged episodes in which the agent takes its most likely action at every step.
 
-A judged episode succeeds when every hard rule of the card holds, the goal included when the card has one. It fails, whatever the rules say, when the arm's machine, not the world, ends it in a final state within $\max(1, \lceil 0.1L \rceil)$ actions, where $L$ is the median length of the solving plan on the card's layouts, or 0 when there is none. The machine has then ended the episode before the agent could act on the task. Soft rules never decide success: every break of a soft rule is counted, each time it happens, in the soft breaks per episode.
+A judge reads each judged episode through the benchmark's reference labelling, written with each world and separate from both machine arms. It checks the card's expected clauses on the trace. The judge is the same for every arm and never uses an arm's labelling function or machine. A wrong machine therefore cannot turn a failed episode into a pass.
 
-The judged success of a seed is the share of its judged episodes that succeed, and the seed passes at 0.8 or more.
+A judged episode succeeds when every hard clause of the card holds, the goal included when the card has one. It fails, whatever the rules say, when the arm's machine, not the world, ends it in a final state within $\max(1, \lceil 0.1L \rceil)$ actions. Here $L$ is the median length of the solving plan on the card's layouts, or 0 when there is none. The machine has then ended the episode before the agent could act on the task. Soft rules never decide success. Every break of a soft rule is counted, each time it happens, in the soft breaks per episode.
+
+The judged success of a seed is the share of its judged episodes that succeed. The seed passes at 0.8 or more.
 
 \keyidea{A card counts as learned for an arm when at least two of its seeds pass: two of three, or both seeds of a pilot card, which trains only two.}
 
-A card with no goal and only soft rules needs another test, because with no hard rule every judged episode succeeds. Its seeds are compared with an idle agent that only waits, on the same layouts. A soft rule left unmet is one still waiting to be met when the episode ends. A seed passes when three things hold, per episode:
+A card with no goal and only soft rules needs another test, since with no hard rule every judged episode succeeds. Its seeds are compared with an idle agent that only waits, on the same layouts. A soft rule left unmet is one still waiting to be met when the episode ends. A seed passes when three things hold, per episode:
 \begin{itemize}
     \item its soft breaks and its soft rules left unmet are both no higher than the idle agent's;
     \item at least one of them is lower;
     \item the labels the judge reads change more often than the idle agent's, which shows that the agent acts.
 \end{itemize}
 
-A row whose machine was not built counts as not learned for that arm. ARM-FM was not trained on the shop, and its shop rows count as not learned under this rule. The rule also covers the cards with no goal, which ARM-FM cannot state (Section~\ref{sec:res-armfm-machines}).
+A row whose machine was not built counts as not learned for that arm.
 
 Besides the learned count, each row reports its mean judged success, its soft breaks per episode and, on the shop, its orders served per episode, each averaged over the seeds. Learned counts are given over the 60 rows and over subsets of them, in this order:
 \begin{enumerate}
     \item ARM-FM's own kind of task against the 49 new kinds;
     \item the goal flag, outside the shop and the step-by-step cards;
-    \item three kinds of card by what the task asks, which are the step-by-step cards, cards with hard rules other than order and no soft rule, and cards with at least one soft rule;
+    \item three kinds of card by what the task asks, which are the step-by-step cards, cards with hard rules but no order of steps and no soft rule, and cards with at least one soft rule;
     \item each suite.
 \end{enumerate}
 
@@ -1491,20 +1506,30 @@ The head-to-head count sorts each of the 60 rows by the machine arms that learn 
 
 \subsection{The ARM-FM paper's own tasks}
 \label{sec:eval-armfm-paper}
-A further comparison repeats the setting of the ARM-FM paper with all three arms. It covers the paper's MiniGrid tasks (DoorKey at three sizes, some on a fixed map, and UnlockToUnlock) and its XLand-MiniGrid experiments: a mix of five tasks, and a generalisation test in which the agent trains on some tasks and meets others without further training. The paper's two ablation arms, ARM-FM without the state embedding and ARM-FM trained on the world's reward with the machine giving only its state, run on the five-task mix only. This comparison is planned and has not run, so the thesis reports no result for it.
+A further comparison, planned and not run, repeats the setting of the ARM-FM paper with all three arms. It covers the paper's MiniGrid tasks, UnlockToUnlock among them, and its XLand-MiniGrid experiments: a mix of five tasks, and a test on tasks the agent never trained on. The thesis reports no result for this comparison.
 % NOTE-OPEN: cite XLand-MiniGrid; no key in bib-keys.md.
 
 \section{Qualitative evaluation of the Reward Machines}
 \label{sec:eval-machines}
-The generation test builds and checks machines without training an agent. Each machine arm builds one machine for every card's own wording, which is its task text, and one for each of its rewordings, except on cards that reuse another card's machine. The FARM machines of this test come from the final version of FARM, frozen before the final run.
+The generation test builds and checks machines without training an agent. Each machine arm builds one machine for every card's own wording, which is its task text, and one for each of its rewordings. Cards that reuse another card's machine are the exception.
 
 \subsection{Built machines and rewordings}
 \label{sec:eval-built}
-The generation test counts the machines each arm builds, scores FARM's clauses and compares the machines of each card's wordings. The model checks that decide whether a machine is built (Section~\ref{sec:eval-arms}) run in rounds, in the same way in both machine arms: the generator proposes a candidate, the critic accepts or rejects it, and a rejection, or a candidate that fails the arm's own checks, starts a new round. In the machine phase each round uses one of the 10 attempts, and the phase that writes the labelling function has its own limit of three rounds. A machine of either arm goes through both phases, so a machine accepted at the first round of each needs two rounds.
+The generation test counts the machines each arm builds, scores FARM's clauses and compares the machines of each card's wordings.
 
-Every FARM machine also goes through a model review before it may train: Claude Opus 5.5 reads one sheet per machine, with its clauses beside the card's accepted answers, the results of the build checks and of the plan check, and, for every state, its role, its transitions, the clauses still owed there and its description. The reviewer's verdict on each machine is ok, unsure or anomaly.
+A machine of either arm goes through both phases of Section~\ref{sec:eval-arms}, so a machine accepted at the first round of each needs two rounds.
 
-FARM's chosen clauses are also scored against the card's accepted answers, and a FARM machine is right when its clauses match one of them, exactly or by an equivalent formula. ARM-FM stores no clauses, so its machines are not scored this way. The thinking-level study repeats FARM's generation at each thinking level of its models. It runs 46 cases picked around past mistakes of the generator, three runs each, and counts the runs whose final clauses match an accepted answer of the case's card. On a case that asks for steps in order it is stricter: clauses that also make an earlier step a goal of its own pass the card but are not counted as right.
+Every FARM machine also goes through a model review before it may train. Claude Opus 5.5 reads one sheet per machine, which shows:
+\begin{itemize}
+    \item its clauses beside the card's accepted answers;
+    \item the results of the build checks and of the plan check;
+    \item for every state, its role, its transitions, the clauses still owed there and its description.
+\end{itemize}
+\noindent The reviewer's verdict on each machine is ok, unsure or anomaly.
+
+FARM's chosen clauses are also scored against the card's accepted answers. A FARM machine is right when its clauses match one of them, exactly or by an equivalent formula. ARM-FM stores no clauses, so its machines are not scored this way.
+
+The thinking-level study repeats FARM's generation at each thinking level of its models. It runs 46 cases picked around past mistakes of the generator, three runs each. It counts the runs whose final clauses match an accepted answer of the case's card. On a case that asks for steps in order it is stricter. Clauses that also make an earlier step a goal of its own pass the card but are not counted as right.
 
 The rewordings test whether the same task, said in other words, gives the same machine. A card is built on every wording when its arm builds a machine for each wording, the plan check included. Over the cards with at least two built wordings, the machines of a card are compared, with three outcomes:
 \begin{itemize}
@@ -1513,29 +1538,38 @@ The rewordings test whether the same task, said in other words, gives the same m
     \item different machines.
 \end{itemize}
 
-FARM's prompts were tuned on the same cards; the versions and their scores are in Appendix~\ref{app:res-prompts}.
+FARM's prompts were tuned on the same cards. The versions and their scores are in Appendix~\ref{app:res-prompts}.
 
 \subsection{From traces to rewards}
 \label{sec:eval-plan-check}
-The plan check runs the scripted plans of a card through a machine and reads what each plan pays. Each plan plays in the card's world: the arm's own labelling function reads every step, the machine follows the labels, and the run stops at the first final state or at the well. No language model takes part. A machine passes when:
+The plan check runs the scripted plans of a card through a machine and reads what each plan pays. No language model takes part.
+
+Each plan plays in the card's world. The arm's own labelling function reads every step, the machine follows the labels, and the run stops at the first final state or at the well. A machine passes when three kinds of plan behave as follows:
 \begin{itemize}
-    \item the solving plan does not enter the well and, when the machine has final states, ends in one;
-    \item on a machine with no final state, an idle plan that keeps every rule does not enter the well either, and both it and the solving plan end with nothing owed;
-    \item no plan that breaks a hard rule reaches a final state, and on a machine with no final state a wrong or idle plan that breaks a hard rule for good ends in the well;
-    \item a plan that breaks only soft rules receives a negative reward before it stops, or ends in the same way as the solving plan on its layout and is paid less in total, summed plainly;
-    \item on a machine with no final state, every wrong plan pays less than the solving plan, both summed plainly and discounted.
+    \item \textbf{The solving plan}: it does not enter the well. When the machine has final states, it ends in one.
+    \item \textbf{A plan that breaks a hard rule}: it never reaches a final state.
+    \item \textbf{A plan that breaks only soft rules}: it receives a negative reward before it stops, or it ends like the solving plan on its layout and is paid less in total, with the rewards added up without discount.
 \end{itemize}
-A machine that ends before the agent acts fails every plan. The check needs no clauses, so it applies to both machine arms. A machine whose build is marked failed trains in neither arm. FARM also refuses to train a machine whose plan-check record marks it failed; a missing record, or a check that tested nothing, does not by itself stop training.
+\noindent A machine with no final state must also meet three more conditions:
+\begin{itemize}
+    \item an idle plan that keeps every rule does not enter the well, and both it and the solving plan end with nothing owed;
+    \item a wrong or idle plan that breaks a hard rule for good ends in the well;
+    \item every wrong plan pays less than the solving plan, both with and without discount.
+\end{itemize}
+
+A machine that ends before the agent acts fails every plan. The check needs no clauses, so it applies to both machine arms.
 
 \subsection{Loops that pay}
 \label{sec:eval-loops}
-A loop pays when an agent can go round a cycle of transitions and collect a positive total, gaining reward without doing the task. FARM's loop check, run on every build, refuses any machine with a loop whose pay adds up to more than zero (Section~\ref{sec:step4}). It finds them with a Bellman--Ford search over the undiscounted rewards, a graph search that detects cycles of this kind. For the comparison, a search of the same kind runs on every built machine of both arms, restricted to the states reachable from the initial state without passing a final state. A loop it finds is searched again with the transitions removed that only a world event can take, such as a box that falls by itself; the world caps how often such events happen in an episode.
+A loop pays when an agent can go round a cycle of transitions and collect a positive total, gaining reward without doing the task. FARM's loop check, run on every build, refuses any machine with a loop whose pay adds up to more than zero (Section~\ref{sec:step4}). It finds them with a Bellman--Ford search over the undiscounted rewards.
 
-A second measure looks at the trained agents. The machine return of an episode is the plain sum of the rewards the arm's own machine pays over it, with any end charge or time-limit penalty the run turns on; it leaves out the world's reward, even on rows that train on both. The machine return of each judged episode is compared with the largest plain sum that a solving plan of the card earns on the same machine in the plan check (the best scripted plan of the card). An episode that earned more would point to pay that the scripted plans do not reach. The comparison covers scripted plans only, and the scripted plan is not proven to be the best possible.
+For the comparison, a search of the same kind runs on every built machine of both arms. It is restricted to the states reachable from the initial state without passing a final state. A loop it finds is searched again with the transitions removed that only a world event can take, such as a box that falls by itself.
 
-\subsection{Shape, number of states and useless states}
+A second measure looks at the trained agents. The machine return of an episode is the plain sum of the rewards the arm's own machine pays over it. The machine return of each judged episode is compared with the largest plain sum that a solving plan of the card earns on the same machine in the plan check (the best scripted plan of the card). An episode that earned more would point to pay that the scripted plans do not reach.
+
+\subsection{Machine size}
 \label{sec:eval-size}
-The size of a machine is its number of states, those on its \texttt{STATES} line, and its number of transitions, the entries of its \texttt{TRANSITION\_\allowbreak FUNCTION} (Section~\ref{sec:output-format}). The sizes of the two machine arms are compared on the trained rows where both built a machine, counting each distinct pair of machines once, and are summed up by their median: the middle value once the sizes are sorted. Useless states are left to Chapter~\ref{chap:limitations}.
+The size of a machine is its number of states and its number of transitions (Section~\ref{sec:output-format}). The sizes of the two machine arms are compared on the trained rows where both built a machine, counting each distinct pair of machines once. They are summed up by their median.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                   RESULTS                                   %
@@ -1544,69 +1578,46 @@ The size of a machine is its number of states, those on its \texttt{STATES} line
 \chapter{Results}
 \label{chap:results}
 
-The final run tests the two claims of Chapter~\ref{chap:evaluation}: FARM builds a right Reward Machine from a plain-language task, and an agent trained on that machine learns the task. This chapter reports it in the same order: first the Reward Machines that FARM and the rebuilt ARM-FM build from the same cards, then what agents learn with them, over all cards, in the zombie lanes and in the shop, and last the smaller studies.
-
-The words of the evaluation keep the meaning Chapter~\ref{chap:evaluation} gives them:
-\begin{itemize}
-    \item \textbf{Arms}: FARM and ARM-FM, which train on the machines that FARM and the rebuilt ARM-FM build, and training with no Reward Machine (``no RM'' in tables and figures), which trains on the world's own reward. FARM and ARM-FM are the machine arms.
-    \item \textbf{Card and row}: a card is one test case, a task with the answers accepted for it; a row is one card trained in one world under one setting, and the training test has 60 rows (Section~\ref{sec:eval-cards}).
-    \item \textbf{Rewording}: the same card's task said in other words.
-    \item \textbf{Plan check}: the run of a card's scripted plans through a built machine (Section~\ref{sec:eval-plan-check}).
-    \item \textbf{Judged episode}: one evaluation episode after training, scored by the judge. Each seed of a row plays its own judged episodes, and its judged success is the share of them that succeed.
-    \item \textbf{Learned}: a row counts as learned for an arm when at least two of its seeds pass, which needs a judged success of 0.8 or more, with a further test for cards with only soft rules (Section~\ref{sec:eval-learned}). A card an arm could not train counts as not learned.
-\end{itemize}
+The final run tests the two claims of Chapter~\ref{chap:evaluation}: FARM builds a right Reward Machine from a plain-language task, and an agent trained on that machine learns the task. This chapter reports it in the same order. First come the Reward Machines that FARM and the rebuilt ARM-FM build from the same cards. Then come what agents learn with them, over all cards, in the zombie lanes and in the shop. The smaller studies come last.
 
 \section{Comparison between ARM-FM and FARM}
 \label{sec:res-comparison}
 
-The two machine arms are compared first on the machines they build from the same cards, and then on what agents learn with those machines, beside training with no Reward Machine. Both arms are asked for the same 266 machines, 111 of them for a card's own wording and the rest for its rewordings. FARM builds its machines on the frozen pipeline with one setting: generator \texttt{deepseek-v4.1-flash} and critic \texttt{glm-5.3-flash}, at thinking level max.
+The two machine arms are compared first on the machines they build from the same cards. They are then compared on what agents learn with those machines, beside training with no Reward Machine. Both arms are asked for the same 266 machines, 111 of them for a card's own wording and the rest for its rewordings. FARM builds its machines on the frozen pipeline with one setting: generator \texttt{deepseek-v4.1-flash} and critic \texttt{glm-5.3-flash}, at thinking level max.
 
 \subsection{Machines built with no hand edit}
 \label{sec:res-built}
 
-A machine can train only once it is built, so the first comparison counts the machines each arm builds and the rounds each build takes. Each machine goes through two phases, each a generator followed by a critic: one writes the machine and one its labelling function. A phase runs in rounds: the generator proposes, the critic accepts or rejects, and a rejection starts a new round (Section~\ref{sec:eval-built}). No machine was edited by hand: 265 of the 266 asked were built (99.6\%, 95\% Wilson interval 97.9\% to 99.9\%). Of these, 262 passed every model check at the first round, and 3 needed a second round after one automatic rejection by a critic, 1 for the machine and 2 for its labelling function. Every card's own wording is built; the one machine not built is a rewording of a shop card, which passes both phases and fails the plan check (Section~\ref{sec:res-farm-machines}).
+A machine can train only once it is built, so the first comparison counts the machines each arm builds and the rounds each build takes (Section~\ref{sec:eval-arms}).
 
-The critic reads each machine together with plain-language clues from the compiler (Section~\ref{sec:step5}):
-\begin{itemize}
-    \item each rule in plain words;
-    \item the hard clauses the others already imply;
-    \item the events that every way to finish includes.
-\end{itemize}
-With them a critic model can reject a wrong machine. Appendix~\ref{app:res-prompts} measures what the clues change.
+No machine was edited by hand. FARM builds 265 of the 266 machines asked (99.6\%, 95\% Wilson interval 97.9\% to 99.9\%). Of these, 262 passed every model check at the first round. The other 3 needed a second round after one automatic rejection by a critic, 1 for the machine and 2 for its labelling function. Every card's own wording is built. The one machine not built is a rewording of a shop card, which passes both phases and fails the plan check (Section~\ref{sec:res-farm-machines}). The critic reads each machine with the compiler clues (Section~\ref{sec:step5}). The clues raise the share of known defects it flags at its first call from 30\% to 56\% (Appendix~\ref{app:res-prompts}).
 
-The rebuilt ARM-FM builds 152 of the 266 (57\%, 95\% Wilson interval 51\% to 63\%): 132 at the first try and 20 after further attempts, 19 of them after a rejection by its critic and 1 after an invalid first output. The other 114 pass both phases and fail the plan check (Section~\ref{sec:res-armfm-machines}). FARM's build check works on clauses; ARM-FM stores none, so its machine counts as built when it passes the plan check (Section~\ref{sec:eval-plan-check}). Figure~\ref{fig:res-built} sets the two counts side by side.
+The rebuilt ARM-FM builds 152 of the 266 (57\%, 95\% Wilson interval 51\% to 63\%). It builds 132 at the first try and 20 after further attempts, 19 of them after a rejection by its critic and 1 after an invalid first output. The other 114 pass both phases and fail the plan check (Section~\ref{sec:res-armfm-machines}). Figure~\ref{fig:res-built} sets the two counts side by side.
 
-Counted as Section~\ref{sec:eval-built} counts them, a built FARM machine takes 2.01 rounds on average, 1.004 for the machine and 1.008 for its labelling function, against the least possible of two, and no phase takes more than two rounds. A built ARM-FM machine takes 2.16, 1.151 and 1.007, and its machine phase takes up to four. The frozen FARM run has no provider retries.
+A built FARM machine takes 2.01 rounds on average, the least possible being two (Section~\ref{sec:eval-built}). A built ARM-FM machine takes 2.16.
 
 \begin{figure}[H]
 \centering
 \input{images/results/fig-res-built.tex}
-\caption[Machines built per arm]{FARM builds 265 of its 266 machines and ARM-FM 152. Each bar splits the 266 machines asked into those built at the first round, those built after a further round and those not built; the whisker under each bar is the 95\% Wilson interval of the built share.}
+\caption[Machines built per arm]{FARM builds 265 of its 266 machines and ARM-FM 152. Each bar splits the 266 machines asked into those built at the first round, those built after a further round and those not built. The whisker under each bar is the 95\% Wilson interval of the built share.}
 \label{fig:res-built}
 \end{figure}
 
 \subsection{FARM's machines}
 \label{sec:res-farm-machines}
 
-A FARM machine is the product of the automata of the clauses the generator chooses, so it keeps hard and soft rules apart. It pays whole units: \gain{$+1$} for each step of progress and \gain{$+10$} more for the finish. Breaking a hard rule enters the well, which pays \loss{$-10$}, takes back the progress already paid and ends the episode; each soft break costs \loss{$-1$} and the episode goes on.
+A FARM machine is the product of the automata of the clauses the generator chooses, so it keeps hard and soft rules apart. It pays whole units: \gain{$+1$} for each step of progress and \gain{$+10$} more for the finish. Breaking a hard rule enters the well, which pays \loss{$-10$}, takes back the progress already paid and ends the episode. Each soft break costs \loss{$-1$}, and the episode goes on.
 
 % PICK RB17: wording to confirm with the author
 % alt: A model reviews every built machine against its task, and at the end none is flagged as wrong in its rules.
 A model reviewed every built machine against its task, and none is wrong in its rules.
 
-The one machine FARM did not build is a rewording of the shop's boil card (\texttt{shop-boil\textasciitilde p2}), whose last sentence reads \textit{Each time the pot boils over, put your load down beside the stove, turn the stove down and pick the load back up.} From \textit{pick the load back up} the generator added a seventh clause, Response(\texttt{stove\_fixed}, \texttt{holding\_food}), $\mathrm{G}\,(\texttt{stove\_fixed} \rightarrow \mathrm{F}\,\texttt{holding\_food})$. With it, on two of the check's layouts the plan that serves the clients but never turns the siren off does not pay less than the solving plan on both counts. On one, both plans pay \loss{$-1$} summed plainly, though the wrong plan pays less when discounted. On the other, the wrong plan pays less summed plainly, \loss{$-2$} against $0$, but more when discounted. On a machine with no final state the plan check needs every wrong plan to pay less on both counts (Section~\ref{sec:eval-plan-check}), so it refuses the machine. The shop world has no event for putting food down, so the pick-up the wording asks for has no exact rule.
-
-Other facts about FARM's machines:
-\begin{itemize}
-    \item \textbf{Largest and smallest}: the largest is the boil card's, with 65 states and 10,662 transitions from six hard clauses (Section~\ref{sec:res-shop}). The smallest have one state: the zombie-lane cards whose only rules are two soft Absence clauses, where the machine charges \loss{$-1$} for a step with a breach in one kind of lane and \loss{$-2$} for a step with both.
-    \item \textbf{``Both'' read as ``neither''}: on the lane card \textit{Try not to let zombies through both the top lane and the side lanes}, the generator reads ``both'' as ``neither'', a reading the card accepts, so its machine is the same as that of the card that asks to keep every lane clear.
-    \item \textbf{A final state on a card with no goal}: a machine can end in a final state on a card marked as having no goal. For \textit{Kill at least two zombies.} the card expects a hard ExistenceTwo, so FARM's machine, built from ExistenceTwo(\texttt{zombie\_killed}), $\mathrm{F}\,(\texttt{zombie\_killed} \land \mathrm{X}\,\mathrm{F}\,\texttt{zombie\_killed})$, has a final state.
-\end{itemize}
+The one machine FARM did not build is a rewording of a shop card. The shop world has no event for putting food down, so the pick-up this wording asks for has no exact rule. The generator added a seventh clause for it. On a machine with no final state the plan check needs every wrong plan to be paid less than the solving plan, both added up without discount and discounted. With the added clause one wrong plan is not paid less both ways, so the check refuses the machine (Section~\ref{sec:eval-plan-check}).
 
 \subsubsection{Which clauses FARM chooses}
 \label{sec:res-clauses}
 
-The compiler builds exactly the clauses the generator chooses, so a FARM machine is as right as that choice. At the frozen setting, 9 of FARM's candidates, the clause sets the generator proposes for one wording, match no answer their card listed before the final run. Eight are fair readings of the task, and the ninth, the shop rewording above, was never built. The eight accepted differ in three ways:
+The compiler builds exactly the clauses the generator chooses, so a FARM machine is as right as that choice. A candidate is the clause set the generator proposes for one wording. At the frozen setting, 9 of FARM's candidates match no answer their card listed before the final run. Eight are fair readings of the task. The ninth, the shop rewording above, was never built. The eight accepted differ in three ways:
 \begin{itemize}
     \item four add a soft Existence rule (``at some point'' in the task's words) beside a soft order;
     \item two read ``not both'' as ``neither'' or as a ban;
@@ -1617,19 +1628,22 @@ The compiler builds exactly the clauses the generator chooses, so a FARM machine
 A machine built from a later-listed answer can still teach the task. A study of clause choice checks FARM's final-run machines on 15 cards that accept more than one answer. Nine are among the 60 rows trained (Section~\ref{sec:eval-cards}). On these nine, the study reports:
 \begin{itemize}
     \item every trained machine matches a listed answer, and 6 of them a later-listed one;
-    \item FARM's agents learn 4 of these 6: UnlockPickup, its pilot copy, KeyCorridor and a soft not-both card with no goal (a not-both card is one whose task asks that two things never both happen, NotCoExistence);
-    \item FARM's agents do not learn the other two, the Blocked box card of Table~\ref{tab:res-ex-machines} (a box task on the BlockedUnlockPickup level, Section~\ref{sec:res-machines}) and a soft-order card on the same level (an order card is one whose task asks for steps in a given order);
-    \item on the 3 rows whose machine matches the first-listed answer, FARM's agents learn 1 (95\% Wilson interval 6\% to 79\%, against 30\% to 90\% for 4 of 6): too few rows to compare.
+    \item FARM's agents learn 4 of these 6: UnlockPickup, its pilot copy, KeyCorridor and a soft not-both card (NotCoExistence) with no goal;
+    \item FARM's agents do not learn the other two, the Blocked box card, a box task on the BlockedUnlockPickup level (Section~\ref{sec:res-machines}), and a soft-order card (Precedence) on the same level.
 \end{itemize}
-The gap follows the level, not the order of the answers. The 4 rows not learned, two with each kind of answer, are all on the BlockedUnlockPickup level and among the seven rows of Section~\ref{sec:res-learning} that only ARM-FM learns, whose tasks skip steps their level needs; the 5 rows on other levels are all learned. The soft not-both card counts as learned by the rule for cards with only soft rules (Section~\ref{sec:eval-learned}). Six of the 15 cards, four of them trained, received an answer only after their machines had been read, so this part of the check is not independent. The other 51 trained rows are outside the study.
+Whether a row is learned follows the level, not the order of the answers. The 4 rows not learned, two with each kind of answer, are all on the BlockedUnlockPickup level. The 5 rows on other levels are all learned.
 
-How the generator chooses among the accepted answers is in Appendix~\ref{app:res-choice}. Right runs of one wording almost always choose the same answer, and order tasks take the chain form the prompt teaches: the Existence of the last step plus one Precedence for each pair of steps in a row. The first-listed answer is chosen in more than half of the machines, with an interval above one half, only once the six added answers are counted. On not-both and order cards with rewordings the answer changes between wordings, each wording run once.
+The soft not-both card counts as learned by the rule for cards with only soft rules (Section~\ref{sec:eval-learned}). Six of the 15 cards, four of them trained, received an answer only after their machines had been read, so this part of the check is not independent. The other 51 trained rows are outside the study.
+
+Right runs of one wording almost always choose the same answer (Appendix~\ref{app:res-choice}).
 % PICK 13: the appendix table gives the choice result in two rows, with the 9 cards that received no added answer, and with all 15 cards and their six added answers.
 
 \subsection{ARM-FM's machines}
 \label{sec:res-armfm-machines}
 
-An ARM-FM machine is a chain of steps through the level that pays a fraction for each step and \gain{$+1$} for the last. A step pays \gain{$+0.05$} to \gain{$+0.3$} in the 31 distinct ARM-FM machines trained and \gain{$+0.05$} to \gain{$+0.4$} over all 152 built, and some machines also charge for a step, such as a key loss. It stores no clauses and marks no rule as hard or soft. All 114 machines ARM-FM did not build passed its generator and critic and failed the plan check. Table~\ref{tab:res-armfm-failures} sorts them by the first problem the check finds.
+An ARM-FM machine is a chain of steps through the level that pays a fraction for each step and \gain{$+1$} for the last. A step pays \gain{$+0.05$} to \gain{$+0.3$} in the 31 distinct ARM-FM machines trained and \gain{$+0.05$} to \gain{$+0.4$} over all 152 built. Some machines also charge for a step, such as a key loss. An ARM-FM machine stores no clauses and marks no rule as hard or soft.
+
+Table~\ref{tab:res-armfm-failures} sorts the 114 machines ARM-FM did not build by the first problem the plan check finds.
 
 \begin{table}[H]
 \centering
@@ -1645,35 +1659,37 @@ The solving plan does not end in a final state & 9 & 0 & \texttt{tpl-responded-e
 The labelling function crashes & 1 & 0 & \texttt{tpl-precedence-1-goal\textasciitilde p3}: \textit{First move the ball off the door, then take the key, open the door with it and pick up the box.} An assertion fails in its code. \\ \midrule
 All & 114 & 27 & \\ \bottomrule
 \end{tabularx}
-\caption[Why ARM-FM's machines were not built]{Half of ARM-FM's 114 machines not built end every episode at the start. Each row counts the machines whose first problem in the plan check is that kind, over the 266 machines asked (All) and over the 60 rows trained (Of the 60), where a machine not built counts as not learned for ARM-FM. Machines, labelling functions and plan checks are in the repository under \texttt{experiments/benchmark/*/bundles/arm-fm/}, and the shop's under \texttt{experiments/benchmark/shop/bundles-freeze/arm-fm/}.}
+\caption[Why ARM-FM's machines were not built]{Half of ARM-FM's 114 machines not built end every episode at the start. Each row counts the machines whose first problem in the plan check is of that kind, over the 266 machines asked (All) and over the 60 rows trained (Of the 60).}
 \label{tab:res-armfm-failures}
 \end{table}
 
 The start state is final on 57 of the 135 machines ARM-FM wrote for cards marked as having no goal, and on none of the 131 for cards with a goal. On the 60 rows trained, ARM-FM's machine was not built on 27, 11 of them in the shop.
 
-ARM-FM's own limit explains both.
+Every mission in ARM-FM's prompts ends on a goal that pays \gain{$+1$}. Its penalties are small, never below \loss{$-1$}, and only undo progress. Its format has no final states (Listing~\ref{lst:armfm-doorkey}). The rebuilt ARM-FM, like FARM, ends an episode when the machine enters a final state, so it asks the model to name them. A task with no goal has no goal state to name, so the model often marked the start state final. The machine then ended every episode before the agent acted, and the plan check refused it (Table~\ref{tab:res-armfm-failures}).
+
+ARM-FM cannot state a task without a goal, so no faithful ARM-FM machine exists for these cards, and they count as not learned for ARM-FM. FARM states them with its rule templates, such as Absence.
 
 \keyidea{ARM-FM handles only tasks with a goal.}
-
-\noindent Every mission in its prompts ends on a goal that pays \gain{$+1$}, its penalties are small, never below \loss{$-1$}, and only undo progress, and its format has no final states (Listing~\ref{lst:armfm-doorkey}). The rebuilt ARM-FM, like FARM, ends an episode when the machine enters a final state, so it asks the model to name them. On a task with no goal there is no goal state to name, so the model often marked the start state final; the machine then ended every episode before the agent acted, and the plan check refused it (Table~\ref{tab:res-armfm-failures}). ARM-FM cannot state a task without a goal, so no faithful ARM-FM machine exists for these cards, and they count as not learned for ARM-FM. FARM states them with its rule templates, such as Absence. The 33 machines ARM-FM built for the 60 rows keep the authors' scale: the largest reward is \gain{$+1.0$} on 32 of them and \gain{$+1.1$} on the other, and no penalty is below \loss{$-1$}.
 
 \subsubsection{Loops that pay}
 \label{sec:res-loops}
 
-A loop that pays would let an agent collect reward by going round it without doing the task, so the built machines of both arms are searched for one. FARM's loop check refuses any machine with a loop that pays, a cycle whose rewards add up to more than zero (Section~\ref{sec:eval-loops}), so no FARM machine has one (Chapter~\ref{chap:farm}). ARM-FM has no such check. Run over its machines, the same check finds a loop that pays in 24 of the 152 built ARM-FM machines and in none of FARM's 265. Each of the 24 loops needs a world event, a box falling or a siren ringing, and the world allows at most two of each per episode; with the world-event edges removed, none of the 24 loops pays. ARM-FM's Box carry machine is one of them (Table~\ref{tab:res-ex-machines}). In the final run no trained agent used one: three of the 24 machines trained, all on box-carry cards, and their judged return of 1.1 to 1.2 per episode, the machine return of Section~\ref{sec:eval-loops}, is what one or two falls of the box pay.
+A loop that pays would let an agent collect reward by going round it without doing the task, so the built machines of both arms are searched for one (Section~\ref{sec:eval-loops}). FARM's loop check refuses any machine with such a loop, so no FARM machine has one (Chapter~\ref{chap:farm}). ARM-FM has no such check. Run over its machines, the same check finds a loop that pays in 24 of the 152 built ARM-FM machines and in none of FARM's 265.
 
-In all trained runs of FARM and ARM-FM, no judged episode earned more on its machine than the best scripted plan of its card (run counts in Appendix~\ref{app:res-counts}). This compares the agents with scripted plans only. The scripted plan is not proven best, so the result is evidence, not a proof.
+Each of the 24 loops needs a world event, a box falling or a siren ringing, and the world allows at most two of each per episode. With the world-event edges removed, none of the 24 loops pays. In the final run no trained agent used one. Three of the 24 machines trained, all on box-carry cards, and their judged return of 1.1 to 1.2 per episode, the machine return of Section~\ref{sec:eval-loops}, is what one or two falls of the box pay.
+
+In all trained runs of FARM and ARM-FM, no judged episode earned more on its machine than the best scripted plan of its card (run counts in Appendix~\ref{app:res-counts}). The scripted plan is not proven best, so the result is evidence, not a proof.
 
 \subsection{The machines side by side}
 \label{sec:res-machines}
 
-Three cards, chosen one for each main difference between the machines, show them side by side:
+The machines of the two arms differ in what they pay for, in how often a rewording changes them and in size. Three cards, chosen one for each main difference between the machines, show them side by side:
 \begin{itemize}
     \item \textbf{DoorKey}: one of ARM-FM's own tasks, which all three arms learn.
     \item \textbf{Blocked box}: a card only ARM-FM learns, whose task skips steps its level needs.
     \item \textbf{Box carry}: a world whose repeated event, the box falling, gives ARM-FM's machine a loop that pays.
 \end{itemize}
-Blocked box sits on the BlockedUnlockPickup level, where a ball blocks the door, a key opens it and a box waits in the other room, and its task names only the box as a goal. Table~\ref{tab:res-ex-clauses} gives the tasks and the clauses FARM chose, Table~\ref{tab:res-ex-machines} both machines of each card, and Figure~\ref{fig:res-ex-machines} draws them. The machines of every card, with their clues and plan checks, are in the repository under \texttt{experiments/benchmark/*/bundles/}, ARM-FM's shop machines under \texttt{experiments/benchmark/shop/bundles-freeze/arm-fm/}.
+Blocked box sits on the BlockedUnlockPickup level, where a ball blocks the door, a key opens it and a box waits in the other room. Its task names only the box as a goal. Table~\ref{tab:res-ex-clauses} gives the tasks and the clauses FARM chose, Table~\ref{tab:res-ex-machines} both machines of each card, and Figure~\ref{fig:res-ex-machines} draws them.
 
 \begin{table}[H]
 \centering
@@ -1694,15 +1710,16 @@ Blocked box sits on the BlockedUnlockPickup level, where a ball blocks the door,
   & Response(\texttt{at\_exit}, \texttt{holding\_box}) & $\mathrm{G}\,(\texttt{at\_exit} \rightarrow \mathrm{F}\,\texttt{holding\_box})$ \\
   & Response(\texttt{box\_fell}, \texttt{holding\_box}) & $\mathrm{G}\,(\texttt{box\_fell} \rightarrow \mathrm{F}\,\texttt{holding\_box})$ \\ \bottomrule
 \end{tabularx}
-\caption[Tasks and clauses of the example cards]{The task of each example card and the clauses FARM chose for it, with their LTLf formulas. All clauses are hard unless marked soft. On Blocked box the card lists a soft NotCoExistence(\texttt{key\_lost}, \texttt{door\_open}) first and accepts the soft Absence as a fair reading.}
+\caption[Tasks and clauses of the example cards]{On Blocked box FARM chooses a fair reading, not the answer its card lists first. Clauses are hard unless marked soft. The Blocked box card lists a soft \mbox{NotCoExistence}(\texttt{key\_lost}, \texttt{door\_open}) first and accepts the soft Absence as a fair reading.}
 \label{tab:res-ex-clauses}
 \end{table}
 
-FARM's DoorKey machine has five states: the start (u0), key acquired (u1), which a later drop does not undo, door open after the key (u3), goal reached (u4, final) and the well (u2), which a broken order enters and never leaves. It pays the key, the door and the goal, and sends each break of the order to the well, at \loss{$-11$} from key acquired, where the key has already paid \gain{$+1$} (Section~\ref{sec:reward-assignment}, \emph{Taking progress back}). ARM-FM's DoorKey machine is a chain of four states, the start (u0), key taken (u1), door open (u2) and goal reached (u3, final), paying \gain{$+0.1$}, \gain{$+0.2$} and \gain{$+1$}, with no state for a broken order. All three arms learn this card.
-
-FARM's Blocked box machine has two states: box not yet picked up (u0) and box picked up (u1, final). Picking up the box pays \gain{$+11$}, or \gain{$+10$} when the key is lost in the same step, and each key loss costs \loss{$-1$}. In judged episodes its agents never reach the box: judged success is 0.00 on all three seeds, and every judged episode runs out of time. ARM-FM's machine has one state for each step of the level: the start (u0), ball moved (u1), key held (u2), door open (u3) and box picked up (uF, final). It pays the four steps in a row, \gain{$+0.05$}, \gain{$+0.05$}, \gain{$+0.1$} and \gain{$+1$}, and charges \loss{$-0.1$} for a key loss in the start state and in key held, where the loss also sends it back to ball moved. Its agents reach 0.95, 0.97 and 0.91 judged success on the three seeds. Training with no Reward Machine stays at 0.00.
-
-FARM's Box carry machine has five states: the start, where every fall has been answered (u0); box fallen and not yet picked up (u1); at the exit without the box and with no fall so far (u2); at the exit without the box after a fall (u4); and at the exit with the box (u3, final). ARM-FM's has three: holding the box (u0), box fallen (u1) and at the exit with the box (uF, final). Both machines follow the box as it falls and is picked up again, between u0 and u1. In FARM's machine that cycle pays 0, reaching the exit without the box pays \gain{$+1$} the first time, and the finish pays \gain{$+11$} or \gain{$+12$}. In ARM-FM's machine each pick-up after a fall pays \gain{$+0.1$}, so the cycle pays every time the box falls (Section~\ref{sec:res-loops}).
+Each card shows one point beyond the states and pays of Table~\ref{tab:res-ex-machines}:
+\begin{itemize}
+    \item \textbf{DoorKey}: in FARM's machine a later drop does not undo key acquired (u1). A broken order enters the well (u2) and never leaves it. From key acquired that break costs \loss{$-11$}, because the key has already paid \gain{$+1$} (Section~\ref{sec:reward-assignment}, \emph{Taking progress back}). ARM-FM's machine has no state for a broken order.
+    \item \textbf{Blocked box}: in judged episodes FARM's agents never reach the box. Judged success is 0.00 on all three seeds, and every judged episode runs out of time. ARM-FM's agents reach 0.95, 0.97 and 0.91 judged success on the three seeds. Training with no Reward Machine stays at 0.00.
+    \item \textbf{Box carry}: both machines follow the box as it falls and is picked up again, between u0 and u1. In FARM's machine that cycle pays 0. In ARM-FM's machine each pick-up after a fall pays \gain{$+0.1$}, so the cycle pays every time the box falls (Section~\ref{sec:res-loops}).
+\end{itemize}
 
 \begin{table}[H]
 \centering
@@ -1738,20 +1755,23 @@ Box carry & u0 $\to$ u1 & 1 & 0 & u0 $\to$ u1 & 1 & 0 \\
   & u2 $\to$ u4 & 1 & 0 & & & \\
   & u4 $\to$ u3 & 1 & 11 & & & \\ \bottomrule
 \end{tabular}
-\caption[Reward Machines of the example cards]{The Reward Machines of the example cards. Each row merges all transitions between two states into one arrow, with their number and their pay; \textit{mixed} marks an arrow whose transitions pay differently. All machines start in u0. FARM's final states are u4 (DoorKey), u1 (Blocked box) and u3 (Box carry), and u2 of DoorKey is its rejecting well. ARM-FM's final states are u3 (DoorKey) and uF (Blocked box and Box carry). Stays that pay nothing are left out; ARM-FM writes one for each state. The tasks are in Table~\ref{tab:res-ex-clauses}.}
+\caption[Reward Machines of the example cards]{FARM's example machines pay whole units, ARM-FM's fractions of a unit before their last step. Each row merges all transitions between two states into one arrow, with their number and their pay; \textit{mixed} marks an arrow whose transitions pay differently. Stays that pay nothing are left out; ARM-FM writes one for each state.}
 \label{tab:res-ex-machines}
 \end{table}
 
-ARM-FM adds steps the task never names. On the BlockedUnlockPickup level it writes the level's steps into its machine even when the task names only some of them, as on Blocked box; the head-to-head count of Section~\ref{sec:res-learning} shows what this does to learning. FARM's compiler adds nothing beyond the chosen clauses. The generator can still choose a requirement the task does not spell out, which the card then accepts as a fair reading (Section~\ref{sec:res-clauses}).
+ARM-FM adds steps the task never names. On the BlockedUnlockPickup level it writes the level's steps into its machine even when the task names only some of them, as on Blocked box. FARM's compiler adds nothing beyond the chosen clauses. The generator can still choose a requirement the task does not spell out, which the card then accepts as a fair reading (Section~\ref{sec:res-clauses}).
 
 \begin{figure}[H]
 \centering
 \input{images/results/fig-res-ex-machines.tex}
-\caption[Drawings of the example cards' Reward Machines]{ARM-FM's machines pay each step of the level, and on Box carry each pick-up after a fall; FARM's pay only what the chosen clauses name. Each drawing is one machine of Table~\ref{tab:res-ex-machines}, FARM beside ARM-FM. The three machines with four transitions or fewer, ARM-FM's DoorKey and Box carry and FARM's Blocked box, draw every transition, labelled \textit{event / reward} as in Figure~\ref{fig:ex3-rm}. The other three are simplified, with one arrow per pair of states, labelled with its reward, or \textit{mixed} when its transitions pay differently, and with $(\times n)$ when it holds $n > 1$ transitions; their propositions are not drawn, and the text names each state. Green arrows pay, red arrows only cost, and grey arrows pay nothing or hold both signs.}
+\caption[Drawings of the example cards' Reward Machines]{ARM-FM's machines pay each step of the level, FARM's only what the chosen clauses name. Three drawings show every transition, labelled \textit{event / reward} as in Figure~\ref{fig:ex3-rm}. The others show one arrow per pair of states, with its reward or \textit{mixed}, and $(\times n)$ for $n > 1$ transitions. Green arrows pay, red arrows only cost, and grey arrows pay nothing or hold both signs.}
 \label{fig:res-ex-machines}
 \end{figure}
 
-Rewording a task seldom changes FARM's machine. Rewordings are built and compared, not trained. The 52 cards with rewordings have 207 wordings in all, their own included; FARM builds 206 of them and ARM-FM 106 (Table~\ref{tab:res-rewording}). FARM gives the same machine in every wording on 47 of the 52 cards, ARM-FM on 3 of the 29 cards where it built at least two wordings; on the other 23 it built fewer than two. On the cards where FARM's machine changes, the wording leads the generator to another accepted answer, as on not-both and order tasks (Appendix~\ref{app:res-choice}).
+\subsubsection{Rewordings}
+A rewording says a card's task in other words, so it tests whether the same task gives the same machine.
+
+Rewording a task seldom changes FARM's machine. The 52 cards with rewordings have 207 wordings in all, their own included. FARM builds 206 of them and ARM-FM 106 (Table~\ref{tab:res-rewording}). FARM gives the same machine in every wording on 47 of the 52 cards. ARM-FM does so on 3 of the 29 cards where it built at least two wordings, and on the other 23 it built fewer than two. On the cards where FARM's machine changes, the wording leads the generator to another accepted answer, as on not-both and order tasks, where each wording is run once (Appendix~\ref{app:res-choice}).
 
 \begin{table}[H]
 \centering
@@ -1772,7 +1792,12 @@ Fewer than two wordings built & 0 & 23 \\ \bottomrule
 \label{tab:res-rewording}
 \end{table}
 
-FARM's machines are larger. Over the trained rows where both machine arms built a machine, 33 rows holding 31 distinct pairs of machines because three box-carry copies share theirs, FARM's median machine has 5 states and 11 transitions and ARM-FM's 4 and 8. States range from 2 to 7 in both arms, transitions from 1 to 57 for FARM and from 3 to 16 for ARM-FM. FARM's machine has more states on 17 of these rows, fewer on 9 and as many on 7. On the 11 step-by-step rows the medians are the same, and FARM learns all 11 (Section~\ref{sec:res-learning}). Table~\ref{tab:res-size} gives the sizes on ARM-FM's four own tasks and on Box carry. Making the machines smaller is work still to do (Chapters~\ref{chap:limitations} and~\ref{chap:future-work}).
+\subsubsection{Size}
+A machine's size is its number of states and transitions (Section~\ref{sec:eval-size}).
+
+FARM's machines are larger. The sizes are compared over the trained rows where both machine arms built a machine. These are 33 rows, holding 31 distinct pairs of machines because three box-carry copies share theirs. On them FARM's median machine has 5 states and 11 transitions, and ARM-FM's 4 and 8. FARM's machine has more states on 17 of these rows, fewer on 9 and as many on 7.
+
+On the 11 step-by-step rows the medians are the same as on the 33, and FARM learns all 11 (Section~\ref{sec:res-learning}). Table~\ref{tab:res-size} gives the sizes on ARM-FM's four own tasks and on Box carry. Making the machines smaller is work still to do (Chapters~\ref{chap:limitations} and~\ref{chap:future-work}).
 
 \begin{table}[H]
 \centering
@@ -1789,7 +1814,7 @@ Box carry & \textit{Carry the box to the exit, and whenever the box falls, pick 
 \multicolumn{2}{@{}l}{Median, trained rows where both machine arms built a machine (33)} & 5 / 11 & 4 / 8 \\
 \multicolumn{2}{@{}l}{Median, 11 step-by-step rows} & 5 / 11 & 4 / 8 \\ \bottomrule
 \end{tabularx}
-\caption[Size of the machines]{FARM's machines have more states and transitions than ARM-FM's. Each cell gives states / transitions of the machine. The clauses are in each card's bundle under \texttt{experiments/benchmark/*/bundles/farm/}, their LTLf in Table~\ref{tab:templates}.}
+\caption[Size of the machines]{FARM's machines have more states and transitions than ARM-FM's. Each cell gives states / transitions of the machine. The clauses are in each card's bundle, their LTLf in Table~\ref{tab:templates}.}
 \label{tab:res-size}
 \end{table}
 
@@ -1805,7 +1830,7 @@ The training test asks whether an agent trained with each arm's reward learns th
 \begin{figure}[H]
 \centering
 \input{images/results/fig-res-learned.tex}
-\caption[Rows learned per arm]{FARM learns 43 of the 60 rows, ARM-FM 29 and training with no Reward Machine 23. Each bar splits one arm's rows of a group into learned, trained but not learned and, for ARM-FM, machine not built, over all 60 rows and per kind of task (step-by-step, no goal, with a goal, the shop); the number above a bar is its rows learned, and the whisker the 95\% Wilson interval of the learned share.}
+\caption[Rows learned per arm]{FARM learns 43 of the 60 rows, ARM-FM 29 and training with no Reward Machine 23. Each bar splits one arm's rows of a group into learned, trained but not learned and, for ARM-FM, machine not built. The number above a bar is its rows learned, and the whisker the 95\% Wilson interval of the learned share.}
 \label{fig:res-learned}
 \end{figure}
 
@@ -1823,7 +1848,7 @@ New kinds & 49 & 32 & 21 & 20 & 26 \\
 \quad no goal & 15 & 14 & 4 & 9 & 11 \\
 \quad with a goal & 23 & 15 & 17 & 10 & 4 \\
 \quad the shop & 11 & 3 & 0 & 1 & 11 \\
-\quad hard rules other than order, no soft rule & 29 & 16 & 13 & 8 & 14 \\
+\quad hard rules, no order, no soft rule & 29 & 16 & 13 & 8 & 14 \\
 \quad at least one soft rule & 20 & 16 & 8 & 12 & 12 \\ \addlinespace
 \multicolumn{6}{@{}l}{\textit{By suite}} \\
 Base & 4 & 4 & 3 & 1 & 0 \\
@@ -1837,12 +1862,12 @@ Shop & 6 & 2 & 0 & 1 & 6 \\
 Shop with the world's reward & 5 & 1 & 0 & 0 & 5 \\ \midrule
 All & 60 & 43 & 29 & 23 & 27 \\ \bottomrule
 \end{tabular}
-\caption[Rows learned per group]{FARM learns at least as many rows as ARM-FM in every group except the rows with a goal. Each cell counts rows learned; the last column counts the rows whose ARM-FM machine was not built, which count as not learned for ARM-FM. Under new kinds, the split by goal (no goal, with a goal, the shop) and the split by clause (hard rules other than order, soft rules) each cover the 49 rows. The cards' tasks are in the suites' \texttt{tasks.json} under \texttt{experiments/benchmark/}, and their clauses' LTLf in Table~\ref{tab:templates}. The pilot cards repeat two base cards with 500,000 steps, 2 seeds and 1 judged episode, and the shop cards with the world's reward repeat five shop cards; shop cards with a serving rule also need orders served (Section~\ref{sec:eval-learned}).}
+\caption[Rows learned per group]{FARM learns at least as many rows as ARM-FM in every group except the rows with a goal. Each cell counts rows learned, and the last column the rows whose ARM-FM machine was not built. Under new kinds, the split by goal (no goal, with a goal, the shop) and the split by clause (hard rules other than an order of steps, soft rules) each cover the 49 rows.}
 \label{tab:res-groups}
 \end{table}
 
 \subsubsection{ARM-FM's own kind of task}
-The step-by-step rows hold the tasks ARM-FM was built for, which list their steps in order. On them FARM learns at least as many rows as ARM-FM: all 11 step-by-step rows (100\%, 95\% Wilson interval 74\% to 100\%) against 8 (73\%, 43\% to 90\%), and all 6 that use the task text of the ARM-FM paper (100\%, 61\% to 100\%) against 5 (83\%, 44\% to 97\%), ARM-FM missing KeyCorridor. The 6 are the paper's four MiniGrid tasks, two of them also as pilot copies.
+The step-by-step rows hold the tasks ARM-FM was built for, which list their steps in order. On them FARM learns at least as many rows as ARM-FM. FARM learns all 11 step-by-step rows (100\%, 95\% Wilson interval 74\% to 100\%) and ARM-FM 8 (73\%, 43\% to 90\%). On the 6 rows that use the task text of the ARM-FM paper, FARM learns all 6 (100\%, 61\% to 100\%) and ARM-FM 5 (83\%, 44\% to 97\%), missing KeyCorridor.
 
 Three gaps separate these cards from the paper's own setting:
 \begin{itemize}
@@ -1850,14 +1875,13 @@ Three gaps separate these cards from the paper's own setting:
     \item the paper's UnlockToUnlock task is not among the 60;
     \item the rebuilt ARM-FM generates with the models of this thesis.
 \end{itemize}
-Section~\ref{sec:res-armfm-paper} holds the comparison on the paper's own tasks.
 
 \subsubsection{New kinds of task}
-The other 49 rows hold the new kinds of task: tasks with no goal, tasks with a goal and the shop (Table~\ref{tab:res-groups}). FARM's largest gain is on the 15 rows with no goal, outside the shop: it learns 14 (93\%, 70\% to 99\%) and ARM-FM 4 (27\%, 11\% to 52\%), because ARM-FM's machine was not built on 11 of them, on 7 of these because it starts in a final state. On the 23 rows with a goal ARM-FM learns more, 17 (74\%, 53\% to 87\%) against 15 (65\%, 45\% to 81\%), with overlapping intervals. The head-to-head count shows where.
+The other 49 rows hold the new kinds of task: tasks with no goal, tasks with a goal and the shop (Table~\ref{tab:res-groups}). FARM's largest gain is on the 15 rows with no goal, outside the shop. FARM learns 14 of them (93\%, 70\% to 99\%). ARM-FM learns 4 (27\%, 11\% to 52\%), because its machine was not built on 11 of them, on 7 of these because it starts in a final state. On the 23 rows with a goal ARM-FM learns more, 17 (74\%, 53\% to 87\%) against 15 (65\%, 45\% to 81\%), with overlapping intervals.
 
 % PICK H2H: from here to END PICK H2H, cut as one block.
 \subsubsection{Head-to-head}
-The rows that one machine arm learns and the other does not tell where the two arms differ. Table~\ref{tab:res-h2h} sorts the 60 rows by the machine arms that learn them. Of the 21 rows only FARM learns, ARM-FM's machine was not built on 18, and on the other 3 its agents trained without learning. The 10 rows neither arm learns are the 8 shop rows with a serving rule, the forced-start card and the box-carry card on which the agent is not turned to the fallen box.
+The rows that one machine arm learns and the other does not tell where the two arms differ. Table~\ref{tab:res-h2h} sorts the 60 rows by the machine arms that learn them. Of the 21 rows only FARM learns, ARM-FM's machine was not built on 18, and on the other 3 its agents trained without learning. The 10 rows neither arm learns are the 8 shop rows with a serving rule, the forced-start card and one box-carry card (Appendix~\ref{app:res-boxcarry}).
 
 \begin{table}[H]
 \centering
@@ -1874,7 +1898,9 @@ The rows that one machine arm learns and the other does not tell where the two a
 \label{tab:res-h2h}
 \end{table}
 
-The 7 rows only ARM-FM learns share one level and one shape. Each card sits on the BlockedUnlockPickup level, asks for the box with one rule beside it, and names one or two of the three steps before it, never all three: moving the ball, taking the key and opening the door. Table~\ref{tab:res-arm-only} sets the three arms side by side. ARM-FM's machine pays \gain{$+0.05$} to \gain{$+0.3$} for each of those steps and \gain{$+1$} for the box. FARM's machine pays only what the task names: \gain{$+10$} to \gain{$+12$} for the box, or \gain{$+6$} or \gain{$+7$} on one card when its soft rule is broken or left unmet on the same step, and \gain{$+1$} for one middle step on 3 of the cards.
+The 7 rows only ARM-FM learns share one level and one shape. Each card sits on the BlockedUnlockPickup level and asks for the box with one rule beside it. It names one or two of the three steps before the box, never all three: moving the ball, taking the key and opening the door. Table~\ref{tab:res-arm-only} sets the three arms side by side.
+
+ARM-FM's machine pays \gain{$+0.05$} to \gain{$+0.3$} for each of those steps and \gain{$+1$} for the box. FARM's machine pays only what the task names. It pays \gain{$+10$} to \gain{$+12$} for the box, or \gain{$+6$} or \gain{$+7$} on one card when its soft rule is broken or left unmet on the same step. On 3 of the cards it also pays \gain{$+1$} for one middle step.
 
 \begin{table}[H]
 \centering
@@ -1895,17 +1921,17 @@ no RM & no machine; the world's reward alone & 0.00 on all 21 & 1 to 18 of 2,608
 \multicolumn{4}{@{}>{\raggedright\arraybackslash}p{\textwidth}@{}}{\texttt{tpl-precedence-soft-1-goal}: \textit{Pick up the box in the other room, and try to move the ball away from the door before you take the key.}} \\
 \multicolumn{4}{@{}>{\raggedright\arraybackslash}p{\textwidth}@{}}{\texttt{tpl-responded-existence-2-goal}: \textit{If you move the ball, you must also take the key. Then pick up the box in the other room.}} \\ \bottomrule
 \end{tabularx}
-\caption[The seven rows only ARM-FM learns]{On the seven rows only ARM-FM learns, its machine pays the level's steps and its agents reach the box; FARM's agents and training with no Reward Machine almost never do. Each FARM and ARM-FM seed trains its own agent; training with no Reward Machine trains one agent per seed on the level, judged on each card. The clauses' LTLf are in Table~\ref{tab:templates}.}
+\caption[The seven rows only ARM-FM learns]{On the seven rows only ARM-FM learns, its machine pays the level's steps and its agents reach the box; FARM's agents and training with no Reward Machine almost never do. Each FARM and ARM-FM seed trains its own agent, while training with no Reward Machine trains one agent per seed on the level, judged on each card.}
 \label{tab:res-arm-only}
 \end{table}
 
 Where a task on the same level names every step, FARM learns it, at 0.98 to 1.00 judged success on the base task, an order card and a complex card; Appendix~\ref{app:res-controls} gives the first two.
 
-The likely reason, not tested, is the reward. ARM-FM's machine pays for steps of the level that the task does not ask for, and these steps guide the agent through the level. FARM's machine keeps to the task, which on these cards leaves little reward before the box. FARM's machines follow the instruction, not the layout of one world.
+The likely reason, not tested, is the reward. ARM-FM's machine pays for steps of the level that the task does not ask for, and these steps guide the agent through the level. FARM's machine keeps to the task, which on these cards leaves little reward before the box.
 % END PICK H2H
 
 \subsubsection{Soft rules}
-A soft rule is a preference: each break costs reward but never prevents finishing the task. On a card with a goal, learned needs only the hard rules, and a card with only soft rules is compared with an idle agent (Section~\ref{sec:eval-learned}). Table~\ref{tab:res-soft} therefore gives the soft rules apart: the soft breaks per judged episode, every break counted, and the soft rules still unmet when the episode ends. The zombie-lane cards, where the world itself sets off the soft rules, are in Section~\ref{sec:res-react}.
+On a card with a goal, learned needs only the hard clauses. A card with only soft rules is compared with an idle agent (Section~\ref{sec:eval-learned}). Table~\ref{tab:res-soft} therefore gives the soft rules apart: the soft breaks per judged episode and the soft rules still unmet when the episode ends. The zombie-lane cards, where the world itself sets off the soft rules, are in Section~\ref{sec:res-react}.
 
 \begin{table}[!htbp]
 \centering
@@ -1923,7 +1949,7 @@ A soft rule is a preference: each break costs reward but never prevents finishin
 \texttt{existence-soft-1-nogoal}: \textit{Try to flip the switch on the wall at some point.} & 0 & 0 & -- & \textit{0} & 1.00 & 0 & -- & \textit{1.00} \\
 \texttt{responded-existence-\allowbreak soft-1-nogoal}: \textit{If the siren rings at any point, try to flip the switch at least once.} & 0 & 0 & -- & \textit{0} & 1.00 & 0 & -- & \textit{1.00} \\ \bottomrule
 \end{tabularx}
-\caption[Soft rules on the soft-rule cards]{FARM's agents break no more soft rules than an idle agent on the cards with only soft rules, and on no card here leave more unmet than training with no Reward Machine. Each value is the mean per judged episode over the three seeds; italics mark an arm that does not learn the card, and -- an ARM-FM machine not built. The idle agent is the reference only on cards with only soft rules; for a card with a goal none exists. Card names drop the prefix \texttt{tpl-}. The zombie-lane cards are in Table~\ref{tab:res-lanes}. Clauses are in the bundles under \texttt{experiments/benchmark/*/bundles/}, their LTLf in Table~\ref{tab:templates}.}
+\caption[Soft rules on the soft-rule cards]{FARM's agents break no more soft rules than an idle agent on the cards with only soft rules, and on no card here leave more unmet than training with no Reward Machine. Each value is the mean per judged episode over the three seeds. Italics mark an arm that does not learn the card, and -- an ARM-FM machine not built. Card names drop the prefix \texttt{tpl-}.}
 \label{tab:res-soft}
 \end{table}
 
@@ -1956,32 +1982,30 @@ A soft rule is a preference: each break costs reward but never prevents finishin
 
 Four comparisons stand out in Table~\ref{tab:res-soft}:
 \begin{itemize}
-    \item \textbf{Soft-only cards}: against an idle agent, FARM's agents keep the soft rules on the four cards with only soft rules. They break none and leave none unmet, where the idle agent breaks one rule on one card and leaves one unmet on three.
-    \item \textbf{Cards with a goal}: on the 11 cards with a goal no idle reference exists, so FARM is set against the other two arms only. There FARM's agents leave a soft rule unmet on one card, on two of its three seeds.
-    \item \textbf{Training with no Reward Machine}: it breaks as few soft rules as FARM's agents. But in every episode it leaves unmet a soft rule that asks for something to happen at some point, such as the soft Existence rule, on four cards with a goal and on two cards with only soft rules; on those two cards it therefore does not learn the task.
-    \item \textbf{Order cards}: on the two order cards where agents break a soft rule, FARM and training with no Reward Machine break about as many (1.91 against 1.92, 1.00 against 1.00) and ARM-FM fewer (0 and 0.67); no idle reference exists for them. The 1.00 card counts as learned although its agents break the soft rule once per episode on every seed, and on the 1.91 card one seed of each arm breaks it about 5.7 times per episode.
+    \item \textbf{Soft-only cards}: against an idle agent, FARM's agents keep the soft rules on the four cards with only soft rules. They break none and leave none unmet. The idle agent breaks one rule on one card and leaves one unmet on three.
+    \item \textbf{Cards with a goal}: FARM's agents leave a soft rule unmet on one of the 11 cards, on two of its three seeds.
+    \item \textbf{Training with no Reward Machine}: it breaks as few soft rules as FARM's agents. But in every episode it leaves unmet a soft rule that asks for something to happen at some point, such as the soft Existence rule. It does so on four cards with a goal and on two cards with only soft rules, and on those two cards it therefore does not learn the task.
+    \item \textbf{Order cards}: on the two order cards where agents break a soft rule, FARM and training with no Reward Machine break about as many (1.91 against 1.92, 1.00 against 1.00), and ARM-FM fewer (0 and 0.67). The 1.00 card counts as learned although its agents break the soft rule once per episode on every seed.
 \end{itemize}
 Figure~\ref{fig:res-soft} draws every soft-rule card, the lane cards included.
 
 \begin{figure}[!htbp]
 \centering
 \input{images/results/fig-res-soft.tex}
-\caption[Soft breaks per episode]{FARM's agents break no soft rule on 14 of the 20 soft-rule cards, 9 of them cards with a goal and no idle plan to compare, and 4 of them cards where an idle agent breaks none either. Bars give the mean soft breaks per judged episode, every broken step counted, for FARM, ARM-FM and training with no Reward Machine, with each seed as a dot and a 95\% Student t interval over the three seeds. A note replaces ARM-FM's bar where its machine was not built, and a line marks the idle plan on the 8 cards with only soft rules, the lane cards among them. The scale reaches 28 for the lane cards, so the values below 2 are read better in Table~\ref{tab:res-soft}.}
+\caption[Soft breaks per episode]{FARM's agents break no soft rule on 14 of the 20 soft-rule cards. Bars give each arm's mean soft breaks per judged episode, with each seed as a dot and a 95\% Student t interval over the three seeds. A note replaces ARM-FM's bar where its machine was not built, and a line marks the idle plan on the 8 cards with only soft rules. Tables~\ref{tab:res-soft} and~\ref{tab:res-lanes} give the values.}
 \label{fig:res-soft}
 \end{figure}
-
-The shop's 11 cards are taken up in Section~\ref{sec:res-shop}.
 
 \subsection{The ARM-FM paper's own tasks}
 \label{sec:res-armfm-paper}
 
 % NOTE-OPEN: follows evaluation.tex, under fact check
-The last comparison, still to run, repeats the setting of the ARM-FM paper~\cite{creus2026armfm} with all three arms: FARM, the rebuilt ARM-FM and training with no Reward Machine, on the paper's MiniGrid tasks and its XLand-MiniGrid experiments, a mix of five tasks and a generalisation test. The paper's two ablation arms run on the five-task mix only (Section~\ref{sec:eval-armfm-paper}). \tbd{learned counts per arm with 95\% Wilson intervals, MiniGrid tasks and XLand-MiniGrid}
+The last comparison, still to run, repeats the setting of the ARM-FM paper~\cite{creus2026armfm} with all three arms, on the paper's MiniGrid tasks and its XLand-MiniGrid experiments (Section~\ref{sec:eval-armfm-paper}). \tbd{learned counts per arm with 95\% Wilson intervals, MiniGrid tasks and XLand-MiniGrid}
 
 \section{The zombie lanes: reacting to events}
 \label{sec:res-react}
 
-A rule that answers an event, such as picking a dropped box up again, holds while the event never happens, so an agent that does nothing passes it. In the forcing worlds of Chapter~\ref{chap:evaluation} the world sets such rules off again and again. The main one is the zombie lanes:
+A rule that answers an event holds while the event never happens, so an agent that does nothing passes it. In the forcing worlds of Chapter~\ref{chap:evaluation} the world sets such rules off again and again. The zombie lanes are the main one. The box-carry worlds are the second. The zombie lanes work as follows:
 \begin{itemize}
     \item \textbf{Field}: 9 by 9 cells crossed by three lanes, of which the top lane is the one to protect; plants grow off the lanes.
     \item \textbf{Zombies}: they enter at the right end of a random lane, with odds that rise from 4\% to 17\% per step, and walk one cell left every three steps.
@@ -2012,13 +2036,21 @@ ExistenceTwo(\texttt{zombie\_killed}) & 3 / 2 & learned; 0.90, 0.89, 0.90 & lear
 \multicolumn{5}{@{}>{\raggedright\arraybackslash}p{\textwidth}@{}}{\texttt{tpl-existence-two-soft-1-nogoal}: \textit{Try to kill at least two zombies.}} \\
 soft ExistenceTwo(\texttt{zombie\_killed}) & 3 / 2 & learned; unmet 0.003 per episode & soft break pays nothing & learned; unmet 0 per episode \\ \bottomrule
 \end{tabularx}
-\caption[The zombie-lane cards]{FARM learns all seven lane cards, training with no Reward Machine the five without the hard top-lane rule, and ARM-FM one. Each card gives its task, the clauses FARM chose (hard unless marked soft; their LTLf in Table~\ref{tab:templates}) and the states / transitions of FARM's machine. Each arm's cell says whether it learns the card, with the judged success of the three seeds where a hard rule or a goal decides it, or the soft breaks per judged episode where only soft rules do; \textit{starts final} and \textit{soft break pays nothing} are ARM-FM machines not built (Table~\ref{tab:res-armfm-failures}). The judge reads each card's expected clauses: on the not-both card a soft NotCoExistence(\texttt{top\_breach}, \texttt{side\_breach}), which FARM reads as two Absence clauses. The idle agent breaks 26.2 soft rules per episode on the absence and precedence cards and 7.5 on the not-both card, and leaves the soft ExistenceTwo unmet in every episode. Machines are in the repository under \texttt{experiments/benchmark/\{forcing,templates\}/bundles/}.}
+\caption[The zombie-lane cards]{FARM learns all seven lane cards, training with no Reward Machine the five without the hard top-lane rule, and ARM-FM one. Each card gives its task, the clauses FARM chose (hard unless marked soft; LTLf in Table~\ref{tab:templates}) and the states / transitions of FARM's machine. Cells give the judged success of the three seeds, or the soft breaks per judged episode where only soft rules decide. \textit{Starts final} and \textit{soft break pays nothing} are ARM-FM machines not built (Table~\ref{tab:res-armfm-failures}).}
 \label{tab:res-lanes}
 \end{table}
 
-Where the top lane is a hard rule, FARM learns the card and training with no Reward Machine does not: on \texttt{lanes-guard}, 0.99, 0.98 and 0.85 judged success against 0.70, 0.65 and 0.54. On \texttt{lanes-rules}, which has a hard rule, no idle reference exists: FARM breaks 15.6 soft rules per episode, training with no Reward Machine 10.6.
+Where the top lane is a hard rule, FARM learns the card and training with no Reward Machine does not. On \texttt{lanes-guard} judged success is 0.99, 0.98 and 0.85 against 0.70, 0.65 and 0.54. On \texttt{lanes-rules}, which has a hard rule, no idle reference exists. There FARM breaks 15.6 soft rules per episode and training with no Reward Machine 10.6.
 
-On the three soft-only cards where zombies break the rules, FARM's agents break fewer soft rules than the idle agent, 18.7 against 26.2 per judged episode, 5.7 against 7.5 and 1.2 against 26.2, so they keep part of the rules; the top lane is the exception below. Training with no Reward Machine breaks fewer still: 10.5, 0.5 and 0.2. On these cards it is one agent per seed, judged on each card, so its three numbers score the same behaviour three ways and are not three learned results. That agent trains on the world's reward, 1 per kill. Table~\ref{tab:res-lanes-counts} sets its episodes beside the idle agent's and FARM's on the absence and not-both cards. FARM's agents and the agent with no Reward Machine let about 8 to 10 zombies through the side lanes per episode. The gap is the top lane: the agent with no Reward Machine keeps it nearly clean, while FARM's agents let as many through as the idle agent.
+On the three soft-only cards where zombies break the rules, FARM's agents break fewer soft rules than the idle agent, so they keep part of the rules. Training with no Reward Machine breaks fewer still. Per judged episode, the soft breaks are:
+\begin{itemize}
+    \item \textbf{Absence card}: FARM 18.7, the idle agent 26.2, no Reward Machine 10.5.
+    \item \textbf{Not-both card}: FARM 5.7, the idle agent 7.5, no Reward Machine 0.5. On this card the judge reads the card's soft NotCoExistence(\texttt{top\_breach}, \texttt{side\_breach}), not FARM's two Absence clauses.
+    \item \textbf{Precedence card}: FARM 1.2, the idle agent 26.2, no Reward Machine 0.2.
+\end{itemize}
+Training with no Reward Machine trains one agent per seed on the world. The same agent is judged on each card, so its three numbers are one result, not three. On the soft ExistenceTwo card the idle agent leaves the rule unmet in every episode.
+
+Table~\ref{tab:res-lanes-counts} sets the episodes of that agent beside the idle agent's and FARM's on the absence and not-both cards. FARM's agents and the agent with no Reward Machine let about 8 to 10 zombies through the side lanes per episode. The gap is in the top lane. The agent with no Reward Machine keeps it nearly clean, while FARM's agents let as many through as the idle agent.
 
 \begin{table}[H]
 \centering
@@ -2033,13 +2065,13 @@ Top-lane breaches & 8.7 & 8.6 & 8.6 to 8.7 & 0.4 to 0.7 \\
 Side-lane breaches & 17.5 & 10.0 to 10.2 & 8.1 to 9.7 & 10.0 \\
 Episodes with no top-lane breach, of 100 & -- & 0 & 0 & 54 to 70 \\ \bottomrule
 \end{tabular}
-\caption[Zombie-lane episodes]{The agent with no Reward Machine kills about twice as many zombies as FARM's and keeps the top lane nearly clean; FARM's agents cut only the side-lane breaches. Ranges run over the three seeds, 100 judged episodes each; the agent with no Reward Machine is one run per seed for both cards. The cards are \texttt{tpl-absence-soft-1-nogoal} and \texttt{tpl-not-co-existence-soft-1-nogoal}, with their tasks in Table~\ref{tab:res-lanes}.}
+\caption[Zombie-lane episodes]{The agent with no Reward Machine kills about twice as many zombies as FARM's and keeps the top lane nearly clean; FARM's agents cut only the side-lane breaches. Ranges run over the three seeds, 100 judged episodes each. The cards are \texttt{tpl-absence-soft-1-nogoal} and \texttt{tpl-not-co-existence-soft-1-nogoal}, with their tasks in Table~\ref{tab:res-lanes}.}
 \label{tab:res-lanes-counts}
 \end{table}
 
-The likely reason, not tested, lies in what each reward pays for. A zombie needs up to 27 steps to cross the field, so FARM's machine charges a breach long after the move that let it happen, and it charges both kinds of lane alike, so nothing draws the agent to the top lane. The world's reward pays on the step of the kill itself, and no template can pay every kill. On the precedence card FARM's agents kill only 2.1 to 2.6 zombies per episode, and no record gives the cause.
+The likely reason, not tested, lies in what each reward pays for. A zombie needs up to 27 steps to cross the field, so FARM's machine charges a breach long after the move that let it happen. It also charges both kinds of lane alike, so nothing draws the agent to the top lane. The world's reward pays on the step of the kill itself, and no template can pay every kill.
 
-In the box-carry worlds the box falls by itself next to the agent, and the task asks the agent to pick it up again each time. FARM learns 4 of the 5 box-carry cards (80\%, 95\% Wilson interval 38\% to 96\%), ARM-FM 3 and training with no Reward Machine 3 (60\% each, 23\% to 88\%); with 5 cards the intervals overlap widely (Appendix~\ref{app:res-boxcarry}).
+In the box-carry worlds the box falls by itself next to the agent, and the task asks the agent to pick it up again each time. FARM learns 4 of the 5 box-carry cards (80\%, 95\% Wilson interval 38\% to 96\%), ARM-FM 3 and training with no Reward Machine 3 (60\% each, 23\% to 88\%). With 5 cards the intervals overlap widely (Appendix~\ref{app:res-boxcarry}).
 
 These results count passes and breaks over whole episodes. They do not measure the reaction itself: no run records how many steps an agent takes to answer an event.
 
@@ -2053,7 +2085,7 @@ The shop merges many rules in one task. Clients come in and wait, and the agent:
     \item turns off a siren that rings;
     \item turns the stove down when the pot boils over.
 \end{itemize}
-Table~\ref{tab:res-shop} gives the six shop cards, five of them also trained with the world's reward added to the machine's. ARM-FM's machine starts in a final state on all six, so ARM-FM trains none of the 11 shop rows. FARM learns 3 (27\%, 95\% Wilson interval 10\% to 57\%) and training with no Reward Machine 1 (9\%, 2\% to 38\%), all on the siren and pot cards, which name no order.
+Table~\ref{tab:res-shop} gives the six shop cards, five of them also trained with the world's reward added to the machine's. ARM-FM's machine starts in a final state on all six, so ARM-FM trains none of the 11 shop rows. FARM learns 3 (27\%, 95\% Wilson interval 10\% to 57\%) and training with no Reward Machine 1 (9\%, 2\% to 38\%), all on the siren and pot cards, which name no order. Training with no Reward Machine trains on the world's reward on every card. On the five copies with the world's reward it learns none.
 
 \begin{table}[!htbp]
 \centering
@@ -2077,13 +2109,15 @@ the clauses of \texttt{shop-full} and Absence(\texttt{served\_while\_ringing}) &
 \multicolumn{5}{@{}>{\raggedright\arraybackslash}p{\textwidth}@{}}{\texttt{shop-boil}: the task of \texttt{shop-full}, then \textit{Whenever the pot boils over, put down what you hold next to the stove, turn the stove down, and pick your item up again.}} \\
 the clauses of \texttt{shop-full} and Response(\texttt{pot\_boiling}, \texttt{stove\_fixed}) & 65 / 10,662 & 0 served & 0 served & 0 served \\ \bottomrule
 \end{tabularx}
-\caption[The shop cards]{FARM learns the siren card, its copy with the world's reward and the pot card; no agent serves an order. Each card gives its task, the clauses FARM chose, all hard, and the states / transitions of FARM's machine. Each arm's cell gives the judged success of the three seeds, or, on a card with a serving rule, the orders served per judged episode, which are 0 on every seed. Training with no Reward Machine trains on the world's reward on every card, and on the five copies with the world's reward it learns none (1.00, 0.00 and 0.00 on the siren card). ARM-FM's machine starts in a final state on all six cards. The clauses' LTLf are in Table~\ref{tab:templates}. FARM's machines are in the repository under \texttt{experiments/benchmark/shop/bundles/farm/}, ARM-FM's under \texttt{experiments/benchmark/shop/bundles-freeze/arm-fm/}.}
+\caption[The shop cards]{FARM learns the siren card, its copy with the world's reward and the pot card; no agent serves an order. Each card gives its task, the clauses FARM chose, all hard, and the states / transitions of FARM's machine. Each arm's cell gives the judged success of the three seeds or, on a card with a serving rule, the orders served per judged episode, 0 on every seed. The clauses' LTLf are in Table~\ref{tab:templates}.}
 \label{tab:res-shop}
 \end{table}
 
 % PICK SHOP: framing to confirm with the author
 % The net-0 sentence (RB36) is now in the text, as the experiments session's checked framing requires; the alt line below keeps the author's framing.
-No trained agent serves an order, with or without a Reward Machine: mean orders served per episode is 0.0 on each of the 66 judged seeds of the 11 rows, from 42 trained agents, 33 of FARM and 9 with no Reward Machine (0 of 42, 95\% Wilson interval 0\% to 8\%). The 13 of these seeds with judged success of 0.8 or more are all on the siren and pot cards, which have no serving rule. The world allows serving: the scripted plan serves 7.24 orders per episode on three of the four cards with a serving rule and 6.24 on the boil card. Training with no Reward Machine runs on the world's reward alone and serves none either, so the Reward Machine is not the only obstacle. Whether an agent learns to serve depends on the world, the learner and how the machine pays each order, taken together: in the frozen pipeline an order nets nothing on FARM's shop machines, since the optional charges are off (Section~\ref{sec:step4}). These results do not separate the causes; Section~\ref{sec:res-curriculum} takes up a curriculum.
+No trained agent serves an order, with or without a Reward Machine. The mean is 0.0 orders served per judged episode on every judged seed of the 11 rows. That is 0 of 42 trained agents, 33 of FARM and 9 with no Reward Machine (95\% Wilson interval 0\% to 8\%). The 13 of these seeds with judged success of 0.8 or more are all on the siren and pot cards, which have no serving rule.
+
+The world allows serving: the scripted plan serves 7.24 orders per episode on three of the four cards with a serving rule and 6.24 on the boil card. Training with no Reward Machine runs on the world's reward alone and serves none either, so the Reward Machine is not the only obstacle. Whether an agent learns to serve depends on the world, the learner and how the machine pays each order, taken together. In the frozen pipeline an order nets nothing on FARM's shop machines, since the optional charges are off (Section~\ref{sec:step4}). These results do not separate the causes.
 % alt (the author's framing; RB36 left out): ... so the Reward Machine is not the only obstacle, and the shop needs another technique, which Section~\ref{sec:res-curriculum} takes up.
 
 % PICK 12: the scripted rates now sit in the paragraph above; the served bar of 7.5 was dropped (2026-11-24).
@@ -2091,35 +2125,35 @@ No trained agent serves an order, with or without a Reward Machine: mean orders 
 \subsection{A curriculum for the shop}
 \label{sec:res-curriculum}
 
-An agent starts with no knowledge of the world, so its first episodes are close to a random walk, and it meets its first reward only by chance. The larger the world, the rarer that first reward, so agents learn worse as the world grows. A curriculum on the size of the world is one answer: the agent learns the task in a small shop, and the shop then grows. \tbd{shop size results: runs that learn at 3$\times$3, 5$\times$5 and 7$\times$7, and with the size curriculum}
+An agent starts with no knowledge of the world, so its first episodes are close to a random walk, and it meets its first reward only by chance. The larger the world, the rarer that first reward, so agents learn worse as the world grows. A curriculum on the size of the world is one answer. The agent learns the task in a small shop, and the shop then grows. \tbd{shop size results: runs that learn at 3$\times$3, 5$\times$5 and 7$\times$7, and with the size curriculum}
 
 The open question is whether a curriculum of shop tasks lets agents learn the shop cards on which, trained directly, no agent serves an order. \tbd{curriculum results for the shop}
 
 \section{Thinking level of the generator}
 \label{sec:res-thinking}
 
-The thinking level sets how much the models reason before they answer, from none to max, and the frozen pipeline uses max. The thinking-level study measures how the share of right machines (Section~\ref{sec:eval-built}) and the time per machine change with it. It runs FARM's generator on 46 cases picked around past mistakes, three times at each level, on the frozen code, with one model pair and one provider. Right machines rise with the thinking level (Figure~\ref{fig:res-thinking}):
+The thinking level sets how much the models reason before they answer, from none to max. The frozen pipeline uses max.
+
+The thinking-level study measures how the share of right machines (Section~\ref{sec:eval-built}) and the time per machine change with it. It runs FARM's generator on 46 cases picked around past mistakes, three times at each level, on the frozen code, with one model pair and one provider. Right machines rise with the thinking level (Figure~\ref{fig:res-thinking}):
 \begin{itemize}
     \item \textbf{None}: 105 of 138 runs (76\%, 95\% Wilson interval 68\% to 82\%);
     \item \textbf{Low}: 134 (97\%, 93\% to 99\%);
     \item \textbf{Medium}: 136 (99\%, 95\% to 100\%);
     \item \textbf{High and max}: all 138 at each (100\%, 97\% to 100\%).
 \end{itemize}
-The median run takes 4 seconds at none, 20 at high and 88 at max. Appendix~\ref{app:res-thinking} gives the values per level, and Appendix~\ref{app:res-prompts} the prompts of the generator and the critic before and after their changes.
+The median run takes 4 seconds at none, 20 at high and 88 at max. Appendix~\ref{app:res-thinking} gives the values per level.
 
 \begin{figure}[H]
 \centering
 \input{images/results/fig-res-thinking.tex}
-\caption[Right machines per thinking level]{Right machines rise from 76\% with no thinking to 100\% at high and max; high reaches 100\% in 20 seconds, max in 88. Right machines against the median seconds to generate one machine (log scale): one point per thinking level, the share of right machines over 138 runs (46 cases, three runs each), with its 95\% Wilson interval. The cases were picked around past mistakes and run with one model pair, so the shares hold for these cases. Run times were measured with eight runs at once, beside training jobs.}
+\caption[Right machines per thinking level]{Right machines rise from 76\% with no thinking to 100\% at high and max; high reaches 100\% in 20 seconds, max in 88. Each point is one thinking level: the share of right machines over 138 runs (46 cases, three runs each), with its 95\% Wilson interval, against the median seconds to generate one machine (log scale). The shares hold for these cases and this model pair.}
 \label{fig:res-thinking}
 \end{figure}
 
 \section{Other language models}
 \label{sec:res-models}
 
-The study of other language models, still to run, covers generation only: the Reward Machines each model builds on the cards, scored per model and drawn as one stacked bar per model, as in the per-model figure of the ARM-FM paper~\cite{creus2026armfm}. The models planned are DeepSeek, GLM, Claude Haiku and GPT Luna, and the open models of that figure: Qwen3-32B, Qwen3-4B, Gemma3-12B, Mistral Small, Llama3-8B, Ministral-8B, Llama3.1-8B and Gemma3-270M. \tbd{generation results per model}
-
-Five pairs of generator and critic models were compared earlier, each in a separate run on its own subset of cases and at its own thinking settings. Each pair therefore measures its models together with their thinking settings, and the five do not form one balanced comparison. Appendix~\ref{app:res-pairs} gives them.
+The study of other language models, still to run, covers generation only. It scores the Reward Machines each model builds on the cards and draws one stacked bar per model. \tbd{generation results per model}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                 CONCLUSIONS                                 %
@@ -2128,11 +2162,11 @@ Five pairs of generator and critic models were compared earlier, each in a separ
 \chapter{Conclusions}
 \label{chap:conclusions}
 
-This thesis set out to build Reward Machines from tasks stated in plain language, with no machine edited by hand, and to find a curriculum for the shop. FARM addresses the first by changing one step of ARM-FM: a language model writes the task as clauses from a fixed catalogue of templates, each hard or soft, and fixed tools compile the clauses into the machine and price its transitions.
+This thesis set out to build Reward Machines from tasks stated in plain language, with no machine edited by hand, and to find a curriculum for the shop. FARM addresses the first by changing one step of ARM-FM. A language model writes the task as clauses from a fixed catalogue of templates, each hard or soft. Fixed tools compile the clauses into the machine and price its transitions.
 
 \keyidea{The machine follows the chosen clauses by construction; whether the clauses say what the person meant rests on the generator and its critic.}
 
-The first objective is met. No machine was edited by hand: FARM builds 265 of the 266 machines asked (99.6\%, Section~\ref{sec:res-built}). On the 60 training cases, agents learn:
+The first objective is met. No machine was edited by hand, and FARM builds 265 of the 266 machines asked (99.6\%, Section~\ref{sec:res-built}). On the 60 training cases, agents learn:
 \begin{itemize}
     \item 43 of 60 (72\%, 95\% Wilson interval 59\% to 81\%) with FARM's machines;
     \item 29 of 60 (48\%, 36\% to 61\%) with the machines of the rebuilt ARM-FM;
@@ -2141,16 +2175,18 @@ The first objective is met. No machine was edited by hand: FARM builds 265 of th
 \noindent A case whose machine was not built counts as not learned for that arm (Section~\ref{sec:res-learning}). The claim is about cases learned, not about how fast they are learned.
 
 % PICK H2H: from here to END PICK H2H, cut as one block.
-FARM still needs tuning. Its lead over ARM-FM comes mostly from cases on which ARM-FM builds no machine: of the 21 training cases that only FARM's agents learn, ARM-FM's machine was not built on 18. On 7 cases only ARM-FM's agents learn (Table~\ref{tab:res-h2h}). All 7 sit on the BlockedUnlockPickup level, ask for the box with one rule beside it, and name one or two of the three steps the level needs before the box, never all three. ARM-FM's machine pays for each of those steps, asked for or not. FARM's machine keeps to the task, as it is built to, and leaves little reward before the box. The likely reason for the gap, not tested, is that ARM-FM's pay for the level's steps guides the agent through the level. Where a task on the same level names every step, FARM's agents learn it (Section~\ref{sec:res-learning}).
+FARM's lead over ARM-FM comes mostly from cases on which ARM-FM builds no machine: of the 21 training cases that only FARM's agents learn, ARM-FM's machine was not built on 18. The 7 cases that only ARM-FM's agents learn all sit on the BlockedUnlockPickup level and name one or two of the three steps it needs before the box, never all three (Table~\ref{tab:res-h2h}). The likely reason, not tested, is that ARM-FM's machine pays for each of those steps, asked for or not, and FARM's keeps to the task and leaves little reward before the box.
 % END PICK H2H
 
-Rewording a task seldom changes FARM's machine, and it changes ARM-FM's more often (Section~\ref{sec:res-machines}). The rewordings were built and not trained, so this holds for the machines and says nothing about learning. The compiler builds exactly the clauses chosen, so a machine is as right as that choice, and the model can still choose clauses that do not fit the task. On one rewording of a shop task the generator added a rule, and the plan check refused the machine (Section~\ref{sec:res-farm-machines}); where the wording is ambiguous, the reading the generator takes decides the machine (Chapter~\ref{chap:limitations}).
+Rewording a task seldom changes FARM's machine, and it changes ARM-FM's more often (Section~\ref{sec:res-machines}). The rewordings were built and not trained, so this holds for the machines and says nothing about learning. On one rewording of a shop task the generator added a rule, and the plan check refused the machine (Section~\ref{sec:res-farm-machines}). Where the wording is ambiguous, the reading the generator takes decides the machine (Chapter~\ref{chap:limitations}).
 
 % PICK SHOP: framing to confirm with the author
-Not every task is learned. In the shop no trained agent serves an order, whether it trains on FARM's machine, on FARM's machine and the world's reward together, or on the world's reward alone; ARM-FM's shop machines start in a final state, so ARM-FM trains none of the shop tasks (Section~\ref{sec:res-shop}). The world allows serving, since a scripted plan serves orders on every shop task with a serving rule. Whether an agent learns to serve depends on the world, the learner and how the machine pays each order, taken together. On FARM's shop machines an order nets nothing in the frozen pipeline, and training on the world's reward, which pays each order served, serves none either. The results do not separate these causes.
+In the shop no trained agent serves an order, whether it trains on FARM's machine, on the world's reward or on both, and ARM-FM, whose shop machines start in a final state, trains none of the shop tasks. An order nets nothing on FARM's shop machines in the frozen pipeline, yet training on the world's reward, which pays each order served, serves none either. Whether an agent learns to serve depends on the world, the learner and how the machine pays each order, and the results do not separate these causes (Section~\ref{sec:res-shop}).
 
 % NOTE-OPEN: rewrite the curriculum sentence once Section sec:res-curriculum holds results.
-The second objective, a curriculum for the shop, is still open: no curriculum result is reported yet (Section~\ref{sec:res-curriculum}). Machine size stays open as well. FARM's machines are larger than ARM-FM's and grow with the number of clauses, which makes the largest hard to read, and making them smaller is work still to do (Chapter~\ref{chap:future-work}). Table~\ref{tab:conc-summary} sets out what the method achieves and where it stops, each entry with the section that holds its evidence.
+The second objective, a curriculum for the shop, is still open. No curriculum result is reported yet (Section~\ref{sec:res-curriculum}).
+
+Machine size stays open as well. FARM's machines are larger than ARM-FM's and grow with the number of clauses, which makes the largest hard to read. Making them smaller is work still to do (Chapter~\ref{chap:future-work}). Table~\ref{tab:conc-summary} sets out what the method achieves and where it stops.
 
 \begin{table}[H]
 \centering
@@ -2165,7 +2201,7 @@ Hard rules and soft preferences sit in one machine, for tasks with or without a 
 No FARM machine has a loop that pays, and in all trained runs no judged episode earned more than the best scripted plan of its task, a comparison with scripted plans only (Section~\ref{sec:res-loops}). & Not every task is learned: in the shop no trained agent serves an order, with or without a Reward Machine (Section~\ref{sec:res-shop}). \\ \midrule
 More tasks are learned than with ARM-FM's machines or with no Reward Machine, including every step-by-step task (Section~\ref{sec:res-learning}). & The model cannot report a task the world cannot do or a fact the environment does not declare (Section~\ref{sec:lim-anomalies}). \\ \bottomrule
 \end{tabularx}
-\caption[Advantages and disadvantages of FARM]{FARM's machines follow the chosen clauses and pay no loop, and agents learn more tasks with them; the machines are larger, and some tasks stay unlearned. Each entry names the section that holds its evidence; the two columns are not paired row by row.}
+\caption[Advantages and disadvantages of FARM]{FARM's machines follow the chosen clauses and pay no loop, and agents learn more tasks with them. The machines are larger, and some tasks stay unlearned. Each entry names the section that holds its evidence, and the two columns are not paired row by row.}
 \label{tab:conc-summary}
 \end{table}
 
@@ -2180,23 +2216,35 @@ Two studies of the Results chapter still wait for data: a curriculum for the sho
 
 \section{Smaller machines}
 \label{sec:fw-size}
-A FARM machine is the product of one automaton per clause, minimised after the product is built (Section~\ref{sec:step4} and Appendix~\ref{app:implementation}), and it grows with the number of clauses (Section~\ref{sec:lim-size}). Minimisation makes the machine smaller by merging into one the states that behave the same. On the shop's boil task each of the six hard rules is either waiting for its answer or not, so the machine holds one state for each combination of the six, plus the well. That gives 65 states and 10,662 transitions (Section~\ref{sec:res-shop}), and since the machine is already minimised, none of them can be merged without changing what it pays. A machine of that size still follows its clauses, but a person can hardly read it. No way of making machines smaller is proposed here. The first step is to measure how the size grows with the number and the kind of rules, on tasks built for that purpose.
+A FARM machine is the product of one automaton per clause, minimised by merging the states that behave the same, and it grows with the number of clauses (Sections~\ref{sec:step4} and~\ref{sec:lim-size}).
+
+On the shop's boil task each of the six hard rules is either waiting for its answer or not, so the machine holds one state for each combination of the six, plus the well. That gives 65 states and 10,662 transitions (Section~\ref{sec:res-shop}). The machine is already minimised, so none of them can be merged without changing what it pays.
+
+No way of making machines smaller is proposed here. The first step is to measure how the size grows with the number and the kind of rules, on tasks built for that purpose.
 
 \section{A model that writes LTLf}
 \label{sec:fw-ltlf}
-The generator picks clauses from eight templates whose arguments are single declared facts, so a task can say no more than those templates state (Section~\ref{sec:lim-conditions}). A generator that writes the LTLf formulas itself could state negated conditions, alternatives and nested conditions. It would give up what the fixed catalogue gives: a known meaning, automaton and price for every clause. The rest of the pipeline should hold, but that needs testing. A first step is to ask such a model for formulas on tasks the catalogue cannot state and pass them through the same checks.
+The generator picks clauses from eight templates whose arguments are single declared facts. A task can therefore say no more than those templates state (Section~\ref{sec:lim-conditions}).
+
+A generator that writes the LTLf formulas itself could state negated conditions, alternatives and nested conditions. It would give up what the fixed catalogue gives: a known meaning, automaton and price for every clause. The rest of the pipeline should hold, but that needs testing. A first step is to ask such a model for formulas on tasks the catalogue cannot state and pass them through the same checks.
 
 \section{A way to refuse}
 \label{sec:fw-refusal}
-The generator's answer is a list of clauses with no way to refuse, so a task it should refuse ends in failed attempts or in clauses that come close and do not say what they leave out (Section~\ref{sec:lim-anomalies}). A field for a refusal, with its reason, would let the model report a task the world cannot do, a fact the environment does not declare or a wording it cannot settle, and a person could then fix the task or the environment description. The first step is to add the field and test it on tasks built to be refused.
+The generator's answer is a list of clauses with no way to refuse. A task it should refuse therefore ends in failed attempts, or in clauses that come close and do not say what they leave out (Section~\ref{sec:lim-anomalies}).
+
+A field for a refusal, with its reason, would let the model report a task the world cannot do, a fact the environment does not declare or a wording it cannot settle. A person could then fix the task or the environment description. The first step is to add the field and test it on tasks built to be refused.
 
 \section{Counting}
 \label{sec:fw-counting}
-The templates count only to two: ExistenceTwo asks for an event at least twice (Section~\ref{sec:step1}). ``At least $n$ times'' needs an LTLf formula that grows with $n$, and an unbounded count, such as one kill for each zombie that enters, cannot be stated in LTLf. A count would let a machine pay for each kill up to a fixed number, closer to the world's reward in the zombie lanes, with no loop that pays (Section~\ref{sec:res-react}); whether that helps the agents there is untested. Counting beyond twice cannot be stated with these templates and needs investigation, starting with how a count would be written as a clause and priced.
+The templates count only to two: ExistenceTwo asks for an event at least twice (Section~\ref{sec:step1}). ``At least $n$ times'' needs an LTLf formula that grows with $n$. An unbounded count, such as one kill for each zombie that enters, cannot be stated in LTLf.
+
+A count would let a machine pay for each kill up to a fixed number, closer to the world's reward in the zombie lanes, with no loop that pays (Section~\ref{sec:res-react}). Whether that helps the agents there is untested. The first step is to find how a count would be written as a clause and priced.
 
 \section{The parts inherited from ARM-FM}
 \label{sec:fw-inherited}
-FARM changes only how the Reward Machine is generated. The labelling function, the state descriptions and the training come from ARM-FM, and each can be improved. The labelling function is one case: a model writes its code, and its critic reads that code without seeing the labels it gives in the world. The plan check catches some faults, such as the labelling function of one ARM-FM machine that crashes (Table~\ref{tab:res-armfm-failures}), but only on the plans it runs. A first step is a critic that also sees the labels on sample episodes.
+FARM changes only how the Reward Machine is generated. The labelling function, the state descriptions and the training come from ARM-FM, and each can be improved.
+
+The labelling function is one case. A model writes its code, and its critic reads that code without seeing the labels it gives in the world. The plan check catches some faults, such as the labelling function of one ARM-FM machine that crashes (Table~\ref{tab:res-armfm-failures}). It catches them only on the plans it runs. A first step is a critic that also sees the labels on sample episodes.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                 BIBLIOGRAFIA                                %
@@ -2216,7 +2264,7 @@ FARM changes only how the Reward Machine is generated. The labelling function, t
 
 \chapter{Sustainable Development Goals}
 \label{app:sdg}
-This appendix relates the work to the Sustainable Development Goals (SDGs) of the United Nations 2030 Agenda; no part of the main text depends on it. Table~\ref{tab:sdg} gives the degree of relation of this work with each goal, and the reflection after it explains the goals the work relates to.
+This appendix relates the work to the Sustainable Development Goals (SDGs) of the United Nations 2030 Agenda. No part of the main text depends on it. Table~\ref{tab:sdg} gives the degree of relation of this work with each goal, and the reflection after it explains the goals the work relates to.
 
 \begin{table}[H]
 \centering
@@ -2243,27 +2291,26 @@ SDG 15. Life on land. & & & & X \\
 SDG 16. Peace, justice and strong institutions. & & & X & \\
 SDG 17. Partnerships for the goals. & & & & X \\ \bottomrule
 \end{tabular}
-\caption[Relation of the work with the Sustainable Development Goals]{Degree of relation of the work with the Sustainable Development Goals (SDGs).}
+\caption[Relation of the work with the Sustainable Development Goals]{The relation of the work is high with SDG 9, low with SDGs 8, 12 and 16, and the other goals do not apply.}
 \label{tab:sdg}
 \end{table}
 
 \section{Reflection on the Sustainable Development Goals}
-This thesis is a technical work in reinforcement learning. It proposes FARM, a method that builds Reward Machines from tasks written in plain language, and measures the machines and the agents that learn with them in simulated worlds. It does not address a social or environmental problem directly, so most goals do not apply. Its relation to four of them follows from what the method aims at and from how it is built.
+This thesis is a technical work in reinforcement learning. It proposes FARM, a method that builds Reward Machines from tasks written in plain language, and measures the machines and the agents that learn with them in simulated worlds. It does not address a social or environmental problem directly, so most goals do not apply. Its contribution stays within its scope: a research method, not a deployed system. Its relation to four goals follows from what the method aims at and from how it is built.
 
 \subsection{SDG 9: Industry, innovation and infrastructure}
-The work is research, which makes this the goal it relates to most. The relation is highest with target 9.5, which asks to enhance scientific research and upgrade technological capabilities. The thesis contributes a method to one research problem, the writing of rewards for reinforcement learning, and extends the open tools it builds on in public forks of IBM nl2ltl and FL-AT (Appendix~\ref{app:implementation}). The intended benefit is reward design that needs no expert in reinforcement learning, so that a developer, a person without technical knowledge or another agent can state a task and get a machine that trains (Chapter~\ref{chap:introduction}). The method also uses small and cheap language models on purpose, which keeps it within reach of groups without large computing budgets. These benefits are intended, not measured: no study with users was run.
+The work is research, which makes this the goal it relates to most. The relation is highest with target 9.5, which asks to enhance scientific research and upgrade technological capabilities. The thesis contributes a method to one research problem, the writing of rewards for reinforcement learning. It also extends the open tools it builds on in public forks of IBM nl2ltl and FL-AT (Appendix~\ref{app:implementation}).
+
+The intended benefit is reward design that needs no expert in reinforcement learning, so that a developer, a person without technical knowledge or another agent can state a task and get a machine that trains (Chapter~\ref{chap:introduction}). The method also uses small and cheap language models on purpose, which keeps it within reach of groups without large computing budgets. These benefits are intended, not measured: no study with users was run.
 
 \subsection{SDG 8: Decent work and economic growth}
 The link with this goal is the work that writing a reward by hand takes. Target 8.2 asks for higher productivity through technological upgrading and innovation. Writing and tuning a reward function by hand takes time and needs expertise in both the task and reinforcement learning. FARM builds the machine from the task with no edit by hand, which could save part of that work. The relation is low because the time saved is not measured.
 
 \subsection{SDG 12: Responsible consumption and production}
-The link with this goal is the computing that the method needs. Target 12.2 asks for the efficient use of natural resources. Steps 2 to 4 of FARM, the compiler, call no language model: fixed tools build the machine from the clauses. Of the five steps, only the generator and the critic call a model, and both models are small. The training runs of the evaluation still use computing power, and the energy used by the work was not measured, so the relation is low.
+The link with this goal is the computing that the method needs. Target 12.2 asks for the efficient use of natural resources. Steps 2 to 4 of FARM, the compiler, call no language model: fixed tools build the machine from the clauses. Of the five steps, only the generator and the critic call a model, and both models are small. The training runs of the evaluation still use computing power. The energy used by the work was not measured, so the relation is low.
 
 \subsection{SDG 16: Peace, justice and strong institutions}
-The link with this goal is indirect, through the transparency of automated systems; the goal includes accountable and transparent institutions. In FARM each clause states its part of the task in one plain sentence, the machine follows the chosen clauses exactly, and a broken hard rule ends the episode in the well (Chapter~\ref{chap:farm}). A person can therefore read what an agent is rewarded for, and check it against the task, before the agent trains. The model can still choose clauses that do not fit the task (Chapter~\ref{chap:limitations}), so this transparency does not replace a review of the clauses.
-
-\subsection{Conclusion}
-The work relates mainly to SDG 9, through its research on reward design and the tools it makes public, and to a lower degree to SDGs 8, 12 and 16. Its contribution stays within its scope: a research method tested in simulated worlds, not a deployed system.
+The link with this goal is indirect, through the transparency of automated systems. The goal includes accountable and transparent institutions. In FARM each clause states its part of the task in one plain sentence, the machine follows the chosen clauses exactly, and a broken hard rule ends the episode in the well (Chapter~\ref{chap:farm}). A person can therefore read what an agent is rewarded for, and check it against the task, before the agent trains. The model can still choose clauses that do not fit the task (Chapter~\ref{chap:limitations}), so this transparency does not replace a review of the clauses.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                      DEVELOPMENT PROCESS AND AI USAGE                       %
@@ -2271,7 +2318,7 @@ The work relates mainly to SDG 9, through its research on reward design and the 
 
 \chapter{Development process and AI usage}
 \label{app:dev-process}
-Artificial intelligence takes a large part in this work: in the development of the system, in its methodology and experiments, and in the preparation of this document. This appendix describes how the work starts, the workflow with AI agents through which most of it is built and checked, and the tools used. The two language models inside FARM, the generator and the critic, belong to the method and are described in Chapter~\ref{chap:farm}; this appendix is about the AI used to build the work.
+Artificial intelligence takes a large part in this work: in the development of the system, in its methodology and experiments, and in the preparation of this document. Most of the work is built and checked through a workflow with AI agents. The two language models inside FARM, the generator and the critic, belong to the method and are described in Chapter~\ref{chap:farm}. This appendix is about the AI used to build the work.
 
 \section{How the work started}
 \label{app:dev-start}
@@ -2290,22 +2337,16 @@ In the iterative period the developer talks to one main agent, which orchestrate
     \item \textbf{Grounding}: the conversation first settles what is to be done, covering the ideas behind it, the aim, the tools and methods, what can and cannot be done, and where in the code it belongs. Mock-ups and first-hand tests come at this point.
     \item \textbf{Requirements that everyone understands}: planning sets down every requirement, in enough detail that the authors, student and supervisor, understand exactly what will happen.
     \item \textbf{Feasibility}: small ad hoc experiments, by hand or by an agent with temporary code, show that the change is achievable, that the algorithms work and the ideas hold.
-    \item \textbf{Plan}: once everything is settled, an agent writes a plan and every reference is checked, so that the agent that codes knows what to do, how to do it and what result it must reach.
+    \item \textbf{Plan}: once everything is settled, an agent writes a plan and every reference is checked. The agent that codes then knows what to do, how to do it and what result it must reach.
     \item \textbf{Code, review and live tests}: every change is reviewed, tested live on real runs and compared with the references.
-    \item \textbf{Reviewers of different providers}: several coding agents, of different providers, review the code independently from different angles and try to break it, to check that it is robust and clean and gives the right results.
+    \item \textbf{Reviewers of different providers}: several coding agents, of different providers, review the code independently from different angles and try to break it. They check that it is robust and clean and gives the right results.
     \item \textbf{The human last}: a person checks the work last. Without reading every line of the code, the person checks the outputs and asks the reviewers for clearer evidence where it is missing. Anything unclear is redone, checked again or compared with the standards and the goals.
 \end{itemize}
 The same workflow applies to this document: agents draft text and figures from the authors' notes and the measured results, and the authors review them.
 
 \section{Development tools}
 \label{app:dev-tools}
-Besides the AI agents, the work relies on four general tools and two tools built for the project. The general tools are:
-\begin{itemize}
-    \item \textbf{LaTeX}: this document.
-    \item \textbf{Python}: the system.
-    \item \textbf{Visual Studio Code}: the editor of the code.
-    \item \textbf{Orca}: an application that orchestrates coding agents.
-\end{itemize}
+Besides the AI agents, the work relies on four general tools and two tools built for the project. The general tools are LaTeX for this document, Python for the system, Visual Studio Code as the editor of the code, and Orca, an application that orchestrates coding agents.
 
 \subsection{The task settings page}
 A small local web page, \texttt{app/app.py}, built with the Python library Dash, gathers the human input and the settings of a run (Figure~\ref{fig:dev-web-ui}). It does four things:
@@ -2319,13 +2360,13 @@ A small local web page, \texttt{app/app.py}, built with the Python library Dash,
 \begin{figure}[H]
 \centering
 \IfFileExists{images/devprocess/web-ui.png}{\includegraphics[width=\linewidth,height=0.42\textheight,keepaspectratio]{images/devprocess/web-ui.png}}{\tbd{screenshot of the local web page}}
-\caption[The local web page for the settings of a run]{The local web page for the settings of a run: the generator and critic settings, the environment description, the tasks, and the compiled machine with its state graph.}
+\caption[The local web page for the settings of a run]{One local web page holds the settings of a run and shows its result: the generator and critic settings, the environment description, the tasks, and the compiled machine with its state graph.}
 \label{fig:dev-web-ui}
 \end{figure}
 
 \subsection{The Reward Machine viewer}
 \label{app:viewer}
-The tool that helps most is a viewer that makes Reward Machines easier to read (Figure~\ref{fig:dev-viewer}). It reads the text of a machine and draws it as an interactive graph, in the web page or as a stand-alone HTML or SVG file through the \texttt{render-rm} command; both use the same drawing code. It compacts the machine in three ways:
+The tool that helps most is a viewer that makes Reward Machines easier to read (Figure~\ref{fig:dev-viewer}). It reads the text of a machine and draws it as an interactive graph, in the web page or as a stand-alone HTML or SVG file through the \texttt{render-rm} command. Both use the same drawing code. The viewer compacts the machine in three ways:
 \begin{itemize}
     \item \textbf{One arrow per pair of states}: all transitions between the same two states share one arrow, labelled with how many transitions it holds and their reward, or \textit{mixed} when the rewards differ. The colour of the arrow tells whether it costs, gains or does neither, as in the drawings of this thesis (Section~\ref{app:drawing}).
     \item \textbf{Propositions on demand}: the guards stay off the graph. Clicking an arrow opens a panel that lists each transition it holds, with its guard split into one chip per proposition and its reward.
@@ -2356,7 +2397,7 @@ Hovering an arrow highlights it, and hovering a state highlights the arrows that
     \caption{A hovered state, with the arrows that leave it highlighted.}
     \label{fig:dev-viewer-3}
 \end{subfigure}
-\caption{Three views of the Reward Machine viewer.}
+\caption[Three views of the Reward Machine viewer]{The viewer draws one arrow per pair of states and shows the transitions of an arrow on demand.}
 \label{fig:dev-viewer}
 \end{figure}
 
@@ -2367,20 +2408,21 @@ Hovering an arrow highlights it, and hovering a state highlights the arrows that
 \chapter{Implementation details}
 \label{app:implementation}
 
-This appendix holds the implementation behind Chapter~\ref{chap:farm}, which points here for its details: the contributions of FARM, how it uses each tool, the format of its machines, and the models and settings of the runs. Section~\ref{sec:eval-training} also points here for the training values of the benchmark.
+This appendix holds the implementation behind Chapter~\ref{chap:farm}: the contributions of FARM, how it uses each tool, the format of its machines, the models and settings of the runs, and the training values of the benchmark (Section~\ref{sec:eval-training}).
 
 \section{Contributions}
 \label{app:contributions}
 FARM adds the following to the tools it builds on, IBM nl2ltl, FL-AT and MONA, and to the generation step of ARM-FM:
 \begin{itemize}
     \item A prompt that offers all eight Declare templates, with the meaning, kind and formula of each, and serves any environment, because the propositions and their meaning come from the environment description (Section~\ref{sec:step1}).
-    \item A restricted answer: each clause is a template, its propositions, a priority and one plain sentence, and only the first three reach the compiler, so tasks of one schema should get machines of one shape (Sections~\ref{sec:step1} and~\ref{sec:task-schemas}).
+    \item A restricted answer: each clause is a template, its propositions, a priority and one plain sentence. Only the first three reach the compiler, so tasks of one schema should get machines of one shape (Sections~\ref{sec:step1} and~\ref{sec:task-schemas}).
     \item A priority for each clause, hard or soft, set by the preference cues of the task, which IBM's templates do not have (Section~\ref{sec:step1}).
     \item A fork of FL-AT that drops MONA's first state only when it is redundant and returns the state of every clause in each product state (Sections~\ref{sec:step2} and~\ref{sec:step3}).
     \item Final states and one well set by the hard clauses, in place of the accepting states and the rewards of FL-AT (Section~\ref{sec:step4}).
     \item Rewards that count the stages still owed: a step closer pays, a new thing to do costs, and reaching the final state pays \gain{$+10$} (Section~\ref{sec:step4}).
     \item Re-armed soft rules, so that every new break is charged, and folded soft Absence clauses, which add no state to the machine (Section~\ref{sec:recurrent}).
-    \item A price for a hard break that, with a soft clause in the task, is higher than the cost of breaking soft rules at every step up to the step limit, and a take-back of progress on the edge into the well (Section~\ref{sec:well-charge}).
+    \item A price for a hard break that is higher than the cost of breaking soft rules at every step up to the step limit. It applies when the task has a soft clause (Section~\ref{sec:well-charge}).
+    \item A take-back of progress on the edge into the well (Section~\ref{sec:well-charge}).
     \item A merge of MONA's start state with its idle successor, and a minimisation of the priced machine (Sections~\ref{sec:start-merge} and~\ref{sec:step4}).
     \item A loop check that refuses any machine with a loop whose rewards add up to more than zero (Section~\ref{sec:step4}).
     \item A pay order for the runs of a machine, from finished to hard break, reported when FARM prepares a machine for training (Section~\ref{sec:step4}).
@@ -2390,65 +2432,65 @@ FARM adds the following to the tools it builds on, IBM nl2ltl, FL-AT and MONA, a
 \end{itemize}
 
 \section{IBM nl2ltl}
-In Step~1 the LTLf formula of each clause comes from the templates of IBM's nl2ltl, which FARM uses through a fork (\url{https://github.com/MiquelGomezCorral/nl2ltl}) of \url{https://github.com/IBM/nl2ltl} \cite{nl2ltl_code}. The GPT engine of nl2ltl is bypassed. FARM supplies its own engine, which asks a language model for a list of clauses under a JSON schema and passes each clause to the Declare template classes of nl2ltl, which build the LTLf formula. Only the template classes and the LTLf builders are reused. The change in the fork concerns the build: it supports modern Python packaging and drops the pin on the OpenAI client, which the new engine does not need.
+In Step~1 the LTLf formula of each clause comes from the templates of IBM's nl2ltl, which FARM uses through a fork (\url{https://github.com/MiquelGomezCorral/nl2ltl}) of \url{https://github.com/IBM/nl2ltl} \cite{nl2ltl_code}. The GPT engine of nl2ltl is bypassed. FARM supplies its own engine. It asks a language model for a list of clauses under a JSON schema and passes each clause to the Declare template classes of nl2ltl, which build the LTLf formula. Only the template classes and the LTLf builders are reused.
 
-FARM talks to three model providers, OpenAI, OpenCode and Antigravity, through one engine each. Generator and critic are configured separately, and each engine returns the clauses under the same JSON schema. In the experiments FARM and ARM-FM use the same models, \texttt{deepseek-v4.1-flash} as generator and \texttt{glm-5.3-flash} as critic, not the GPT-4o of the ARM-FM paper.
+FARM talks to three model providers, OpenAI, OpenCode and Antigravity, through one engine each. Generator and critic are configured separately. Each engine returns the clauses under the same JSON schema.
 
-The template classes of nl2ltl cover all eight Declare templates of Table~\ref{tab:templates}, but its GPT prompt lets the model choose only five: Existence, ExistenceTwo, Response, ChainResponse and RespondedExistence. The prompt of FARM allows all eight, so it adds Absence, Precedence and NotCoExistence to what the model may choose.
+The template classes of nl2ltl cover all eight Declare templates of Table~\ref{tab:templates}. Its GPT prompt lets the model choose only five: Existence, ExistenceTwo, Response, \mbox{ChainResponse} and RespondedExistence.
 
 \section{FL-AT}
-Steps 2 and 3 run on FL-AT, which FARM uses through a fork (\url{https://github.com/MiquelGomezCorral/Flat}) of \url{https://github.com/Jamidd/Flat} \cite{flat_code}. The fork makes five changes:
+Steps 2 and 3 run on FL-AT, which FARM uses through a fork (\url{https://github.com/MiquelGomezCorral/Flat}) of \url{https://github.com/Jamidd/Flat} \cite{flat_code}. The main changes of the fork are:
 \begin{itemize}
-    \item Library packaging: the code installs as a package and uses package-relative imports.
-    \item MONA runs in a subprocess with temporary files, where the original wrote a file in the working folder through \texttt{os.system}, and its output is parsed strictly.
+    \item MONA runs in a subprocess with temporary files, where the original wrote a file in the working folder through \texttt{os.system}. Its output is parsed strictly: an automaton that repeats a guard out of one state stops the build with an error.
     \item Proposition names are renamed with regular expressions, where the original split strings and evaluated labels.
-    \item MONA's first state is removed when it is redundant: not accepting, with one successor, never re-entered, and with transitions that cover every input exactly once (Section~\ref{sec:redundant}). Otherwise the automaton stays as MONA made it.
+    \item MONA's first state is removed when it is redundant (Section~\ref{sec:redundant}).
     \item The state tuples of the product are exported, so that each product state tells which state every clause is in.
 \end{itemize}
 
-The logic that the fork writes for MONA is monadic second-order logic over finite strings (the \texttt{m2l-str} header). The parse of MONA's output is strict: an automaton that repeats a guard out of one state stops the build with an error.
-
 \section{The generator prompt}
-The prompt of the generator has three parts: a system message, a user message and a catalogue of the Declare templates. The catalogue gives, for each template, its arguments, its kind (goal or rule), its meaning in English and its LTLf formula in IBM's syntax, and states that only Existence and ExistenceTwo are goals and that every rule holds when nothing happens. A second table maps thirteen typical wordings to templates.
+The prompt of the generator has three parts: a system message, a user message and a catalogue of the Declare templates. The catalogue gives, for each template, its arguments, its kind (goal or rule), its meaning in English and its LTLf formula in IBM's syntax. It states that only Existence and ExistenceTwo are goals and that every rule holds when nothing happens. A second table maps thirteen typical wordings to templates.
 
-The instructions for the priority list the preference cues that make a clause soft: ``if possible'', ``preferably'', ``ideally'', ``try to'', ``when you can'', ``it would be nice'' and, for a ban, ``try not to''. Every other clause is hard. A cue covers the phrase it modifies, not the whole sentence or the task, and it covers the step it qualifies, not the order word that leads into that step.
+The instructions for the priority list the preference cues that make a clause soft: ``if possible'', ``preferably'', ``ideally'', ``try to'', ``when you can'', ``it would be nice'' and, for a ban, ``try not to''. Every other clause is hard. A cue covers the step it qualifies, not the order word that leads into that step.
 
-A commanded step is \textbf{lone} when no hard Precedence chain links it to a later step that has a hard Existence. Every lone step gets its own hard Existence, and no other step does. Lone steps are a single ``do $a$'', the last hard step of an order, and a step whose later step is only preferred, since a soft Existence forces nothing.
+A commanded step is \textbf{lone} when no hard Precedence chain links it to a later step that has a hard Existence. Every lone step gets its own hard Existence, and no other step does. Three kinds of step are lone:
+\begin{itemize}
+    \item a step commanded alone;
+    \item the last hard step of an order;
+    \item a step whose later step is only preferred, since a soft Existence forces nothing.
+\end{itemize}
 
-An order is written as a hard Existence of its last step and one Precedence for each pair of consecutive steps: ``$a$, then $b$, then $c$'' becomes Existence$(c)$, Precedence$(a,b)$ and Precedence$(b,c)$, with no Precedence$(a,c)$. The \runex{sequence} example is built this way: Existence(\texttt{at\_goal}), Precedence(\texttt{has\_key}, \texttt{door\_open}) and Precedence(\texttt{door\_open}, \texttt{at\_goal}) (Table~\ref{tab:running}). An order the task states is kept even when the environment guarantees it, and no order the task does not state is added.
+An order is written as a hard Existence of its last step and one Precedence for each pair of consecutive steps. The \runex{sequence} example is built this way: Existence(\texttt{at\_goal}), Precedence(\texttt{has\_key}, \texttt{door\_open}) and Precedence(\texttt{door\_open}, \texttt{at\_goal}), with no \mbox{Precedence}(\texttt{has\_key}, \texttt{at\_goal}) (Table~\ref{tab:running}).
 % NOTE-OPEN: paste the prompt text, or an excerpt, from app/src/prompts/compiler-rm/ (declare-templates.md, reward-ltlf-creator.system.md, reward-ltlf-creator.user.md) at the commit of the frozen run.
 
 \section{The post-process}
-Four parts of the post-process of Step~4 need more detail than Chapter~\ref{chap:farm} gives: the count of stages, the optional end charges, the minimisation of the machine and the pay order.
+Three parts of the post-process of Step~4 need more detail than Chapter~\ref{chap:farm} gives: the count of stages, the optional end charges and the minimisation of the machine. The pay-order report of Section~\ref{sec:reward-assignment} needs the step limit, and without one it is recorded as not checked.
 
 \subsection{Stages}
-The stages that a state $u$ owes, $\Phi(u)$ (Section~\ref{sec:reward-assignment}), are counted in one of two ways, depending on whether the machine has a final state. With a final state, the hard part of $\Phi(u)$ is the fewest events that take $u$ to a final state, where a step costs the propositions that its guard needs true, and at least one. Each soft clause, a soft goal included, adds its own count: the longest path from its state to an accepting state in its own automaton, with every cycle collapsed into one node, times its chain weight. The chain weight of a clause is one plus the weights of the clauses that the event closing it makes pending, so a rule that hands off to another is worth the chain behind it. A violated state counts zero, and a final state owes nothing. Without a final state, every clause, hard or soft, uses this local count.
+The stages that a state $u$ owes, $\Phi(u)$ (Section~\ref{sec:reward-assignment}), are counted in one of two ways, depending on whether the machine has a final state.
+
+With a final state, the hard part of $\Phi(u)$ is the fewest events that take $u$ to a final state, where a step costs the propositions that its guard needs true, and at least one. Each soft clause, a soft goal included, adds its own local count. That count is the longest path from the clause's state to an accepting state in its own automaton, with every cycle collapsed into one node, times its chain weight. The chain weight of a clause is one plus the weights of the clauses that the event closing it makes pending, so a rule that hands off to another is worth the chain behind it. A violated state counts zero.
+
+Without a final state, every clause, hard or soft, uses this local count.
 
 \subsection{End charges}
-Two options of Table~\ref{tab:rewards}, both off in the frozen pipeline, read the count of stages: the end charges, for the stages still open when an episode ends, and the promise cost, for each step out of a state that still owes a hard stage. The end charges of Section~\ref{sec:open-promises} sum the local, chain-weighted count of every clause, hard clauses included, on the state that the edge into the well leaves or, when the environment ends the episode, on the state reached. The promise cost reads the hard part of the same count.
+Two options of Table~\ref{tab:rewards}, both off in the frozen pipeline, read the count of stages. The end charges are for the stages still open when an episode ends, and the promise cost is for each step out of a state that still owes a hard stage. The end charges of Section~\ref{sec:open-promises} sum the local, chain-weighted count of every clause, hard clauses included. They read it on the state that the edge into the well leaves or, when the environment ends the episode, on the state reached. The promise cost reads the hard part of the same count.
 
 \subsection{Minimisation}
 Minimisation makes the machine smaller. After pricing, states that pay the same, lead to the same states on every input and end an episode alike are merged into one. Minimisation is a setting, on by default.
 
-\subsection{Pay order}
-The pay order of Section~\ref{sec:reward-assignment} is a report, written when FARM prepares a machine for training and the step limit is known; without a step limit it is recorded as not checked. A failed order prints a warning and does not stop training, and the \texttt{generate-rm} command, which builds a machine alone, does not write the report. A machine with no final state skips the comparison of started against not started.
-
 \section{Retries and the critic}
-A rejection by the critic starts a new attempt, while failures of providers and tools follow rules of their own. On a retry, the prompt of the generator carries the comments of the critic and the refused candidates, each with who refused it and at which step, the feedback, the proposed clauses and the compiled machine. The critic keeps no history and starts fresh on every attempt.
-
-What a failure costs depends on its kind:
+A rejection by the critic starts a new attempt (Section~\ref{sec:step5}). Failures of providers and tools, and inputs too large for the critic, follow rules of their own:
 \begin{itemize}
-    \item \textbf{Generator provider}: a passing failure of the generator's provider, such as a timeout or a rate limit, uses no attempt; the same attempt is rerun, up to ten times in a row.
+    \item \textbf{Generator provider}: a passing failure of the generator's provider, such as a timeout or a rate limit, uses no attempt. The same attempt is rerun, up to ten times in a row.
     \item \textbf{Invalid generator answer}: it uses an attempt, like a rejection.
     \item \textbf{Critic}: a failed critic request, or a critic answer that cannot be read, is repeated on the same candidate, up to ten times.
     \item \textbf{Limits and permanent errors}: when either limit of ten runs out, or when a provider gives a permanent error, the run ends.
     \item \textbf{MONA or FL-AT}: a failure of MONA, or of FL-AT's translation of the formula into MONA's input, also ends the run instead of using an attempt.
+    \item \textbf{Large inputs}: a machine text longer than 200{,}000 characters reaches the critic as a summary. A task with more than twelve propositions gets no compiler clues.
 \end{itemize}
 
-A machine text longer than 200{,}000 characters reaches the critic as a summary, and a task with more than twelve propositions gets no compiler clues.
-
 \section{State descriptions}
-The labelling functions and the state descriptions that turn the machine into a LARM follow ARM-FM. After the machine is built, a tagger writes one description per state. It sends the states in batches of twenty, with up to three requests per batch, and it also sees the information that the critic received.
+The labelling functions and the state descriptions that turn the machine into a LARM follow ARM-FM. After the machine is built, a tagger writes one description per state. It sends the states in batches of twenty, with up to three requests per batch. It also sees the information that the critic received.
 
 \section{Machine format}
 The format of FARM differs from that of ARM-FM (Listing~\ref{lst:armfm-doorkey}) in these points:
@@ -2457,20 +2499,26 @@ The format of FARM differs from that of ARM-FM (Listing~\ref{lst:armfm-doorkey})
     \item The states with a special role are listed explicitly. \texttt{FINAL\_\allowbreak STATES} is always written and may be empty; \texttt{REJECTING\_\allowbreak STATES} is left out when the machine has no well.
     \item A single event expression combines propositions with \texttt{!} and \texttt{\&}, such as \texttt{has\_key\&\allowbreak !door\_open}, instead of a separate predicate such as \texttt{not\_has\_key}.
     \item \texttt{REWARD\_FUNCTION} lists only the transitions with a reward other than 0.
-    \item \texttt{ACCEPTING\_\allowbreak STATES}, \texttt{HARD\_\allowbreak FAILED\_\allowbreak REWARD}, \texttt{SOFT\_\allowbreak FAILED\_\allowbreak REWARD} and \texttt{PENDING\_\allowbreak PROMISES} appear only when the optional charge at the end of an episode is on (Section~\ref{sec:open-promises}), which it is not by default.
+    \item Four fields appear only when the optional charge at the end of an episode is on (Section~\ref{sec:open-promises}), which it is not by default. They are \texttt{ACCEPTING\_\allowbreak STATES}, \texttt{HARD\_\allowbreak FAILED\_\allowbreak REWARD}, \texttt{SOFT\_\allowbreak FAILED\_\allowbreak REWARD} and \texttt{PENDING\_\allowbreak PROMISES}.
 \end{itemize}
 
 \section{Drawing the machines}
 \label{app:drawing}
-The drawings of Reward Machines in this thesis colour each arrow by the sign of what it pays. In the simplified drawings, all transitions between two states share one arrow. The arrow is drawn as a cost when its rewards are negative or zero, as a gain when they are positive or zero, and neutral only when it holds both signs or only zeros. The label \textit{mixed} means that the rewards differ, not that the colour is neutral. The drawings follow the Reward Machine viewer of Section~\ref{app:viewer}, without its \texttt{else} loops.
+The drawings of Reward Machines in this thesis colour each arrow by the sign of what it pays. In the simplified drawings, all transitions between two states share one arrow, and the arrow is drawn:
+\begin{itemize}
+    \item \textbf{as a cost} when its rewards are negative or zero;
+    \item \textbf{as a gain} when they are positive or zero;
+    \item \textbf{neutral} only when it holds both signs or only zeros.
+\end{itemize}
+The label \textit{mixed} means that the rewards differ, not that the colour is neutral. The drawings follow the Reward Machine viewer of Section~\ref{app:viewer}, without its \texttt{else} loops.
 
 \section{Models and settings}
-Unless stated otherwise, generation uses the settings of the frozen pipeline: the OpenCode provider, \texttt{deepseek-v4.1-flash} as generator, \texttt{glm-5.3-flash} as critic and thinking level max. The generator has three attempts by default, and the benchmark gives ten (Section~\ref{sec:step5}). The running examples were built with these settings (Appendix~\ref{app:running}).
+Unless stated otherwise, generation uses the settings of the frozen pipeline: the OpenCode provider, \texttt{deepseek-v4.1-flash} as generator, \texttt{glm-5.3-flash} as critic and thinking level max. The generator has three attempts by default, and the benchmark gives ten (Section~\ref{sec:step5}).
 % TODO: add the commit of the code once the rule-only branch is merged into main. At the time of writing the code is commit a56bbed of the branch feat/rule-only-rewards.
 
 \subsection{Training settings of the benchmark}
 \label{app:training-settings}
-Every row of the benchmark trains with PPO. Table~\ref{tab:app-ppo} lists the training values of the rows of most cards, the first group of Table~\ref{tab:eval-training}. The state description of the current machine state is embedded with \texttt{nomic-embed-text} into 768 values, which a small network reduces to 192 before they join the observation.
+Every row of the benchmark trains with PPO. Table~\ref{tab:app-ppo} lists the training values of the rows of most cards, the first group of Table~\ref{tab:eval-training}. The state description of the current machine state is embedded with \texttt{nomic-embed-text} into 768 values. A small network reduces them to 192 before they join the observation.
 % NOTE-OPEN: cite nomic-embed-text; no key in bib-keys.md.
 
 \begin{table}[H]
@@ -2491,7 +2539,7 @@ Parallel environments & 16, with 256 steps each per update \\
 Judged episodes & 100 per seed; the agent takes its most likely action \\
 Time limit per episode & DoorKey 640, UnlockPickup 288, BlockedUnlockPickup 576 and KeyCorridor 480 steps; shop 600 steps \\ \bottomrule
 \end{tabularx}
-\caption{Training values of the rows of most cards.}
+\caption[Training values of the rows of most cards]{The rows of most cards train with these PPO values.}
 \label{tab:app-ppo}
 \end{table}
 
@@ -2500,14 +2548,16 @@ Time limit per episode & DoorKey 640, UnlockPickup 288, BlockedUnlockPickup 576 
 \chapter{Supporting results}
 \label{app:results}
 
-This appendix holds the counts and tables behind Chapter~\ref{chap:results}, which points to each of its sections. Chapter~\ref{chap:evaluation} also points to two of them, on the choice among accepted answers and on the prompt versions.
+This appendix holds the counts and tables behind Chapter~\ref{chap:results}, among them the two studies that Chapter~\ref{chap:evaluation} points to: the choice among accepted answers and the prompt versions.
 
 % Target: Appendix "Supporting results", section "Machines built and runs counted"
 % (from Results, Sections sec:res-built and sec:res-loops; decided lines RB1, RB2, RA10, RA13).
 \section{Machines built and runs counted}
 \label{app:res-counts}
 
-The counts behind Sections~\ref{sec:res-built} and~\ref{sec:res-loops} are gathered here: the machines each arm built and in how many rounds, the loops that pay, and the trained runs behind the comparison with scripted plans. A round is every generator answer, an unreadable one included, and every machine goes through two phases, each a generator followed by a critic: one for the machine and one for its labelling function (Section~\ref{sec:eval-built}). FARM's 265 machines take 533 rounds of generator and critic, against 530 at the least, one per phase: 266 rounds for the machines and 267 for their labelling functions. Every one of the 111 machines asked for a card's own wording is built. ARM-FM's 152 built machines take 175 rounds of the machine phase and 153 of the labelling phase. In the machine phase 133 need one round (132 of them need one round in both phases), 16 two, 2 three and 1 four; in the labelling phase 151 need one and 1 two.
+Table~\ref{tab:app-res-counts} gathers the counts behind Sections~\ref{sec:res-built} and~\ref{sec:res-loops}: the machines each arm built and in how many rounds, the loops that pay, and the trained runs behind the comparison with scripted plans. A round is every generator answer, an unreadable one included, in the machine phase or in the labelling phase (Section~\ref{sec:eval-arms}).
+
+FARM's 265 machines take 533 rounds of generator and critic, against 530 at the least, one per phase. ARM-FM's 152 built machines take 175 rounds of the machine phase and 153 of the labelling phase.
 
 \begin{table}[H]
 \centering
@@ -2539,7 +2589,7 @@ Runs & 275 \\
 Judged episodes & 26,708 \\
 Judged episodes that beat the best scripted plan of their card & 0 \\ \bottomrule
 \end{tabular}
-\caption[Machines built and runs counted]{Machines built by each arm, loops that pay, and the trained runs behind the comparison with scripted plans. Each of ARM-FM's 24 paying loops needs a world event, and with the world-event edges removed none of them pays.}
+\caption[Machines built and runs counted]{FARM builds all but one of the machines asked, and none of its machines has a loop that pays. Each of ARM-FM's 24 paying loops needs a world event, and with the world-event edges removed none of them pays.}
 \label{tab:app-res-counts}
 \end{table}
 
@@ -2548,7 +2598,18 @@ Judged episodes that beat the best scripted plan of their card & 0 \\ \bottomrul
 \section{How the generator chooses among accepted answers}
 \label{app:res-choice}
 
-A card may accept several answers. Table~\ref{tab:app-res-choice} measures which one the generator picks, in two sets. The thinking-level rows count runs of the thinking-level study (Appendix~\ref{app:res-thinking}) on its 11 cases with several accepted answers, three runs per case and level. The final-run rows count FARM's final-run machines, one per wording, on the 15 cards of Section~\ref{sec:res-clauses}: 12 machines of 6 ordered cards and 24 machines of 9 not-both and order cards, 5 of them with three rewordings and 4 with the original wording only (9 originals and 15 rewordings). A run is right (as Section~\ref{sec:eval-built} defines it, with its stricter rule for ordered tasks) when its final clauses match an accepted answer of its card, and an ordered task is in the chain form when it is written as the Existence of its last step plus one Precedence for each pair of steps in a row (Appendix~\ref{app:implementation}). The thinking-level study ran before six answers were added to the cards. One of its cases is affected and never took the added answer, so its rows are the same with or without them. From low to max, the thinking level does not change the pick.
+A card may accept several answers. Table~\ref{tab:app-res-choice} measures which one the generator picks. Its rows count three sets of runs:
+\begin{itemize}
+    \item \textbf{Thinking-level study}: the runs of the study (Appendix~\ref{app:res-thinking}) on its 11 cases with several accepted answers, three runs per case and level.
+    \item \textbf{Ordered cards of the final run}: FARM's 12 final-run machines of the 6 ordered cards among the 15 cards of Section~\ref{sec:res-clauses}, one per wording.
+    \item \textbf{Not-both and order cards of the final run}: FARM's 24 final-run machines of the other 9 cards, one per wording. Five of these cards have three rewordings and four have the original wording only.
+\end{itemize}
+
+A run is right (as Section~\ref{sec:eval-built} defines it, with its stricter rule for ordered tasks) when its final clauses match an accepted answer of its card. An ordered task is in the chain form when it is written as the Existence of its last step plus one Precedence for each pair of steps in a row (Appendix~\ref{app:implementation}).
+
+The thinking-level study ran before six answers were added to the cards. One of its cases is affected and never took the added answer, so its rows are the same with or without them. From low to max, the thinking level does not change the pick.
+
+Random choice among the accepted answers gives 50\% on the 9 cards that received no added answer and 48\% on all 15 with the added answers, since one card then accepts three. The one-half bar is therefore the slightly stricter test. All 8 alternative answers of the final-run machines are among the six added after the final run.
 
 \begin{table}[H]
 \centering
@@ -2557,7 +2618,7 @@ A card may accept several answers. Table~\ref{tab:app-res-choice} measures which
 \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}Xl@{}}
 \toprule
 \textbf{Measure} & \textbf{Result} \\ \midrule
-Cells of the thinking-level study (one case at one thinking level, three runs) with at least two right runs, whose right runs choose the same answer; assuming two accepted answers, two right runs would agree by chance in about 27\% of cells & 51 of 52 (98\%, 90\% to 100\%) \\
+Cells of the thinking-level study (one case at one thinking level, three runs) with at least two right runs, whose right runs choose the same answer & 51 of 52 (98\%, 90\% to 100\%) \\
 Final-run machines of the 6 ordered cards written in the chain form & 12 of 12 (100\%, 76\% to 100\%) \\
 Right runs of the thinking-level study on ordered tasks written in the chain form & 137 of 138 (99\%, 96\% to 100\%) \\
 Not-both and order cards with four wordings on which the answer changes between wordings, each wording run once & 5 of 5 (100\%, 57\% to 100\%) \\
@@ -2566,21 +2627,23 @@ Final-run machines of the 9 not-both and order cards (9 original wordings and 15
 Final-run machines of the 9 cards that received no added answer, choosing the first-listed answer & 11 of 15 (73\%, 48\% to 89\%) \\
 Final-run machines of all 15 cards, choosing the first-listed answer, with the six added answers & 24 of 36 (67\%, 50\% to 80\%) \\ \bottomrule
 \end{tabularx}
-\caption[How the generator chooses among accepted answers]{Right runs of one wording almost always give one answer, and ordered tasks take the chain form. The first-listed answer is chosen in more than half of the machines with an interval above one half only once the six added answers are counted; on the 9 cards that received no added answer the interval includes one half. Random choice among the accepted answers gives 50\% on the 9 cards and 48\% on all 15 with the added answers, since one card then accepts three, so the one-half bar is the slightly stricter test. On the 5 not-both and order cards with rewordings the answer changes between wordings, each wording run once, and all 8 alternative answers are among the six added after the final run. Intervals are 95\% Wilson. The two nines differ: the 9 not-both and order cards and the 9 cards that received no added answer are different sets of the~15.}
+\caption[How the generator chooses among accepted answers]{Right runs of one wording almost always give one answer, and ordered tasks take the chain form. The first-listed answer is chosen in more than half of the machines, with an interval above one half, only once the six added answers are counted. Intervals are 95\% Wilson. The two nines differ: the 9 not-both and order cards and the 9 cards that received no added answer are different sets of the~15.}
 \label{tab:app-res-choice}
 \end{table}
+
+For the first row, assuming two accepted answers, two right runs would agree by chance in about 27\% of cells.
 
 % Target: Appendix "Supporting results", section "Prompt versions before and after"
 % (from Results, Section sec:res-thinking; decided lines RB4, RB21, Q8, and E6 of the Evaluation file).
 \section{Prompt versions before and after}
 \label{app:res-prompts}
 
-Two changes made during development are measured here: the versions of the generator prompt, and the compiler clues added to the critic. The generator prompt went through twelve versions, v0 to v11, measured over 2,430 runs on the card benchmark. From the first version to the last, the share of ordered tasks written in the chain form rises from 52\% (22 of 42, 95\% Wilson interval 38\% to 67\%) to 81\% (68 of 84, 71\% to 88\%), short of the 90\% set as its target, and wrong machines fall from 14\% (18 of 126 runs, 9\% to 22\%) to 12\% (31 of 252, 9\% to 17\%).
+Two changes made during development are measured here: the versions of the generator prompt, and the compiler clues added to the critic. The generator prompt went through twelve versions, v0 to v11, measured over 2,430 runs on the card benchmark. From the first version to the last, the share of ordered tasks written in the chain form rises from 52\% (22 of 42, 95\% Wilson interval 38\% to 67\%) to 81\% (68 of 84, 71\% to 88\%), short of the 90\% set as its target. Wrong machines fall from 14\% (18 of 126 runs, 9\% to 22\%) to 12\% (31 of 252, 9\% to 17\%).
 
-Adding the compiler's plain-language clues to the critic (each rule in plain words, the hard clauses the others already imply, and the events that every way to finish includes) raises the labelled defects the critic flags at its first call from 30\% (74 of 246, 95\% Wilson interval 25\% to 36\%) to 56\% (23 of 41, 41\% to 70\%). The measure covers 38 items: 28 wrong clause sets holding 41 defects, and 10 right ones. Through the full loop of generator and critic on 46 cases, right machines rise from 77\% (213 of 276, 72\% to 82\%) to 85\% (39 of 46, 72\% to 92\%).
+Adding the compiler clues to the critic raises the labelled defects the critic flags at its first call from 30\% (74 of 246, 95\% Wilson interval 25\% to 36\%) to 56\% (23 of 41, 41\% to 70\%). The measure covers 38 items: 28 wrong clause sets holding 41 defects, and 10 right ones. Through the full loop of generator and critic on 46 cases, right machines rise from 77\% (213 of 276, 72\% to 82\%) to 85\% (39 of 46, 72\% to 92\%).
 
 % PICK NOISE
-A move under about 10 points in the chain-form share counts here as noise, a rule of thumb: one prompt version scored 75.0\% and, run again an hour later, 70.2\% (63 and 59 of 84), and two other versions differ by 12 points. The changes in wrong machines and in right machines through the full loop are other measures, which were not repeated.
+A move under about 10 points in the chain-form share counts here as noise, a rule of thumb. One prompt version scored 75.0\% and, run again an hour later, 70.2\% (63 and 59 of 84). Two other versions differ by 12 points. The changes in wrong machines and in right machines through the full loop are other measures, which were not repeated.
 
 % Target: Appendix "Supporting results", section "Thinking level, values per level"
 % (from Results, Section sec:res-thinking; decided lines RB5 and RB40).
@@ -2602,35 +2665,8 @@ medium & 136 of 138 & 99\% (95\% to 100\%) & 18 s \\
 high & 138 of 138 & 100\% (97\% to 100\%) & 20 s \\
 max & 138 of 138 & 100\% (97\% to 100\%) & 88 s \\ \bottomrule
 \end{tabular}
-\caption[Right machines per thinking level]{Right machines and median run time per thinking level of the generator: the 46 cases of the thinking-level study, three runs each, on the frozen code, 690 runs in all, with one model pair and one provider. Run times were measured with eight runs at once, beside training jobs.}
+\caption[Right machines per thinking level]{Right machines and median run time rise with the thinking level of the generator. The 46 cases of the thinking-level study ran three times each at every level, on the frozen code, 690 runs in all, with one model pair and one provider. Run times were measured with eight runs at once, beside training jobs.}
 \label{tab:app-res-thinking}
-\end{table}
-
-% Target: Appendix "Supporting results", section "Generator and critic pairs"
-% (from Results, Section sec:res-models; decided lines RB6 and Q48).
-\section{Generator and critic pairs}
-\label{app:res-pairs}
-
-Five pairs of generator and critic models ran as separate studies, mostly one run per case. Pairs A, B and E ran on 46 cases, B with two extra runs of one case. Pairs C and D ran only on a hard subset of nine cases, two runs each; their share is not comparable with that of A, B and E, so they are best read case by case. Claude Haiku runs at thinking level max and GPT Luna at xhigh, the name its provider gives to the highest setting, while DeepSeek and GLM run here at level none, so each row measures a model together with its thinking setting.
-
-Pair A uses FARM's two models at thinking level none, the level of the first row of Table~\ref{tab:app-res-thinking}, yet scores 42 of 46 against 105 of 138 there. The two runs differ in more than the level: pair A ran before the code freeze, on other versions of the cards and once per case, so the two shares do not compare.
-
-\begin{table}[H]
-\centering
-\footnotesize
-\setlength{\tabcolsep}{4pt}
-\renewcommand{\arraystretch}{1.2}
-\begin{tabular}{@{}lllccc@{}}
-\toprule
-\textbf{Pair} & \textbf{Generator (thinking)} & \textbf{Critic (thinking)} & \textbf{Cases} & \textbf{Runs} & \textbf{Right machines} \\ \midrule
-A & \texttt{deepseek-v4.1-flash} (none) & \texttt{glm-5.3-flash} (none) & 46 & 46 & 42 (91\%, 80\% to 97\%) \\
-B & \texttt{claude-haiku-5-5} (max) & \texttt{gpt-6-luna} (xhigh) & 46 & 48 & 47 (98\%, 89\% to 100\%) \\
-C & \texttt{claude-haiku-5-5} (max) & \texttt{glm-5.3-flash} (none) & 9 hard & 18 & 18 (100\%, 82\% to 100\%) \\
-D & \texttt{deepseek-v4.1-flash} (none) & \texttt{gpt-6-luna} (xhigh) & 9 hard & 18 & 16 (89\%, 67\% to 97\%) \\
-E & \texttt{gpt-6-luna} (xhigh) & \texttt{claude-haiku-5-5} (max) & 46 & 46 & 46 (100\%, 92\% to 100\%) \\ \bottomrule
-\end{tabular}
-\caption[Generator and critic pairs]{Five generator and critic pairs, each a separate study on its own subset of cases and at its own thinking settings; they are not one balanced comparison. Intervals are 95\% Wilson.}
-\label{tab:app-res-pairs}
 \end{table}
 
 % Target: Appendix "Supporting results", section "Cards that name every step"
@@ -2638,7 +2674,7 @@ E & \texttt{gpt-6-luna} (xhigh) & \texttt{claude-haiku-5-5} (max) & 46 & 46 & 46
 \section{Cards that name every step}
 \label{app:res-controls}
 
-Two cards on the BlockedUnlockPickup level name all four steps the level needs. FARM's machine pays every step, and its agents learn both cards. This fits the reading of Section~\ref{sec:res-learning} for the seven cards that only ARM-FM learns: their tasks name one or two of these steps, never all three, and on them FARM's machine leaves little reward before the box. No run rewords one of those tasks to test the reading.
+Two cards on the BlockedUnlockPickup level name all four steps the level needs. FARM's machine pays every step, and its agents learn both cards. This fits the reading of Section~\ref{sec:res-learning} for the seven cards that only ARM-FM learns. Their tasks name one or two of these steps, never all three, and on them FARM's machine leaves little reward before the box. No run rewords one of those tasks to test the reading.
 
 \begin{table}[H]
 \centering
@@ -2650,7 +2686,7 @@ Two cards on the BlockedUnlockPickup level name all four steps the level needs. 
 BlockedUnlockPickup & \textit{Pick up the blocking ball and the key, in either order, unlock the door, and then pick up the box in the other room.} & learned & learned & not learned \\
 Ball first & \textit{Move the ball away from the door before you take the key. Then open the door with the key and pick up the box.} & learned & not built & not learned \\ \bottomrule
 \end{tabularx}
-\caption[Cards that name every step]{FARM learns both BlockedUnlockPickup cards whose task names every step. ARM-FM's machine for the second card was not built, so that card counts as not learned for ARM-FM. The cards are \texttt{base-blocked-unlock-pickup} and \texttt{tpl-precedence-1-goal}; their clauses and machines are in the bundles under \texttt{experiments/benchmark/\{base,templates\}/bundles/}, the clauses' LTLf in Table~\ref{tab:templates}.}
+\caption[Cards that name every step]{FARM learns both BlockedUnlockPickup cards whose task names every step. The cards are \texttt{base-blocked-unlock-pickup} and \texttt{tpl-precedence-1-goal}. Their clauses and machines are in the bundles under \texttt{experiments/benchmark/\{base,templates\}/bundles/}, the clauses' LTLf in Table~\ref{tab:templates}.}
 \label{tab:app-res-controls}
 \end{table}
 
@@ -2674,7 +2710,7 @@ No goal: \textit{Whenever the box falls, pick it up again on your very next move
 No turn: the task of Next move; the agent keeps its direction after a fall. & not learned; 0.00, 0.00, 0.00 & not learned; 0.00, 0.00, 0.78 & not learned; 0.35, 0.35, 0.35 \\
 Side turn: the task of Next move; a box that falls behind turns the agent only to its side. & learned; 1.00, 1.00, 1.00 & not learned; 0.00, 0.00, 0.00 & not learned; 0.41, 0.68, 0.68 \\ \bottomrule
 \end{tabularx}
-\caption[Box-carry cards]{FARM learns 4 of the 5 box-carry cards (80\%, 95\% Wilson interval 38\% to 96\%), ARM-FM 3 and training with no Reward Machine 3 (60\% each, 23\% to 88\%). Each cell gives whether the card is learned and its judged success on the three seeds. The clauses and machines are in the bundles under \texttt{experiments/benchmark/box-carry/bundles/}, the clauses' LTLf in Table~\ref{tab:templates}; Table~\ref{tab:res-ex-machines} gives both machines of Box carry.}
+\caption[Box-carry cards]{FARM learns 4 of the 5 box-carry cards (80\%, 95\% Wilson interval 38\% to 96\%), ARM-FM 3 and training with no Reward Machine 3 (60\% each, 23\% to 88\%). Each cell gives whether the card is learned and its judged success on the three seeds. Table~\ref{tab:res-ex-machines} gives both machines of Box carry.}
 \label{tab:app-res-boxcarry}
 \end{table}
 
@@ -2684,13 +2720,15 @@ Side turn: the task of Next move; a box that falls behind turns the agent only t
 
 \chapter{IBM template examples}
 \label{app:templates}
-This appendix shows what the compiler builds from each template alone, as a companion to Table~\ref{tab:templates} of Step~1, which gives the eight Declare templates with their LTLf formulas and how to read them. Each machine is the Reward Machine of a task with that single clause, once hard and once soft, sixteen machines in all. Each row shows one template, hard on the left and soft on the right, and its caption gives the plain sentence of each version. As in Section~\ref{sec:run-step4}, a double circle marks the final state, the well is grey and implicit stays are not drawn. Since these machines are small, each arrow also carries its guard next to its reward, and the colour of an arrow follows the sign of its reward.
+This appendix shows what the compiler builds from each template alone. It is a companion to Table~\ref{tab:templates} of Step~1, which gives the eight Declare templates with their LTLf formulas and how to read them. Each machine is the Reward Machine of a task with that single clause, once hard and once soft, sixteen machines in all.
+
+Each row shows one template, hard on the left and soft on the right, and its caption gives the plain sentence of each version. As in Section~\ref{sec:run-step4}, a double circle marks the final state, the well is grey and implicit stays are not drawn. Since these machines are small, each arrow also carries its guard next to its reward, and the colour of an arrow follows the sign of its reward.
 
 Three rules of Chapter~\ref{chap:farm} account for the shapes:
 \begin{itemize}
-    \item \textbf{Only a hard goal gives a final state.} Existence and ExistenceTwo are the goals: hard, each gives a machine with a final state; soft, neither does. A hard rule alone gives a rule-only machine, with no final state (Section~\ref{sec:rule-only}).
-    \item \textbf{A broken hard rule leads to the well.} Absence, Precedence, ChainResponse and NotCoExistence have a violated state, so their hard machines have a well; the hard Absence machine has the shape of panel~(c) of Figure~\ref{fig:mona-stages}. RespondedExistence and Response have no violated state, so their hard machines have no well: the trigger costs at once, and the answer pays it back.
-    \item \textbf{A soft clause never ends the episode.} No soft machine has a well. A soft rule that can break is re-armed, so every new break costs again, and a soft Absence is folded: it adds no state, and its break is a loop that costs \loss{$-1$} (Section~\ref{sec:recurrent}).
+    \item \textbf{Only a hard goal gives a final state.} Existence and ExistenceTwo are the goals. Each gives a machine with a final state when it is hard, and neither does when it is soft. A hard rule alone gives a rule-only machine, with no final state (Section~\ref{sec:rule-only}).
+    \item \textbf{A broken hard rule leads to the well.} Absence, Precedence, ChainResponse and NotCoExistence have a violated state, so their hard machines have a well. The hard Absence machine is drawn on the left of panel~(c) of Figure~\ref{fig:templates-alone-1}. \mbox{RespondedExistence} and Response have no violated state, so their hard machines have no well: the trigger costs at once, and the answer pays it back.
+    \item \textbf{A soft clause never ends the episode.} No soft machine has a well. A soft rule that can break is re-armed, so every new break costs again. A soft Absence is folded: it adds no state, and its break is a loop that costs \loss{$-1$} (Section~\ref{sec:recurrent}).
 \end{itemize}
 
 \IfFileExists{images/templates/all.tex}{\input{images/templates/all.tex}}{\tbd{the 16 single-template machines}}
@@ -2705,9 +2743,9 @@ This appendix draws, on one clause, the two removals of redundant states that Se
 \begin{itemize}
     \item \textbf{Panel~(a)}: the automaton that MONA prints. Its start state S0 moves to S1 on every input.
     \item \textbf{Panel~(b)}: the same automaton after the FL-AT fork removes S0.
-    \item \textbf{Panel~(c)}: the post-process has merged the ``no step yet'' start S1 into its idle successor S2, which behaves identically on every input, and has priced the edges. The clause is kept hard here, and the machine is the one that the post-process builds from this clause alone.
+    \item \textbf{Panel~(c)}: the post-process has merged the ``no step yet'' start S1 into its idle successor S2, which behaves identically on every input, and has priced the edges.
 \end{itemize}
-Panels~(a) and~(b) draw every transition of the automaton, and double circles mark accepting states. Panel~(c) follows the convention of Section~\ref{sec:run-step4}: the rejecting well u1 is grey and is entered with reward \loss{$-10$}, and the implicit stay of u0 is not drawn. The \runex{careful key} (Section~\ref{sec:run-step4}) contains this clause as a soft one, while the figure keeps it hard to show the well, so the machine of that example differs from panel~(c).
+Panels~(a) and~(b) draw every transition of the automaton, and double circles mark accepting states. Panel~(c) follows the convention of Section~\ref{sec:run-step4}: the rejecting well u1 is grey and is entered with reward \loss{$-10$}, and the implicit stay of u0 is not drawn. The \mbox{\runex{careful key}} (Section~\ref{sec:run-step4}) contains this clause as a soft one. The figure keeps it hard to show the well, so the machine of that example differs from panel~(c).
 
 \begin{figure}[H]
     \centering
@@ -2743,7 +2781,7 @@ Panels~(a) and~(b) draw every transition of the automaton, and double circles ma
     \label{fig:mona-stages}
 \end{figure}
 
-Listing~\ref{lst:mona-rm} gives the text of the machine in panel~(c). The implicit stay of u0 is not listed, and there are no pending promises (a promise is a clause that the run still owes, Section~\ref{sec:open-promises}, Table~\ref{tab:rewards}), since the only promise is hard and its violation leads to the well.
+Listing~\ref{lst:mona-rm} gives the text of the machine in panel~(c).
 
 \noindent\begin{minipage}{\linewidth}
 \lstinputlisting[style=rm,caption={The Reward Machine of the hard clause Absence(\texttt{key\_lost}).},label={lst:mona-rm}]{images/farm/mona.rm.txt}
@@ -2755,7 +2793,9 @@ Listing~\ref{lst:mona-rm} gives the text of the machine in panel~(c). The implic
 
 \chapter{Running examples}
 \label{app:running}
-This appendix gathers the final versions of the three running examples that Chapter~\ref{chap:farm} follows step by step (Section~\ref{sec:running-examples}): for each, the task, the clauses with their LTLf formulas, and the final machine as a simplified drawing and as text. Two of these parts are not repeated here, since Chapter~\ref{chap:farm} already shows them: the text of the \runex{sequence} machine is Listing~\ref{lst:farm-example1}, and the drawing of the \runex{careful key} is Figure~\ref{fig:ex3-rm}. All three ran on the description of the DoorKey $8 \times 8$ environment with the frozen pipeline, at code commit \texttt{881b22d}. Each was built at the first attempt, and the critic accepted each with \texttt{NO CHANGES NEEDED}. No machine was edited by hand. The drawings follow the convention of Section~\ref{sec:run-step4}, and the well is drawn in grey.
+This appendix gathers the final versions of the three running examples that Chapter~\ref{chap:farm} follows step by step (Section~\ref{sec:running-examples}): for each, the task, the clauses with their LTLf formulas, and the final machine as a simplified drawing and as text. Two of these parts are not repeated here, since Chapter~\ref{chap:farm} already shows them: the text of the \runex{sequence} machine is Listing~\ref{lst:farm-example1}, and the drawing of the \runex{careful key} is Figure~\ref{fig:ex3-rm}.
+
+All three ran on the description of the DoorKey $8 \times 8$ environment with the frozen pipeline, at code commit \texttt{881b22d}. Each was built at the first attempt, and the critic accepted each with \texttt{NO CHANGES NEEDED}. No machine was edited by hand. The drawings follow the convention of Section~\ref{sec:run-step4}, and the well is drawn in grey.
 
 \section{Sequence}
 The \runex{sequence} orders three steps, and every break of that order leads to the well.
@@ -2769,7 +2809,7 @@ The \runex{sequence} orders three steps, and every break of that order leads to 
     \item Precedence(\texttt{door\_open}, \texttt{at\_goal}), $(\neg\texttt{at\_goal}\ \mathrm{U}\ \texttt{door\_open}) \lor \mathrm{G}\,\neg\texttt{at\_goal}$.
 \end{itemize}
 
-\textbf{Machine.} Five states and eleven transitions; Listing~\ref{lst:farm-example1} gives the text. The start u0 owes three stages, u1 (key) two, u3 (key and door open) one and the final state u4 none; u2 is the well. Each step along the order pays \gain{$+1$}, and reaching the goal adds \gain{$+10$}: \gain{$+11$} from u3, \gain{$+12$} from u1 and \gain{$+13$} from u0 when all three happen in one step. The four ways to break the order from u0 pay \loss{$-10$}, and the one from u1 pays \loss{$-11$}, because u1 is one stage ahead of the start (Section~\ref{sec:well-charge}).
+\textbf{Machine.} Five states and eleven transitions. Listing~\ref{lst:farm-example1} gives the text, and Section~\ref{sec:output-format} what each transition pays. The start u0 owes three stages, u1 (key) two, u3 (key and door open) one and the final state u4 none. The well is u2.
 
 \begin{figure}[H]
 \centering
@@ -2803,7 +2843,7 @@ The \runex{dropped key} joins the goal with a hard rule that reacts to an event:
 
 \textbf{Clauses.} Both are hard: Existence(\texttt{at\_goal}), $\mathrm{F}\,\texttt{at\_goal}$; ChainResponse(\texttt{key\_lost}, \texttt{has\_key}), $\mathrm{G}\,(\texttt{key\_lost} \rightarrow \mathrm{X}\,\texttt{has\_key})$.
 
-\textbf{Machine.} Five states and ten transitions, nine of them with a reward (Listing~\ref{lst:ex2-rm}). Section~\ref{sec:rewards-example} below gives the stages of each state and what each transition pays.
+\textbf{Machine.} Five states and ten transitions, nine of them with a reward (Figure~\ref{fig:ex2-rm} and Listing~\ref{lst:ex2-rm}). Section~\ref{sec:rewards-example} below gives the stages of each state and what each transition pays.
 
 \begin{figure}[H]
 \centering
@@ -2927,9 +2967,9 @@ REWARD_FUNCTION:
 
 \subsection{The rewards step by step}
 \label{sec:rewards-example}
-This part follows the rewards of Section~\ref{sec:reward-assignment} on the \runex{dropped-key} machine, to clarify them with an example. The machine shows progress, a step back, completion and a hard break; it has no soft clause. The part goes in three steps: what each state still owes, what each step pays, and what five runs total.
+This part follows the rewards of Section~\ref{sec:reward-assignment} on the \runex{dropped-key} machine. The machine shows progress, a step back, completion and a hard break. It has no soft clause.
 
-\textbf{What each state owes.} Table~\ref{tab:ex2-todo} gives the stages that each state still owes. Figure~\ref{fig:ex2-rm} draws the machine and Listing~\ref{lst:ex2-rm} gives its text.
+\textbf{What each state owes.} Table~\ref{tab:ex2-todo} gives the stages that each state still owes.
 
 \begin{table}[H]
 \centering
@@ -2976,7 +3016,7 @@ Nothing happens & -- & $0$ \\ \bottomrule
 \label{tab:ex2-traces}
 \end{table}
 
-Every trace that does the task totals \gain{$+11$}, with or without a drop, so a drop that is repaired costs nothing in the end. Leaving the key on the floor totals \loss{$-11$}, below a run in which nothing happens, so finished, not started and hard break keep the pay order of Section~\ref{sec:reward-assignment}.
+Every trace that does the task totals \gain{$+11$}, with or without a drop, so a drop that is repaired costs nothing in the end. Leaving the key on the floor totals \loss{$-11$}, below a run in which nothing happens. Finished, not started and hard break therefore keep the pay order of Section~\ref{sec:reward-assignment}.
 
 \section{Careful key}
 \label{app:ex3}
@@ -2986,7 +3026,7 @@ The \runex{careful key} joins the goal with a preference, which costs reward whe
 
 \textbf{Clauses.} Existence(\texttt{at\_goal}), hard, $\mathrm{F}\,\texttt{at\_goal}$; Absence(\texttt{key\_lost}), soft, $\neg\,\mathrm{F}\,\texttt{key\_lost}$.
 
-\textbf{Machine.} Two states and three transitions (Listing~\ref{lst:ex3-rm}); Figure~\ref{fig:ex3-rm} draws it. Losing the key before the goal pays \loss{$-1$} and stays in u0; reaching the goal pays \gain{$+11$}, or \gain{$+10$} in the step that loses the key. The machine has no well.
+\textbf{Machine.} Two states and three transitions (Listing~\ref{lst:ex3-rm}). Figure~\ref{fig:ex3-rm} draws it, and Section~\ref{sec:run-step4} explains what each transition pays. The machine has no well.
 
 \noindent\begin{minipage}{\linewidth}
 \begin{lstlisting}[style=rm,caption={The Reward Machine of the \runex{careful-key} example.},label={lst:ex3-rm}]
