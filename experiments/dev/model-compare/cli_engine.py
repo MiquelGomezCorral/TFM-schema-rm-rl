@@ -22,7 +22,16 @@ from src.utils import generation
 
 CLAUDE_MODELS = frozenset({"claude-haiku-5-5"})
 CODEX_MODELS = frozenset({"gpt-6-luna"})
+# The app refuses one model name as both generator and critic. A CLI model with this suffix is
+# the same model in the critic role, so a model can check its own proposals.
+CRITIC_SUFFIX = "@critic"
 CLI_TIMEOUT_S = 900
+# The app's reasoning level (CONFIG.reasoning) to each CLI's own effort. Claude Code cannot turn
+# Haiku 5.5's thinking off (CLAUDE_CODE_DISABLE_THINKING, MAX_THINKING_TOKENS=0 and
+# alwaysThinkingEnabled=false all left it thinking, 2026-11-24), so it has no "none". Codex calls
+# its top level xhigh and accepts "none" (0 reasoning tokens).
+CLAUDE_EFFORT = {"low": "low", "medium": "medium", "high": "high", "max": "max"}
+CODEX_EFFORT = {"none": "none", "low": "low", "medium": "medium", "high": "high", "max": "xhigh"}
 USAGE_STOP = 0.95  # a subscription window at 95 % or more ends the run (user rule)
 CODEX_SESSIONS = Path.home() / ".codex" / "sessions"
 JSON_ONLY = "Return only a JSON object matching this schema, with no markdown or commentary:"
@@ -74,8 +83,8 @@ def install(log_path: Path) -> None:
         should_stop: Callable[[], bool] | None = None,
         warn: Callable[[str], None] | None = None,
     ) -> GenericEngine:
-        if model in CLAUDE_MODELS | CODEX_MODELS:
-            engine = CliEngine(environment, model)
+        if (model or "").removesuffix(CRITIC_SUFFIX) in CLAUDE_MODELS | CODEX_MODELS:
+            engine = CliEngine(environment, model, CONFIG.reasoning)
             engine.should_stop, engine.warn = should_stop, warn
         else:
             engine = app_get_engine(CONFIG, environment, model, should_stop=should_stop, warn=warn)
@@ -151,8 +160,9 @@ def _metered(engine: GenericEngine) -> None:
 class CliEngine(GenericEngine):
     """Answer each structured request with one Claude Code or Codex one-shot."""
 
-    def __init__(self, environment: EnvironmentDescription, model: str) -> None:
+    def __init__(self, environment: EnvironmentDescription, model: str, level: str) -> None:
         super().__init__(environment, model, f"CLI {model}", self._request_cli)
+        self.level = level
         self.cli_meta: dict[str, Any] | None = None
 
     def _request_cli(self, model: str, system: str, user: str, schema: dict, _name: str) -> str:
@@ -163,11 +173,16 @@ class CliEngine(GenericEngine):
         """
         schema_text = json.dumps(schema, ensure_ascii=False, separators=(",", ":"))
         prompt = f"{user}\n\n{JSON_ONLY}\n{schema_text}"
-        run = _run_claude if model in CLAUDE_MODELS else _run_codex
+        model = model.removesuffix(CRITIC_SUFFIX)
+        is_claude = model in CLAUDE_MODELS
+        run = _run_claude if is_claude else _run_codex
+        efforts = CLAUDE_EFFORT if is_claude else CODEX_EFFORT
+        if self.level not in efforts:
+            raise ImmediateEngineError(f"{model} has no thinking level {self.level!r}")
         self.cli_meta = None
         # An empty folder outside the repository, so neither CLI finds project files.
         with tempfile.TemporaryDirectory(prefix="model-compare-") as folder:
-            self.cli_meta = run(model, system, prompt, Path(folder))
+            self.cli_meta = run(model, system, prompt, Path(folder), efforts[self.level])
         self.reported_model = self.cli_meta.get("model")
         _raise_on_failure(self.cli_meta)
         return _json_object(self.cli_meta["reply"])
@@ -217,11 +232,11 @@ def _events(stdout: str) -> list[dict[str, Any]]:
 # ======================================================================================
 
 
-def _run_claude(model: str, system: str, prompt: str, cwd: Path) -> dict[str, Any]:
+def _run_claude(model: str, system: str, prompt: str, cwd: Path, effort: str) -> dict[str, Any]:
     # The given one-shot argv; then the flags that leave only the app's prompt (safe mode drops
     # CLAUDE.md, skills, plugin hooks and MCP; no tools; the app's system prompt replaces Claude
     # Code's); then stream-json, whose events carry the model, tool use, cost and usage snapshot.
-    command = ["claude", "--model", model, "--effort", "max", "--print"]
+    command = ["claude", "--model", model, "--effort", effort, "--print"]
     command += ["--dangerously-skip-permissions", "--no-session-persistence"]
     command += ["--safe-mode", "--strict-mcp-config", "--disable-slash-commands", "--tools", ""]
     command += ["--system-prompt", system]
@@ -258,7 +273,7 @@ def _run_claude(model: str, system: str, prompt: str, cwd: Path) -> dict[str, An
     return meta
 
 
-def _run_codex(model: str, system: str, prompt: str, cwd: Path) -> dict[str, Any]:
+def _run_codex(model: str, system: str, prompt: str, cwd: Path, effort: str) -> dict[str, Any]:
     # The given one-shot argv, with approval_policy as a -c setting (`codex exec` has no
     # --ask-for-approval flag); then the flags that leave only the app's prompt where Codex has
     # one (no user config, skills, plugins, hooks or extra instruction blocks; the app's system
@@ -266,7 +281,7 @@ def _run_codex(model: str, system: str, prompt: str, cwd: Path) -> dict[str, Any
     reply_path, system_path = cwd / "reply.txt", cwd / "system.txt"
     system_path.write_text(system)
     command = ["codex", "exec", "--sandbox", "danger-full-access", "-c", "approval_policy=never"]
-    command += ["-c", "model_reasoning_effort=xhigh", "--model", model, "--skip-git-repo-check"]
+    command += ["-c", f"model_reasoning_effort={effort}", "--model", model, "--skip-git-repo-check"]
     command += [
         "--ignore-user-config",
         "--strict-config",
