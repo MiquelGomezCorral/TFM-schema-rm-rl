@@ -1014,7 +1014,31 @@ A step into a state from which no state with nothing pending can be reached pays
 
 \paragraph{Rule triggers} A rule that waits for an event, such as a Response, owes a stage once its trigger happens, whether the agent or the environment caused it. The trigger costs \loss{one unit} \textbf{per stage at once}, and the reaction that the rule asks for pays it back. A trigger that is answered therefore totals 0, the same as no trigger. With no final state, the pay order skips the comparison of started and not started.
 
-\tbd{a rule-only example rebuilt on the frozen pipeline: task, clauses with LTLf, machine and the pay of each edge}
+One task of the evaluation benchmark, \cardid{cx-rules-only}, shows these rewards at work.
+
+\textbf{Task.} \textit{Do not pick up the box in the other room. Try not to drop the key while the door is still closed. Whenever you are holding the key, try to have the door open at that moment or open it afterwards.}
+
+\textbf{Clauses.} One hard and two soft. They use four propositions, \texttt{target\_picked\_up} (the box is picked up), \texttt{key\_lost} (the key is dropped while the door is still closed), \texttt{has\_door\_key} and \texttt{door\_open}.
+\begin{itemize}
+    \item Absence(\texttt{target\_picked\_up}), hard: $\neg\,\mathrm{F}\,\texttt{target\_picked\_up}$;
+    \item Absence(\texttt{key\_lost}), soft: $\neg\,\mathrm{F}\,\texttt{key\_lost}$;
+    \item Response(\texttt{has\_door\_key}, \texttt{door\_open}), soft: $\mathrm{G}\,(\texttt{has\_door\_key} \rightarrow \mathrm{F}\,\texttt{door\_open})$.
+\end{itemize}
+
+\textbf{RM.} The task has no goal, so the RM has no final state. It has three states and seventeen transitions (Figure~\ref{fig:rule-only-rm}). The start is u0 and the well u1. In u2 the key is held while the door is shut, so the Response owes one stage.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[farm graph,
+    rm gain/.style={draw=green!50!black, text=green!40!black},
+    rm cost/.style={draw=red!70!black, text=red!60!black}]
+\input{images/farm/rm-rule-only}
+\end{tikzpicture}
+\caption[RM of a rule-only task]{The RM of the rule-only task \cardid{cx-rules-only}, with u1 as the well and no final state. Each arrow joins the transitions of one event, labelled \textit{event / reward}. A step with none of these events stays in its state and pays 0.}
+\label{fig:rule-only-rm}
+\end{figure}
+
+\textbf{Rewards.} Holding the key with the door shut triggers the Response and moves the RM from u0 to u2 for \loss{$-1$}, the charge of one stage. Opening the door answers it and pays the \gain{$+1$} back on the way to u0. A lost key breaks the folded soft Absence, a loop that costs \loss{$-1$} in either state. Picking up the box breaks the hard Absence and sends the run from either state to the well for \loss{$-100.694$}. This is the price of a hard break in a task with a soft clause (Section~\ref{sec:well-charge}) for the step limit of the environment, 576 steps. Neither u0 nor u2 is ahead of the start, so the edge into the well takes no progress back. Holding the key and then opening the door totals 0, like any answered trigger.
 
 \subsubsection{Summary of the rewards}
 \phantomsection\label{sec:open-promises}Table~\ref{tab:rewards} gathers every reward of this section with its default value. Its last three rewards are options, off in the frozen pipeline, the version of FARM fixed for the evaluation, and worth trying in an experiment.
@@ -1940,7 +1964,7 @@ To measure how the share of right RMs (Section~\ref{sec:eval-built}) and the tim
 \begin{figure}[!htb]
 \centering
 \input{images/results/fig-res-thinking.tex}
-\caption[Right RMs per model and thinking level]{Only the pair of the frozen pipeline gets every run right, at high and max, when set beside two language models from other makers, Haiku 5.5 and GPT-6 Luna, on the levels run in full, the ones shown. Haiku 5.5 at high is one run short in less time, and GPT-6 Luna at max in more. Each point is one model, or the pair, at one thinking level, placed by its share of right RMs over 138 runs (46 cases, three runs each), with its 95\% Wilson interval, against the median seconds to generate one RM (log scale). A point is filled when no other point is at least as fast and as often right, and faster or more often right. The grey line joins the filled points. Haiku 5.5 and GPT-6 Luna each play both roles, and their times include a new command-line process per call.}
+\caption[Right RMs per model and thinking level]{Set beside two language models from other makers, Haiku 5.5 and GPT-6 Luna, the pair of the frozen pipeline gets every run right at high and max, and so does Haiku 5.5 at max, in 111 seconds per RM against 20 for the pair at high. Haiku 5.5 at high is one run short in less time than the pair at high, and GPT-6 Luna at max one short in more. Each point is one model, or the pair, at one thinking level, placed by its share of right RMs over 138 runs (46 cases, three runs each), with its 95\% Wilson interval, against the median seconds to generate one RM (log scale). A point is filled when no other point is at least as fast and as often right, and faster or more often right. The grey line joins the filled points. Haiku 5.5 and GPT-6 Luna each play both roles, and their times include a new command-line process per call.}
 \label{fig:res-thinking}
 \end{figure}
 With this pair, the share of right RMs rises with the thinking level (Figure~\ref{fig:res-thinking}):
@@ -1954,9 +1978,9 @@ The gain has a cost in time, however. The median run takes 4 seconds at none, 12
 
 Two language models from other makers, Anthropic's Haiku 5.5 and OpenAI's GPT-6 Luna, take the same test, with the same 46 cases, prompts and scorer and three runs per level. Each of them plays both roles, generator and critic, and reviews its own clauses, which the frozen pipeline avoids by design (Section~\ref{sec:step5}), so a difference from the pair may come from the model or the review. The pair is called through its provider, and each of the other two through its maker's command-line tool, with a new process for each call. Their times include that start-up and two calls per median RM, to generate and review, or four for GPT-6 Luna from none to medium, where its critic rejects the first RM. Haiku 5.5 runs only from low up, because its tool cannot turn its thinking off. Each provider and tool names its own levels, and one name need not mean the same amount of reasoning.
 
-Table~\ref{tab:app-res-thinking} gives the values per model and level. Of the levels run in full, only the pair gets all 138 runs right, at high and max. Haiku 5.5 at high and GPT-6 Luna at max are one run short, 137 of 138 in 14 and 32 seconds against 20. GPT-6 Luna has the lowest share at each of its levels, 64\% to 72\% from none to medium, with overlapping intervals. These intervals lie wholly below those of the pair from low to max and of Haiku 5.5 at every level, and overlap that of the pair at none (76\%). GPT-6 Luna rises to 97\% at high and 99\% at max, where its intervals overlap those of the other two from low up.
+Table~\ref{tab:app-res-thinking} gives the values per model and level. The pair at high and max and Haiku 5.5 at max get all 138 runs right, the pair at high in 20 seconds per RM and Haiku 5.5 at max in 111. Haiku 5.5 at high and GPT-6 Luna at max are one run short, 137 of 138 in 14 and 32 seconds against 20. GPT-6 Luna has the lowest share at each of its levels, 64\% to 72\% from none to medium, with overlapping intervals. These intervals lie wholly below those of the pair from low to max and of Haiku 5.5 at every level, and overlap that of the pair at none (76\%). GPT-6 Luna rises to 97\% at high and 99\% at max, where its intervals overlap those of the other two from low up.
 
-The figure holds 13 points. A point is beaten when another point is at least as fast and as often right, and faster or more often right. The points that no other point beats form the \textbf{Pareto frontier} between time and right RMs. Five points are not beaten, the pair at none and at high and Haiku 5.5 at low, medium and high, the filled points of Figure~\ref{fig:res-thinking}. The other eight are beaten. Haiku 5.5 at medium beats the pair at low and GPT-6 Luna at high (134 of 138 each, in 11 seconds against 12 and 22), although it is less than a second faster than the pair at low, so which of the two lies on the frontier means little. Haiku 5.5 at high beats the pair at medium (137 and 136 of 138, in 14 seconds against 18), and the pair at high beats the pair at max (138 of 138 each, in 20 seconds against 88). Both beat GPT-6 Luna at max (137 of 138 in 32 seconds), and the pair at none beats the other three points of GPT-6 Luna. The frontier ranks the point estimates only, since the intervals of Haiku 5.5 and of GPT-6 Luna at high and max overlap those of the pair from low to max. The time axis compares ways of calling a model, not the speed of the models, and no cost per RM was recorded, so the frontier weighs time alone. \tbd{still to come: Haiku 5.5 at max and four models that wait for a GPU of the computing cluster (Qwen3.8, Gemma 4, Muse Glimmer, gpt-oss); recheck then the filled points and every ``only the pair''}
+The figure holds 14 points. A point is beaten when another point is at least as fast and as often right, and faster or more often right. The points that no other point beats form the \textbf{Pareto frontier} between time and right RMs. Five points are not beaten, the pair at none and at high and Haiku 5.5 at low, medium and high, the filled points of Figure~\ref{fig:res-thinking}. The other nine are beaten. Haiku 5.5 at medium beats the pair at low and GPT-6 Luna at high (134 of 138 each, in 11 seconds against 12 and 22), although it is less than a second faster than the pair at low, so which of the two lies on the frontier means little. Haiku 5.5 at high beats the pair at medium (137 and 136 of 138, in 14 seconds against 18), and the pair at high beats the pair at max (138 of 138 each, in 20 seconds against 88). Both beat GPT-6 Luna at max (137 of 138 in 32 seconds), and the pair at none beats the other three points of GPT-6 Luna. Haiku 5.5 at max gets all 138 right too, in 111 seconds, so the pair at high and at max both beat it. The frontier ranks the point estimates only, since the intervals of Haiku 5.5 and of GPT-6 Luna at high and max overlap those of the pair from low to max. The time axis compares ways of calling a model, not the speed of the models, and no cost per RM was recorded, so the frontier weighs time alone. \tbd{still to come: four models that wait for a GPU of the computing cluster (Qwen3.8, Gemma 4, Muse Glimmer, gpt-oss); recheck then the filled points and which points get every run right}
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -2028,7 +2052,7 @@ The other bounds concern the tasks. FARM states tasks with the eight Declare tem
 \chapter{Future work}
 \label{chap:future-work}
 
-Two studies of the Results chapter still wait for data, a curriculum for the shop (Section~\ref{sec:res-curriculum}) and the study of other language models, which still lacks some models and levels (Section~\ref{sec:res-models}). Beyond them, the five directions below go past this thesis. Each one gives what is missing today, why it matters and a first step.
+Two studies of the Results chapter still wait for data, a curriculum for the shop (Section~\ref{sec:res-curriculum}) and the study of other language models, which still lacks some models (Section~\ref{sec:res-models}). Beyond them, the five directions below go past this thesis. Each one gives what is missing today, why it matters and a first step.
 
 \section{Smaller RMs}
 \label{sec:fw-size}
@@ -2040,7 +2064,7 @@ The first step in this direction could be to measure how the size grows with the
 
 \section{A model that writes LTLf}
 \label{sec:fw-ltlf}
-The generator picks clauses from eight templates whose arguments are single declared facts. A task can therefore say no more than those templates state (Section~\ref{sec:lim-conditions}) and cannot use any other logical constructs to simplify the output formulas for a given task.
+The generator picks clauses from eight templates whose arguments are single declared facts. A task can therefore say no more than those templates state (Section~\ref{sec:lim-conditions}), and the generator cannot use other logical constructs to simplify the formulas of a task.
 
 A further step is a generator that writes the LTLf formulas itself. Such a model could state negated conditions, alternatives and nested conditions. This way, it could give shorter formulas and smaller RMs, and state tasks that the templates cannot. In exchange, it would give up what the fixed catalogue gives, a known meaning, automaton and price for every clause. 
 
@@ -2052,9 +2076,9 @@ Each clause is a promise of its own, so the RM keeps one state for every combina
 \[
 \mathrm{G}\,\bigl(a \rightarrow \mathrm{F}\,(b \wedge \mathrm{F}\,(c \wedge \mathrm{F}\,d))\bigr)
 \]
-Its RM has 4 states and 15 transitions, one state for each step still owed. The reward changes with it, however. With three clauses, the RM charges three units when the chain opens and pays one back at each later step. With the single formula, it charges one unit when the chain opens and pays it back when the chain closes, with nothing in between.
+Its RM has 4 states and 15 transitions, one with nothing owed and one for each step still owed. The reward changes with it, however. With three clauses, the RM charges three units when the chain opens and pays one back at each later step. With the single formula, it charges one unit when the chain opens and pays it back when the chain closes, with nothing in between.
 
-The rest of the pipeline should hold, but that needs testing. A first step is to ask such a model for formulas on tasks the catalogue cannot state, and to pass them through the same checks.
+The rest of the pipeline should hold. Whether it does still needs testing. A first step is to ask such a model for formulas on tasks the catalogue cannot state, and to pass them through the same checks.
 
 \section{A way to refuse}
 \label{sec:fw-refusal}
@@ -2078,9 +2102,9 @@ The parts that FARM takes from ARM-FM unchanged, the labelling function, the sta
 
 The labelling function is one case. A model writes its code, and its critic reads that code without seeing the labels it gives in the environment. The plan check catches some faults, such as the labelling function of one ARM-FM RM, which crashes (Table~\ref{tab:res-armfm-failures}). However, it catches them only on the plans it runs. 
 
-The state descriptions are another. The agent sees its current RM state as a text embedding of that state's description, which has 768 values (Appendix~\ref{app:training-settings}). These values do not reach the agent as they are. A small network of two layers first reduces them to 192. These then join the features that the agent takes from its observation. The training script of ARM-FM's first author does this \cite{armfm_code}. The paper itself does not describe the network.
+The state descriptions are another. The agent sees its current RM state as a text embedding of that state's description, which has 768 values (Appendix~\ref{app:training-settings}). In the shop, the agent sees a one-hot code of the RM state instead. The 768 values do not reach the agent as they are. A small network of two layers first reduces them to 192. These then join the features that the agent takes from its observation. The training script of ARM-FM's first author does this \cite{armfm_code}. The paper itself does not describe the network.
 
-Even after this reduction, 192 values are many beside those of the observation. With MiniGrid's usual view of 7$\times$7 cells, the agent takes 1,024 features from its observation, so the RM state is 192 of 1,216 values, and in XLand-MiniGrid it is 192 of 448. The small network itself adds about 185,000 weights to learn. The states of one RM also have descriptions that lie close together. Closeness here is the cosine similarity of two embeddings, which is 1 when they point the same way. Its mean between the embedding of a state and that of its nearest state in the same RM is 0.873 over the 82 RMs that agents trained on in the final run. This is very high beside the 0.639 of states of different RMs.
+Even after this reduction, 192 values are many beside those of the observation. With MiniGrid's usual view of 7$\times$7 cells, the agent takes 1,024 features from its observation, so the RM state is 192 of 1,216 values, and in XLand-MiniGrid it is 192 of 448. The small network itself adds about 185,000 weights to learn. The states of one RM also have descriptions that lie close together. Closeness here is the cosine similarity of two embeddings, which is 1 when they point the same way. The mean similarity between the embedding of a state and that of its nearest state in the same RM is 0.873, over the 82 RMs with at least two states that agents trained on in the final run. Any two states of one RM score 0.823 on average, against 0.639 for two states of different RMs.
 
 Future work could therefore reduce the size of these embeddings and make their values tell the states of one RM apart better.
 
@@ -2624,25 +2648,26 @@ Section~\ref{sec:res-thinking} sets the model pair of the frozen pipeline beside
 \renewcommand{\arraystretch}{1.2}
 \begin{tabular}{@{}lccc@{}}
 \toprule
-\textbf{Thinking level} & \textbf{Right RMs} & \textbf{Share (95\% Wilson)} & \textbf{Median run time} \\ \midrule
+\textbf{Thinking level} & \textbf{Right RMs} & \textbf{Share (95\% Wilson)} & \textbf{Median run time (s)} \\ \midrule
 \multicolumn{4}{@{}l}{\textbf{Model pair of the frozen pipeline}} \\
-none & 105 of 138 & 76\% (68\% to 82\%) & 4 s \\
-low & 134 of 138 & 97\% (93\% to 99\%) & 12 s \\
-medium & 136 of 138 & 99\% (95\% to 100\%) & 18 s \\
-high & 138 of 138 & 100\% (97\% to 100\%) & 20 s \\
-max & 138 of 138 & 100\% (97\% to 100\%) & 88 s \\ \midrule
+none & 105 of 138 & 76\% (68\% to 82\%) & 4 \\
+low & 134 of 138 & 97\% (93\% to 99\%) & 12 \\
+medium & 136 of 138 & 99\% (95\% to 100\%) & 18 \\
+high & 138 of 138 & 100\% (97\% to 100\%) & 20 \\
+max & 138 of 138 & 100\% (97\% to 100\%) & 88 \\ \midrule
 \multicolumn{4}{@{}l}{\textbf{Haiku 5.5}} \\
-low & 132 of 138 & 96\% (91\% to 98\%) & 10 s \\
-medium & 134 of 138 & 97\% (93\% to 99\%) & 11 s \\
-high & 137 of 138 & 99\% (96\% to 100\%) & 14 s \\ \midrule
+low & 132 of 138 & 96\% (91\% to 98\%) & 10 \\
+medium & 134 of 138 & 97\% (93\% to 99\%) & 11 \\
+high & 137 of 138 & 99\% (96\% to 100\%) & 14 \\
+max & 138 of 138 & 100\% (97\% to 100\%) & 111 \\ \midrule
 \multicolumn{4}{@{}l}{\textbf{GPT-6 Luna}} \\
-none & 94 of 138 & 68\% (60\% to 75\%) & 19 s \\
-low & 89 of 138 & 64\% (56\% to 72\%) & 18 s \\
-medium & 100 of 138 & 72\% (64\% to 79\%) & 20 s \\
-high & 134 of 138 & 97\% (93\% to 99\%) & 22 s \\
-max & 137 of 138 & 99\% (96\% to 100\%) & 32 s \\ \bottomrule
+none & 94 of 138 & 68\% (60\% to 75\%) & 19 \\
+low & 89 of 138 & 64\% (56\% to 72\%) & 18 \\
+medium & 100 of 138 & 72\% (64\% to 79\%) & 20 \\
+high & 134 of 138 & 97\% (93\% to 99\%) & 22 \\
+max & 137 of 138 & 99\% (96\% to 100\%) & 32 \\ \bottomrule
 \end{tabular}
-\caption[Right RMs per model and thinking level]{Right RMs and median run time of the pair of the frozen pipeline, Haiku 5.5 and GPT-6 Luna, per thinking level. Each row counts 138 runs, the 46 cases of the thinking-level study, three runs each. The pair ran on the frozen code with one provider, and its times were measured with eight generation runs at once, beside training jobs. The times of Haiku 5.5 and GPT-6 Luna include starting a new command-line process for each call. Four runs of each of the two ran at once, up to eight together, beside 11 to 18 training jobs at the times checked. Haiku 5.5 has no level none, because the tool that calls it cannot turn its thinking off. Haiku 5.5 at max is not run in full and is left out.}
+\caption[Right RMs per model and thinking level]{Right RMs and median run time of the pair of the frozen pipeline, Haiku 5.5 and GPT-6 Luna, per thinking level. Each row counts 138 runs, the 46 cases of the thinking-level study, three runs each. The pair ran on the frozen code with one provider, and its times were measured with eight generation runs at once, beside training jobs. The times of Haiku 5.5 and GPT-6 Luna include starting a new command-line process for each call. Four runs of each of the two ran at once, up to eight together, beside 11 to 18 training jobs at the times checked. Haiku 5.5 has no level none, because the tool that calls it cannot turn its thinking off. Haiku 5.5 at max ran in two sessions, since a usage limit stopped it after 37 runs.}
 \label{tab:app-res-thinking}
 \end{table}
 
