@@ -647,3 +647,12 @@ and a restart is easier to trust.
   Cards `shop-ladder-{deliver,order-deliver}-grow` grow 3x3 -> 5x5 -> 7x7 inside one run (10 served to move on)
   on the base card's FARM machine; evaluation and the judge play the 7x7 world. Defaults byte-identical. Outside
   the counted 60.
+- 2026-11-23: ARM-FM on no-goal cards (user decision). The 18 counted cards whose ARM-FM machine makes the start
+  state final, so the plan check fails it with "ends the episode before the agent acts", are all tasks with no goal.
+  That is 7 outside the shop and 11 in it, out of 27 ARM-FM machines not built of the counted 60. The authors' ARM-FM
+  handles only tasks with a goal (every mission ends on a +1 goal, `~/src/llms-rm-rl/prompts/make_rm/DoorKey/generator.txt:5`).
+  Our reproduction asks for nonempty accepting `FINAL_STATES`, which end the episode, so these machines stop at
+  once, and no faithful ARM-FM machine exists for them. They stay counted as ARM-FM not learned. The paper explains
+  that ARM-FM cannot express tasks without a goal. There is no rerun and no prompt change; the trial fix on branch
+  `feat/armfm-finals` is not merged. 2026-11-24: for the same reason the ARM-FM baseline on the shop ladder side
+  cards is dropped (user decision); those cards count as ARM-FM not built.

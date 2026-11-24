@@ -134,6 +134,9 @@ tasks, while keeping the generator and critic responsibilities stable.
 - Antigravity is supported through its local `agy` CLI and cached Google account
   subscription. The adapter is headless, schema-constrained, verifies its selected agent,
   rejects tool or subagent execution, and has no permission bypass.
+- `local` is a provider for self-hosted vLLM and Ollama servers. A critic named `<model>@critic`
+  is sent to the server as `<model>`, so the generator and the critic can be one model while their
+  ids still differ.
 - The packaged compiler prompts include the executable subset of `docs/LTLF_TASK_LANGUAGE.md`.
   They do not load or symlink the full document because it also describes candidate
   patterns that are not executable.

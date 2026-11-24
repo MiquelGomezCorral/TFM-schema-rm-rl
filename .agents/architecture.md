@@ -13,7 +13,7 @@ automata composition, and the external MONA executable for LTLf-to-DFA compilati
 - `app/scripts/`: bounded generator/critic orchestration and timed progress reporting.
 - `app/src/models/environment.py`: strict environment Markdown and proposition parsing.
 - `app/src/engines/generic_engine.py`: provider-neutral constrained proposal and critic workflow.
-- `app/src/engines/provider_engines.py`: OpenAI, OpenCode, and no-tools Antigravity CLI adapters.
+- `app/src/engines/provider_engines.py`: OpenAI, OpenCode, local (vLLM, Ollama), and no-tools Antigravity CLI adapters.
 - `app/src/compiler/ltlf.py`: `pylogics` AST to FL-AT syntax serialization.
 - `app/src/compiler/pipeline.py`: per-task proposal and deterministic compilation boundaries.
 - `app/src/compiler/reward_machine.py`: guard parsing and the shared RM structures.
