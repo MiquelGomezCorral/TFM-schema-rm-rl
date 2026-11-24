@@ -1859,9 +1859,13 @@ hatched in the arm's colour = machine not built), plus the corrected MONA panel 
    dots = seeds, error bar = 95% t interval over the 3 seeds (low end clipped at 0). The idle plan is a black mark on the 8
    soft-only cards only (the 12 others have none). ARM-FM appears where it trained (8 of the 20, 1 of the 8
    soft-only).
-4. `fig-res-thinking`: right machines of 138 runs against the median generation seconds, one point per thinking
-   level: none 105 at 3.9 s, low 134 at 12.05 s, medium 136 at 17.6 s, high 138 at 20.35 s, max 138 at 88.1 s (Wilson
-   intervals; log x axis).
+4. `fig-res-thinking`: right machines of 138 runs against the median generation seconds, one point per model and
+   thinking level, 14 points (Wilson intervals; log x axis; rows from `other-llms-by-level/data/levels.csv`, marks in
+   `data/thinking.csv`). Frozen pipeline pair: none 105 at 3.9 s, low 134 at 12.05 s, medium 136 at 17.6 s, high 138 at
+   20.35 s, max 138 at 88.1 s. Haiku 5.5: low 132 at 10.35 s, medium 134 at 11.4 s, high 137 at 14.1 s, max 138 at
+   111.2 s. GPT-6 Luna: none 94 at 18.85 s, low 89 at 18.15 s, medium 100 at 19.75 s, high 134 at 21.7 s, max 137 at
+   32.1 s. Filled (no other point at least as fast and as often right): the pair at none and high, Haiku 5.5 at low,
+   medium and high.
 5. `fig-res-ex-machines`: the machines of the three example cards (DoorKey, Blocked box = `tpl-not-co-existence-soft-1-goal`,
    Box carry = `cx-box-carry`), FARM beside ARM-FM, one arrow per pair of states with its reward, or `mixed` when its
    transitions pay differently, and `(x n)` when it holds more than one transition. No propositions.

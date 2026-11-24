@@ -44,6 +44,7 @@ THINKING_LABELS = {  # (series, level): (anchor, hang, shift in pt); see draw.fi
     ("Haiku 5.5", "low"): ("south east", "point", (-3, 3)),
     ("Haiku 5.5", "medium"): ("south", "high", (0, 2)),
     ("Haiku 5.5", "high"): ("south", "high", (8, 2)),
+    ("Haiku 5.5", "max"): ("south", "point", (0, 5)),
     ("GPT-6 Luna", "none"): ("east", "point", (-8, 0)),
     ("GPT-6 Luna", "low"): ("east", "point", (-5, 0)),
     ("GPT-6 Luna", "medium"): ("west", "point", (6, 0)),
