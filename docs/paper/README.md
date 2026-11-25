@@ -1861,7 +1861,8 @@ hatched in the arm's colour = machine not built), plus the corrected MONA panel 
    soft-only).
 4. `fig-res-thinking`: right machines of 138 runs against the median generation seconds, one point per model and
    thinking level, 14 points (Wilson intervals; log x axis; rows from `other-llms-by-level/data/levels.csv`, marks in
-   `data/thinking.csv`). Frozen pipeline pair: none 105 at 3.9 s, low 134 at 12.05 s, medium 136 at 17.6 s, high 138 at
+   `data/thinking.csv`; the cluster models of that file are left out, their times come from one GPU running 8 RMs at
+   once). Default pair (the frozen pipeline's DeepSeek V4.1 Flash + GLM 5.3 Flash): none 105 at 3.9 s, low 134 at 12.05 s, medium 136 at 17.6 s, high 138 at
    20.35 s, max 138 at 88.1 s. Haiku 5.5: low 132 at 10.35 s, medium 134 at 11.4 s, high 137 at 14.1 s, max 138 at
    111.2 s. GPT-6 Luna: none 94 at 18.85 s, low 89 at 18.15 s, medium 100 at 19.75 s, high 134 at 21.7 s, max 137 at
    32.1 s. Filled (no other point at least as fast and as often right): the pair at none and high, Haiku 5.5 at low,
@@ -2293,15 +2294,28 @@ the freeze `809dfe3` (260 of 260 FARM, 143 of 152 ARM-FM machines of the frozen 
 
 ### Other LLMs by thinking level (`other-llms-by-level/`), 2026-11-24
 
-First cut of the level benchmark for Haiku 5.5 and GPT-6 Luna beside the production pair: right of 138 with 95% Wilson
-bars against median seconds per RM, one row per (model, level) in `data/levels.csv`, and how each model's time was
-measured. See `other-llms-by-level/README.md`; rerun: `check/build.py`, then `check/figure.py`.
+The level benchmark for the production pair (DeepSeek V4.1 Flash writes, GLM 5.3 Flash checks), GPT-6 Luna, Haiku 5.5,
+Muse Glimmer 30B, Gemma 4 31B, Qwen3.8 27B and gpt-oss-120b (these four served by vLLM on the cluster) and Qwen3.5
+9B Q4 (Ollama on the desktop GPU, 2 runs at once): right of 138 with 95% Wilson bars against median seconds per RM, 28
+final rows (one per model and level) in `data/levels.csv`, and how each model's time was measured. Qwen3.8 `max` and
+Llama 3.1 8B are not final yet. See `other-llms-by-level/README.md`; rerun: `check/build.py`, then `check/figure.py`.
 
 ### A rule-only task end to end (`rule-only-example/`), 2026-11-24
 
-Worked example for the thesis section "Reward assignment" (`sec:rule-only`): card `cx-rules-only` (no goal; hard
-`Absence(target_picked_up)`, soft `Absence(key_lost)`, soft `Response(has_door_key, door_open)`), its LTLf, the 3-state
-machine with no final state and its `render-rm --html` graph, the pay of every case split into progress and break or
-well charge (a hard break -100.694, a soft break -1, a promise opened -1 and kept +1), one 6-step trace and the four
-recorded plan traces. Rebuilt from the bundle's clauses on the frozen code (`809dfe3`); no model call. See
-`rule-only-example/README.md`; rerun: `check/rule_only_example.py` (`PYTHONPATH` on a `git archive 809dfe3 app` copy).
+Worked examples for the thesis section "Reward assignment" (`sec:rule-only`, Figure 3.9). Main example: card `shop-siren`
+(no goal; hard `Response(siren_ringing, switch_toggled)`), its LTLf, the 2-state machine with no final state and its
+`render-rm --html` graph, one 6-step trace, the plan check, and the final run (FARM 1.0 on 3 of 3 seeds, no-RM 1 of 3;
+machine states as embeddings, not one-hot). Second example: card `cx-rules-only` (no goal; hard `Absence(target_picked_up)`,
+soft `Absence(key_lost)`, soft `Response(has_door_key, door_open)`), its LTLf, the 3-state machine and graph, the pay of
+every case split into progress and break or well charge (a hard break -100.694, a soft break -1, a promise opened -1 and
+kept +1), one 6-step trace and the four recorded plan traces. Both rebuilt from the bundle's clauses; no model call. See
+`rule-only-example/README.md`; rerun: `check/siren_example.py` (`PYTHONPATH=app`, needs `outputs/runs/`) and
+`check/rule_only_example.py` (`PYTHONPATH` on a `git archive 809dfe3 app` copy).
+
+### Idle-passable tasks: 18 of the 53 no-goal tasks (`idle-passable-tasks/`), 2026-11-25
+
+An agent that only waits, judged by the judge on its 100 test seeds, passes 18 no-goal tasks (17 `templates`, `cx-rules-only`), each at 1.00; every other hard no-goal task scores 0.00, none of the 18 is trained, and the task notes mark 14 of them. See `idle-passable-tasks/README.md`; rerun: `check/idle_tasks.py`.
+
+### Zombie lanes with the environment's reward added (`lanes-env-reward/`), 2026-11-25
+
+FARM trained the two soft-only lane tasks (`tpl-absence-soft-1-nogoal`, `tpl-not-co-existence-soft-1-nogoal`) a second time with `reward_source: both` (its machine plus 1 per zombie killed), 3 runs each, against FARM alone, no RM and the idle agent. With the environment's reward the agents kill 9.63 and 9.54 zombies per episode (FARM alone 7.95 and 9.05) and still breach the top lane 8.65 times per episode, in every episode, as the idle agent does (8.66; the same count on 98 to 100 of 100 episodes of the same seeds). By the thesis rule (every break against idle's every break, user ruling 2026-11-22) all six runs with the environment's reward, all six FARM-alone runs and all six no-RM runs count as learned: FARM breaks fewer than idle overall (17.57 against 26.18 on absence, 5.78 against 7.49 on not-both, through the side lanes), but the top lane is breached as often as idle's. Idle, measured on the judge's 100 reset seeds: 0 kills, 8.66 top-lane and 17.52 side-lane breaches, 0 of 100 episodes without a top-lane breach (matches the thesis table's Idle column). The no-RM runs are shared with `tpl-existence-two-5-nogoal`. The NL task, LTLf and RM of both tasks, the tables with 95% t intervals and the 18 judge files are in `lanes-env-reward/README.md` and `evidence/`; rerun (no model call, no training): `check/lanes_env_reward.py`.

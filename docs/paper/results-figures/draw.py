@@ -260,7 +260,7 @@ def fig_learned(rows, groups, names):
         "height=7cm, xmin=0.45, xmax=5.55, ymin=0, ymax=116, "
         f"xtick={{1,2,3,4,5}}, xticklabels={{{labels}}}, xticklabel style={{align=center}}, xtick style={{draw=none}}, "
         "ytick={0,20,40,60,80,100}, yticklabel={\\pgfmathprintnumber{\\tick}\\%}, "
-        "ylabel={rows learned (95\\% Wilson interval)}, ymajorgrids, major grid style={black!12}, "
+        "ylabel={tasks learned (95\\% Wilson interval)}, ymajorgrids, major grid style={black!12}, "
         "legend style={at={(0.5,1.04)}, anchor=south, legend columns=3}"
     )
     return picture(options, body, left=1.9)
@@ -279,7 +279,7 @@ def fig_soft(panels, xmax):
         swatch(f"fill={ARM_COLOR['no-rm']}, draw={ARM_COLOR['no-rm']}"),
         "\\addlegendentry{no RM}",
         "\\addlegendimage{only marks, mark=*, mark size=1.2pt, mark options={fill=black, draw=white, line width=0.3pt}}",
-        "\\addlegendentry{one seed}",
+        "\\addlegendentry{one run}",
         "\\addlegendimage{only marks, mark=|, mark size=4pt, mark options={line width=1.2pt}}",
         "\\addlegendentry{idle plan}",
     ]

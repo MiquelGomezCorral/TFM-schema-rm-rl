@@ -31,16 +31,16 @@ EXAMPLES = {  # the Results chapter's three example cards: (suite, card id)
     "Box carry": ("box-carry", "cx-box-carry"),
 }
 THINKING_SERIES = {  # model of levels.csv: (name in the legend, colour, pgfplots mark); one each per model
-    "DeepSeek V4.1 Flash + GLM 5.3 Flash": ("Frozen pipeline pair", draw.ARM_COLOR["farm"], "*"),
+    "DeepSeek V4.1 Flash + GLM 5.3 Flash": ("Default pair", draw.ARM_COLOR["farm"], "*"),
     "Haiku 5.5": ("Haiku 5.5", "plotModelB", "square*"),
     "GPT-6 Luna": ("GPT-6 Luna", "plotModelC", "triangle*"),
 }
 THINKING_LABELS = {  # (series, level): (anchor, hang, shift in pt); see draw.fig_thinking
-    ("Frozen pipeline pair", "none"): ("north west", "point", (3, -1)),
-    ("Frozen pipeline pair", "low"): ("north", "low", (5, -2)),
-    ("Frozen pipeline pair", "medium"): ("north", "low", (0, -2)),
-    ("Frozen pipeline pair", "high"): ("south", "point", (0, 5)),
-    ("Frozen pipeline pair", "max"): ("east", "point", (-6, 0)),
+    ("Default pair", "none"): ("north west", "point", (3, -1)),
+    ("Default pair", "low"): ("north", "low", (5, -2)),
+    ("Default pair", "medium"): ("north", "low", (0, -2)),
+    ("Default pair", "high"): ("south", "point", (0, 5)),
+    ("Default pair", "max"): ("east", "point", (-6, 0)),
     ("Haiku 5.5", "low"): ("south east", "point", (-3, 3)),
     ("Haiku 5.5", "medium"): ("south", "high", (0, 2)),
     ("Haiku 5.5", "high"): ("south", "high", (8, 2)),
@@ -75,7 +75,7 @@ ARMFM_LABELS = {  # task labels of Figures 6 and 7, the same as the baseline ent
     "xland-zc": "ZC",
 }
 GROUP_LABEL = {
-    "all": "all rows",
+    "all": "all tasks",
     "step-by-step": "step-by-step",
     "no goal": "no goal",
     "with a goal": "with a goal",
@@ -286,8 +286,8 @@ def build_fig_soft():
         return title.format(len(found)), found
 
     panels = [
-        panel("Soft rules only, no goal ({} cards)", True),
-        panel("With a goal or a hard rule ({} cards): no idle plan", False),
+        panel("Soft rules only, no goal ({} tasks)", True),
+        panel("With a goal or a hard rule ({} tasks): no idle plan", False),
     ]
     xmax = 28
     assert (
@@ -312,9 +312,10 @@ def build_fig_thinking():
     levels = records.thinking_levels()
     print("thinking, right:", [r["right"] for r in levels], "leads", LEADS_RIGHT)
     print("thinking, median s:", [r["median_s"] for r in levels], "leads", LEADS_MEDIAN)
-    rows = records.final_model_levels()
+    # API models only: the cluster models' times come from one GPU running 8 RMs at once (author to decide)
+    rows = [r for r in records.final_model_levels() if r["model"] in THINKING_SERIES]
     assert all(r["runs"] == 138 for r in levels + rows), "every drawn level has all 138 runs"
-    pipeline = [r for r in rows if THINKING_SERIES[r["model"]][0] == "Frozen pipeline pair"]
+    pipeline = [r for r in rows if THINKING_SERIES[r["model"]][0] == "Default pair"]
     assert [(r["level"], r["right"], r["median_s"]) for r in pipeline] == [
         (r["level"], r["right"], round(r["median_s"], 2)) for r in levels
     ], "levels.csv and the records disagree on the frozen pipeline"
