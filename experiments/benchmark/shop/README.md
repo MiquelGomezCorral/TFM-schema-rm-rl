@@ -151,6 +151,22 @@ FARM serves only in the 3x3 shop (rungs 1 and 3; 0 served at 5x5, 7x7 and 8x8). 
 ]
 ```
 
+## Two jobs at once, with a curriculum (2026-11-25)
+
+User, 2026-11-25: "if we cannot learn three things at the same time, at least see if we can get two". Each task pairs a serving job with one hard part; the agent first learns the serving job without the hard part, then the hard part is switched on. 16 cards `shop-two-<task>-<shop>` (`train` false, not among the counted 60; `bundle_of` the task's machine card, same task text and clauses; cards built by `plans/farm-final-20261119/shop-two-20261125/build_cards.py`):
+
+| Task | Serving job | Hard part | Machine card | Final environment (`env_kwargs` over the card defaults) | Hard part off in the first stage |
+|---|---|---|---|---|---|
+| `serve-falls` | deliver | food falls | `shop-ladder-deliver` | `order_needed`, `cooking_needed`, `siren` false | `slip_chance: 0` |
+| `serve-siren` | deliver | siren, no falls | `shop-ladder-deliver-siren` | `order_needed`, `cooking_needed` false, `slip_chance: 0` | `siren: false` |
+| `full-falls` | order, cook, deliver | food falls, no siren | `shop-serve` | `siren` false | `slip_chance: 0` |
+| `full-siren` | order, cook, deliver | siren, no falls | `shop-full` | `slip_chance: 0` | `siren: false` |
+
+- Shops `3x3`, `5x5`, `7x7` (`area` in the final environment) and `grow`. A fixed-size card has one stage (the hard part off at that size), then plays the final environment. A grown card has three: 3x3 with the hard part off, 3x3 with it on, 5x5 with it on, then the final 7x7. `siren` is read at every reset like `area` and `slip_chance`, so a stage may switch it off and on (`shop.py` `_plan_events`).
+- Stage switch: the grid's rule (Curriculum above), computed for each stage's environment: 60% of the scripted worker's mean served (rounded down to 0.1), `caught` 0.9 when the stage has falls, `silenced` 0.9 when it has the siren. The thresholds are in each card's `env_stages`; the scripted means of the worlds the grid did not measure are in `plans/farm-final-20261119/shop-two-20261125/scripted-rates.json`.
+- Evaluation and the judge play the final environment, the whole task at the final size.
+- Runs: `runs-two-farm.yaml` (suite `shop-two`, FARM, RM reward alone) and `runs-two-no-rm.yaml` (suite `shop-two-reward`, the shop's own reward, `rm_state_encoding: embedding` because no machine exists); `ppo-shop.yaml`, 5M steps, seeds 1 to 3, 48 runs each.
+
 ## Contents
 
 - `tasks.json`: the cards. `runs-*.yaml`: the run grid above. `bundles/<arm>/<card-id>/`: the generated machines (made by `generate-suite`, not in this slice except for the proof).
