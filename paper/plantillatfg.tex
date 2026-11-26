@@ -78,6 +78,7 @@
     farm rm/.style={farm data, fill=farmRM, farm icon={\textcolor{cyan!50!black}{\faProjectDiagram}}},
     farm final/.style={farm data, fill=farmFinal, farm icon={\textcolor{green!45!black}{\faCheckCircle}}},
     farm group/.style={draw=gray!60, rounded corners=4pt, fill=gray!6, inner sep=7pt},
+    farm frame/.style={draw=black!55, line width=0.6pt, rounded corners=5pt, inner xsep=5pt, inner ysep=4pt},
     farm title/.style={font=\scriptsize\bfseries},
     farm flow/.style={->, semithick},
     farm graph/.style={>={Latex[length=2mm]}, initial text=, font=\small, every state/.style={minimum size=9mm, inner sep=1pt}},
@@ -230,12 +231,13 @@ I would like to thank my tutor, Eva Onaindía De La Rivaherrera. Eva helped me a
     \item[Labelling function] The function that reads the environment at every step and returns the propositions that hold, which the RM follows.
     \item[LARM] Language-Aligned Reward Machine, the output of ARM-FM: an RM, the code of its labelling function and a plain-language description of each state.
     \item[Learned] A task counts as learned for a method when at least two of its runs pass, which a run does when 0.8 or more of its judged episodes succeed. A task with no goal and only soft rules is compared with an idle agent (Section~\ref{sec:eval-learned}). A task whose RM was not built counts as not learned.
-    \item[Loop that pays] A cycle of transitions whose rewards add up to more than zero, so that an agent can collect reward by going round it without doing the task.
     \item[LTL and LTLf] Linear Temporal Logic, a logic of properties over sequences of states. LTLf reads the same formulas over finite sequences, such as an episode.
     \item[Method] One of the ways of building RMs or of training that the evaluation compares, FARM and ARM-FM in the generation experiment, and these two and training with no RM (shown as ``no RM'' in tables and figures) in the training experiment.
     \item[Proposition] A fact about the environment that is true or false at each step, such as \texttt{has\_key}. The labelling function reports which propositions hold.
     \item[Re-arming and folding] Two ways in which FARM handles a soft rule. A re-armed soft rule watches for the next break after each one, so every break costs again; a folded soft Absence adds no state to the RM, and its break becomes a loop that costs reward.
+    \item[Reward farming] An agent collecting reward again and again without doing the task, for example by going round a rewarding loop.
     \item[Reward Machine (RM)] A finite-state machine that reads which propositions hold at each step, moves between its states and pays a reward on each transition.
+    \item[Rewarding loop] A cycle of transitions whose rewards add up to more than zero, so that an agent can collect reward by going round it without doing the task.
     \item[Rewording] The same task, said in other words.
     \item[Run] One instance of an experiment on a task. In the generation experiment it is one build of an RM for one wording of the task, and in the training experiment one training of an agent on the task from its own random start.
     \item[Scripted plan] A program of commands written in advance for a task: one solves the task, others each break a named rule, and an idle one only waits.
@@ -243,6 +245,7 @@ I would like to thank my tutor, Eva Onaindía De La Rivaherrera. Eva helped me a
     \item[Stage] One event still needed to finish the task. Every state of an RM that FARM builds owes a number of stages, and progress pays as that number falls.
     \item[Task] In the evaluation, a task of the benchmark, stored with the answers accepted for it, its rewordings and its scripted plans. A task trained again under a second setting counts as a task of its own.
     \item[Task schema] The clauses of a task with the propositions left open. Tasks of one schema get RMs of one shape, with the names exchanged.
+    \item[Temperature] The setting of a language model that controls how random its output is. At zero, the model takes its most likely output at every step.
     \item[Template] One of the eight fixed patterns of IBM nl2ltl, taken from Declare, such as Existence, Precedence or Absence. Each has a fixed LTLf formula in which only the propositions change.
     \item[Thinking level] How much a model reasons before it answers, from none to max. FARM uses max by default.
     \item[Well] The one rejecting state of an RM that FARM builds, which an RM may lack. Entering it ends the episode. An edge leads to it when a step breaks a hard clause or, in a task with a hard goal, leaves the task impossible to finish, and each such edge carries its own price.
@@ -386,51 +389,69 @@ In automated planning, a plan is a sequence of actions that takes a system from 
 
 \section{Critique of the state of the art}
 \label{sec:critique}
-The methods reviewed above leave several problems open. The four that this section examines concern ARM-FM, the method that this thesis compares against. 
+The methods reviewed above leave several problems open. The four problems that this section examines concern ARM-FM, the method that this thesis compares against. 
 
 The tasks that ARM-FM is evaluated on are narrow, its generation is neither consistent nor structured, its RMs partially depend on a human to verify them, and its exact outputs cannot be reproduced.
 
 \subsection{Narrow task variety}
-The tasks that ARM-FM evaluates are simple in what they ask: most are a list of steps that ends in one goal. Its MiniGrid tasks are long and hard to explore, as the paper stresses \cite[pp.~5, 14]{creus2026armfm}, but what they ask is still such a list. For instance, in DoorKey the agent ``finds a key'', ``unlocks a door'' and ``reaches the goal''; in BlockedUnlockPickup it ``moves a ball out of the way'', ``takes a key'', ``unlocks a door'' and ``picks up a box''; in Craftium it gathers ``wood'', ``stone'', ``iron'' and ``diamond'' in this order; etc.
+The tasks that ARM-FM evaluates are simple in what they ask: most are a list of steps that ends in one goal. 
 
-Each RM the paper prints is a chain of states, one per step, with at most a few edges that skip a step or go back after a loss. Beyond the steps, no task states a rule that must hold throughout the episode, and none separates what must happen from what is only preferable. 
+For instance, in DoorKey the agent ``finds a key'', ``unlocks a door'' and ``reaches the goal''; in BlockedUnlockPickup it ``moves a ball out of the way'', ``takes a key'', ``unlocks a door'' and ``picks up a box''; in Craftium it gathers ``wood'', ``stone'', ``iron'' and ``diamond'' in this order; etc. Only its MiniGrid tasks are long and hard to explore, as the paper stresses \cite[pp.~5, 14]{creus2026armfm}, but what they ask is still such a list. 
 
-\subsection{Inconsistent and unstructured generation}
-Language models do not return the same output on every run, even with the temperature set to zero. Ouyang et al.~\cite{ouyang2025empirical} measured this for ChatGPT on 829 code-generation problems, and the same task can therefore yield different RMs. ARM-FM also puts no fixed structure on what the model writes. The RM is plain text in a format described by the prompt, and the rewards are free numbers.
+Each RM the paper shows is a chain of steps the agent has to follow, beyond that, no task states a rule that must hold throughout the episode, and none separates what must happen from what is only preferable. 
 
-Free rewards allow loops that pay without progress. Proposition~1 of ARM-FM guarantees that optimising the LARM also solves the sparse task, provided the RM has no loop that pays (a cycle whose rewards add up to more than zero) and its final reward is larger than what any run that does not finish collects \cite[p.~21]{creus2026armfm}. The paper describes no automatic check of these conditions. Instead, the critic prompt only asks the model to verify that regressions are penalised, that reward magnitudes do not allow reward hacking and that there are no unintentional loops \cite[p.~27]{creus2026armfm}. 
+\subsection{Inconsistent and unstructured generation of RMs}
+In ARM-FM a language model writes the whole RM with just a few guides, and two things together make this a problem. First, a language model does not return the same output on every run, even with its temperature set to zero, as Ouyang et al.~\cite{ouyang2025empirical} measured for ChatGPT. Second, almost nothing constrains what the model writes. The RM is plain text in a format described by the prompt, and the model chooses every reward value freely. The same task can therefore yield a different RM on every run, and nothing limits how different those RMs can be.
 
-This means the check fully relies on LLM inference, and \textbf{thus is not robust}. In fact, the Meta-World RM printed in the paper breaks the first condition: the cycle $u_0 \to u_1 \to u_2 \to u_0$ pays $+0.20$, $+0.40$ and $-0.40$, a total of $+0.20$ per lap \cite[p.~32]{creus2026armfm}, although the paper states that its LARMs satisfy the property \cite[p.~21]{creus2026armfm}. By contrast, the DoorKey loop that pays $+0.2$ for picking the key up and $-0.2$ for dropping it sums to zero, so it meets the condition because two chosen values cancel, and nothing in the method enforces it.
+Free reward values are a risk, because an agent learns to collect as much reward as it can, whether or not that is what the task asks for. If the rewards around a cycle of the RM add up to more than zero, the agent can go round it again and again and earn reward on every lap without getting any closer to finishing the task. This is called reward farming, and such a cycle is a rewarding loop. ARM-FM's own guarantee, say that an agent which maximises the reward of the RM also solves the original task, but this holds only if the RM has no rewarding loop that allows farming \cite[p.~21]{creus2026armfm}. 
 
-A critic is itself a language model, and language models can state things that are false \cite{huang2025survey}. The survey covers generated text in general, and it warns that methods that rely on a model's self-correction ``may be unreliable'' \cite[Section~5.3.1]{huang2025survey}. A critic's approval is therefore no guarantee either. This is an inference, not a measured result.
+Nothing in ARM-FM enforces this condition. The paper describes no automatic check of it and leaves it to the critic, whose prompt asks the model to look for unintentional loops \cite[p.~27]{creus2026armfm}. The critic is itself a language model, and language models can state things that are false \cite{huang2025survey}, so its approval is \textbf{not a robust check}. The condition does fail in the paper itself. The paper states that its RMs have no rewarding loop \cite[p.~21]{creus2026armfm}, yet the Meta-World RM it prints has a cycle of three transitions that leaves $+0.20$ on every lap \cite[p.~32]{creus2026armfm}.
 
 \subsection{Verification by a human or another model}
 ARM-FM states the limitation itself: human verification during RM generation is a trade-off that presupposes access to human verifiers. The authors add that such verifiers are not strictly required, although they can improve the output, and leave reducing this dependence by exploiting the automaton structure, for example through formal verification, as future work \cite[pp.~9--10]{creus2026armfm}. 
 
-In practice, in 3 of the 7 settings of its Table~3 a human corrected or extended the RM. In one MiniGrid task a human asked for a transition for a dropped key, which the model then added. In another a human advised intermediate rewards, and in Meta-World a human rescaled the reward values \cite[p.~20]{creus2026armfm}. Some others needed no human intervention.
+In practice, 3 of the 7 settings that the paper reports needed a human to correct or extend the RM \cite[p.~20]{creus2026armfm}. In two of them, the RM that the model generated was missing something the task needed. In one MiniGrid task it had no transition for the agent dropping the key after picking it up, and a human had to ask the model to add it. In another its rewards were too sparse, and a human had to advise the model to define intermediate rewards, such as one for crossing a door. In both, the model wrote the change only after a person had pointed out what was missing, which implies the need of an expert reviewing the process.
 
 \subsection{Reproducibility}
 The ARM-FM paper releases no code. Instead, its appendices print the generator and critic prompts, six RMs, the labelling functions of four MiniGrid tasks and the hyperparameters. A public repository of the first author \cite{armfm_code}, which the paper does not reference, adds prompts, generated RMs, labelling code and a training script for four MiniGrid tasks only. This material allows the method to be rebuilt but not its exact outputs, so the ARM-FM baseline of this thesis is a reconstruction whose results may differ from the original ones. The authors did not answer the contact attempts made for further material.
 
 \section{Conclusions and proposed approach}
 \label{sec:proposal}
-Each line of work reviewed in this chapter covers part of the problem. RMs expose the structure of a reward but are built by hand. ARM-FM generates them from language, and its guarantee holds only if the generated RM meets conditions that no automatic step checks. LTLf gives task statements a precise meaning and a route to automata, and planning separates the constraints that must hold from the preferences that only cost.
+Now that the review is presented, two ideas stand out as worth keeping: an RM gives the reward a structure that the learner can use, and ARM-FM lets a language model write the RM, so that no one has to build it by hand. 
 
-Taken as they are, these methods leave three needs open. The first is a reward that captures the whole task as the person states it, with its goal, the order of its steps, its rules and its preferences. The second is that RMs need no expert to check them, and the third is that tasks of the same kind get the same kind of RM. The three subsections below state the aims that follow from these needs. Chapter~\ref{chap:farm} then combines the pieces reviewed above into a method built for these three aims, and says how it meets each one.
+Now, ARM-FM is not yet the final solution. As Section~\ref{sec:critique} shows, three problems in how it writes the RM are still. This thesis takes each problem as an aim.
 
-\subsection{Understanding preferences and temporal relations}
-An RL agent pursues whatever its reward pays for, so the reward is the way a person tells the agent what to achieve \cite{sutton2018reinforcement}. More broadly, AI alignment aims to make AI systems behave in line with human intentions and values \cite{ji2025alignment}. For an RL agent, one part of this aim is a reward that captures the whole task as the person states it, with its goal, the order of its steps, the rules that must not be broken and the preferences to keep when possible.
+\begin{itemize}
+    \item \textbf{Narrow tasks.} The tasks of ARM-FM are lists of steps that end in one goal. The first aim is to capture the whole task, with its order, rules and preferences.
+    \item \textbf{Human verification.} A person or a second model has to check each RM. The second aim is an RM that needs no expert.
+    \item \textbf{Free generation.} The model writes a different RM on every run, with nothing to constrain it. The third aim is that tasks of the same kind get the same kind of RM.
+\end{itemize}
 
-Such a task is rarely a single chain of steps. A person says, in plain language, what to do, in which order, what to do in response to an event and what must never happen. The first aim is to catch these relations of order, response and prohibition, together with the person's preferences, in a shape from which a reward can be built. That needs a translator from human intent into a language that encodes such relations exactly, a part that a foundation model can play.
+To meet these aims, this thesis uses the other two lines of work reviewed: LTLf and the hard and soft constraints of planning. The three subsections below present one aim each, and Chapter~\ref{chap:farm} presents the method built for them.
 
-Each of these statements is either hard or soft. A hard statement must hold for the task to count as done. A soft statement is a preference: the agent may give it up, at a cost. This split between constraints and preferences comes from planning (Section~\ref{sec:sota-preferences}), and the aim is to carry it into RMs.
+\subsection{Broader tasks, with rules and preferences}
+The tasks that ARM-FM is evaluated on are lists of steps that end in one goal (Section~\ref{sec:critique}). A person may want to tell the agent more than that, because a task is rarely a single chain of steps. 
+
+A person says, in plain language, what to do, in which order, what to do in response to an event and what must never happen. Thus, the first aim is a reward that captures the whole of such a task. This matters because an RL agent pursues whatever its reward pays for, so the reward is the way a person tells the agent what to achieve \cite{sutton2018reinforcement}. 
+
+More broadly, AI alignment can be brought into the table, given that it aims to make AI systems behave in line with human intentions and values \cite{ji2025alignment}. Again, alignment is a reward that captures the whole task as the person states it.
+
+Capturing the whole task means catching these \textbf{relations of order}, \textbf{response and prohibition}, together with the person's \textbf{preferences}, in a \textbf{shape from which a reward can be built}. That needs a translator from human intent into a language that encodes such relations exactly, a part that a foundation model can play.
+
+It also means keeping apart what must hold and what is only preferred. Each statement of the task is either hard or soft, where a hard statement must hold for the task to count as done, while a soft statement is a preference, which the agent may give up at a cost. This split between constraints and preferences comes from planning (Section~\ref{sec:sota-preferences}), and the aim is to carry it into RMs.
 
 \subsection{RMs without a human expert}
-ARM-FM relies on a human or on a second model to verify its RMs, and its authors name human verification as a trade-off of their approach (Section~\ref{sec:critique}). The second aim is generation without a human expert: a person states the task, and no one who knows RMs or reinforcement learning has to check or repair the RM. The properties that make an RM safe to train on, such as having no loop that pays, should follow from how the RM is built, and not from a reviewer who may miss them.
+ARM-FM relies on a human or on a second model to verify its RMs, and its authors name human verification as a trade-off of their approach (Section~\ref{sec:critique}). As we stated, the second aim is generation without a human expert. A person states the task, and no one who knows RMs or reinforcement learning has to check or repair the output RM.
+
+That is possible only if an RM is safe to train on without being reviewed. The properties that make it safe, such as having no rewarding loop, should therefore \textbf{follow from how the RM is built}, and not from a reviewer who may miss them.
 
 \subsection{Same kind of task, same kind of RM}
 \label{sec:schemas}
-A language model that writes an RM freely may write a different one on every run (Section~\ref{sec:critique}). The third aim, instead, is that tasks of one kind share a schema, the form of the task with its objects left open, and that one schema gives one kind of RM. For example, \textit{gather wood, then stone, then iron} and \textit{attend the client, prepare the order, then serve it} share the schema ``first $a$, then $b$, then $c$''. Table~\ref{tab:schemas} gives both with their formulas. Their RMs should then have the same shape, with only the objects exchanged, so that the result is predictable and the variability of the language model is confined to how it reads the task. This is an aim, not a guarantee. Tasks of one kind get one kind of RM only when the model reads them into the same schema. Chapter~\ref{chap:results} measures the closest case, whether the rewordings of one task get the same RM (Section~\ref{sec:res-machines}).
+A language model that writes an RM freely may write a different one on every run (Section~\ref{sec:critique}). Since that is a problem inherent to LLMs, the third aim tries to attack it by making tasks of the same kind receive the same kind of RM, so that the result is predictable.
+
+Two tasks are of the same kind when they share a \texttt{schema}. For example, \textit{gather wood, then stone, then iron} and \textit{attend the client, prepare the order, then serve it} share the schema ``first $a$, then $b$, then $c$''. Their RMs should then have the same shape, with only the objects exchanged.
+
+The one thing that can still vary is how the language model reads the task, so this is an aim and not a guarantee. Tasks of the same kind get the same kind of RM only when the model reads them into the same schema. Chapter~\ref{chap:results} measures the closest case, whether the rewordings of one task get the same RM (Section~\ref{sec:res-machines}).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -440,26 +461,21 @@ A language model that writes an RM freely may write a different one on every run
 \chapter{FARM}
 \label{chap:farm}
 % \section{Introduction and motivation}
-This chapter describes the process by which FARM (A Formal Approach to Reward Machine Generation) turns a task written in plain language into an RM. The implementation details, with the list of what FARM adds to the tools it builds on, are in Appendix~\ref{app:implementation}. FARM replaces only the generation of the RM in ARM-FM (Section~\ref{sec:sota-armfm}). The rest of the ARM-FM pipeline stays as it is.
-
-Each aim of Section~\ref{sec:proposal} rests on one tool:
-\begin{itemize}
-    \item A language model reads the task and the environment description, from which captures the whole task as the person states it, with its goal, the order of its steps, its rules and its preferences.
-    \item The Declare templates of nl2ltl, an IBM tool that goes from natural language to LTLf, guide the LLM. It picks a template and fills it to form a clause, and the template writes the formula.
-    \item LTLf encodes these statements as formulas over finite traces (Section~\ref{sec:sota-ltl}).
-    \item The Formal Language--Automaton Transmogrifier (FL-AT) and MONA, two tools for logic and automata, convert each formula into an automaton and combine the automata into one product.
-    \item FARM's post-process builds the RM from the chosen clauses alone.
-    \item A second language model, the critic, reviews the clauses against the task.
-\end{itemize}
-Together these tools form the pipeline of FARM, whose five steps use them in this order.
+This chapter describes the process by which FARM (A Formal Approach to Reward Machine Generation) turns a task written in plain language into an RM. More implementation details, with the list of what FARM adds to the tools it builds on, are in Appendix~\ref{app:implementation}.
+% Each aim of Section~\ref{sec:proposal} rests on one tool:
+% \begin{itemize}
+%     \item A language model reads the task and the environment description, from which captures the whole task as the person states it, with its goal, the order of its steps, its rules and its preferences.
+%     \item The Declare templates of nl2ltl, an IBM tool that goes from natural language to LTLf, guide the LLM. It picks a template and fills it to form a clause, and the template writes the formula.
+%     \item LTLf encodes these statements as formulas over finite traces (Section~\ref{sec:sota-ltl}).
+%     \item The Formal Language--Automaton Transmogrifier (FL-AT) and MONA, two tools for logic and automata, convert each formula into an automaton and combine the automata into one product.
+%     \item FARM's post-process builds the RM from the chosen clauses alone.
+%     \item A second language model, the critic, reviews the clauses against the task.
+% \end{itemize}
+% Together these tools form the pipeline of FARM, whose five steps use them in this order.
 
 \section{Global overview of the pipeline}
 \label{sec:overview}
-FARM turns a natural-language task into an RM in five steps: task interpretation (Step~1), LTLf to DFA (Step~2), the product of the DFAs (Step~3), the post-process (Step~4) and the critic (Step~5). A language model chooses clauses, fixed tools compile them into one automaton, a post-process adds the rewards and the structure of the task, and a second model reviews the result.
-
-Steps 2 to 4 form the \textbf{compiler}. They call no language model and read only the chosen clauses and the run settings, which makes the compiler the deterministic part of the pipeline. The two language models of Steps 1 and 5 are therefore the only source of variability. 
-
-Figure~\ref{fig:pipeline} draws the pipeline, with the data each step takes and returns and the tool that runs it.
+FARM turns a natural-language task into an RM in five steps: task interpretation (Step~1), LTLf to DFA (Step~2), the product of the DFAs (Step~3), the post-process (Step~4) and the critic (Step~5). Figure~\ref{fig:pipeline} draws the pipeline, with the data each step takes and returns and the tool that runs it.
 
 \begin{figure}[H]
 \centering
@@ -475,9 +491,9 @@ Figure~\ref{fig:pipeline} draws the pipeline, with the data each step takes and 
 \node[farm tool, farm step=3]   (flat) at (5,-2.5)  {FL-AT};
 \node[farm rm]                  (pm)   at (5,-3.75) {Product automaton};
 % Step 4: the main steps of FARM's post-process
-\node[farm tool] (hard)  at (10,0)     {Apply hard clauses};
-\node[farm tool] (merge) at (10,-1.25) {Merge start state};
-\node[farm tool] (rew)   at (10,-2.5)  {Assign rewards};
+\node[farm tool] (hard)  at (10,0)     {Final states and the well};
+\node[farm tool] (merge) at (10,-1.25) {Merging the start state};
+\node[farm tool] (rew)   at (10,-2.5)  {Reward assignment};
 \node[farm rm]   (rm)    at (10,-3.75) {RM};
 % Step 5: the critic
 \node[farm llm, farm step=5] (crit) at (5,-5.6) {Critic};
@@ -492,8 +508,11 @@ Figure~\ref{fig:pipeline} draws the pipeline, with the data each step takes and 
     \node[farm group, fit=(hard)(rm)]    (g3) {};
 \end{scope}
 \node[farm title, above=0pt of g1.north] {IBM nl2ltl};
-\node[farm title, above=0pt of g2.north] {MONA and FL-AT};
-\node[farm title, above=0pt of g3.north] {FARM post-process};
+\node[farm title, above=0pt of g2.north] (t2) {MONA and FL-AT};
+\node[farm title, above=0pt of g3.north] (t3) {FARM post-process};
+% The compiler: Steps 2 to 4
+\node[farm frame, fit=(g2)(g3)(t2)(t3)] (comp) {};
+\node[farm title, above=0pt of comp.north] {Compiler};
 \node[farm number] at (g3.north west) {4};
 % Flow
 \draw[farm flow] (task.south) -- (task.south |- gen.north);
@@ -514,9 +533,24 @@ Figure~\ref{fig:pipeline} draws the pipeline, with the data each step takes and 
 \node[farm rm, text width=2.4cm, minimum height=9mm] at (8.7,-8.2) {Intermediate automaton or RM};
 \node[farm final, text width=1.9cm, minimum height=7mm] at (11.2,-8.2) {Final RM};
 \end{tikzpicture}
-\caption[The FARM pipeline]{The FARM pipeline. Rectangles are processes and slanted boxes are data. The colour and the corner icon give the kind of each box, as in the legend, and are the same in every diagram of this chapter. A stack stands for one item per clause.}
+\caption[The FARM pipeline]{The FARM pipeline. Rectangles are processes and slanted boxes are data. The colour and the corner icon give the kind of each box, as in the legend, and are the same in every diagram of this chapter. A stack stands for one item per clause of the step 1.1 output.}
 \label{fig:pipeline}
 \end{figure}
+
+
+In short, each step does the following.
+
+\begin{itemize}
+    \item \textbf{Step 1, task interpretation and formalisation.} A language model reads the task and states it as clauses, short statements with a fixed form, and each clause gives one LTLf formula.
+    \item \textbf{Step 2, LTLf to DFA.} Each formula becomes an automaton (DFA).
+    \item \textbf{Step 3, the product.} The automata of all clauses are combined into one.
+    \item \textbf{Step 4, the post-process.} FARM adds the rewards and tweaks the RM.
+    \item \textbf{Step 5, the critic.} A second language model reviews the RM, and accepts it or sends it back with comments.
+\end{itemize}
+
+FARM replaces only the generation of the RM in ARM-FM (Section~\ref{sec:sota-armfm}) whith the above steps, and reuses the rest of the ARM-FM pipeline (Section~\ref{sec:output-format}).
+
+Notice that Steps 2 to 4 form the \textbf{compiler}. They call no language model and read only the chosen clauses and the run settings, which makes the compiler the deterministic part of the pipeline. The two language models of Steps 1 and 5 are therefore the only source of variability. 
 
 % \begin{table}[H]
 % \centering
@@ -621,7 +655,7 @@ NotCoExistence$(a,b)$ & $\mathrm{F}\,a \rightarrow \neg\,\mathrm{F}\,b$ & if $a$
 
 The formulas use four operators (Section~\ref{sec:sota-ltl}): $\textbf{F}\,a$ means that $a$ holds at some step from now on, $\textbf{G}\,a$ that $a$ holds at every step from now on, $\textbf{X}\,a$ that $a$ holds at the next step, and $a\ \textbf{U}\ b$ that $b$ holds at some step and $a$ holds at every step before it.
 
-Response and Precedence are easy to confuse, and both allow the same step. Response$(a,b)$ lets $b$ appear without $a$, but \text{after} an $a$ a $b$ must follow, at the same step or later. Precedence$(a,b)$ lets $a$ appear without $b$, but a $b$ needs an $a$ \text{before} it or at the same step.
+Response and Precedence are easy to confuse, and both allow the same step. Response$(a,b)$ lets $b$ appear without $a$, but \textbf{after} an $a$ a $b$ must follow, at the same step or later. Precedence$(a,b)$ lets $a$ appear without $b$, but a $b$ needs an $a$ \textbf{before} it or at the same step.
 
 \subsection{Goals and rules}
 A clause is a \textbf{goal} if it asks for something to happen, and a \textbf{rule} if it only limits what may happen. One test tells them apart: after a step in which \textbf{nothing happens}, that is, no proposition holds, a goal is not satisfied yet, while a rule is. 
@@ -643,11 +677,11 @@ IBM's default prompt is a few-shot list that offers five of the eight templates,
     \item On a retry, the comments of the critic.
 \end{itemize}
 
-The propositions come from the environment description, so the same LLM prompt serves any environment.
+The environment description is a Markdown file written once for each environment, in plain words and with no code. It says what the environment contains and what the agent can do in it, what ends an episode and what can and cannot happen, and it lists the propositions with the meaning of each. It also gives one solved episode step by step and a few example tasks. The propositions come from this file, so the same LLM prompt serves any environment.
     
 Three instructions shape the answer. 
 \begin{enumerate}
-    \item A step the task asks for gets its own goal, a hard Existence, unless a hard order already puts it before a later step. A single ``do $a$'' gets one, and so does the last step of an order; the earlier steps need none, since the order makes them come first. Without that goal nothing makes the agent take the step, because a rule holds while nothing happens.
+    \item Every step the task asks for needs a goal of its own, a hard Existence. A rule holds while nothing happens, so without a goal nothing makes the agent take the step. Only a step that a hard Precedence already puts before a later step needs none, because the Precedence makes it come first. A task with a single step therefore gets one goal, and an ordered task gets one for its last step.
     \item When the task states an order, the order stays as a Precedence even if the environment already forces it, so the RM follows the instruction and not one layout of the environment.
     \item When the task states no order, none is added. Appendix~\ref{app:implementation} gives the prompt text and the form of an ordered task.
 \end{enumerate}
@@ -708,7 +742,7 @@ Absence(\texttt{key\_lost}), soft & $\neg\,\mathrm{F}\,\texttt{key\_lost}$ \\ \b
 
 \section{Step 2 · LTLf to DFA}
 \label{sec:step2}
-The second step turns the LTLf formula of every clause into a deterministic finite automaton (DFA) that accepts exactly the traces satisfying it (Section~\ref{sec:sota-ltl}). FL-AT translates the formula for MONA, and MONA returns the automaton (Figure~\ref{fig:step2}).
+The second step, the first of the compiler, turns the LTLf formula of every clause into a deterministic finite automaton (DFA) that accepts exactly the traces satisfying it (Section~\ref{sec:sota-ltl}). FL-AT translates the formula for MONA, and MONA returns the automaton (Figure~\ref{fig:step2}).
 
 \begin{figure}[H]
 \centering
@@ -726,23 +760,28 @@ The second step turns the LTLf formula of every clause into a deterministic fini
 \subsection{FL-AT and MONA}
 FL-AT, the Formal Language--Automaton Transmogrifier \cite{transmogrifier2020}, writes each LTLf formula in monadic second-order logic over finite strings, the input language of MONA. In that encoding a temporal operator becomes a quantifier over the positions of the trace, and a proposition becomes the set of positions where it holds. MONA \cite{henriksen1995mona} decides a formula of this logic by building the smallest DFA for it.
 
-The fork of FL-AT that FARM uses runs MONA as a separate process and reads back the automaton that MONA prints: its initial state, its accepting states and its transitions, each with a guard over the propositions. The reading is strict, and a malformed automaton stops the build (Appendix~\ref{app:implementation}). The fork changes two things: it drops MONA's first state when that state is redundant (see next at Section~\ref{sec:redundant}), and it returns, for every state of the product built in Step~3, the clause states it combines.
+FL-AT runs MONA as a separate process and reads back the automaton that MONA prints: its initial state, its accepting states and its transitions, each with a guard over the propositions. The reading is strict, and a malformed automaton stops the build (Appendix~\ref{app:implementation}). FARM changes two things in FL-AT, which now drops MONA's first state when that state is redundant (see next at Section~\ref{sec:redundant}) and returns, for every state of the product built in Step~3, the clause states it combines.
 
 \subsection{Redundant states in MONA's automata}
 \label{sec:redundant}
 MONA returns the smallest automaton for each formula, but two of its states do no work in an RM. Figure~\ref{fig:mona-stages} in Appendix~\ref{app:mona} shows both for the clause Absence(\texttt{key\_lost}), $\neg\,\mathrm{F}\,\texttt{key\_lost}$, but they are described here.
 
-\paragraph{A pass-through first state.} MONA's automaton can begin with a state that every input leaves for the same next state. In panel~(a), S0 moves to S1 whatever happens. The FL-AT fork removes such a state and starts the automaton at its successor, which gives panel~(b). To be safe, it removes the state only when it is not accepting, has one successor, is never entered again and has transitions that cover every input exactly once. Otherwise the automaton stays as MONA made it.
+\paragraph{A pass-through first state.} MONA's automaton can begin with a state that every input leaves for the same next state. In panel~(a), S0 moves to S1 whatever happens. FARM removes such a state and starts the automaton at its successor, which gives panel~(b). To be safe, it removes the state only when it is not accepting, has one successor, is never entered again and has transitions that cover every input exactly once. Otherwise the automaton stays as MONA made it.
 
-\paragraph{A start for a run with no steps.} In a rule clause, MONA keeps a separate start for the moment before the first step. In panel~(b), S1 is that start. It moves exactly like S2, the state that a step without \texttt{key\_lost} leads to, and differs from S2 only in that it does not accept, because the automaton does not accept a run with no steps. An episode always has at least one step, so the difference never matters, and Step~4 merges S1 into S2 (Section~\ref{sec:start-merge}), which gives panel~(c).
+\paragraph{A start for a trace with no steps.} In a rule clause, MONA keeps a separate start for the moment before the first step. In panel~(b), S1 is that start. It moves exactly like S2, the state that a step without \texttt{key\_lost} leads to, and differs from S2 only in that it does not accept, because the automaton does not accept a trace with no steps. An episode always has at least one step, so the difference never matters, and Step~4 merges S1 into S2 (Section~\ref{sec:start-merge}), which gives panel~(c).
 
 \subsection{Running examples: from formulas to DFAs}
 \label{sec:run-step2}
-The three running examples have seven clauses but only four templates, and clauses of the same template give automata of the same shape. Figure~\ref{fig:run-dfas} draws one automaton per template: Existence(\texttt{at\_goal}), which all three examples share, Absence(\texttt{key\_lost}) from the \runex{careful key}, Precedence(\texttt{has\_key}, \texttt{door\_open}) from the \runex{sequence} and ChainResponse(\texttt{key\_lost}, \texttt{has\_key}) from the \runex{dropped key}. The second Precedence of the \runex{sequence} differs from the first only in its propositions. 
+The three running examples have seven clauses but only four templates, and clauses of the same template give automata of the same shape. Figure~\ref{fig:run-dfas} therefore draws one automaton per template. 
 
-An arrow without a source marks the initial state and a double circle an accepting state. Each edge carries its guard, where $\top$ stands for any input.
+A double circle marks an accepting state, where the clause holds for the steps taken so far. A state whose only edge is a loop marked $\top$, which stands for any input, is never left, so the clause is met or broken there for good. S1 is always the start. In panels~(b) to~(d) it is the ``no step yet'' start of Section~\ref{sec:redundant}, which moves like S2, so these three can be read from S2.
 
-In every automaton S1 is the start. Existence waits in S1 until \texttt{at\_goal} holds and then accepts in S2. Absence accepts in S2 while the key is kept and falls at the first loss into S3, which no input leaves. Precedence accepts in S2 while neither event has happened and in S3 once the key has come, before the door or with it; opening the door without the key leads to S4, which no input leaves. ChainResponse accepts in S2 while nothing is owed; a lost key moves it to S3, where the key must be back at the next step, and a step without \texttt{has\_key} leads to S4, which no input leaves. In the three rule automata S1 is the ``no step yet'' start of Section~\ref{sec:redundant}. It moves like S2 but does not accept.
+\begin{itemize}
+    \item \textbf{Existence, panel~(a).} The automaton waits in S1 until the agent is at the goal. It then moves to S2 and stays there, with the clause met for good.
+    \item \textbf{Absence, panel~(b).} The automaton stays in S2 while the key is kept. The first loss of the key sends it to S3, where the clause is broken for good.
+    \item \textbf{Precedence, panel~(c).} The automaton stays in S2 while the agent has neither picked up the key nor opened the door. Picking up the key sends it to S3, where the clause is met for good, whatever happens to the door afterwards. Opening the door without the key sends it to S4, where the clause is broken for good.
+    \item \textbf{ChainResponse, panel~(d).} The automaton stays in S2 while the key is not lost. A lost key sends it to S3, where the key must be back at the next step. With the key back it returns to S2. Otherwise it falls to S4, where the clause is broken for good.
+\end{itemize}
 
 \begin{figure}[H]
 \centering
@@ -793,7 +832,7 @@ In every automaton S1 is the start. Existence waits in S1 until \texttt{at\_goal
 
 \section{Step 3 · Multiply DFAs into one automaton}
 \label{sec:step3}
-The third step combines the automata of all clauses into one (Figure~\ref{fig:step3}). FL-AT builds their synchronous product, the construction that Camacho et al.~\cite{camacho2019ltl} use for combined specifications. A product state holds one state of each clause DFA, and every step moves all of them at once. 
+Still inside the compiler, the third step combines the automata of all clauses into one (Figure~\ref{fig:step3}). FL-AT builds their synchronous product, the construction that Camacho et al.~\cite{camacho2019ltl} use for combined specifications. A product state holds one state of each clause DFA, and every step moves all of them at once. 
 
 \begin{figure}[H]
 \centering
@@ -813,7 +852,7 @@ The idea of the product is to run the clause automata side by side. Each automat
 
 A step of the agent moves every automaton at once, each along the edge that the events of the step choose in it. An edge of the product is therefore one edge of each automaton, taken together in the same step. Its guard asks for all of their guards to hold, so it joins them with \textit{and}, and it leads to the product state made of their destinations. When two of these guards contradict, as when one asks for \texttt{door\_open} and the other for $\neg\,\texttt{door\_open}$, no step can take both edges, and the product has no such edge.
 
-FL-AT builds the product from its start state, which holds the start state of every automaton. It adds the edges out of that state, then the edges out of every new state they reach, until no new state appears. The product therefore contains only the combinations of states that some run can reach.
+FL-AT builds the product from its start state, which holds the start state of every automaton. It adds the edges out of that state, then the edges out of every new state they reach, until no new state appears. The product therefore contains only the combinations of states that some trace can reach.
 
 The \runex{careful key} example shows each part. Both automata start in S1, so the product starts in p0 = (S1, S1). In S1, Existence has two edges: $\neg\,\texttt{at\_goal}$ stays in S1 and \texttt{at\_goal} goes to S2. Absence has two as well: $\neg\,\texttt{key\_lost}$ goes to S2 and \texttt{key\_lost} to S3. One edge from each gives four combinations, so p0 has four edges. A step that reaches the goal and keeps the key, for instance, takes \texttt{at\_goal} in Existence and $\neg\,\texttt{key\_lost}$ in Absence, so its product edge has the guard $\texttt{at\_goal} \land \neg\,\texttt{key\_lost}$ and leads to p3 = (S2, S2). The other three edges lead to p1 = (S1, S2), where nothing has happened yet, p2 = (S1, S3), where the key is lost, and p4 = (S2, S3), where the goal is reached and the key lost. No guards contradict here, since the two clauses share no proposition. The edges out of p1 to p4 reach no new pair, so the product has the five states of Table~\ref{tab:run-product}. The two automata could form $2 \times 3 = 6$ pairs, but (S2, S1) never occurs, because Absence leaves S1 on the first step and never comes back.
 
@@ -838,14 +877,14 @@ p4 & (S2, S3) & Goal, key lost & 1 \\ \bottomrule
 
 \subsection{Discarded features of FL-AT's product}
 \label{sec:flat-discard}
-FL-AT also prices the product and marks its final states, and FARM replaces both. FARM needs rewards that pay for each step of progress, never pay for going round a loop, and price a broken hard rule apart from a broken preference, and it needs final states that only the hard clauses decide. FL-AT's pricing gives none of these.
+FL-AT also sets the rewards of the product and marks its final states, and FARM replaces both. FARM needs rewards that pay for each step of progress, never pay for going round a loop, and price a broken hard rule apart from a broken preference, and it needs final states that only the hard clauses decide. FL-AT's rewards give none of these.
 
 FL-AT pays each edge one unit for every clause whose DFA accepts after the step. This rewards the agent before the task is done, a simple form of shaping, but it falls short in four ways.
 \begin{enumerate}
-    \item \textbf{It pays for staying, not for progress.} A clause pays on every step it spends accepting, not once when it is met, so a loop through an accepting state keeps paying, and a rule that holds from the start pays the agent for doing nothing. Such a reward is not potential-based shaping, so it can change which behaviour is best \cite{ng1999policy}. The agent may earn more by staying than by finishing. FARM pays for the change in the stages still owed, where a stage is one event still needed (Section~\ref{sec:reward-assignment}), so every loop adds up to zero, and its loop check refuses any RM with a loop that pays (Section~\ref{sec:step4}).
+    \item \textbf{It pays for staying, not for progress.} A clause pays on every step it spends accepting, not once when it is met, so a loop through an accepting state keeps paying, and a rule that holds from the start pays the agent for doing nothing. Such a reward is not potential-based shaping, so it can change which behaviour is best \cite{ng1999policy}. The agent may earn more by staying than by finishing. FARM pays for the change in the stages still owed, where a stage is one event still needed (Section~\ref{sec:reward-assignment}), so every loop adds up to zero, and its loop check refuses any RM with a rewarding loop (Section~\ref{sec:step4}).
     \item \textbf{Progress that completes no clause pays nothing.} A clause pays only once its DFA accepts. In the \runex{sequence} example, taking the key pays the same as a step in which nothing happens, because the Precedence of key and door accepts both before and after it. FARM pays $+1$ for each stage a step closes.
-    \item \textbf{A break has no price of its own.} FL-AT has no hard or soft clauses. Each clause is worth one unit. A broken clause just stops paying, one unit less on that step and on every later one, so the cost of a break depends on the steps left, not on what was broken, and an early break costs more than a late one. Nothing ends the episode either, so after a broken hard rule the agent still collects the units of the other clauses. FARM sends a hard break to the well, a shared rejecting state (Section~\ref{sec:final-well}) that ends the episode with a set charge (Section~\ref{sec:well-charge}), and charges $-1$ for each soft break when it happens (Section~\ref{sec:recurrent}).
-    \item \textbf{The final states follow from the rewards.} FL-AT marks as final the destinations of the edges with the largest reward. A broken preference then stops the task from finishing, and in a task made only of rules every clause already accepts after a step in which nothing happens, so that step would finish the task. FARM marks a state final when every hard clause holds, ignores the soft ones, and gives a task with no hard goal no final state (Section~\ref{sec:step4}).
+    \item \textbf{A break has no price of its own.} Each clause is worth one unit, whatever it states. A broken clause just stops paying, one unit less on that step and on every later one, so the cost of a break depends on the steps left, not on what was broken, and an early break costs more than a late one. Nothing ends the episode either, so after a break the agent still collects the units of the other clauses. FARM gives each break a price of its own, charged at the step it happens, and ends the episode when the task can no longer be completed (Step~4).
+    \item \textbf{The final states follow from the rewards.} FL-AT marks as final the destinations of the edges with the largest reward. A broken preference then stops the task from finishing, and in a task made only of rules every clause already accepts after a step in which nothing happens, so that step would finish the task. FARM sets the final states itself (Section~\ref{sec:final-well}).
 \end{enumerate}
 
 \begin{figure}[H]
@@ -859,7 +898,7 @@ FL-AT pays each edge one unit for every clause whose DFA accepts after the step.
 
 The \runex{careful key} of Figure~\ref{fig:run-product3} shows points 1, 3 and 4; point 2 needs a task with more steps, such as the \runex{sequence}. The loop on p1 pays 1 at every step in which nothing happens, because the Absence clause accepts (point 1). If p3 ended the episode, an agent that idles in p1 until the step limit would earn more than one that reaches the goal early. Losing the key leads to p2, which pays nothing until the goal, so the loss costs more the earlier it happens (point 3). The largest reward is 2, so p3 is the only final state, and p4, the goal reached with the key lost, is not, although the key is only a preference (point 4).
 
-FARM keeps the states and edges of the product, sets the final states from the hard clauses and prices every edge itself (Step~4). 
+FARM keeps the states and edges of the product, sets the final states from the hard clauses and sets the reward of every edge itself (Step~4). 
 
 
 \subsection{Running examples: from DFAs to the product}
@@ -877,21 +916,23 @@ The \runex{careful-key} product result is the one of Table~\ref{tab:run-product}
 
 \section{Step 4 · Post-process}
 \label{sec:step4}
-The fourth step is FARM's own and turns the product into the RM (Figure~\ref{fig:step4}). It prepares the clause automata \textbf{before} FL-AT multiplies them, and \textbf{after} the product it sets the final states and the well plus prices every edge. Hard clauses decide which states are final and which edges go to the well; soft clauses only change what the RM pays.
+The fourth step, the last of the compiler, is FARM's own and turns the product into the RM (Figure~\ref{fig:step4}). It prepares the clause automata \textbf{before} FL-AT multiplies them, and \textbf{after} the product it sets the final states, the well and the reward of every edge. Hard clauses decide which states are final and which edges go to the well; soft clauses only change what the RM pays.
 
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[farm]
 \node[farm items, text width=2.15cm] (dfa)  at (-0.3,0) {Clause DFAs};
-\node[farm tool, text width=2.15cm]  (prep) at (2.75,0) {Label and re-arm the clauses};
-\node[farm tool, farm step=3, text width=2.15cm] (flat) at (5.5,0) {FL-AT};
-\node[farm rm, text width=2.4cm]     (pm)   at (8.4,0)  {Product\\automaton};
-\node[farm tool, text width=2.15cm]  (fold)  at (0,-1.9)    {Fold soft Absence};
-\node[farm tool, text width=2.15cm]  (hard)  at (2.75,-1.9) {Apply hard clauses};
-\node[farm tool, text width=2.15cm]  (merge) at (5.5,-1.9)  {Merge start state};
-\node[farm tool, text width=2.15cm]  (rew)   at (8.25,-1.9) {Assign rewards};
+\node[farm tool, text width=2.15cm]  (lab)  at (2.75,0) {Clause states};
+\node[farm tool, text width=2.15cm]  (prep) at (5.5,0)  {Re-arming\\soft rules};
+\node[farm tool, farm step=3, text width=2.15cm] (flat) at (8.25,0) {FL-AT};
+\node[farm rm, text width=2.4cm]     (pm)   at (11.2,0)  {Product\\automaton};
+\node[farm tool, text width=2.15cm]  (fold)  at (0,-1.9)    {Folding\\soft Absence};
+\node[farm tool, text width=2.15cm]  (hard)  at (2.75,-1.9) {Final states\\and the well};
+\node[farm tool, text width=2.15cm]  (merge) at (5.5,-1.9)  {Merging the\\start state};
+\node[farm tool, text width=2.15cm]  (rew)   at (8.25,-1.9) {Reward\\assignment};
 \node[farm rm, text width=2.4cm]     (rm)    at (11.2,-1.9) {RM};
-\draw[farm flow] (dfa) -- (prep);
+\draw[farm flow] (dfa) -- (lab);
+\draw[farm flow] (lab) -- (prep);
 \draw[farm flow] (prep) -- (flat);
 \draw[farm flow] (flat) -- (pm);
 \draw[farm flow] (pm.south) -- ++(0,-0.6) -| (fold.north);
@@ -900,7 +941,7 @@ The fourth step is FARM's own and turns the product into the RM (Figure~\ref{fig
 \draw[farm flow] (merge) -- (rew);
 \draw[farm flow] (rew) -- (rm);
 \begin{scope}[on background layer]
-    \node[farm group, inner sep=6pt, fit=(prep)] (g4a) {};
+    \node[farm group, inner sep=6pt, fit=(lab)(prep)] (g4a) {};
     \node[farm group, inner sep=6pt, fit=(fold)(hard)(merge)(rew)] (g4b) {};
 \end{scope}
 \node[farm number] at (g4a.north west) {4};
@@ -921,9 +962,9 @@ An LTLf formula gives one verdict per trace, so a broken soft rule would be char
 
 This only applies to the four templates whose DFA has a violated state: Absence, Precedence, ChainResponse and NotCoExistence. The other four, Existence, ExistenceTwo, RespondedExistence and Response, have no violated state, but a soft one still moves progress while it is pending. For example, the event that sets off a soft Response can cost $-1$ at once and its answer pay the $+1$ back, and finishing with the clause still pending costs $-5$.
 
-A soft Absence is \textbf{folded} as well. In the product, the states in which it is violated merge into the matching states in which it is satisfied, and the break becomes a mark on the edge. The clause then adds no state to the RM, and its break is a loop that pays $-1$ (Section~\ref{sec:run-step4}). Re-arming and folding are settings, both on by default. With re-arming off, a soft rule costs one charge per episode.
+\paragraph{Folding soft Absence} A soft Absence is \textbf{folded} as well. In the product, the states in which it is violated merge into the matching states in which it is satisfied, and the break becomes a mark on the edge. The clause then adds no state to the RM, and its break is a loop that pays $-1$ (Section~\ref{sec:run-step4}). Re-arming and folding are settings, both on by default. With re-arming off, a soft rule costs one charge per episode.
 
-To accomplish this, FARM uses no table of template conversions. It computes reachability on the DFA, a deterministic process. The list above is only the result for the eight templates of the catalogue, and any new templates added by other developers, would be processed automatically by the same algorithm.
+To accomplish this, FARM uses no table of template conversions. It computes reachability on the DFA, a deterministic process. This mean that the affected templates are not hard-coded, and any new templates added by other developers, would be processed automatically by the same algorithm.
 
 \subsection{Final states and the well}
 \label{sec:final-well}
@@ -941,39 +982,49 @@ The edges out of a final state are dropped, so reaching it ends the episode, and
 
 \paragraph{Unreachable states} States that the start cannot reach are pruned. In a task with a hard goal, if no reachable edge enters a final state, the clauses conflict and the build fails. A rule-only task compiles with no final state.
 
-\subsection{Merging MONA's start state}
+\subsection{Merging the start state}
 \label{sec:start-merge}
 MONA gives each rule a ``no step yet'' start (Section~\ref{sec:redundant}), and the product inherits it as a start that no edge re-enters. Its \textbf{idle successor} is the state it moves to on a step in which no proposition holds. The idle successor becomes the start, and the old start is dropped, when three conditions hold: no edge re-enters the start, the idle successor is neither the start, the well nor a final state, and both states move to the same state on every input. Otherwise the product is unchanged.
 
-The merge makes the RM smaller. It is safe because no template of the catalogue is broken by a step in which nothing happens, so the start and its idle successor are priced alike. On 25 sample RMs and 3,512 clause sets, the RMs built with and without the merge had the same rewards, final states and wells.
+The merge makes the RM smaller. It is safe because no template of the catalogue is broken by a step in which nothing happens, so the start and its idle successor get the same rewards.
 
 \subsection{Reward assignment}
 \label{sec:reward-assignment}
-With the final states and the well in place, every edge of the RM still needs a price. FARM sets these prices itself, in place of FL-AT's one unit per accepting clause (Section~\ref{sec:flat-discard}), so that the agent is paid for progress rather than for staying, and every break has a price of its own.
+With the final states and the well in place, every edge of the RM still needs a reward. FARM sets these rewards itself, in place of FL-AT's one unit per accepting clause (Section~\ref{sec:flat-discard}), so that the agent is paid for progress rather than for staying, and every break has a price of its own.
 
-Every price serves one order between the runs an agent can take. A \textbf{finished} run is the best run to the final state. A \textbf{started} run is the best run with a return of zero or more to a state closer to the final state than the start, measured in the fewest events still needed to finish. A \textbf{not started} run is one in which nothing happens, \textbf{soft break} is the cost of breaking soft rules and \textbf{hard break} the mildest edge into the well. An RM must pay them in this order:
+Every reward serves the order between five ways an episode can end up. Among the episodes that end up one way, the best is the one that collects the most reward.
+
+\begin{itemize}
+    \item \textbf{Finished.} The best episode that reaches the final state.
+    \item \textbf{Started.} The best episode that makes progress without finishing. It ends closer to the final state than the start, with fewer events still needed to finish, and totals a net reward of zero or more.
+    \item \textbf{Not started.} The episode in which nothing happens. The agent produces no event, either because it does not move or because its movements do not influence the environment.
+    \item \textbf{Soft break.} The episode that is charged the most for breaking soft rules, at worst, a break at every step.
+    \item \textbf{Hard break.} The episode that breaks a hard rule at the lowest price, the edge into the well with the highest reward.
+\end{itemize}
+
+An RM must pay them in this order:
 
 \keyidea{\centering\upshape\bfseries\boldmath finished $>$ started $>$ not started $\geq$ soft break $>$ hard break}
-\noindent Not started may tie with a soft break. Every reward of this section is set to keep this order. To keep it, the rewards follow one principle: getting closer to finishing the task or a rule \textbf{pays}, and stepping back from it, breaking a rule, or getting a new thing to do \textbf{costs}. A new thing to do can come from the agent, which triggered a rule, or from the environment, which changed so that the instructions now ask for a reaction.
+\noindent Not started may tie with a soft break. Every reward of this section is set to keep this order, and they all follow one principle: getting closer to finishing the task or a rule \textbf{pays}, and stepping back from it, breaking a rule, or getting a new thing to do \textbf{costs}. A new thing to do can come from the agent, which triggered a rule, or from the environment, which changed so that the instructions now ask for a reaction.
 
-Table~\ref{tab:rewards}, at the end of the section, gives every value. To clarify the rewards with an example, Appendix~\ref{sec:rewards-example} follows them step by step on one task, the \runex{dropped key}: what each state still owes, what each step pays and what five runs total.
+Table~\ref{tab:rewards}, at the end of the section, gives every value. To clarify the rewards with an example, Appendix~\ref{sec:rewards-example} follows them step by step on one task, the \runex{dropped key}: what each state still owes, what each step pays and what five example episodes total.
 
 \subsubsection{Progress}
-Each step is paid first for its progress, measured by how much less it leaves to do. Progress is what puts a started run above a not started one. 
+Each step is paid first for its progress, measured by how much less it leaves to do. Progress is what puts the started episode above the not started one. 
 
-A \textbf{stage} is one event still needed, and every state owes a number of stages $\Phi(u)$. With a final state, $\Phi(u)$ counts the fewest events still needed to finish plus, for each soft clause (a soft goal included), the longest run of events its own automaton may still need; without one, every clause counts its own events (Appendix~\ref{app:implementation}). A step from $u$ to $u'$ pays
+A \textbf{stage} is one event still needed, and every state owes a number of stages $\Phi(u)$. With a final state, $\Phi(u)$ counts the fewest events still needed to finish plus, for each soft clause (a soft goal included), the most events its own automaton may still need; without one, every clause counts its own events (Appendix~\ref{app:implementation}). A step from $u$ to $u'$ pays
 \[ r_{\mathrm{progress}}(u,u') = \Phi(u) - \Phi(u'), \]
 \gain{one unit} for each stage it closes and \loss{minus one} for each stage it adds. This is potential-based shaping \cite{ng1999policy} with the potential $-\Phi$ and no discount, so around any loop the progress adds up to zero. The learner does discount its rewards, so the guarantee that shaping leaves the best behaviour unchanged holds only approximately. A final state owes nothing, so the finishing edge pays every stage still owed. 
 
 Two exceptions apply: a step that breaks a soft rule pays no progress for that rule, and an edge into the well takes progress back (see \emph{Taking progress back} below).
 
 \subsubsection{Completion and charges}
-Besides progress, a few events have a fixed price. Completion puts a finished run at the top of the order, and the charges keep a soft break no better than a not started run. 
+Besides progress, a few events have a fixed reward. Completion puts the finished episode at the top of the order, and the charges keep the soft break no better than the not started episode. 
 
 \begin{itemize}
     \item Completion pays \gain{$+10$} on top of the progress of the finishing step. 
     \item Each new break of a re-armed soft rule is charged again, \loss{$-1$} per break (Section~\ref{sec:recurrent}), so a repeated break is never free. 
-    \item A soft clause still pending when the run finishes is charged \loss{$-5$} once, on the finishing edge, so a preference that was never met costs reward without blocking the end. 
+    \item A soft clause still pending when the episode finishes is charged \loss{$-5$} once, on the finishing edge, so a preference that was never met costs reward without blocking the end. 
     \item A soft break costs \loss{$-1$}, a tenth of completion, so one preference weighs less than finishing the task.
     \item A hard break costs \loss{$-10$} when the task has no soft clause. When the task also has soft clauses, the price grows with the step limit, about \loss{$-96$} for 300 steps, so that a hard break still costs more than breaking soft rules at every step and stays at the bottom of the order (see \emph{The price of a hard break} below).
 \end{itemize}
@@ -981,7 +1032,7 @@ Besides progress, a few events have a fixed price. Completion puts a finished ru
 
 \subsubsection{The price of a hard break}
 \phantomsection\label{sec:well-charge}
-A hard break sends the run to the well, and its price must keep the hard break at the bottom of the order. In a task \textbf{without} a soft clause, an edge into the well pays the flat price of Table~\ref{tab:rewards}, \loss{$-10$}. Now, in the other case:
+A hard break ends the episode in the well, and its price must keep the hard break at the bottom of the order. In a task \textbf{without} a soft clause, an edge into the well pays the flat price of Table~\ref{tab:rewards}, \loss{$-10$}. Now, in the other case:
 
 \keyidea{\textbf{With} a soft clause in the task, a hard break must cost more than breaking soft rules at every step until the episode ends; otherwise an agent facing many soft breaks could prefer the well.}
 \noindent The edge into the well then pays
@@ -991,9 +1042,9 @@ where $c$ is the price of a soft break ($1$), $N$ the number of soft rules that 
 With a step limit of 300 steps, the discount $0.99$, one soft rule per step and a soft-break price of $1$, the price is about \loss{$-96$} ($-96.096$), which is the discounted cost of breaking a soft rule at every one of the 300 steps, plus one. The price grows with the step limit and is never milder than \loss{$-11$}. The order holds only if no more than $N$ soft rules can break in one step, and the compiler does not check $N$ against the task. 
 
 \paragraph{Taking progress back}
-Progress pays as the run gets closer to the end, so a run that breaks a hard rule late has already been paid for the stages it closed. Without a correction, the same break would cost less the later it came, and the hard break could climb up the order.
+Progress pays as the episode gets closer to finishing, so an episode that breaks a hard rule late has already been paid for the stages it closed. Without a correction, the same break would cost less the later it came, and the hard break could climb up the order.
 
-\keyidea{The edge into the well takes back the progress the run made, so a hard break late in the run costs no less than one at the first step.}
+\keyidea{The edge into the well takes back the progress the episode made, so a hard break late in the episode costs no less than one at the first step.}
 \noindent A state is \textbf{ahead} of the start when it owes fewer stages than the start. The edge into the well takes \loss{one unit} for each stage by which the state it leaves is ahead, and nothing when that state is not ahead. The soft-rule charges paid on the way are not taken back.
 
 In the \runex{sequence} RM (Listing~\ref{lst:farm-example1}), the edge from u0 into the well pays \loss{$-10$}, and the edge from u1, one stage ahead of the start, pays \loss{$-11$}. An episode in which the agent picks up the key and then reaches the goal with the door closed therefore totals \loss{$-10$}, the same as a break at the first step.
@@ -1003,7 +1054,7 @@ The rewards are set to keep the order of the start of this section, and three ch
 
 \begin{itemize}
     \item \textbf{Loop check.} It searches the RM for a loop whose rewards add up to more than zero, counting every step without discount. An agent could circle such a loop for ever and earn more than by finishing, which is known as Reward Farming. It runs on every build and refuses the RM if it finds one.
-    \item \textbf{Pay order.} It checks that the RM pays its five runs in the order of the start of this section; when the optional end charge is on (see \emph{Summary of the rewards} below), the started run includes it. It is a report, written when FARM prepares an RM for training and the step limit of the environment is known. A failed order prints a warning and stops nothing, and an RM built alone with the \texttt{generate-rm} command gets no report.
+    \item \textbf{Pay order.} It checks that the RM pays the five episodes in the order of the start of this section; when the optional end charge is on (see \emph{Summary of the rewards} below), the started episode includes it. It is a report, written when FARM prepares an RM for training and the step limit of the environment is known. A failed order prints a warning and stops nothing, and an RM built alone with the \texttt{generate-rm} command gets no report.
     \item \textbf{Scripted-plan check.} It plays the scripted plans of each task of the evaluation benchmark (sequences of commands written in advance that solve the task or break one of its rules) through the RM and reads what each plan pays (Chapter~\ref{chap:evaluation}). A recorded failure stops that RM from training, while a missing record or an unchecked result does not.
 \end{itemize}
 
@@ -1013,7 +1064,7 @@ Some tasks only set rules, such as \textit{never touch the lava}, and ask for no
 
 \keyidea{Progress then counts every clause on its own and aims at the states where no clause is pending rather than at the goal.}
 
-A step into a state from which no state with nothing pending can be reached pays no progress. The rules can no longer all be met, so there is nothing left to get closer to.
+A step pays progress only if a state where no clause is pending can still be reached after it. If none can, the rules can no longer all be met, and there is nothing left to get closer to.
 
 \label{sec:checks}\paragraph{Rule triggers} A rule that waits for an event, such as a Response, owes a stage once its trigger happens, whether the agent or the environment caused it. The trigger costs \loss{one unit} \textbf{per stage at once}, and the reaction that the rule asks for pays it back. A trigger that is answered therefore totals 0, the same as no trigger, but it lets no other choice to the agent but to follow the rule for maximizing its reward.
 
@@ -1033,7 +1084,7 @@ Its RM has two states and no final state (Figure~\ref{fig:rule-only-rm}), and no
 \end{figure}
 
 \subsubsection{Summary of the rewards}
-\phantomsection\label{sec:open-promises}Table~\ref{tab:rewards} gathers every reward of this section with its default value. Its last three rewards are options, off by default and worth trying in an experiment.
+\phantomsection\label{sec:open-promises}Table~\ref{tab:rewards} gathers every reward of this section with its default value. Its last two rewards are options, off by default and worth trying in an experiment.
 
 \begin{table}[H]
 \centering
@@ -1044,20 +1095,19 @@ Its RM has two states and no final state (Figure~\ref{fig:rule-only-rm}), and no
 \textbf{What happens} & \textbf{What it pays} \\ \midrule
 A step brings the task or a rule closer to done & \gain{$+1$} per stage closer \\
 A new thing to do appears, or a stage is lost & \loss{$-1$} per stage added \\
-The run reaches the final state & \gain{$+10$} \\
+The episode reaches the final state &\gain{$+10$} \\
 A soft rule is broken & \loss{$-1$} \\
 A soft rule is broken again while it is still broken & \loss{$-1$} for each new break \\
-The run finishes with a soft clause still pending & \loss{$-5$} per pending soft clause \\
+The episode finishes with a soft clause still pending &\loss{$-5$} per pending soft clause \\
 A hard rule is broken, no soft clause & \loss{$-10$} \\
 A hard rule is broken, with soft clause & about \loss{$-96$} with a step limit of 300 steps \\
 A hard rule is broken, apply take back & earlier + \loss{$-1$} more for each stage ahead \\  \midrule
 \multicolumn{2}{@{}l@{}}{\textit{Options, off by default}} \\
 A charge on the edge into the well for the stages still open & \loss{$-10$} per open hard stage \\
 & \loss{$-5$} per open soft stage \\
-A charge when the environment ends the episode & the same amounts, once, on the last step \\
-Promise cost: a step out of a state that still owes a hard stage & \loss{$-0.1$}; on an edge into the well, \loss{$-0.1$} for each step of the step limit \\ \bottomrule
+A charge when the environment ends the episode & the same amounts, once, on the last step \\ \bottomrule
 \end{tabularx}
-\caption{Rewards of the RMs that FARM builds. The last three are options, off by default.}
+\caption{Rewards of the RMs that FARM builds. The last two are options, off by default.}
 \label{tab:rewards}
 \end{table}
 
@@ -1085,10 +1135,10 @@ The larger RMs of the thesis are drawn in a simplified form: transitions between
 
 The task, \textit{Reach the goal, ideally without ever losing the key}, has a hard Existence(\texttt{at\_goal}), $\mathrm{F}\,\texttt{at\_goal}$, and a soft Absence(\texttt{key\_lost}), $\neg\,\mathrm{F}\,\texttt{key\_lost}$. The five-state product of Figure~\ref{fig:run-product3} becomes two states, and each part of Step~4 does its share:
 \begin{itemize}
-    \item \textbf{Folding} (Section~\ref{sec:recurrent}). Folding the soft Absence in the product leaves out the lost-key states p2 and p4. A loss becomes a mark on the edge, and the RM stays where it was.
-    \item \textbf{Final state and well} (Section~\ref{sec:final-well}). p3 becomes the final state u1. The key is soft, so no state leads to a well, and a lost key never blocks finishing.
-    \item \textbf{Start merge} (Section~\ref{sec:start-merge}). The start p0 merges with its idle successor p1 into u0.
-    \item \textbf{Rewards} (Section~\ref{sec:reward-assignment}). Of the three transitions, losing the key before the goal costs \loss{$-1$} and stays in u0, so every new loss is charged again. Reaching the goal pays \gain{$+11$}, the \gain{$+10$} of completion plus \gain{one} stage of progress, or \gain{$+10$} when the key is lost in the same step, the \loss{$-1$} of the break taken from the $+11$. Idle steps pay nothing.
+    \item \textbf{Folding soft Absence} (Section~\ref{sec:recurrent}). The fold leaves out the lost-key states p2 and p4 of the product. A loss becomes a mark on the edge, and the RM stays where it was.
+    \item \textbf{Final states and the well} (Section~\ref{sec:final-well}). p3 becomes the final state u1. The key is soft, so no state leads to a well, and a lost key never blocks finishing.
+    \item \textbf{Merging the start state} (Section~\ref{sec:start-merge}). The start p0 merges with its idle successor p1 into u0.
+    \item \textbf{Reward assignment} (Section~\ref{sec:reward-assignment}). Of the three transitions, losing the key before the goal costs \loss{$-1$} and stays in u0, so every new loss is charged again. Reaching the goal pays \gain{$+11$}, the \gain{$+10$} of completion plus \gain{one} stage of progress, or \gain{$+10$} when the key is lost in the same step, the \loss{$-1$} of the break taken from the $+11$. Idle steps pay nothing.
 \end{itemize}
 
 The \runex{sequence} RM has five states and eleven transitions (Listing~\ref{lst:farm-example1}). Its states follow the order of the task, and every edge that breaks the order goes to the well. The \runex{dropped-key} RM has five states and ten transitions, and Appendix~\ref{sec:rewards-example} follows what it pays. Appendix~\ref{app:running} draws both.
@@ -1177,14 +1227,9 @@ The \runex{sequence} RM (Listing~\ref{lst:farm-example1}) has edges out of u0 on
 \subsection{Things to keep in mind}
 Two points bound what this step can promise. Both models can be wrong, and how often depends on their thinking level.
 
-\subsubsection{LLMs can hallucinate}
-The critic can hallucinate as well as the generator \cite{huang2025survey}.
+\paragraph{LLMs can hallucinate} As stated earlier, the critic and the generator are LLMs, thus they can hallucinate or make mistakes \cite{huang2025survey}. The compiler builds the RM exactly from the chosen clauses and adds nothing they do not state, so a wrong RM always comes from a wrong clause set. By this idea, if any mistake is made, both LLMs are at fault: \textbf{the generator proposed something wrong and the critic missed it}.
 
-\keyidea{The compiler builds the RM exactly from the chosen clauses and adds nothing they do not state, so a wrong RM always comes from a wrong clause set: \textbf{the generator proposed it and the critic missed it}.}
-
-
-\subsubsection{Thinking level of the models}
-Both models can think before they answer. Thinking levels go from none to low, medium, high or max. The default is max. Chapter~\ref{chap:results} shows how the share of correct RMs changes with the level.
+\paragraph{Thinking level of the models} Both models can think before they answer. Thinking levels go from none to low, medium, high or max. The default is max and Chapter~\ref{chap:results} shows how the share of correct RMs changes with the level. Now, that comes at a price, since thinking longer means more tokens and therfore more cost.
 
 \subsection{Running examples: the verdict of the critic}
 \label{sec:run-step5}
@@ -1334,7 +1379,7 @@ For example, a condition such as \textit{serve no food while the siren rings} jo
 \label{sec:lim-quantities}
 The limits above are things FARM does not do today. This last section is about tasks it is not meant to do, because they do not fit an RM at all. They are of three kinds:
 \begin{itemize}
-    \item \textbf{As much or as little as possible}: a clause is met or broken over a whole run, so it cannot ask for as many items as possible or for the shortest path. The templates that count stop at a fixed number and LTLf cannot express the unbounded counting. An RM that paid every time something happens would need a loop that pays, which the loop check refuses (Section~\ref{sec:step4}). 
+    \item \textbf{As much or as little as possible}: a clause is met or broken over a whole run, so it cannot ask for as many items as possible or for the shortest path. The templates that count stop at a fixed number and LTLf cannot express the unbounded counting. An RM that paid every time something happens would need a rewarding loop, which the loop check refuses (Section~\ref{sec:step4}). 
     
     A reward paid for each event (such as \texttt{kill\_zombie}) is simple to write in the environment instead if needed.
     \item \textbf{Behaviour no one can put into words}: something the user cannot define with words, such as a movement that looks natural, gives no clauses to write. It needs a reward learnt from human feedback \cite{christiano2017deep}.
@@ -1477,7 +1522,7 @@ Two smaller studies look at the language models behind FARM with the goal of obs
 
 \begin{itemize}
     \item \textbf{thinking-level study} changes how much the models reason before they answer, from level none to max (Section~\ref{sec:step5}). It measures how the share of right RMs and the time per RM change with the level.
-    \item \textbf{study of other language models} replaces the default pair with one model from another makers such as Anthropic's, OpenAI's and other opensource ones. 
+    \item \textbf{study of other language models} replaces the default pair with one model from another maker, such as Anthropic's, OpenAI's or an open-weight one. 
 \end{itemize}
 
 \section{Empirical evaluation in a real environment}
@@ -1528,7 +1573,7 @@ A last count pairs FARM and ARM-FM task by task. The \textbf{head-to-head} count
 
 \paragraph{The zombie lanes} This is another of the environments created for this thesis. The agent has to react to the zombies and keep them from crossing the lanes, guarding one lane before the others. Three experiments change the setup. They make the environment smaller, add obstacles that force the agent to guard one lane first, and add the environment's own reward to FARM's RM.
 
-\paragraph{Other limits} Four last experiments each test one limit: three times the training on two tasks, other room sizes for KeyCorridor, training the ARM-FM RMs that were not built because they fail a check, and FARM's promise cost turned on.
+\paragraph{Other limits} Three last experiments each test one limit: three times the training on two tasks, other room sizes for KeyCorridor, and training the ARM-FM RMs that were not built because they fail a check.
 
 \section{Hardware}
 Almost all experiments have been run on the same machine: a PC with an AMD Ryzen 9 9900X CPU, 64 GB of RAM and an NVIDIA GeForce RTX 5070 GPU with 12 GB of VRAM. Those that not, were ran on the cluster provided by the university. 
@@ -2001,7 +2046,9 @@ In the second study, two language models from other makers, Anthropic's Haiku 5.
 
 Table~\ref{tab:app-res-thinking} gives the values per model and level. The pair at high and max and Haiku 5.5 at max get all 138 runs right, the pair at high in 20 seconds per RM and Haiku 5.5 at max in 111. Haiku 5.5 at high and GPT-6 Luna at max are one run short, 137 of 138 in 14 and 32 seconds against 20. GPT-6 Luna has the lowest share at each of its levels, 64\% to 72\% from none to medium, with overlapping intervals. These intervals lie wholly below those of the pair from low to max and of Haiku 5.5 at every level, and overlap that of the pair at none (76\%). GPT-6 Luna rises to 97\% at high and 99\% at max, where its intervals overlap those of the other two from low up.
 
-The figure holds 14 points. A point is beaten when another point is at least as fast and as often right, and faster or more often right. The points that no other point beats form the \textbf{Pareto frontier} between time and right RMs. Five points are not beaten, the pair at none and at high and Haiku 5.5 at low, medium and high, the filled points of Figure~\ref{fig:res-thinking}. The other nine are beaten. Haiku 5.5 at medium beats the pair at low and GPT-6 Luna at high (134 of 138 each, in 11 seconds against 12 and 22), although it is less than a second faster than the pair at low, so which of the two lies on the frontier means little. Haiku 5.5 at high beats the pair at medium (137 and 136 of 138, in 14 seconds against 18), and the pair at high beats the pair at max (138 of 138 each, in 20 seconds against 88). Both beat GPT-6 Luna at max (137 of 138 in 32 seconds), and the pair at none beats the other three points of GPT-6 Luna. Haiku 5.5 at max gets all 138 right too, in 111 seconds, so the pair at high and at max both beat it. The frontier ranks the point estimates only, since the intervals of Haiku 5.5 and of GPT-6 Luna at high and max overlap those of the pair from low to max. The time axis compares ways of calling a model, not the speed of the models, and no cost per RM was recorded, so the frontier weighs time alone. \tbd{still to come: four models that wait for a GPU of the computing cluster (Qwen3.8, Gemma 4, Muse Glimmer, gpt-oss); recheck then the filled points and which points get every run right}
+The figure holds 14 points. A point is beaten when another point is at least as fast and as often right, and faster or more often right. The points that no other point beats form the \textbf{Pareto frontier} between time and right RMs. Five points are not beaten, the pair at none and at high and Haiku 5.5 at low, medium and high, the filled points of Figure~\ref{fig:res-thinking}. The other nine are beaten. Haiku 5.5 at medium beats the pair at low and GPT-6 Luna at high (134 of 138 each, in 11 seconds against 12 and 22), although it is less than a second faster than the pair at low, so which of the two lies on the frontier means little. Haiku 5.5 at high beats the pair at medium (137 and 136 of 138, in 14 seconds against 18), and the pair at high beats the pair at max (138 of 138 each, in 20 seconds against 88). Both beat GPT-6 Luna at max (137 of 138 in 32 seconds), and the pair at none beats the other three points of GPT-6 Luna. Haiku 5.5 at max gets all 138 right too, in 111 seconds, so the pair at high and at max both beat it. The frontier ranks the point estimates only, since the intervals of Haiku 5.5 and of GPT-6 Luna at high and max overlap those of the pair from low to max. The time axis compares ways of calling a model, not the speed of the models, and no cost per RM was recorded, so the frontier weighs time alone.
+
+Six open-weight models also play both roles, Muse Glimmer 30B, Gemma 4 31B, Qwen3.8 27B, gpt-oss-120b, Qwen3.5 9B and Llama 3.1 8B. They ran on GPUs of the university's computing cluster or of the machine of this thesis, so their times are not comparable with those above and they stay out of Figure~\ref{fig:res-thinking}. The four models of 27B to 120B parameters reach 91\% to 100\% right RMs at their best level, and Qwen3.8 27B at max gets all 138 right. The two small ones fall far behind. Qwen3.5 9B reaches 69\% at best, and Llama 3.1 8B, which has no thinking mode, gets 7 of 138 right, although as its own critic it accepts 135 of its RMs. Table~\ref{tab:app-res-open-models} gives every level.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -2057,7 +2104,7 @@ An agent starts with no knowledge of the environment, so its first episodes are 
 
 \textbf{Holding the falls back works.} In the full 8$\times$8 shop, FARM's agents learn neither task, in 0 of 6 runs, while training with no RM learns them in 5 of 6. When food starts to fall only once the agent serves 10 orders per episode, all 6 runs learn (95\% Wilson interval 61\% to 100\%), and they serve 18.7 and 11.6 orders per judged episode on the two tasks. When a quarter of the falls land behind the agent, however, no run learns.
 
-\textbf{A smaller shop works as well.} In a 3$\times$3 shop, FARM learns the two tasks in all 6 of its runs (61\% to 100\%), and in 5$\times$5 and 7$\times$7 shops in none of 12 (0\% to 24\%). In the larger shops, its runs serve no order in their first 100 training episodes, so the agent has almost nothing to learn from. A shop that grows within one run, from 3$\times$3 to 7$\times$7, each time the agent serves 10 orders per episode, learns at 7$\times$7 in 3 of 6 runs, against 0 of 6 without growth. The intervals overlap, however, and training with no RM learns the 7$\times$7 shop in 5 of 6 runs. Over five tasks of one job each in the same four shops, where food falls only in the task about falls, FARM and training with no RM learn about as many, 11 and 10 of 20. Both learn serving and orders in every shop and cooking in the two smallest, and neither learns the falls or the siren.
+\textbf{A smaller shop works as well.} In a 3$\times$3 shop, FARM learns the two tasks in all 6 of its runs (61\% to 100\%), and in 5$\times$5 and 7$\times$7 shops in none of 12 (0\% to 24\%). In the larger shops, its runs serve no order in their first 100 training episodes, so the agent has almost nothing to learn from. A shop that grows within one run, from 3$\times$3 to 7$\times$7, each time the agent serves 10 orders per episode, learns at 7$\times$7 in 3 of 6 runs, against 0 of 6 without growth. The intervals overlap, however, and training with no RM learns the 7$\times$7 shop in 5 of 6 runs. Over five tasks that add one job at a time, from serving to the falls, in the same four shops, FARM and training with no RM learn about as many, 11 and 10 of 20. Food falls only in the last of these tasks. Both learn the tasks up to taking orders in every shop and the one with cooking in the two smallest, and neither learns the tasks with the siren or the falls.
 
 \textbf{Splitting the jobs does not help on its own.} In the 8$\times$8 shop, FARM learns none of five tasks that add the shop's jobs one by one. A curriculum of tasks, in which one run of 15M steps adds the jobs one at a time and grows the shop, serves no order in any of its 9 runs.
 
@@ -2068,7 +2115,7 @@ In the shop, then, FARM's agents learn once their first rewards come early, in a
 
 The zombie lanes test how an agent reacts to events it does not cause (Section~\ref{sec:res-react}). Three changes to the environment show when FARM's RM helps there. Table~\ref{tab:res-lanes-more} counts the runs that pass on the two lane tasks with a hard clause, \card{lanes-guard} and \card{lanes-rules}.
 
-\textbf{Closer lanes keep FARM ahead.} The lanes of the training experiment are four rows apart. Moving them two rows or one apart also shrinks the environment, from 11$\times$11 cells to 11$\times$7 and 11$\times$5. FARM's agents then pass both tasks in every run, and training with no RM learns them only with the lanes one row apart.
+\textbf{Closer lanes keep FARM ahead.} The lanes of the training experiment are four rows apart. Moving them two rows or one apart also shrinks the environment, from a field of 9$\times$9 cells to 9$\times$5 and 9$\times$3. FARM's agents then pass both tasks in every run, and training with no RM learns them only with the lanes one row apart.
 
 \textbf{With plants, training with no RM catches up.} Plants stun the agent for two steps, and a zombie that crosses the top lane ends the episode, whatever the method. Training with no RM on the reward for each kill then learns both tasks at every spacing, while FARM learns the rules task only with the lanes two rows apart. The early end makes the difference, since without it the same reward learns neither task. It likely gives training with no RM what FARM's RM gives it in the plain lanes, a cost for the top lane. Other rewards do worse. A penalty for each breach added to the kill reward learns both tasks only with the lanes two rows apart, and the penalty alone learns neither.
 
@@ -2101,15 +2148,13 @@ With plants & guard, 4 & 3 & 3 & 3 \\
 \subsection{Other limits}
 \label{sec:res-other-limits}
 
-Four last experiments each test one limit.
+Three last experiments each test one limit.
 
 \textbf{Longer training.} Two tasks of the training experiment have a right FARM RM and are still not learned. With three times the training, 4.5M steps, one of them is learned, at 0.80 to 0.85 of its judged episodes against 0.55 to 0.67 before. The other still passes in no run.
 
 \textbf{Room size.} FARM learns KeyCorridor with rooms of size 3 in all 3 runs, and training with no RM in none. With rooms of size 5 or 6, the size the ARM-FM paper uses, neither learns it. The training experiment uses size 4.
 
 \textbf{ARM-FM's own checks.} On nine tasks of the training experiment, ARM-FM's RM is not built because it fails a check, yet it still lets the agent act. Trained anyway, seven of them are learned. ARM-FM would not hand these RMs over, so they are not counted (Section~\ref{sec:eval-learned}). Counted, they would raise ARM-FM's learned tasks from 29 to 36 of 60, still below FARM's 43.
-
-\textbf{The promise cost.} Turning on FARM's promise cost, an optional charge of Table~\ref{tab:rewards}, changes no result on the tasks trained both ways. Five of them are shop tasks that FARM learns neither way.
 
 \chapter{Conclusions}
 \label{chap:conclusions}
@@ -2153,10 +2198,10 @@ Table~\ref{tab:conc-summary} gathers these points as the advantages and disadvan
 The RM follows the chosen clauses exactly and adds no step they do not state (Chapter~\ref{chap:farm}; Section~\ref{sec:res-machines}). & The model can still choose clauses that do not fit the task, and ambiguous wording decides the RM (Section~\ref{sec:res-clauses}; Chapter~\ref{chap:limitations}). \\ \midrule
 Rewording a task seldom changes its RM (Section~\ref{sec:res-machines}). & The RMs are larger than ARM-FM's and grow with the number of clauses (Table~\ref{tab:res-size}; Chapter~\ref{chap:future-work}). \\ \midrule
 Hard rules and soft preferences sit in one RM, for tasks with or without a goal, and agents try to keep the soft rules (Sections~\ref{sec:res-learning} and~\ref{sec:res-react}). & On the level where a ball blocks the door (BlockedUnlockPickup), tasks that skip steps the level needs are not learned with FARM's RMs and are with ARM-FM's (Sections~\ref{sec:res-machines} and~\ref{sec:res-learning}). \\ \midrule
-No FARM RM has a loop that pays (Section~\ref{sec:step4}). & Not every task is learned. In the shop no trained agent serves an order, with or without an RM (Section~\ref{sec:res-shop}). \\ \midrule
+No FARM RM has a rewarding loop (Section~\ref{sec:step4}). & Not every task is learned. In the shop no trained agent serves an order, with or without an RM (Section~\ref{sec:res-shop}). \\ \midrule
 More tasks are learned than with ARM-FM's RMs or with no RM, including every step-by-step task (Section~\ref{sec:res-learning}). & A task that cannot be done is caught only in part (Section~\ref{sec:lim-anomalies}). \\ \bottomrule
 \end{tabularx}
-\caption[Advantages and disadvantages of FARM]{FARM's RMs follow the chosen clauses and have no loop that pays, and agents learn more tasks with them. The RMs are larger, and some tasks stay unlearned. Each entry names the section that holds its evidence. The two columns are not paired row by row.}
+\caption[Advantages and disadvantages of FARM]{FARM's RMs follow the chosen clauses and have no rewarding loop, and agents learn more tasks with them. The RMs are larger, and some tasks stay unlearned. Each entry names the section that holds its evidence. The two columns are not paired row by row.}
 \label{tab:conc-summary}
 \end{table}
 
@@ -2175,7 +2220,7 @@ The other bounds concern the tasks. FARM states tasks with the eight Declare tem
 \chapter{Future work}
 \label{chap:future-work}
 
-One study of the Results chapter still waits for data, the study of other language models, which still lacks some models (Section~\ref{sec:res-models}). Beyond them, the five directions below go past this thesis. Each one gives what is missing today, why it matters and a first step.
+One study of the Results chapter still waits for data, the study of other language models, which still lacks two small open-weight models (Section~\ref{sec:res-models}). Beyond it, the five directions below go past this thesis. Each one gives what is missing today, why it matters and a first step.
 
 \section{Smaller RMs}
 \label{sec:fw-size}
@@ -2215,7 +2260,7 @@ The first step is to add the field  on the generator output schema, adjust the p
 \label{sec:fw-counting}
 The templates count only to two, with ExistenceTwo, which asks for an event at least twice (Section~\ref{sec:step1}). Beyond two, ``at least $n$ times'' needs an LTLf formula (Section~\ref{sec:fw-ltlf}) that grows with $n$. But an \textbf{unbounded} count, such as ``one kill for each zombie that enters``, cannot be stated in LTLf.
 
-A count would let an RM pay for each kill up to a fixed number, with no loop that pays. Such an RM would come closer to the reward of the zombie lanes, where the environment pays for each kill (Section~\ref{sec:res-react}). 
+A count would let an RM pay for each kill up to a fixed number, with no rewarding loop. Such an RM would come closer to the reward of the zombie lanes, where the environment pays for each kill (Section~\ref{sec:res-react}). 
 
 The first step is to find how a count would be written as a clause and priced, if even possible at all with RMs, since their nature does not allow unbounded counting.
 
@@ -2421,7 +2466,7 @@ FARM makes fifteen additions to the tools it builds on, IBM nl2ltl, FL-AT and MO
 \section{IBM nl2ltl}
 In Step~1 the LTLf formula of each clause comes from the templates of IBM's nl2ltl. FARM uses them through a fork (\url{https://github.com/MiquelGomezCorral/nl2ltl}) of \url{https://github.com/IBM/nl2ltl} \cite{nl2ltl_code}. It reuses only the template classes and the LTLf builders. The GPT engine of nl2ltl is bypassed, and FARM supplies its own engine in its place. That engine asks a language model for a list of clauses under a JSON schema, and then passes each clause to the Declare template classes of nl2ltl, which build the LTLf formula.
 
-FARM talks to three model providers, OpenAI, OpenCode and Antigravity, through one engine each, and every engine returns the clauses under the same JSON schema. The study of other language models calls its two models through their makers' command-line tools, outside these engines (Section~\ref{sec:res-models}). The generator and the critic are configured separately.
+FARM talks to four model providers, OpenAI, OpenCode, Antigravity and a local server (vLLM or Ollama), through one engine each, and every engine returns the clauses under the same JSON schema. The study of other language models calls Haiku 5.5 and GPT-6 Luna through their makers' command-line tools, outside these engines, and its open-weight models through the local engine (Section~\ref{sec:res-models}). The generator and the critic are configured separately.
 
 The template classes of nl2ltl cover all eight Declare templates of Table~\ref{tab:templates}. The GPT prompt of nl2ltl, by contrast, lets the model choose only five: Existence, ExistenceTwo, Response, \mbox{ChainResponse} and RespondedExistence.
 
@@ -2462,8 +2507,7 @@ To this hard part, each soft clause, a soft goal included, adds its own local co
 Without a final state, every clause, hard or soft, uses this local count.
 
 \subsection{End charges}
-Two options of Table~\ref{tab:rewards}, both off by default, read the count of stages: the end charges and the promise cost. The end charges of Section~\ref{sec:open-promises} are for the stages still open when an episode ends. They sum the local, chain-weighted count of every clause, hard clauses included. They read that count on the state that the edge into the well leaves or, when the environment ends the episode, on the state reached. The promise cost is for each step out of a state that still owes a hard stage, and it reads the hard part of the same count.
-
+The two options of Table~\ref{tab:rewards}, both off by default, read the count of stages. They are the end charges of Section~\ref{sec:open-promises}, for the stages still open when an episode ends. They sum the local, chain-weighted count of every clause, hard clauses included. They read that count on the state that the edge into the well leaves or, when the environment ends the episode, on the state reached.
 \subsection{Minimisation}
 Minimisation makes the RM smaller. After pricing, states that pay the same, lead to the same states on every input and end an episode alike are merged into one. Minimisation is a setting, on by default.
 
@@ -2762,7 +2806,7 @@ By a rule of thumb, a move of less than about 10 points in the chain-form share 
 \section{Thinking level, values per model and level}
 \label{app:res-thinking}
 
-Section~\ref{sec:res-thinking} sets the default pair beside Haiku 5.5 and GPT-6 Luna, two language models from other makers. Table~\ref{tab:app-res-thinking} gives the count and the share of right RMs for each model and thinking level, with the median time of a run.
+Section~\ref{sec:res-thinking} sets the default pair beside Haiku 5.5 and GPT-6 Luna, two language models from other makers. Table~\ref{tab:app-res-thinking} gives the count and the share of right RMs for each model and thinking level, with the median time of a run. Table~\ref{tab:app-res-open-models} gives the same for six open-weight models.
 
 \begin{table}[H]
 \centering
@@ -2791,6 +2835,40 @@ max & 137 of 138 & 99\% (96\% to 100\%) & 32 \\ \bottomrule
 \end{tabular}
 \caption[Right RMs per model and thinking level]{Right RMs and median run time of the default pair, Haiku 5.5 and GPT-6 Luna, per thinking level. Each row counts 138 runs, the 46 tasks of the thinking-level study, three runs each. The pair ran with one provider, and its times were measured with eight generation runs at once, beside training jobs. The times of Haiku 5.5 and GPT-6 Luna include starting a new command-line process for each call. Four runs of each of the two ran at once, up to eight together, beside 11 to 18 training jobs at the times checked. Haiku 5.5 has no level none, because the tool that calls it cannot turn its thinking off. Haiku 5.5 at max ran in two sessions, since a usage limit stopped it after 37 runs.}
 \label{tab:app-res-thinking}
+\end{table}
+
+\begin{table}[H]
+\centering
+\footnotesize
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Thinking level} & \textbf{Right RMs} & \textbf{Share (95\% Wilson)} & \textbf{Median run time (s)} \\ \midrule
+\multicolumn{4}{@{}l}{\textbf{Muse Glimmer 30B}} \\
+low & 122 of 138 & 88\% (82\% to 93\%) & 82 \\
+medium & 132 of 138 & 96\% (91\% to 98\%) & 155 \\
+high & 133 of 138 & 96\% (92\% to 98\%) & 229 \\
+max & 130 of 138 & 94\% (89\% to 97\%) & 271 \\ \midrule
+\multicolumn{4}{@{}l}{\textbf{Gemma 4 31B}} \\
+none & 109 of 138 & 79\% (71\% to 85\%) & 18 \\
+high & 132 of 138 & 96\% (91\% to 98\%) & 168 \\ \midrule
+\multicolumn{4}{@{}l}{\textbf{Qwen3.8 27B}} \\
+none & 92 of 138 & 67\% (58\% to 74\%) & 47 \\
+low & 133 of 138 & 96\% (92\% to 98\%) & 128 \\
+medium & 135 of 138 & 98\% (94\% to 99\%) & 155 \\
+max & 138 of 138 & 100\% (97\% to 100\%) & 381 \\ \midrule
+\multicolumn{4}{@{}l}{\textbf{gpt-oss-120b}} \\
+low & 100 of 138 & 72\% (64\% to 79\%) & 15 \\
+medium & 118 of 138 & 86\% (79\% to 90\%) & 33 \\
+high & 126 of 138 & 91\% (85\% to 95\%) & 117 \\ \midrule
+\multicolumn{4}{@{}l}{\textbf{Qwen3.5 9B (Q4)}} \\
+none & 34 of 138 & 25\% (18\% to 32\%) & 15 \\
+high & 95 of 138 & 69\% (61\% to 76\%) & 272 \\ \midrule
+\multicolumn{4}{@{}l}{\textbf{Llama 3.1 8B Instruct (Q5)}} \\
+none & 7 of 138 & 5\% (2\% to 10\%) & 12 \\ \bottomrule
+\end{tabular}
+\caption[Right RMs of the open-weight models]{Right RMs and median run time of six open-weight models, per thinking level, on the same 138 runs as Table~\ref{tab:app-res-thinking}. Each model plays both generator and critic. They ran on GPUs of the university's computing cluster or of the machine of this thesis, so their times are not comparable with those of Table~\ref{tab:app-res-thinking}. Each model has only the levels its own thinking controls allow.}
+\label{tab:app-res-open-models}
 \end{table}
 
 % Target: Appendix "Supporting results", section "Cards that name every step"
@@ -3046,7 +3124,7 @@ Three rules of Chapter~\ref{chap:farm} account for the shapes:
 MONA's automata can hold two states that do no work in an RM, and FARM removes both (Section~\ref{sec:redundant}). This appendix draws the two removals on one clause. Figure~\ref{fig:mona-stages} follows Absence(\texttt{key\_lost}), with the LTLf formula $\neg\,\mathrm{F}\,\texttt{key\_lost}$, through both removals in three panels:
 \begin{itemize}
     \item \textbf{Panel~(a)}: the automaton that MONA prints. Its start state S0 moves to S1 on every input.
-    \item \textbf{Panel~(b)}: the same automaton after the FL-AT fork removes S0.
+    \item \textbf{Panel~(b)}: the same automaton after FARM removes S0.
     \item \textbf{Panel~(c)}: the RM after Step~4. That step has merged the ``no step yet'' start S1 into its idle successor S2, which moves exactly like S1 on every input, and has priced the edges.
 \end{itemize}
 Panels~(a) and~(b) draw every transition of the automaton, and double circles mark accepting states. Panel~(c) follows the convention of Section~\ref{sec:run-step4}. In it, the rejecting well u1 is grey and is entered with reward \loss{$-10$}, and the implicit stay of u0 is not drawn.
@@ -3072,7 +3150,7 @@ The \mbox{\runex{careful key}} (Section~\ref{sec:run-step4}) holds this clause a
         \scalebox{0.88}{\begin{tikzpicture}[mona panel, x=0.85cm]
             \input{images/farm/mona-post1}
         \end{tikzpicture}}
-        \caption{S0 removed by the FL-AT fork.}
+        \caption{S0 removed by FARM.}
         \label{fig:mona-post1}
     \end{subfigure}\hfill
     \begin{subfigure}[b]{0.17\textwidth}
@@ -3305,7 +3383,7 @@ u4, well & the key was not picked up in time & -- \\ \bottomrule
     \item \textbf{A step without the key after a drop} breaks the hard rule. Every edge into the well u4 pays \loss{$-10$} and takes nothing back, because neither u1 nor u3 is ahead of the start (Section~\ref{sec:reward-assignment}, \emph{Taking progress back}).
 \end{itemize}
 
-\textbf{What five runs total.} Table~\ref{tab:ex2-traces} adds up five traces.
+\textbf{What five episodes total.} Table~\ref{tab:ex2-traces} adds up five traces.
 
 \begin{table}[H]
 \centering
