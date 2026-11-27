@@ -475,7 +475,24 @@ This chapter describes the process by which FARM (A Formal Approach to Reward Ma
 
 \section{Global overview of the pipeline}
 \label{sec:overview}
-FARM turns a natural-language task into an RM in five steps: task interpretation (Step~1), LTLf to DFA (Step~2), the product of the DFAs (Step~3), the post-process (Step~4) and the critic (Step~5). Figure~\ref{fig:pipeline} draws the pipeline, with the data each step takes and returns and the tool that runs it.
+FARM turns a natural-language task into an RM using a five-step procedure shown in Figure ~\ref{fig:pipeline}. The figure shows the input and output data for each step, as well as the necessary tool. The five steps are:
+
+
+\begin{itemize}
+    \item \textbf{Step 1, task interpretation and formalisation.} A language model reads the task and states it as clauses, short statements with a fixed form, and each clause gives one LTLf formula.
+    \item \textbf{Step 2, LTLf to DFA.} Each formula becomes an automaton (DFA).
+    \item \textbf{Step 3, the product.} The automata of all clauses are combined into one.
+    \item \textbf{Step 4, the post-process.} FARM adds the rewards and tweaks the RM.
+    \item \textbf{Step 5, the critic.} A second language model reviews the RM, and accepts it or sends it back with comments.
+\end{itemize}
+
+FARM replaces only the generation of the RM in ARM-FM (Section~\ref{sec:sota-armfm}) whith the above steps, and reuses the rest of the ARM-FM pipeline (Section~\ref{sec:output-format}). \textcolor{red}{esto hay que explicarlo mejor porque además te lo van a preguntar, en qué te has basado y qué has reutilizado ... en primer lugar, aquí estás explicando la transformación de la tarea en una RM y todo lo que has puesto y la figura es aportación tuya ... tal y como lo has puesto parece que es el pipeline de ARM-FM ... por otra parte, tendrías que explicar qué es el pipeline de ARM-FM, qué es el pipeline de ARM-FM???  no puedes poner que está en la sección 3.7 porque el lector no sabe lo qué es. Igual es preferible no decir nada aquí del pipeline de ARM-FM y lo introduces en 3.7 ... POR CIERTO, NO VEO QUE LA SECCIÓN 3.7 TENGA NADA QUE VER CON EL PIPELINE DE ARM-FM}
+
+\textcolor{blue}{el pipeline de ARM-FM no es lo que has utilizado para la experimentación??? entonces no lo pongas aquí si no tiene nada que ver con tu contribución, tú propones la generación del RM con un método formal y en ARM-FM con un FM}
+
+Notice that Steps 2 to 4 form the \textbf{compiler}. They call no language model \textcolor{red}{utilizas demasiado expresiones como 'no ...' es mejor decir 'These two steps do not use a language model ...'} and read only the chosen clauses and the run settings, which makes the compiler the deterministic part of the pipeline. The two language models of Steps 1 and 5 are therefore the only source of variability. \textcolor{blue}{este párrafo no se entiende, da una visión más general de lo que hace cada paso. Por ejemplo, para el primer paso: Step 1.1 takes as input a task written in natural language and produces a set of LTLf formulas. This is done with the tool \textbf{NL2LTL} (REFERENCIA), which comes with support for a set of LTL patterns, corresponding to popular DECLARE templates (REFERENCIA).}
+
+\textcolor{magenta}{lo que te he puesto arriba es una descripción general de lo que yo creo que hace el paso 1 pero no sé a qué llamas tú 'CLAUSES' y si los 'IBM TEMPLATES' te refieres a los DECLARE patterns o a otra cosa ... NL2LTL en mayúscula tal y como lo ponen los autores en el paper}
 
 \begin{figure}[H]
 \centering
@@ -537,20 +554,9 @@ FARM turns a natural-language task into an RM in five steps: task interpretation
 \label{fig:pipeline}
 \end{figure}
 
+\textcolor{red}{este punto es clave, tienes que describirlo de una forma más natural y descriptiva sin entrar en detalle, se trata de que el lector lo entienda ... no uses tanto texto hecho por LLM porque se nota y no se lee bin}
 
-In short, each step does the following.
 
-\begin{itemize}
-    \item \textbf{Step 1, task interpretation and formalisation.} A language model reads the task and states it as clauses, short statements with a fixed form, and each clause gives one LTLf formula.
-    \item \textbf{Step 2, LTLf to DFA.} Each formula becomes an automaton (DFA).
-    \item \textbf{Step 3, the product.} The automata of all clauses are combined into one.
-    \item \textbf{Step 4, the post-process.} FARM adds the rewards and tweaks the RM.
-    \item \textbf{Step 5, the critic.} A second language model reviews the RM, and accepts it or sends it back with comments.
-\end{itemize}
-
-FARM replaces only the generation of the RM in ARM-FM (Section~\ref{sec:sota-armfm}) whith the above steps, and reuses the rest of the ARM-FM pipeline (Section~\ref{sec:output-format}).
-
-Notice that Steps 2 to 4 form the \textbf{compiler}. They call no language model and read only the chosen clauses and the run settings, which makes the compiler the deterministic part of the pipeline. The two language models of Steps 1 and 5 are therefore the only source of variability. 
 
 % \begin{table}[H]
 % \centering
@@ -581,18 +587,30 @@ Notice that Steps 2 to 4 form the \textbf{compiler}. They call no language model
 
 \subsection{Running examples}
 \label{sec:running-examples}
-Three tasks in the DoorKey environment of ARM-FM run through the chapter as examples of what each step accomplishes. The environment provides four propositions: \texttt{has\_key}, \texttt{door\_open}, \texttt{at\_goal} and \texttt{key\_lost} (lost while the door is still closed). These are the tasks:
+
+\textcolor{red}{Intenta usar un estilo más personal, que parezca que lo has escrito tú ...  We run three tasks from the DoorKey environment throughout this chapter to exemplify each step of the pipeline.}
+
+\textcolor{blue}{los nombres de los entornos ponlos en otro formato o destácalos de algún modo}
+
+Three tasks in the DoorKey environment of ARM-FM run through the chapter as examples of what each step accomplishes. The environment provides four propositions: \texttt{has\_key}, \texttt{door\_open}, \texttt{at\_goal} and \texttt{key\_lost} (the robot loses the key while the door is still closed). The tasks used in this chapter are:
 \begin{itemize}
     \item \runex{Sequence}: \textit{Pick up the key, then open the door, then reach the goal.}
     \item \runex{Dropped key}: \textit{Reach the goal, and if you drop the key, pick it up right away.}
     \item \runex{Careful key}: \textit{Reach the goal, ideally without ever losing the key.}
 \end{itemize}
 
-Each step ends with the part of the examples it needs, and Appendix~\ref{app:running} gives the three RMs in full.
+Each step ends with the part of the examples it needs \textcolor{red}{no entiendo esto}, and Appendix~\ref{app:running} gives the three RMs in full. 
 
 \section{Step 1 · Task interpretation and formalisation}
 \label{sec:step1}
-In the first step a language model, the \textbf{generator}, reads the task and the environment description and writes the task as clauses (Figure~\ref{fig:step1}). A \textbf{clause} names one of eight \textbf{templates}, the \textbf{propositions} it applies to and a \textbf{priority, hard or soft}, and states its part of the task in one plain sentence. The answer is restricted to this form, with at most 25 clauses, and only the template, the propositions and the priority reach the compiler. The template of each clause then writes its LTLf formula.
+In the first step, a language model, the \textbf{generator}, reads the task and the environment description and writes the task as clauses (Figure~\ref{fig:step1}). \textcolor{red}{qué es el generator?? no veo nada de eso en la figura 3.2} \textcolor{blue}{qué es el generator prompt que aparece en la sección 3.24?? donde se usa aquí un prompt??}
+
+\textcolor{red}{explica en una frase qué es el environment y que una tarea consiste en una serie de instrucciones o acciones a realizar donde se pueden especificar restricciones en su realización}
+
+
+A \textbf{clause} names one of eight \textbf{templates}, the \textbf{propositions} it applies to and a \textbf{priority, hard or soft}, and states its part of the task in one plain sentence.  \textcolor{blue}{NO ENTIENDO NADA DE LA FRASE, a ver, eight templates??? qué eight templates??? esto tienes que explicarlo, ya sé que lo explicas en 3.2.2 pero no puedes decir aquí simplemente 8 templates y no decir lo qué es, luego dices 'the propositions it applies to' ... que se aplica donde? a qué? y qué es la priority?? 'and states its part of the task in one plain sentence'??? 'states its part of the task'????  }
+
+The answer is restricted to this form, with at most 25 clauses, and only the template, the propositions and the priority reach the compiler. The template of each clause then writes its LTLf formula.
 
 \begin{figure}[H]
 \centering
@@ -621,7 +639,11 @@ In the first step a language model, the \textbf{generator}, reads the task and t
 \label{fig:step1}
 \end{figure}
 
-FARM assumes that the task it receives can be done. Everything the task speaks of is a proposition that the environment description declares and that can become true in the environment, and the clauses that state the task do not contradict each other. Section~\ref{sec:lim-anomalies} describes what happens to a task that breaks this assumption, and letting the generator refuse such a task is future work (Section~\ref{sec:fw-refusal}).
+FARM assumes that the task it receives can be done. Everything the task speaks of is a proposition that the environment description declares and that can become true in the environment, and the clauses that state the task do not contradict each other. \textcolor{red}{Section~\ref{sec:lim-anomalies} describes what happens to a task that breaks this assumption, and letting the generator refuse such a task is future work (Section~\ref{sec:fw-refusal}) QUITA TODO ESTO, NO ADELANTES LO QUE SE VA A HACER, NO SE ENTIENDE}.
+
+\textcolor{blue}{podrías poner un ejemplo de tarea, de environment description, }
+
+\textcolor{magenta}{yo creo que es mejor estructurar el resto del step 1 siguiendo el orden del step 1: haz un apartado que sea Clauses and templates y las prioridades porque están relacionados (por cierto, aún no sé bien lo que es una cláusula, puedes poner algún ejemplo??) }
 
 \subsection{IBM nl2ltl}
 IBM's nl2ltl \cite{fuggitti2023nl2ltl} goes from natural language to LTLf through templates. A language model chooses which templates to use and which propositions fill them, and each template maps to a fixed LTLf formula in which only the propositions change. 
@@ -658,9 +680,11 @@ The formulas use four operators (Section~\ref{sec:sota-ltl}): $\textbf{F}\,a$ me
 Response and Precedence are easy to confuse, and both allow the same step. Response$(a,b)$ lets $b$ appear without $a$, but \textbf{after} an $a$ a $b$ must follow, at the same step or later. Precedence$(a,b)$ lets $a$ appear without $b$, but a $b$ needs an $a$ \textbf{before} it or at the same step.
 
 \subsection{Goals and rules}
-A clause is a \textbf{goal} if it asks for something to happen, and a \textbf{rule} if it only limits what may happen. One test tells them apart: after a step in which \textbf{nothing happens}, that is, no proposition holds, a goal is not satisfied yet, while a rule is. 
 
-For example, Existence and ExistenceTwo are goals since by doing nothing, they cannot be satisfied. The other six templates are rules, Precedence included. They hold while nothing happens, and a later event may break them or make them wait for an answer. For example, if $b$ happens before $a$, Precedence$(a,b)$ is broken, but if nothing happens, it still holds.
+\textcolor{red}{qué es esto de goals and rules??}
+A clause is a \textbf{goal} if it asks for something to happen, and a \textbf{rule} if it only limits what may happen. One test tells them apart: after a step in which \textbf{nothing happens}, that is, no proposition holds, a goal is not satisfied yet, while a rule is. \textcolor{red}{este párrafo es incomprensible}
+
+For example, Existence and ExistenceTwo \textcolor{red}{esto son templates!!, lo acabas de decir en la sección anterior} are goals since by doing nothing, they cannot be satisfied. The other six templates are rules, Precedence included. They hold while nothing happens, and a later event may break them or make them wait for an answer. For example, if $b$ happens before $a$, Precedence$(a,b)$ is broken, but if nothing happens, it still holds.
 
 The compiler applies the test to the DFA of each clause, so it needs no list of templates. The difference shapes Step~4. Only a hard goal gives the RM a final state, and the RM pays the agent as it gets closer to that state.
 
