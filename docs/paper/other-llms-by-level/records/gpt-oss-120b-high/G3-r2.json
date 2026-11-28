@@ -1,0 +1,65 @@
+{
+ "suite": "templates",
+ "name": "tpl-existence-3-goal",
+ "task": "Get into the locked room. Pick up the ball.",
+ "gen": "gpt-oss-120b",
+ "critic": "gpt-oss-120b@critic",
+ "reasoning": "high",
+ "status": "accepted",
+ "error": null,
+ "wall_s": 171.6,
+ "attempts_used": 2,
+ "critic_rejections": 1,
+ "provider_reruns": 0,
+ "calls": 4,
+ "trace": [
+  {
+   "attempt": 1,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Pick up the target ball eventually.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Enter the locked room before picking up the ball.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_room_entered\",\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 1,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The task explicitly commands two separate actions \u2013 \u201cGet into the locked room\u201d and \u201cPick up the ball\u201d. This requires a hard Existence(target_room_entered) clause for the first command and a hard Existence(target_picked_up) clause for the second. The candidate lacks the Existence(target_room_entered) clause, so the first command is not enforced. Moreover, the added hard Precedence(target_room_entered, target_picked_up) imposes an order that the task does not state (there is no \u201cbefore\u201d cue linking the two sentences). Replace the Precedence clause with a hard Existence(target_room_entered) (or add it alongside the existing Existence(target_picked_up)) and remove the unnecessary Precedence clause."
+   }
+  },
+  {
+   "attempt": 2,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Enter the locked room\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_room_entered\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the ball\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 2,
+   "step": "critic",
+   "value": {
+    "accepted": true,
+    "feedback": "NO CHANGES NEEDED"
+   }
+  }
+ ],
+ "sends": [],
+ "clauses": [
+  [
+   "Existence",
+   [
+    "target_room_entered"
+   ],
+   "hard"
+  ],
+  [
+   "Existence",
+   [
+    "target_picked_up"
+   ],
+   "hard"
+  ]
+ ],
+ "texts": [
+  "Enter the locked room",
+  "Pick up the ball"
+ ],
+ "machine": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !target_picked_up&target_room_entered) -> u1\n(u0, target_picked_up&!target_room_entered) -> u2\n(u0, target_picked_up&target_room_entered) -> u3\n(u1, target_picked_up) -> u3\n(u2, target_room_entered) -> u3\nREWARD_FUNCTION:\n(u0, !target_picked_up&target_room_entered, u1) -> 1\n(u0, target_picked_up&!target_room_entered, u2) -> 1\n(u0, target_picked_up&target_room_entered, u3) -> 12\n(u1, target_picked_up, u3) -> 11\n(u2, target_room_entered, u3) -> 11\n"
+}

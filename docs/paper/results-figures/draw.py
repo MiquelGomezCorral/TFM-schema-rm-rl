@@ -6,6 +6,7 @@ shades and hatches are the palette's one scheme: solid = learned or built at the
 light = built after a further round, open = built but not learned, hatched = not built.
 """
 
+import re
 from math import ceil
 
 ARM_COLOR = {"farm": "plotFarm", "arm-fm": "plotArm", "no-rm": "plotNoRm"}
@@ -198,7 +199,7 @@ def fig_built(rows):
         f"height=5.8cm, xmin=0, xmax={asked + 8}, ymin=-0.8, ymax=2.5, "
         "ytick={0,1.6}, yticklabels={ARM-FM,FARM}, ytick style={draw=none}, "
         f"xtick={{0,50,100,150,200,250}}, extra x ticks={{{asked}}}, "
-        f"xlabel={{RMs built, of {asked} asked per arm}}, "
+        f"xlabel={{RMs built, of {asked} asked per method}}, "
         "legend style={at={(0.5,-0.25)}, anchor=north, legend columns=1}"
     )
     return picture(options, body, left=2.0)
@@ -354,7 +355,7 @@ def fig_soft(panels, xmax):
 # ========= Figure 4: right machines per thinking level, per model =========
 def mark_size(mark):
     """A triangle of the circle's radius looks smaller, so it gets a larger one."""
-    return {"triangle*": "3.2pt"}.get(mark, "2.6pt")
+    return {"triangle*": "3.2pt", "diamond*": "3.2pt"}.get(mark, "2.6pt")
 
 
 def fig_thinking(rows, labels):
@@ -410,6 +411,107 @@ def fig_thinking(rows, labels):
         "xlabel={median seconds to generate one RM}, ylabel={share of right RMs, of 138 runs (95\\% Wilson interval)}, "
         "ymajorgrids, xmajorgrids, major grid style={black!12}, "
         "legend style={at={(0.5,1.04)}, anchor=south, legend columns=3}"
+    )
+    return picture(options, body, left=2.0)
+
+
+# ========= Open-weight models: right machines per model, one column each =========
+# one marker shape per thinking level, in the order of the levels; the shapes are the figure's key
+LEVEL_MARK = {
+    "none": ("*", ""),
+    "low": ("triangle*", ""),
+    "medium": ("square*", ""),
+    "high": ("diamond*", ""),
+    "max": ("triangle*", "rotate=180, "),
+}
+LEVEL_STEP = 0.17  # column widths between two neighbouring levels of one model
+GPU_GB = (12, 48)  # the memory of the GPUs the models ran on: one desktop GPU, one cluster GPU
+OPEN_YMAX = 112  # room above 100% for the labels of the spans
+GREY = "black!55"
+
+
+def name_and_size(model):
+    """The name and the size of a model, without its quantization or ``Instruct``, on two lines."""
+    name = model.split(" (")[0].removesuffix(" Instruct")
+    return re.sub(r"[ -](\d+b)$", r"\\\\\1", name, flags=re.IGNORECASE)
+
+
+def fig_open_models(rows):
+    """Return the figure of right RMs per open-weight model and thinking level, one column per model.
+
+    rows: dicts series, colour, model, level, weights (GB), runs, right, low, high (0 to 1), ordered
+    by weights, then level. The columns follow the weights of the models; the tick label is the name,
+    the size and the memory, on three lines. A model's levels sit left to right inside its column,
+    one marker shape each (``LEVEL_MARK``), joined by a thin grey line under the markers, with a
+    whisker per point; the colour says where the model ran. Thin lines mark where the weights pass
+    ``GPU_GB``, and each span between them is named at the top. The caller passes only final rows.
+    """
+    weights = {r["model"]: r["weights"] for r in rows}
+    levels = list(LEVEL_MARK)
+    body = [
+        "\\addlegendimage{empty legend}",
+        "\\addlegendentry{thinking level:}",
+    ]
+    for level, (mark, turn) in LEVEL_MARK.items():
+        body += [
+            f"\\addlegendimage{{only marks, mark={mark}, mark size={mark_size(mark)}, color={GREY}, "
+            f"mark options={{{turn}fill={GREY}, draw=white, line width=0.4pt}}}}",
+            f"\\addlegendentry{{{level}}}",
+        ]
+    for name, colour in dict.fromkeys((r["series"], r["colour"]) for r in rows):
+        body += [swatch(f"fill={colour}, draw={FILL_OUTLINE}"), f"\\addlegendentry{{{name}}}"]
+    cuts = [sum(w <= gb for w in weights.values()) for gb in GPU_GB]  # columns before each line
+    edges = [0, *cuts, len(weights)]
+    names = [f"fits one {gb} GB GPU" for gb in GPU_GB]
+    names.append("needs two\\\\GPUs")  # a one-column span, so two lines
+    for cut in cuts:
+        body.append(line([(cut + 0.5, 0), (cut + 0.5, OPEN_YMAX)], "black!45, line width=0.4pt"))
+    for first, last, text in zip(edges[:-1], edges[1:], names, strict=True):
+        body.append(
+            node(
+                (first + last + 1) / 2,
+                OPEN_YMAX - 1,
+                text,
+                "anchor=north, align=center, text=black!60, font=\\scriptsize, inner sep=1pt",
+            )
+        )
+    column = {model: i + 1 for i, model in enumerate(weights)}
+
+    def level_x(row):
+        return column[row["model"]] + LEVEL_STEP * (
+            levels.index(row["level"]) - (len(levels) - 1) / 2
+        )
+
+    # the grey joins come first, so every marker and whisker is drawn over them
+    for model in weights:
+        points = [(level_x(r), 100 * r["right"] / r["runs"]) for r in rows if r["model"] == model]
+        if len(points) > 1:
+            body.append(line(points, "black!35, line width=0.4pt"))
+    for row in rows:
+        x = level_x(row)
+        y, low, high = 100 * row["right"] / row["runs"], 100 * row["low"], 100 * row["high"]
+        colour = row["colour"]
+        mark, turn = LEVEL_MARK[row["level"]]
+        whisker = f"{colour}, line width=0.6pt"
+        body += [
+            line([(x, low), (x, high)], whisker),
+            line([(x - 0.05, low), (x + 0.05, low)], whisker),
+            line([(x - 0.05, high), (x + 0.05, high)], whisker),
+            f"\\addplot[only marks, forget plot, mark={mark}, mark size={mark_size(mark)}, "
+            f"color={colour}, mark options={{{turn}fill={colour}, draw=white, line width=0.4pt}}] "
+            f"coordinates {{({x:.3f},{y:.3f})}};",
+        ]
+    ticks = ",".join(f"{{{name_and_size(m)}\\\\{w:.1f} GB}}" for m, w in weights.items())
+    options = (
+        f"height=7.5cm, xmin=0.5, xmax={len(weights) + 0.5}, ymin=0, ymax={OPEN_YMAX}, "
+        f"xtick={{1,...,{len(weights)}}}, xticklabels={{{ticks}}}, "
+        "xticklabel style={align=center, font=\\scriptsize}, ytick={0,10,...,100}, "
+        "yticklabel={\\pgfmathprintnumber{\\tick}\\%}, "
+        "xlabel={models, ordered by the memory of their weights}, "
+        "ylabel={share of right RMs, of 138 runs (95\\% Wilson interval)}, "
+        "ymajorgrids, major grid style={black!12}, "
+        # the legend is as wide as the picture, so it is centred on that, not on the plot
+        "legend style={at={(0.5,1.04)}, anchor=south, xshift=-0.75cm, legend columns=8}"
     )
     return picture(options, body, left=2.0)
 

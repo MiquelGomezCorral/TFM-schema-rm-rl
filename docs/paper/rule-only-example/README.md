@@ -1,4 +1,154 @@
-# A rule-only task end to end: `cx-rules-only`
+# A rule-only task end to end: `shop-siren`, and `cx-rules-only` below it
+
+Date: 2026-11-25, for the thesis section "Reward assignment" (`sec:rule-only`) and its Figure 3.9, the
+TikZ drawing of the siren machine (`paper/images/farm/rm-rule-only.tex`). The first example is card
+`shop-siren`, the machine the final FARM run trained on. The second, from 2026-11-24, is the larger
+`cx-rules-only` that the section used before; its material starts at "Second example" below.
+
+## shop-siren: what it shows
+
+A task that only sets one rule and names no goal, compiled to a Reward Machine with 2 states and no
+final state, and what that machine pays: a ring opens a promise (-1), the toggle that silences the
+siren keeps it (+1). The page holds the card, its clause and LTLf, the machine, one 6-step trace with
+state and pay at each step, the card's plan check, and what the final run learned on this machine
+(FARM 1.0 on 3 of 3 seeds, no-RM 1 of 3). The graph is the repository's own `render-rm --html` output:
+[evidence/graph/shop-siren.html](evidence/graph/shop-siren.html). The machine is the stored bundle
+file, rebuilt from its clause by the frozen compiler: no model call.
+
+## shop-siren: the card
+
+Card `shop-siren` (suite `shop`, level 1, `gym_id` `MiniGrid-Shop-v0`, `goal: false`, template
+`Response`, `experiments/benchmark/shop/tasks.json`):
+
+> Keep the shop quiet: whenever the siren rings, turn it off.
+
+The generator (`deepseek-v4.1-flash`, reasoning `max`, critic `glm-5.3-flash`) wrote 1 clause in 1
+attempt with 0 critic interventions (110.8 s):
+
+| # | Sentence | Template | Priority | LTLf |
+|---|---|---|---|---|
+| 1 | Whenever the siren is ringing, the agent toggles the siren switch to turn it off. | `Response(siren_ringing, switch_toggled)` | hard | `G (siren_ringing → (F switch_toggled))` |
+
+The LTLf as the run's `judge.json` stores it: raw `(G(siren_ringing->(Fswitch_toggled)))`, readable
+`(G (siren_ringing -> (F switch_toggled)))`.
+
+The shop is `MiniGrid-Shop-v0` (`experiments/benchmark/envs/shop/environment.md`): the siren starts by
+itself (first at step 3 to 30, then 25 to 69 steps after each toggle) and rings until the agent
+toggles the switch. `switch_toggled` is true on every toggle of the switch, also when the siren is
+silent. The clients and the food slips run too, so the room is the one every card sees.
+
+## shop-siren: the machine
+
+`evidence/graph/shop-siren.rm`, byte-equal to the bundle's `reward_machine.txt`:
+
+```
+REWARD_MACHINE:
+STATES: u0, u1
+INITIAL_STATE: u0
+FINAL_STATES:
+DEFAULT_REWARD: 0
+TRANSITION_FUNCTION:
+(u0, siren_ringing&!switch_toggled) -> u1
+(u1, switch_toggled) -> u0
+REWARD_FUNCTION:
+(u0, siren_ringing&!switch_toggled, u1) -> -1
+(u1, switch_toggled, u0) -> 1
+```
+
+- `u0`: the shop is quiet. No promise is open.
+- `u1`: the siren rings and has not been silenced. The promise of the `Response` is open.
+- A step no transition lists stays put and pays 0 (`DEFAULT_REWARD`): walking, a toggle on a silent
+  siren, a siren that keeps ringing.
+- There is no final state, no well and no end judgment. A hard `Response` can be broken only by the
+  episode ending with the siren on, and the run's `time_limit_penalty` is 0.0, so a ring left open
+  keeps its -1 and nothing more. A ring that is answered nets 0.
+- Both pays are the progress part of the reward layer (`_progress`,
+  `app/src/compiler/reward_layer.py`): the machine rebuilt with the progress part off pays 0 on every
+  transition.
+- The bundle is in commit `e6c3acba` (`data(benchmark): final-run bundles generated on the freeze
+  (809dfe3)`), stamped `809dfe3f932528c90be33232ddd684a883d8fbb0` (not dirty), and no later commit
+  touches `reward_machine.txt`. `state_descriptions.json` holds the two state texts and
+  `embeddings.json` their 768-dimension vectors (`nomic-embed-text`).
+
+## shop-siren: one trace
+
+This 6-step episode is made up to show the edges, not a recorded run. Each step lists the propositions
+that are true after it. The script runs it through the real `RewardMachineRuntime` and checks every
+step.
+
+| Step | Labels true | State | Pay | Total | What happens |
+|---|---|---|---|---|---|
+| 1 | none | u0 -> u0 | 0 | 0 | the shop is quiet, nothing happens |
+| 2 | `siren_ringing` | u0 -> u1 | -1 | -1 | the siren starts ringing: the promise opens |
+| 3 | `siren_ringing` | u1 -> u1 | 0 | -1 | the agent walks to the switch, the siren still rings |
+| 4 | `switch_toggled` | u1 -> u0 | +1 | 0 | the agent toggles the switch, the siren stops: the promise is kept |
+| 5 | `siren_ringing` | u0 -> u1 | -1 | -1 | the siren rings again: the promise opens |
+| 6 | `switch_toggled` | u1 -> u0 | +1 | 0 | the agent toggles the switch again: the promise is kept |
+
+## shop-siren: the plan check
+
+`experiments/benchmark/shop/bundles/farm/shop-siren.plan_check.json` holds 12 real runs of the card's
+plans on the shop (event seeds 1 to 3, 600 steps, `[plain, discounted]` pay), with no problem found:
+
+- `solve` (the scripted shop worker): ends in `u0`, plain pay 0 (discounted -0.1753, -0.212, -0.2107).
+- `wrong-0` (serves the clients, never switches the siren off) and `wrong-1` (does nothing for 600
+  steps): end in `u1`, plain pay -1 (discounted -0.8601, -0.7778, -0.7857).
+- `idle`: the plan that only waits, which the check adds for a machine with no final state, the same
+  run as `wrong-1`: `u1`, -1.
+
+Doing nothing is not a pass: the first ring always comes within the first 30 steps and leaves the
+machine in `u1` for good.
+
+## shop-siren: what the final run learned
+
+The final FARM run trained PPO (1,500,000 steps, 3 seeds) with `reward_source: rm` on this bundle
+(`bundle:` in its `run-config.yaml`), started 2026-11-22 14:27. The no-RM arm trained on the
+environment's own reward. Judged success is `mean_judged_success` of each run's `judge.json`, over 100
+evaluation episodes.
+
+| Method | Seed 1 | Seed 2 | Seed 3 |
+|---|---|---|---|
+| FARM (this machine) | 1.0 | 1.0 | 1.0 |
+| no-RM | 0.0 | 0.0 | 1.0 |
+
+Caveat on the encoding: this card trained with the machine state as an embedding (`rm_state_encoding:
+embedding`, the default since `58984baf`; each FARM run's resolved `config.yaml` says so and its
+`run-config.yaml` has no such key), not as a one-hot vector. The 1.0 is the result with the embeddings
+of the two state texts. The no-RM arm has no machine state, so the setting does not apply to it. Three
+runs per method are counts, not rates: the arms differ by 3 of 3 against 1 of 3.
+
+## shop-siren: evidence
+
+- `evidence/shop-siren-check-output.txt`: the checks the script passed (rebuilt machine equals the
+  stored text, the states, the two transitions and their pays, both pays are progress, the trace, the
+  plan check, the six judged results, the embedding encoding, the README tables).
+- `evidence/shop-siren-clauses.md`, `shop-siren-trace.md`: the tables above.
+  `evidence/shop-siren-results.json`: the six judged results with their run folder names (the run
+  folders are git-ignored under `outputs/runs/`).
+- `evidence/graph/shop-siren.{rm,svg,html}`: the machine and its `render-rm --html` graph.
+- `check/siren_example.py`: the script that writes all of the above.
+
+## shop-siren: gaps
+
+- The 6-step trace is made up. The plan check lists end states and pays of 12 real runs, not their steps.
+- The manifest says `provenance.status: "reconstructed"`, `generator: "compiler-adaptation"`. That is
+  the label every compiler-adapted bundle gets (`generation.py`), not a sign of a rebuilt machine.
+- The run folders are not in Git. A rerun needs the main checkout that holds `outputs/runs/`.
+- Embedding encoding, not one-hot (above). Three seeds per method.
+
+## shop-siren: rerun
+
+From the repository root, inside `RM_RL_env`, no model call (MONA runs locally):
+
+```bash
+env OMP_NUM_THREADS=4 PYTHONPATH=app python -W ignore docs/paper/rule-only-example/check/siren_example.py
+```
+
+It reuses `rebuild`, `walk`, `trace_table` and `clause_table` of `check/rule_only_example.py` (same
+folder) and fails if the rebuilt machine differs from the bundle's `reward_machine.txt`. The compiler
+files are the same on the freeze and on main `2e62e243`, where it was checked.
+
+# Second example: `cx-rules-only`
 
 Date: 2026-11-24, for the thesis section "Reward assignment" (`sec:rule-only`). One card, the frozen
 pipeline (commit `809dfe3`), no model call: everything below is recomputed from the clauses the
@@ -170,7 +320,8 @@ kind and a promise opened and kept all show in 3 states. The level benchmark cou
   break pricing, so only the progress part is additive; the table never splits the well charge.
 - The manifest says `provenance.status: "reconstructed"`. That is the label every
   compiler-adapted bundle gets (`generation.py`), not a sign of a rebuilt machine.
-- No TikZ figure: the repository has no generic RM-to-TikZ exporter.
+- The thesis draws a TikZ figure by hand, Figure 3.9 (`paper/images/farm/rm-rule-only.tex`), of the
+  `shop-siren` machine, not of this one; the repository has no generic RM-to-TikZ exporter.
 
 ## Files
 

@@ -1,0 +1,91 @@
+{
+ "suite": "templates",
+ "name": "tpl-existence-2-goal",
+ "task": "Open the door. Pick up the box in the other room.",
+ "gen": "gpt-oss:20b",
+ "critic": "gpt-oss:20b@critic",
+ "reasoning": "high",
+ "status": "accepted",
+ "error": null,
+ "wall_s": 693.8,
+ "attempts_used": 4,
+ "critic_rejections": 3,
+ "provider_reruns": 0,
+ "calls": 8,
+ "trace": [
+  {
+   "attempt": 1,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Eventually pick up the target box.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Open the door before picking up the target box.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 1,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The task specifies a goal to open the door, but no clause enforces that. Add a hard Existence(door_open) clause. The current clauses only require picking up the box and that it cannot be picked up before the door opens, but they do not require the door to open at all."
+   }
+  },
+  {
+   "attempt": 2,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Eventually open the door.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Eventually pick up the target box.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Open the door before picking up the target box.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 2,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The clause `Existence door_open` is redundant given the other hard rules (Existence target_picked_up and Precedence door_open before target_picked_up). Remove the Existence door_open clause and keep the other two clauses."
+   }
+  },
+  {
+   "attempt": 3,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Eventually pick up the box in the other room.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Open the door before picking up the box in the other room.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 3,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The task commands that the agent must open the door, but the clause set lacks a hard `Existence(door_open)` to enforce that goal. Additionally, the clause `Precedence(door_open, target_picked_up)` imposes an ordering that is not stated in the task text; it should be removed. Add a hard `Existence(door_open)` and keep only the hard `Existence(target_picked_up)`."
+   }
+  },
+  {
+   "attempt": 4,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Eventually open the door.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Eventually pick up the box in the other room.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 4,
+   "step": "critic",
+   "value": {
+    "accepted": true,
+    "feedback": "NO CHANGES NEEDED"
+   }
+  }
+ ],
+ "sends": [],
+ "clauses": [
+  [
+   "Existence",
+   [
+    "door_open"
+   ],
+   "hard"
+  ],
+  [
+   "Existence",
+   [
+    "target_picked_up"
+   ],
+   "hard"
+  ]
+ ],
+ "texts": [
+  "Eventually open the door.",
+  "Eventually pick up the box in the other room."
+ ],
+ "machine": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&target_picked_up) -> u1\n(u0, door_open&!target_picked_up) -> u2\n(u0, door_open&target_picked_up) -> u3\n(u1, door_open) -> u3\n(u2, target_picked_up) -> u3\nREWARD_FUNCTION:\n(u0, !door_open&target_picked_up, u1) -> 1\n(u0, door_open&!target_picked_up, u2) -> 1\n(u0, door_open&target_picked_up, u3) -> 12\n(u1, door_open, u3) -> 11\n(u2, target_picked_up, u3) -> 11\n"
+}

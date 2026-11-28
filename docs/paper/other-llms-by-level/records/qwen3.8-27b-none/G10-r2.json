@@ -1,0 +1,175 @@
+{
+ "suite": "templates",
+ "name": "tpl-response-1-goal",
+ "task": "Whenever you are holding the key, the door must be open at that moment or opened afterwards. Pick up the key, open the door with it, then pick up the box in the other room.",
+ "gen": "qwen3.8-27b",
+ "critic": "qwen3.8-27b@critic",
+ "reasoning": "none",
+ "status": "accepted",
+ "error": null,
+ "wall_s": 395.6,
+ "attempts_used": 9,
+ "critic_rejections": 8,
+ "provider_reruns": 0,
+ "calls": 18,
+ "trace": [
+  {
+   "attempt": 1,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Whenever the agent is holding the key, the door must be open at that moment or opened afterwards.\",\n    \"pattern\": \"Response\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the key.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Open the door after picking up the key.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the box after opening the door.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the box after opening the door.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 1,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The clause `Existence(has_door_key)` is redundant. The task commands a sequence ('Pick up the key... then... pick up the box'), and the compiler's `Redundant` clue confirms that `Existence(has_door_key)` is already implied by the other hard clauses (specifically, the hard `Existence(target_picked_up)` combined with the `Precedence` chain forces `has_door_key` to occur). Per checklist item 6, this redundant `Existence` is a defect that treats a prerequisite as an independent goal, which can distort rewards. Remove `Existence(has_door_key)`. Keep the `Precedence` chain and the `Response` clause."
+   }
+  },
+  {
+   "attempt": 2,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Whenever the agent is holding the key, the door must be open at that moment or opened afterwards.\",\n    \"pattern\": \"Response\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Open the door after picking up the key.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the box after opening the door.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the box.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 2,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The hard `Response(has_door_key, door_open)` is incorrect because `has_door_key` is a persistent condition. According to the template definitions and environment constraints, the agent must drop the key (`has_door_key` becomes false) before picking up the box (`target_picked_up`). Since `Response(a, b)` requires `b` to be true on the last step whenever `a` is true, and `door_open` is not guaranteed to remain open until the end of the episode (it can be toggled shut), this clause would require the door to be open on the final step (when `target_picked_up` is true) every time the key was ever held. This conflicts with the task's command to pick up the box after opening the door, as the task does not require the door to remain open until the box is picked up. The intended logic for 'whenever you are holding the key, the door must be open... or opened afterwards' in this context is captured by the order of steps: the agent must pick up the key and then open the door. This is correctly expressed by `Precedence(has_door_key, door_open)` (Clause 2) combined with the goal `Existence(target_picked_up)` (Clause 4) and `Precedence(door_open, target_picked_up)` (Clause 3). The `Response` clause adds a restrictive requirement (door open at termination if key was held) that is not in the task and is physically awkward (requires toggling door open right before picking box if it was closed). Remove `Response(has_door_key, door_open)`."
+   }
+  },
+  {
+   "attempt": 3,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Open the door after picking up the key.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the box after opening the door.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the box.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 3,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The task states 'Whenever you are holding the key, the door must be open at that moment or opened afterwards.' This conditional requirement is not captured by the candidate clauses. The candidate uses `Precedence(has_door_key, door_open)`, which only ensures that `door_open` does not occur *before* the first time `has_door_key` is true. It allows the agent to hold the key (`has_door_key` true) for an indefinite duration while the door remains closed (`door_open` false), as long as the door was not opened *before* the key was picked up. The task, however, requires that whenever the key is held, the door is either already open or will be opened. This is a condition with a timing cue ('at that moment or opened afterwards'), which maps to `Response(a, b)` where `a` is the condition and `b` is the outcome. Therefore, you must add a hard `Response(has_door_key, door_open)` clause. The existing clauses `Precedence(has_door_key, door_open)`, `Precedence(door_open, target_picked_up)`, and `Existence(target_picked_up)` correctly capture the second sentence of the task ('Pick up the key, open the door with it, then pick up the box in the other room') and can remain."
+   }
+  },
+  {
+   "attempt": 4,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Pick up the box.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Open the door after picking up the key.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the box after opening the door.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 4,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The first sentence of the task, 'Whenever you are holding the key, the door must be open at that moment or opened afterwards', imposes a conditional requirement on the agent's behavior while holding the key. This corresponds to a `Response(has_door_key, door_open)` rule (whenever `has_door_key` is true, `door_open` must be true at that step or become true later). The candidate omits this rule entirely. The existing clause `Precedence(has_door_key, door_open)` only ensures that the door is not opened *before* the key is first picked up; it does not constrain the state of the door while the key is being held (e.g., it would allow the agent to hold the key while the door is closed, as long as the door was never opened before the key was picked up). To capture the full task logic, you must add a hard `Response(has_door_key, door_open)` clause."
+   }
+  },
+  {
+   "attempt": 5,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Whenever the agent is holding the key, the door must be open at that moment or opened afterwards.\",\n    \"pattern\": \"Response\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Open the door after picking up the key.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the box after opening the door.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the box.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 5,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The task states the order 'Pick up the key, open the door ... then pick up the box'. This requires that the key is picked up before the door is opened. The candidate includes `Precedence(has_door_key, door_open)`, which only restricts `door_open` from happening *before* `has_door_key`; it does not force `has_door_key` to happen. While `has_door_key` is currently forced by the goal `Existence(target_picked_up)` via the environment's physical constraints (you can't reach the box without the key), the clause `Precedence(has_door_key, door_open)` as the sole representation of the first order link is structurally incorrect. According to the clause language rules, a commanded step ('Pick up the key') that is followed by a hard-ordered step ('open the door') should be represented by an `Existence` of the first step (or the last step of the chain forcing it, but here 'pick up key' is the first). More critically, looking at the standard mapping for 'Do A, then B': we need `Existence(B)` and `Precedence(A, B)`. Here, the 'A' is 'pick up key' (`has_door_key`) and 'B' is 'open door' (`door_open`). The clause `Precedence(has_door_key, door_open)` is correct for the ordering, but is `has_door_key` forced? Yes, by the chain to `target_picked_up`. However, let's look closer at the specific wording 'Pick up the key'. `has_door_key` is a persistent condition. `Existence(has_door_key)` is the standard way to ensure the agent actually acquires the key. Without `Existence(has_door_key)`, the machine relies entirely on the environmental constraint that `target_picked_up` implies `has_door_key` happened. While this is valid in this specific environment, the clause `Precedence(has_door_key, door_open)` is redundant if we have `Response(has_door_key, door_open)`? No, `Precedence` ensures the *first* door_open is after the *first* has_door_key. `Response` ensures every has_door_key is followed by a door_open. The task says 'Whenever you are holding the key, the door must be open...'. This maps to `Response(has_door_key, door_open)`. The task also says 'Pick up the key, open the door... then pick up the box'. This maps to the chain. The clause `Precedence(has_door_key, door_open)` is derived from 'Pick up the key... open the door'. The clause `Precedence(door_open, target_picked_up)` is derived from 'open the door... then pick up the box'. The goal is `Existence(target_picked_up)`. This set of clauses {`Response(has_door_key, door_open)`, `Precedence(has_door_key, door_open)`, `Precedence(door_open, target_picked_up)`, `Existence(target_picked_up)`} seems to capture the logic. Is there a defect? Let's check the `Response(has_door_key, door_open)`. `has_door_key` is a condition. If the agent holds the key, drops it, picks it up again, does `Response` trigger again? Yes. If the agent holds the key, and the door is already open, does it satisfy? Yes, `b` happens on that step. The task says 'door must be open at that moment or opened afterwards'. This matches `Response`. However, consider the case where the agent picks up the key *after* the door is open. `Precedence(has_door_key, door_open)` forbids `door_open` before `has_door_key`. So the agent must pick up the key *before* opening the door. This is consistent with the task 'Pick up the key, open the door...'. Is `Precedence(has_door_key, door_open)` necessary if we have `Response(has_door_key, door_open)`? `Response` allows `door_open` to happen *before* `has_door_key` as long as `has_door_key` never happens? No, `Response(a,b)` holds if `a` never happens. If `a` happens, `b` must happen later. It does NOT forbid `b` before `a`. The task says 'Pick up the key, open the door'. This is an order: Key THEN Door. `Response` does not enforce this order. `Precedence` does. So `Precedence` is needed. Is `Existence(has_door_key)` needed? The prompt says 'A hard `Existence(b)` with a hard `Precedence(a, b)` already forces `a`'. Here, `Existence(target_picked_up)` and `Precedence(door_open, target_picked_up)` force `door_open`. `door_open` and `Precedence(has_door_key, door_open)` force `has_door_key`. So `has_door_key` is forced. No `Existence` needed for it. So the clauses seem correct? Let's re-read the `Response` clause. 'Whenever you are holding the key, the door must be open at that moment or opened afterwards.' This is `Response(has_door_key, door_open)`. Wait, if `has_door_key` is true, and `door_open` is false, and then `has_door_key` becomes false (drop key), and then `door_open` becomes true... `Response` says: For every step where `a` is true, there is a step >= t where `b` is true. If `a` is true at t=1, `b` must be true at t=1 or later. If `b` becomes true at t=5, it satisfies. The `Precedence` clause `Precedence(has_door_key, door_open)` ensures the *first* `door_open` is not before the *first* `has_door_key`. But what if the agent opens the door, closes it, and then picks up the key? `Precedence` is broken. The task 'Pick up the key, open the door' implies the key is picked up first. So `Precedence` is correct. Is there any missing clause? The task says 'Pick up the key, open the door with it, then pick up the box'. The clauses cover: 1. Key before Door (`Precedence(has_door_key, door_open)`). 2. Door before Box (`Precedence(door_open, target_picked_up)`). 3. Box happens (`Existence(target_picked_up)`). 4. If holding key, door opens (`Response(has_door_key, door_open)`). This seems complete. Why would I reject it? Let's look at the compiler clues. 'Redundant: none'. 'Every way to finish includes: has_door_key, door_open, target_picked_up'. This looks correct. Let me double check the `Response` clause. Is `Response(has_door_key, door_open)` actually required? 'Whenever you are holding the key, the door must be open at that moment or opened afterwards.' Yes. Is it redundant with `Precedence`? No. `Precedence` doesn't care what happens while holding the key, as long as the first door open is after the first key. `Response` cares about *every* time you hold the key. Example: Pick up key (t=1). Door opens (t=2). Door closes (t=3). Pick up key again (t=4). `Precedence` is satisfied (first key t=1, first door t=2). `Response` for t=1 is satisfied (door at t=2). `Response` for t=4 requires door to open at t=4 or later. The task says 'Whenever...'. So the agent must reopen the door. This is a valid constraint. The clauses seem correct. I will accept."
+   }
+  },
+  {
+   "attempt": 6,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Whenever the agent is holding the key, the door must be open at that moment or opened afterwards.\",\n    \"pattern\": \"Response\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"The door must be opened only after the agent has picked up the key.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"The target box must be picked up only after the door is open.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the box.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 6,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The task commands the agent to 'Pick up the key', but no clause makes `has_door_key` happen. The candidate includes `Precedence(has_door_key, door_open)` and `Response(has_door_key, door_open)`, but since `has_door_key` is a persistent condition (true whenever the key is held), these rules are vacuously satisfied if the key is never picked up (the condition never triggers, so no response is owed and no precedence is violated). Consequently, `door_open` is not forced to happen (as it is not required by any goal clause), and the agent could successfully complete the task by ignoring the key and door entirely, provided it somehow reached the box (or in the machine logic, simply failing to reject while never picking up the key). To enforce the commanded step, add a hard `Existence(has_door_key)`. With the existing hard `Precedence(has_door_key, door_open)` and `Precedence(door_open, target_picked_up)`, plus the hard `Existence(target_picked_up)`, this will correctly force the sequence: pick up key -> open door -> pick up box."
+   }
+  },
+  {
+   "attempt": 7,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Whenever the agent is holding the key, the door must be open at that moment or opened afterwards.\",\n    \"pattern\": \"Response\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"The door must be opened only after the agent has picked up the key.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"The target box must be picked up only after the door is open.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the target box.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 7,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The candidate is missing a hard `Existence(has_door_key)` clause. The task explicitly commands the agent to 'Pick up the key'. In the compiled clauses, `has_door_key` appears only as the antecedent of the `Response` rule and as the first argument of a `Precedence` rule; neither rule type forces the event to occur. The current machine has no requirement for `has_door_key` to be true at any point during the episode. While the subsequent requirements (`door_open` then `target_picked_up`) are physically impossible without the key in this specific environment, the reward machine must encode the commanded steps from the task text. Without `Existence(has_door_key)`, the machine fails to model the first commanded step. Add a hard `Existence(has_door_key)` clause."
+   }
+  },
+  {
+   "attempt": 8,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Whenever the agent is holding the key, the door must be open at that moment or opened afterwards.\",\n    \"pattern\": \"Response\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the key.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Open the door after picking up the key.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the box after opening the door.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the target box.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 8,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The clause `Existence(has_door_key)` is redundant. The task commands the sequence 'Pick up the key, open the door... then pick up the box', which is captured by the hard `Precedence` chain (`Precedence(has_door_key, door_open)` and `Precedence(door_open, target_picked_up)`) ending in the hard `Existence(target_picked_up)`. This chain forces `has_door_key` to occur before `door_open`, which must occur before `target_picked_up`. Therefore, an explicit `Existence(has_door_key)` repeats what the chain already forces. Remove `Existence(has_door_key)`. The `Response(has_door_key, door_open)` clause correctly captures the conditional 'Whenever you are holding the key...'. Note that `has_door_key` is a persistent condition; in this specific environment, the agent drops the key before the episode ends (to pick up the box), so the response does not fail at the horizon due to the lasting condition, and it is the correct template for the stated 'whenever' constraint."
+   }
+  },
+  {
+   "attempt": 9,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Whenever the agent is holding the key, the door must be open at that moment or opened afterwards.\",\n    \"pattern\": \"Response\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"The door must be opened only after the agent has picked up the key.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"The target box must be picked up only after the door is open.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the target box.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 9,
+   "step": "critic",
+   "value": {
+    "accepted": true,
+    "feedback": "NO CHANGES NEEDED"
+   }
+  }
+ ],
+ "sends": [],
+ "clauses": [
+  [
+   "Response",
+   [
+    "has_door_key",
+    "door_open"
+   ],
+   "hard"
+  ],
+  [
+   "Precedence",
+   [
+    "has_door_key",
+    "door_open"
+   ],
+   "hard"
+  ],
+  [
+   "Precedence",
+   [
+    "door_open",
+    "target_picked_up"
+   ],
+   "hard"
+  ],
+  [
+   "Existence",
+   [
+    "target_picked_up"
+   ],
+   "hard"
+  ]
+ ],
+ "texts": [
+  "Whenever the agent is holding the key, the door must be open at that moment or opened afterwards.",
+  "The door must be opened only after the agent has picked up the key.",
+  "The target box must be picked up only after the door is open.",
+  "Pick up the target box."
+ ],
+ "machine": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4, u5, u6\nINITIAL_STATE: u0\nFINAL_STATES: u4\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&!has_door_key&target_picked_up) -> u1\n(u0, !door_open&has_door_key&!target_picked_up) -> u2\n(u0, !door_open&has_door_key&target_picked_up) -> u1\n(u0, door_open&!has_door_key&!target_picked_up) -> u1\n(u0, door_open&!has_door_key&target_picked_up) -> u1\n(u0, door_open&has_door_key&!target_picked_up) -> u3\n(u0, door_open&has_door_key&target_picked_up) -> u4\n(u2, !door_open&target_picked_up) -> u1\n(u2, door_open&!target_picked_up) -> u3\n(u2, door_open&target_picked_up) -> u4\n(u3, !door_open&!has_door_key&target_picked_up) -> u4\n(u3, !door_open&has_door_key&!target_picked_up) -> u5\n(u3, !door_open&has_door_key&target_picked_up) -> u6\n(u3, door_open&target_picked_up) -> u4\n(u5, !door_open&target_picked_up) -> u6\n(u5, door_open&!target_picked_up) -> u3\n(u5, door_open&target_picked_up) -> u4\n(u6, door_open) -> u4\nREWARD_FUNCTION:\n(u0, !door_open&!has_door_key&target_picked_up, u1) -> -10\n(u0, !door_open&has_door_key&!target_picked_up, u2) -> 1\n(u0, !door_open&has_door_key&target_picked_up, u1) -> -10\n(u0, door_open&!has_door_key&!target_picked_up, u1) -> -10\n(u0, door_open&!has_door_key&target_picked_up, u1) -> -10\n(u0, door_open&has_door_key&!target_picked_up, u3) -> 2\n(u0, door_open&has_door_key&target_picked_up, u4) -> 13\n(u2, !door_open&target_picked_up, u1) -> -11\n(u2, door_open&!target_picked_up, u3) -> 1\n(u2, door_open&target_picked_up, u4) -> 12\n(u3, !door_open&!has_door_key&target_picked_up, u4) -> 11\n(u3, !door_open&has_door_key&!target_picked_up, u5) -> -1\n(u3, door_open&target_picked_up, u4) -> 11\n(u5, !door_open&target_picked_up, u6) -> 1\n(u5, door_open&!target_picked_up, u3) -> 1\n(u5, door_open&target_picked_up, u4) -> 12\n(u6, door_open, u4) -> 11\n"
+}

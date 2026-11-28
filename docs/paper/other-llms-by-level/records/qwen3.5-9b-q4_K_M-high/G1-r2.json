@@ -1,0 +1,66 @@
+{
+ "suite": "templates",
+ "name": "tpl-existence-1-goal",
+ "task": "Pick up the key, then reach the goal.",
+ "gen": "qwen3.5:9b-q4_K_M",
+ "critic": "qwen3.5:9b-q4_K_M@critic",
+ "reasoning": "high",
+ "status": "accepted",
+ "error": null,
+ "wall_s": 431.4,
+ "attempts_used": 2,
+ "critic_rejections": 1,
+ "provider_reruns": 0,
+ "calls": 4,
+ "trace": [
+  {
+   "attempt": 1,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Pick up the key (eventually acquire it)\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_key\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Reach the goal after picking up the key\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_key\",\n      \"at_goal\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 1,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The task 'Pick up the key, then reach the goal' requires reaching the goal (`at_goal`) as a hard command. The candidate clauses miss a hard `Existence(at_goal)` clause. Without this, the machine's success state (u1) can be reached prematurely based on `has_key` alone according to the provided transition logic, failing to enforce the 'then reach the goal' requirement. Additionally, the clause `Existence(has_key)` is redundant because the hard chain ending in `Existence(at_goal)` with a `Precedence(has_key, at_goal)` would force `has_key`. Remove `Existence(has_key)` and add `Existence(at_goal)`."
+   }
+  },
+  {
+   "attempt": 2,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Reach the goal\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"at_goal\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the key before reaching the goal\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_key\",\n      \"at_goal\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 2,
+   "step": "critic",
+   "value": {
+    "accepted": true,
+    "feedback": "NO CHANGES NEEDED: The clauses Existence(at_goal) hard and Precedence(has_key, at_goal) hard correctly capture the original task 'Pick up the key, then reach the goal.' Environment constraints ensure at_goal requires door_open which requires has_key, so the order is implicitly enforced. The machine transitions match the clause logic (reject if at_goal without prior has_key)."
+   }
+  }
+ ],
+ "sends": [],
+ "clauses": [
+  [
+   "Existence",
+   [
+    "at_goal"
+   ],
+   "hard"
+  ],
+  [
+   "Precedence",
+   [
+    "has_key",
+    "at_goal"
+   ],
+   "hard"
+  ]
+ ],
+ "texts": [
+  "Reach the goal",
+  "Pick up the key before reaching the goal"
+ ],
+ "machine": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&has_key) -> u1\n(u0, at_goal&!has_key) -> u2\n(u0, at_goal&has_key) -> u3\n(u1, at_goal) -> u3\nREWARD_FUNCTION:\n(u0, !at_goal&has_key, u1) -> 1\n(u0, at_goal&!has_key, u2) -> -10\n(u0, at_goal&has_key, u3) -> 12\n(u1, at_goal, u3) -> 11\n"
+}

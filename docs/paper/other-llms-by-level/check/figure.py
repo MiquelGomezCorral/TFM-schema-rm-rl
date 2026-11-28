@@ -28,6 +28,9 @@ SERIES_LIGHT = [
     "#1b7f8c",
     "#6b52c0",
     "#8a6d3b",
+    "#5b6b7f",
+    "#6f9a1a",
+    "#d6336c",
 ]
 SERIES_DARK = [
     "#8fb0ff",
@@ -38,6 +41,9 @@ SERIES_DARK = [
     "#5ccfdc",
     "#b9a2ff",
     "#d8b56b",
+    "#a6b4c8",
+    "#b5d95a",
+    "#ff7da8",
 ]
 
 

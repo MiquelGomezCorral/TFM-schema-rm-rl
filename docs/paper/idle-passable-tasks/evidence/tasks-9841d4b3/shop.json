@@ -1,0 +1,1308 @@
+{
+  "suite": "shop",
+  "schema": 1,
+  "cards": [
+    {
+      "id": "shop-siren",
+      "env": {
+        "description": "experiments/benchmark/envs/shop/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-Shop-v0",
+        "env_kwargs": {
+          "max_steps": 600
+        },
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Keep the shop quiet: whenever the siren rings, turn it off.",
+      "goal": false,
+      "template": "Response",
+      "status": "draft",
+      "expect": [
+        [
+          "Response",
+          [
+            "siren_ringing",
+            "switch_toggled"
+          ],
+          "hard"
+        ]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [
+          {
+            "do": "policy",
+            "name": "shop",
+            "ignore": []
+          }
+        ],
+        "wrong": [
+          {
+            "breaks": [
+              0
+            ],
+            "why": "Serves the clients but never switches the siren off.",
+            "steps": [
+              {
+                "do": "policy",
+                "name": "shop",
+                "ignore": [
+                  "siren"
+                ]
+              }
+            ]
+          },
+          {
+            "breaks": [
+              0
+            ],
+            "why": "Does nothing for the whole episode: every rule that opens is left open.",
+            "steps": [
+              {
+                "do": "wait",
+                "n": 600
+              }
+            ]
+          }
+        ]
+      },
+      "event_seeds": [
+        1,
+        2,
+        3
+      ],
+      "paraphrases": [
+        "Whenever the siren goes off, switch it off again.",
+        "Each time the siren starts ringing, turn it off.",
+        "Keep the shop quiet by turning the siren off every time it rings."
+      ],
+      "notes": "Level 1. The siren rule alone; the clients and food slips still run, so the world is the one every card sees."
+    },
+    {
+      "id": "shop-serve",
+      "env": {
+        "description": "experiments/benchmark/envs/shop/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-Shop-v0",
+        "env_kwargs": {
+          "max_steps": 600
+        },
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Whenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move.",
+      "goal": false,
+      "template": null,
+      "status": "draft",
+      "expect": [
+        [
+          "Response",
+          [
+            "client_arrived",
+            "order_taken"
+          ],
+          "hard"
+        ],
+        [
+          "Response",
+          [
+            "order_taken",
+            "food_prepared"
+          ],
+          "hard"
+        ],
+        [
+          "Response",
+          [
+            "food_prepared",
+            "order_served"
+          ],
+          "hard"
+        ],
+        [
+          "ChainResponse",
+          [
+            "food_fell",
+            "holding_food"
+          ],
+          "hard"
+        ]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [
+          {
+            "do": "policy",
+            "name": "shop",
+            "ignore": []
+          }
+        ],
+        "wrong": [
+          {
+            "breaks": [
+              0
+            ],
+            "why": "Does nothing for the whole episode: every rule that opens is left open.",
+            "steps": [
+              {
+                "do": "wait",
+                "n": 600
+              }
+            ]
+          },
+          {
+            "breaks": [
+              3
+            ],
+            "why": "Serves the clients, but leaves a fallen food portion on the floor for one step.",
+            "steps": [
+              {
+                "do": "policy",
+                "name": "shop",
+                "ignore": [
+                  "food_fall"
+                ]
+              }
+            ]
+          },
+          {
+            "breaks": [
+              1
+            ],
+            "why": "Takes the first client's order and then does nothing.",
+            "steps": [
+              {
+                "do": "wait",
+                "n": 30
+              },
+              {
+                "do": "toggle",
+                "obj": "ball"
+              },
+              {
+                "do": "wait",
+                "n": 600
+              }
+            ]
+          }
+        ]
+      },
+      "event_seeds": [
+        1,
+        2,
+        3
+      ],
+      "paraphrases": [
+        "Each time a client arrives, take their order, get food from the pantry, prepare it at the stove and hand it over; should the food fall, your very next move must pick it up.",
+        "For every client who comes in: take the order, bring food from the pantry, prepare it at the stove and give it to the client. If the food falls, pick it up again on your very next move.",
+        "When a client walks in, take their order, fetch food from the pantry, prepare it at the stove and serve it to them. Every time the food falls, pick it up on the very next move."
+      ],
+      "notes": "Level 2. The serving rules; the siren still rings and the card ignores it on purpose."
+    },
+    {
+      "id": "shop-full",
+      "env": {
+        "description": "experiments/benchmark/envs/shop/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-Shop-v0",
+        "env_kwargs": {
+          "max_steps": 600
+        },
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Run the shop: whenever the siren rings, turn it off, and whenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move.",
+      "goal": false,
+      "template": null,
+      "status": "draft",
+      "expect": [
+        [
+          "Response",
+          [
+            "siren_ringing",
+            "switch_toggled"
+          ],
+          "hard"
+        ],
+        [
+          "Response",
+          [
+            "client_arrived",
+            "order_taken"
+          ],
+          "hard"
+        ],
+        [
+          "Response",
+          [
+            "order_taken",
+            "food_prepared"
+          ],
+          "hard"
+        ],
+        [
+          "Response",
+          [
+            "food_prepared",
+            "order_served"
+          ],
+          "hard"
+        ],
+        [
+          "ChainResponse",
+          [
+            "food_fell",
+            "holding_food"
+          ],
+          "hard"
+        ]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [
+          {
+            "do": "policy",
+            "name": "shop",
+            "ignore": []
+          }
+        ],
+        "wrong": [
+          {
+            "breaks": [
+              0,
+              1
+            ],
+            "why": "Does nothing for the whole episode: every rule that opens is left open.",
+            "steps": [
+              {
+                "do": "wait",
+                "n": 600
+              }
+            ]
+          },
+          {
+            "breaks": [
+              0
+            ],
+            "why": "Serves the clients but never switches the siren off.",
+            "steps": [
+              {
+                "do": "policy",
+                "name": "shop",
+                "ignore": [
+                  "siren"
+                ]
+              }
+            ]
+          },
+          {
+            "breaks": [
+              4
+            ],
+            "why": "Serves the clients, but leaves a fallen food portion on the floor for one step.",
+            "steps": [
+              {
+                "do": "policy",
+                "name": "shop",
+                "ignore": [
+                  "food_fall"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "event_seeds": [
+        1,
+        2,
+        3
+      ],
+      "paraphrases": [
+        "Keep the shop running: switch the siren off each time it rings, and for every client who arrives take their order, get food from the pantry, prepare it at the stove and hand it over; if the food falls, your very next move must pick it up.",
+        "Turn the siren off whenever it rings. When a client comes in, take the order, bring food from the pantry, prepare it at the stove and give it to the client. If the food falls, pick it up again on your very next move.",
+        "Run the shop by turning the siren off every time it rings, and by serving each client who walks in: take their order, fetch food from the pantry, prepare it at the stove and serve it. After the food falls, pick it up on the very next move."
+      ],
+      "notes": "Level 3. The clauses of levels 1 and 2 together."
+    },
+    {
+      "id": "shop-quiet-first",
+      "env": {
+        "description": "experiments/benchmark/envs/shop/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-Shop-v0",
+        "env_kwargs": {
+          "max_steps": 600
+        },
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Run the shop: whenever the siren rings, turn it off, and whenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move. Never give a client their food while the siren is ringing.",
+      "goal": false,
+      "template": null,
+      "status": "draft",
+      "expect": [
+        [
+          "Response",
+          [
+            "siren_ringing",
+            "switch_toggled"
+          ],
+          "hard"
+        ],
+        [
+          "Response",
+          [
+            "client_arrived",
+            "order_taken"
+          ],
+          "hard"
+        ],
+        [
+          "Response",
+          [
+            "order_taken",
+            "food_prepared"
+          ],
+          "hard"
+        ],
+        [
+          "Response",
+          [
+            "food_prepared",
+            "order_served"
+          ],
+          "hard"
+        ],
+        [
+          "ChainResponse",
+          [
+            "food_fell",
+            "holding_food"
+          ],
+          "hard"
+        ],
+        [
+          "Absence",
+          [
+            "served_while_ringing"
+          ],
+          "hard"
+        ]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [
+          {
+            "do": "policy",
+            "name": "shop",
+            "ignore": []
+          }
+        ],
+        "wrong": [
+          {
+            "breaks": [
+              0,
+              1
+            ],
+            "why": "Does nothing for the whole episode: every rule that opens is left open.",
+            "steps": [
+              {
+                "do": "wait",
+                "n": 600
+              }
+            ]
+          },
+          {
+            "breaks": [
+              0,
+              5
+            ],
+            "why": "Serves the clients but never switches the siren off.",
+            "steps": [
+              {
+                "do": "policy",
+                "name": "shop",
+                "ignore": [
+                  "siren"
+                ]
+              }
+            ]
+          },
+          {
+            "breaks": [
+              5
+            ],
+            "why": "Serves a waiting client first and switches the siren off only afterwards.",
+            "steps": [
+              {
+                "do": "policy",
+                "name": "shop",
+                "ignore": [
+                  "siren_late"
+                ]
+              }
+            ]
+          },
+          {
+            "breaks": [
+              4
+            ],
+            "why": "Serves the clients, but leaves a fallen food portion on the floor for one step.",
+            "steps": [
+              {
+                "do": "policy",
+                "name": "shop",
+                "ignore": [
+                  "food_fall"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "event_seeds": [
+        1,
+        2,
+        3
+      ],
+      "paraphrases": [
+        "Keep the shop running: switch the siren off each time it rings, and for every client who arrives take their order, get food from the pantry, prepare it at the stove and hand it over; if the food falls, your very next move must pick it up. Do not hand a client their food while the siren is ringing.",
+        "Turn the siren off whenever it rings. When a client comes in, take the order, bring food from the pantry, prepare it at the stove and give it to the client; if the food falls, pick it up again on your very next move. The siren must be silent whenever you give a client their food.",
+        "Run the shop by turning the siren off every time it rings, and by serving each client who walks in: take their order, fetch food from the pantry, prepare it at the stove and serve it, and after the food falls pick it up on the very next move. Never serve a client while the siren rings."
+      ],
+      "notes": "Level 4. Level 3 plus the quiet rule, which fits none of the 8 templates on its own, so `served_while_ringing` carries it as an `Absence`."
+    },
+    {
+      "id": "shop-boil",
+      "env": {
+        "description": "experiments/benchmark/envs/shop-pot/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-Shop-Pot-v0",
+        "env_kwargs": {
+          "max_steps": 600
+        },
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Run the shop: whenever the siren rings, turn it off, and whenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move. Whenever the pot boils over, put down what you hold next to the stove, turn the stove down, and pick your item up again.",
+      "goal": false,
+      "template": null,
+      "status": "draft",
+      "expect": [
+        [
+          "Response",
+          [
+            "siren_ringing",
+            "switch_toggled"
+          ],
+          "hard"
+        ],
+        [
+          "Response",
+          [
+            "client_arrived",
+            "order_taken"
+          ],
+          "hard"
+        ],
+        [
+          "Response",
+          [
+            "order_taken",
+            "food_prepared"
+          ],
+          "hard"
+        ],
+        [
+          "Response",
+          [
+            "food_prepared",
+            "order_served"
+          ],
+          "hard"
+        ],
+        [
+          "ChainResponse",
+          [
+            "food_fell",
+            "holding_food"
+          ],
+          "hard"
+        ],
+        [
+          "Response",
+          [
+            "pot_boiling",
+            "stove_fixed"
+          ],
+          "hard"
+        ]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [
+          {
+            "do": "policy",
+            "name": "shop",
+            "ignore": []
+          }
+        ],
+        "wrong": [
+          {
+            "breaks": [
+              0,
+              1,
+              5
+            ],
+            "why": "Does nothing for the whole episode: every rule that opens is left open.",
+            "steps": [
+              {
+                "do": "wait",
+                "n": 600
+              }
+            ]
+          },
+          {
+            "breaks": [
+              0
+            ],
+            "why": "Serves the clients but never switches the siren off.",
+            "steps": [
+              {
+                "do": "policy",
+                "name": "shop",
+                "ignore": [
+                  "siren"
+                ]
+              }
+            ]
+          },
+          {
+            "breaks": [
+              5
+            ],
+            "why": "Serves the clients and handles the siren but never turns the stove down.",
+            "steps": [
+              {
+                "do": "policy",
+                "name": "shop",
+                "ignore": [
+                  "pot"
+                ]
+              }
+            ]
+          },
+          {
+            "breaks": [
+              4
+            ],
+            "why": "Serves the clients, but leaves a fallen food portion on the floor for one step.",
+            "steps": [
+              {
+                "do": "policy",
+                "name": "shop",
+                "ignore": [
+                  "food_fall"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "event_seeds": [
+        1,
+        2,
+        3
+      ],
+      "paraphrases": [
+        "Keep the shop running: switch the siren off each time it rings, and for every client who arrives take their order, get food from the pantry, prepare it at the stove and hand it over; if the food falls, your very next move must pick it up. When the pot boils over, set down whatever you carry next to the stove, turn the stove down, and take your item up again.",
+        "Turn the siren off whenever it rings. When a client comes in, take the order, bring food from the pantry, prepare it at the stove and give it to the client; if the food falls, pick it up again on your very next move. Each time the pot boils over, put your load down beside the stove, turn the stove down and pick the load back up.",
+        "Run the shop by turning the siren off every time it rings, and by serving each client who walks in: take their order, fetch food from the pantry, prepare it at the stove and serve it, and after the food falls pick it up on the very next move. Whenever the pot boils over, drop what you carry next to the stove, turn the stove down and pick it up again."
+      ],
+      "notes": "Level 5, Shop-Pot. Level 3 plus the pot rule; the stove works only with empty hands, so a carrying agent puts the food down first."
+    },
+    {
+      "id": "shop-pot",
+      "env": {
+        "description": "experiments/benchmark/envs/shop-pot/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-Shop-Pot-v0",
+        "env_kwargs": {
+          "max_steps": 600
+        },
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Whenever the pot boils over, turn the stove down.",
+      "goal": false,
+      "template": "Response",
+      "status": "draft",
+      "expect": [
+        [
+          "Response",
+          [
+            "pot_boiling",
+            "stove_fixed"
+          ],
+          "hard"
+        ]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": true,
+      "plans": {
+        "solve": [
+          {
+            "do": "policy",
+            "name": "shop",
+            "ignore": []
+          }
+        ],
+        "wrong": [
+          {
+            "breaks": [
+              0
+            ],
+            "why": "Does nothing for the whole episode: every rule that opens is left open.",
+            "steps": [
+              {
+                "do": "wait",
+                "n": 600
+              }
+            ]
+          },
+          {
+            "breaks": [
+              0
+            ],
+            "why": "Serves the clients and handles the siren but never turns the stove down.",
+            "steps": [
+              {
+                "do": "policy",
+                "name": "shop",
+                "ignore": [
+                  "pot"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "event_seeds": [
+        1,
+        2,
+        3
+      ],
+      "paraphrases": [
+        "Each time the pot boils over, turn the stove down.",
+        "Whenever the pot starts boiling over, switch the stove down.",
+        "Turn the stove down every time the pot boils over."
+      ],
+      "notes": "The transfer experiment's second level (a separate slice trains it); not part of the difficulty ladder and never trained as an RM-and-shop-reward card."
+    },
+    {
+      "id": "shop-ladder-deliver",
+      "env": {
+        "description": "experiments/benchmark/envs/shop/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-Shop-v0",
+        "env_kwargs": {
+          "max_steps": 600,
+          "order_needed": false,
+          "cooking_needed": false,
+          "siren": false
+        },
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Whenever a client comes in, fetch food from the pantry and give it to them; if the food falls, pick it up on your very next move.",
+      "goal": false,
+      "template": null,
+      "status": "draft",
+      "expect": [
+        [
+          "Response",
+          [
+            "client_arrived",
+            "order_served"
+          ],
+          "hard"
+        ],
+        [
+          "ChainResponse",
+          [
+            "food_fell",
+            "holding_food"
+          ],
+          "hard"
+        ]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [
+          {
+            "do": "policy",
+            "name": "shop",
+            "ignore": []
+          }
+        ],
+        "wrong": [
+          {
+            "breaks": [
+              0
+            ],
+            "why": "Does nothing for the whole episode: every rule that opens is left open.",
+            "steps": [
+              {
+                "do": "wait",
+                "n": 600
+              }
+            ]
+          },
+          {
+            "breaks": [
+              1
+            ],
+            "why": "Serves the clients, but leaves a fallen food portion on the floor for one step.",
+            "steps": [
+              {
+                "do": "policy",
+                "name": "shop",
+                "ignore": [
+                  "food_fall"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "event_seeds": [
+        1,
+        2,
+        3
+      ],
+      "paraphrases": [
+        "Each time a client arrives, get food from the pantry and hand it over; should the food fall, your very next move must pick it up.",
+        "For every client who comes in: bring food from the pantry and give it to the client. If the food falls, pick it up again on your very next move.",
+        "When a client walks in, fetch food from the pantry and serve it to them. Every time the food falls, pick it up on the very next move."
+      ],
+      "notes": "Shop ladder rung 1, deliver (user, 2026-11-22; README \"Ladder\"): no order, no cooking and no siren (`order_needed`, `cooking_needed` and `siren` false), food slips at the default chance. Serve every client with food from the pantry and pick fallen food up on the very next move. Fetching the food only makes `holding_food` true, so it gets no clause (the whenever-chain rule of the generator prompt), as in `shop-serve`. No clause starts at `holding_food`, so an agent that ends an episode holding a spare portion keeps every rule (the 2026-11-16 ladder's `Response(holding_food, order_served)` failed such agents, H14). `train` is false: the card is not in the counted 60-card set; the ladder's own runs file trains it."
+    },
+    {
+      "id": "shop-ladder-deliver-siren",
+      "env": {
+        "description": "experiments/benchmark/envs/shop/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-Shop-v0",
+        "env_kwargs": {
+          "max_steps": 600,
+          "order_needed": false,
+          "cooking_needed": false
+        },
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Run the shop: whenever the siren rings, turn it off, and whenever a client comes in, fetch food from the pantry and give it to them; if the food falls, pick it up on your very next move.",
+      "goal": false,
+      "template": null,
+      "status": "draft",
+      "expect": [
+        [
+          "Response",
+          [
+            "siren_ringing",
+            "switch_toggled"
+          ],
+          "hard"
+        ],
+        [
+          "Response",
+          [
+            "client_arrived",
+            "order_served"
+          ],
+          "hard"
+        ],
+        [
+          "ChainResponse",
+          [
+            "food_fell",
+            "holding_food"
+          ],
+          "hard"
+        ]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [
+          {
+            "do": "policy",
+            "name": "shop",
+            "ignore": []
+          }
+        ],
+        "wrong": [
+          {
+            "breaks": [
+              0,
+              1
+            ],
+            "why": "Does nothing for the whole episode: every rule that opens is left open.",
+            "steps": [
+              {
+                "do": "wait",
+                "n": 600
+              }
+            ]
+          },
+          {
+            "breaks": [
+              0
+            ],
+            "why": "Serves the clients but never switches the siren off.",
+            "steps": [
+              {
+                "do": "policy",
+                "name": "shop",
+                "ignore": [
+                  "siren"
+                ]
+              }
+            ]
+          },
+          {
+            "breaks": [
+              2
+            ],
+            "why": "Serves the clients, but leaves a fallen food portion on the floor for one step.",
+            "steps": [
+              {
+                "do": "policy",
+                "name": "shop",
+                "ignore": [
+                  "food_fall"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "event_seeds": [
+        1,
+        2,
+        3
+      ],
+      "paraphrases": [
+        "Keep the shop running: switch the siren off each time it rings, and for every client who arrives get food from the pantry and hand it over; if the food falls, your very next move must pick it up.",
+        "Turn the siren off whenever it rings. When a client comes in, bring food from the pantry and give it to the client. If the food falls, pick it up again on your very next move.",
+        "Run the shop by turning the siren off every time it rings, and by serving each client who walks in: fetch food from the pantry and serve it. After the food falls, pick it up on the very next move."
+      ],
+      "notes": "Shop ladder rung 2, deliver + siren (user, 2026-11-22; README \"Ladder\"): `shop-ladder-deliver` with the siren on (`order_needed` and `cooking_needed` false), so the siren rule of `shop-siren` comes first, as in `shop-full`. `train` is false: the ladder's own runs file trains it."
+    },
+    {
+      "id": "shop-ladder-order-deliver",
+      "env": {
+        "description": "experiments/benchmark/envs/shop/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-Shop-v0",
+        "env_kwargs": {
+          "max_steps": 600,
+          "cooking_needed": false,
+          "siren": false
+        },
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Whenever a client comes in, take their order, fetch food from the pantry and give it to them; if the food falls, pick it up on your very next move.",
+      "goal": false,
+      "template": null,
+      "status": "draft",
+      "expect": [
+        [
+          "Response",
+          [
+            "client_arrived",
+            "order_taken"
+          ],
+          "hard"
+        ],
+        [
+          "Response",
+          [
+            "order_taken",
+            "order_served"
+          ],
+          "hard"
+        ],
+        [
+          "ChainResponse",
+          [
+            "food_fell",
+            "holding_food"
+          ],
+          "hard"
+        ]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [
+          {
+            "do": "policy",
+            "name": "shop",
+            "ignore": []
+          }
+        ],
+        "wrong": [
+          {
+            "breaks": [
+              0
+            ],
+            "why": "Does nothing for the whole episode: every rule that opens is left open.",
+            "steps": [
+              {
+                "do": "wait",
+                "n": 600
+              }
+            ]
+          },
+          {
+            "breaks": [
+              2
+            ],
+            "why": "Serves the clients, but leaves a fallen food portion on the floor for one step.",
+            "steps": [
+              {
+                "do": "policy",
+                "name": "shop",
+                "ignore": [
+                  "food_fall"
+                ]
+              }
+            ]
+          },
+          {
+            "breaks": [
+              1
+            ],
+            "why": "Takes the first client's order and then does nothing.",
+            "steps": [
+              {
+                "do": "wait",
+                "n": 30
+              },
+              {
+                "do": "toggle",
+                "obj": "ball"
+              },
+              {
+                "do": "wait",
+                "n": 600
+              }
+            ]
+          }
+        ]
+      },
+      "event_seeds": [
+        1,
+        2,
+        3
+      ],
+      "paraphrases": [
+        "Each time a client arrives, take their order, get food from the pantry and hand it over; should the food fall, your very next move must pick it up.",
+        "For every client who comes in: take the order, bring food from the pantry and give it to the client. If the food falls, pick it up again on your very next move.",
+        "When a client walks in, take their order, fetch food from the pantry and serve it to them. Every time the food falls, pick it up on the very next move."
+      ],
+      "notes": "Shop ladder rung 3, order + deliver (user, 2026-11-22; README \"Ladder\"): the order is needed, cooking is not, no siren (`cooking_needed` and `siren` false), food slips at the default chance. The serving chain of `shop-serve` without the stove: the order hands off to the serve. Fetching the food gets no clause, so no clause starts at `holding_food` (H14 of the 2026-11-16 ladder cannot fail a solving agent here). `train` is false: the ladder's own runs file trains it."
+    },
+    {
+      "id": "shop-ladder-order-deliver-siren",
+      "env": {
+        "description": "experiments/benchmark/envs/shop/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-Shop-v0",
+        "env_kwargs": {
+          "max_steps": 600,
+          "cooking_needed": false
+        },
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Run the shop: whenever the siren rings, turn it off, and whenever a client comes in, take their order, fetch food from the pantry and give it to them; if the food falls, pick it up on your very next move.",
+      "goal": false,
+      "template": null,
+      "status": "draft",
+      "expect": [
+        [
+          "Response",
+          [
+            "siren_ringing",
+            "switch_toggled"
+          ],
+          "hard"
+        ],
+        [
+          "Response",
+          [
+            "client_arrived",
+            "order_taken"
+          ],
+          "hard"
+        ],
+        [
+          "Response",
+          [
+            "order_taken",
+            "order_served"
+          ],
+          "hard"
+        ],
+        [
+          "ChainResponse",
+          [
+            "food_fell",
+            "holding_food"
+          ],
+          "hard"
+        ]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [
+          {
+            "do": "policy",
+            "name": "shop",
+            "ignore": []
+          }
+        ],
+        "wrong": [
+          {
+            "breaks": [
+              0,
+              1
+            ],
+            "why": "Does nothing for the whole episode: every rule that opens is left open.",
+            "steps": [
+              {
+                "do": "wait",
+                "n": 600
+              }
+            ]
+          },
+          {
+            "breaks": [
+              0
+            ],
+            "why": "Serves the clients but never switches the siren off.",
+            "steps": [
+              {
+                "do": "policy",
+                "name": "shop",
+                "ignore": [
+                  "siren"
+                ]
+              }
+            ]
+          },
+          {
+            "breaks": [
+              3
+            ],
+            "why": "Serves the clients, but leaves a fallen food portion on the floor for one step.",
+            "steps": [
+              {
+                "do": "policy",
+                "name": "shop",
+                "ignore": [
+                  "food_fall"
+                ]
+              }
+            ]
+          },
+          {
+            "breaks": [
+              0,
+              2
+            ],
+            "why": "Takes the first client's order and then does nothing, the siren included.",
+            "steps": [
+              {
+                "do": "wait",
+                "n": 30
+              },
+              {
+                "do": "toggle",
+                "obj": "ball"
+              },
+              {
+                "do": "wait",
+                "n": 600
+              }
+            ]
+          }
+        ]
+      },
+      "event_seeds": [
+        1,
+        2,
+        3
+      ],
+      "paraphrases": [
+        "Keep the shop running: switch the siren off each time it rings, and for every client who arrives take their order, get food from the pantry and hand it over; if the food falls, your very next move must pick it up.",
+        "Turn the siren off whenever it rings. When a client comes in, take the order, bring food from the pantry and give it to the client. If the food falls, pick it up again on your very next move.",
+        "Run the shop by turning the siren off every time it rings, and by serving each client who walks in: take their order, fetch food from the pantry and serve it. After the food falls, pick it up on the very next move."
+      ],
+      "notes": "Shop ladder rung 4, order + deliver + siren (user, 2026-11-22; README \"Ladder\"): `shop-ladder-order-deliver` with the siren on (`cooking_needed` false), the siren rule first as in `shop-full`. `train` is false: the ladder's own runs file trains it."
+    },
+    {
+      "id": "shop-ladder-serve",
+      "bundle_of": "shop-serve",
+      "env": {
+        "description": "experiments/benchmark/envs/shop/environment.md",
+        "family": "minigrid",
+        "gym_id": "MiniGrid-Shop-v0",
+        "env_kwargs": {
+          "max_steps": 600,
+          "siren": false
+        },
+        "layout": "procedural",
+        "layout_seed": null,
+        "observation": "symbolic"
+      },
+      "task": "Whenever a client comes in, take their order, fetch food from the pantry, prepare it at the stove and give it to them; if the food falls, pick it up on your very next move.",
+      "goal": false,
+      "template": null,
+      "status": "draft",
+      "expect": [
+        [
+          "Response",
+          [
+            "client_arrived",
+            "order_taken"
+          ],
+          "hard"
+        ],
+        [
+          "Response",
+          [
+            "order_taken",
+            "food_prepared"
+          ],
+          "hard"
+        ],
+        [
+          "Response",
+          [
+            "food_prepared",
+            "order_served"
+          ],
+          "hard"
+        ],
+        [
+          "ChainResponse",
+          [
+            "food_fell",
+            "holding_food"
+          ],
+          "hard"
+        ]
+      ],
+      "also_ok": [],
+      "env_reward_matches": false,
+      "train": false,
+      "plans": {
+        "solve": [
+          {
+            "do": "policy",
+            "name": "shop",
+            "ignore": []
+          }
+        ],
+        "wrong": [
+          {
+            "breaks": [
+              0
+            ],
+            "why": "Does nothing for the whole episode: every rule that opens is left open.",
+            "steps": [
+              {
+                "do": "wait",
+                "n": 600
+              }
+            ]
+          },
+          {
+            "breaks": [
+              3
+            ],
+            "why": "Serves the clients, but leaves a fallen food portion on the floor for one step.",
+            "steps": [
+              {
+                "do": "policy",
+                "name": "shop",
+                "ignore": [
+                  "food_fall"
+                ]
+              }
+            ]
+          },
+          {
+            "breaks": [
+              1
+            ],
+            "why": "Takes the first client's order and then does nothing.",
+            "steps": [
+              {
+                "do": "wait",
+                "n": 30
+              },
+              {
+                "do": "toggle",
+                "obj": "ball"
+              },
+              {
+                "do": "wait",
+                "n": 600
+              }
+            ]
+          }
+        ]
+      },
+      "event_seeds": [
+        1,
+        2,
+        3
+      ],
+      "paraphrases": [],
+      "notes": "Shop ladder rung 5, serve without the siren (user, 2026-11-22; README \"Ladder\"): world copy of `shop-serve`, same task, clauses and plans, only `siren: false`, so the ringing that `shop-serve` ignores is gone. No paraphrases and no bundle of its own: `bundle_of` makes `run-suite` train it on `shop-serve`'s FARM machine, and `generate-suite` skips it. `train` is false: the ladder's own runs file trains it."
+    }
+  ]
+}

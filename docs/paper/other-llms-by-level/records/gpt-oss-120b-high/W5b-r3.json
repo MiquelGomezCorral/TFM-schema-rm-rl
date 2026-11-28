@@ -1,0 +1,66 @@
+{
+ "suite": "templates",
+ "name": "tpl-precedence-3-goal",
+ "task": "Pick up the box in the other room, but do not drop the key while the door is closed until the door has been opened once.",
+ "gen": "gpt-oss-120b",
+ "critic": "gpt-oss-120b@critic",
+ "reasoning": "high",
+ "status": "accepted",
+ "error": null,
+ "wall_s": 282.1,
+ "attempts_used": 2,
+ "critic_rejections": 1,
+ "provider_reruns": 0,
+ "calls": 4,
+ "trace": [
+  {
+   "attempt": 1,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Pick up the target box\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Never lose the key (drop the key while the door is closed)\",\n    \"pattern\": \"Absence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"key_lost\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 1,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The hard Absence(key_lost) clause forbids losing the key at any time, but the task only forbids dropping the key while the door is closed until the door has been opened once. This adds a restriction not present in the task. Replace the hard Absence(key_lost) clause with a hard Precedence(door_open, key_lost) rule, which correctly captures \u201cdo not drop the key while the door is closed before the door is opened\u201d. The Existence(target_picked_up) clause is correct."
+   }
+  },
+  {
+   "attempt": 2,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Pick up the target box\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Key loss must not occur before the door is opened\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"key_lost\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 2,
+   "step": "critic",
+   "value": {
+    "accepted": true,
+    "feedback": "NO CHANGES NEEDED"
+   }
+  }
+ ],
+ "sends": [],
+ "clauses": [
+  [
+   "Existence",
+   [
+    "target_picked_up"
+   ],
+   "hard"
+  ],
+  [
+   "Precedence",
+   [
+    "door_open",
+    "key_lost"
+   ],
+   "hard"
+  ]
+ ],
+ "texts": [
+  "Pick up the target box",
+  "Key loss must not occur before the door is opened"
+ ],
+ "machine": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u1\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&!key_lost&target_picked_up) -> u1\n(u0, !door_open&key_lost&!target_picked_up) -> u2\n(u0, !door_open&key_lost&target_picked_up) -> u2\n(u0, door_open&!target_picked_up) -> u3\n(u0, door_open&target_picked_up) -> u1\n(u3, target_picked_up) -> u1\nREWARD_FUNCTION:\n(u0, !door_open&!key_lost&target_picked_up, u1) -> 11\n(u0, !door_open&key_lost&!target_picked_up, u2) -> -10\n(u0, !door_open&key_lost&target_picked_up, u2) -> -10\n(u0, door_open&target_picked_up, u1) -> 11\n(u3, target_picked_up, u1) -> 11\n"
+}

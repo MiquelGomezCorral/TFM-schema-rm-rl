@@ -51,6 +51,10 @@ THINKING_LABELS = {  # (series, level): (anchor, hang, shift in pt); see draw.fi
     ("GPT-6 Luna", "high"): ("west", "point", (6, 0)),
     ("GPT-6 Luna", "max"): ("west", "point", (6, 0)),
 }
+OPEN_WHERE = {  # "where" of open-models.csv: (name in the legend, colour); plotFarm stays FARM's
+    "cluster": ("on the cluster", "plotModelB"),
+    "local": ("on the PC", "plotModelC"),
+}
 # leads of the writer (results-notes.md section 9), printed against the recomputed values, never asserted
 LEADS_RIGHT, LEADS_MEDIAN = (105, 134, 136, 138, 138), (4, 12, 18, 20, 88)
 DRAFT_GROUPS = {  # learned FARM / ARM-FM / no RM per group, as the Results draft states them
@@ -345,6 +349,19 @@ def build_fig_thinking():
     figure("fig-res-thinking", draw.fig_thinking(rows, THINKING_LABELS))
 
 
+# ========= Figure 4b: right machines per open-weight model and level, one column per model =========
+def build_fig_open_models():
+    memory = records.open_model_memory()
+    rows = [r for r in records.final_model_levels() if r["model"] in memory]
+    assert {r["model"] for r in rows} == set(memory), "every open-weight model has a final level"
+    assert all(r["runs"] == 138 for r in rows), "every drawn level has all 138 runs"
+    for row in rows:
+        where, row["weights"] = memory[row["model"]]
+        row["series"], row["colour"] = OPEN_WHERE[where]
+    rows.sort(key=lambda r: (r["weights"], records.LEVELS.index(r["level"])))
+    figure("fig-res-open-models", draw.fig_open_models(rows))
+
+
 # ========= Figure 5: the example machines =========
 def build_fig_machines():
     machines, table = {}, []
@@ -429,20 +446,22 @@ def write_thesis_preamble():
     (FIGURES / "thesis-preamble.tex").write_text("\n".join(out) + "\n", encoding="utf-8")
 
 
-DATA.mkdir(exist_ok=True)
-FIGURES.mkdir(exist_ok=True)
-built = build_fig_built()
-build_fig_learned()
-build_fig_soft()
-build_fig_thinking()
-build_fig_machines()
-build_fig_armfm()
-write_thesis_preamble()
-print(
-    "built",
-    {
-        arm: (r["built"], r["asked"], round(r["low"], 4), round(r["high"], 4))
-        for arm, r in built.items()
-    },
-)
-print("all assertions passed")
+if __name__ == "__main__":  # importing the module builds nothing, so one builder can run alone
+    DATA.mkdir(exist_ok=True)
+    FIGURES.mkdir(exist_ok=True)
+    built = build_fig_built()
+    build_fig_learned()
+    build_fig_soft()
+    build_fig_thinking()
+    build_fig_open_models()
+    build_fig_machines()
+    build_fig_armfm()
+    write_thesis_preamble()
+    print(
+        "built",
+        {
+            arm: (r["built"], r["asked"], round(r["low"], 4), round(r["high"], 4))
+            for arm, r in built.items()
+        },
+    )
+    print("all assertions passed")

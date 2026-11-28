@@ -1,0 +1,74 @@
+{
+ "suite": "complex",
+ "name": "cx-goal-one-rule",
+ "task": "Open the door and then pick up the box in the other room, and try not to drop the key while the door is still closed.",
+ "gen": "gpt-oss-120b",
+ "critic": "gpt-oss-120b@critic",
+ "reasoning": "medium",
+ "status": "accepted",
+ "error": null,
+ "wall_s": 56.5,
+ "attempts_used": 2,
+ "critic_rejections": 1,
+ "provider_reruns": 0,
+ "calls": 4,
+ "trace": [
+  {
+   "attempt": 1,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"The door must be opened at least once.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"The target box must be picked up at least once.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"The box may be picked up only after the door has been opened.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Preferably, the key should not be lost (i.e., not dropped while the door is closed).\",\n    \"pattern\": \"Absence\",\n    \"priority\": \"soft\",\n    \"propositions\": [\n      \"key_lost\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 1,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The hard clause `Existence(door_open)` is redundant. The required order is captured by `Precedence(door_open, target_picked_up)` together with the hard `Existence(target_picked_up)`, which already forces the door to be opened before the box is picked up. Remove the `Existence(door_open)` clause and keep the remaining three clauses."
+   }
+  },
+  {
+   "attempt": 2,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"The target box must be picked up at least once.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"The box may be picked up only after the door has been opened.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Preferably, the key should not be dropped while the door is still closed.\",\n    \"pattern\": \"Absence\",\n    \"priority\": \"soft\",\n    \"propositions\": [\n      \"key_lost\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 2,
+   "step": "critic",
+   "value": {
+    "accepted": true,
+    "feedback": "NO CHANGES NEEDED: The clauses correctly capture the required opening of the door before picking up the box (hard Existence of target and hard Precedence of door before target) and the preferred avoidance of dropping the key while the door is closed (soft Absence of key_lost). No redundant or missing clauses are present."
+   }
+  }
+ ],
+ "sends": [],
+ "clauses": [
+  [
+   "Existence",
+   [
+    "target_picked_up"
+   ],
+   "hard"
+  ],
+  [
+   "Precedence",
+   [
+    "door_open",
+    "target_picked_up"
+   ],
+   "hard"
+  ],
+  [
+   "Absence",
+   [
+    "key_lost"
+   ],
+   "soft"
+  ]
+ ],
+ "texts": [
+  "The target box must be picked up at least once.",
+  "The box may be picked up only after the door has been opened.",
+  "Preferably, the key should not be dropped while the door is still closed."
+ ],
+ "machine": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&!key_lost&target_picked_up) -> u1\n(u0, !door_open&key_lost&!target_picked_up) -> u0\n(u0, !door_open&key_lost&target_picked_up) -> u1\n(u0, door_open&!key_lost&!target_picked_up) -> u2\n(u0, door_open&!key_lost&target_picked_up) -> u3\n(u0, door_open&key_lost&!target_picked_up) -> u2\n(u0, door_open&key_lost&target_picked_up) -> u3\n(u2, !key_lost&target_picked_up) -> u3\n(u2, key_lost&!target_picked_up) -> u2\n(u2, key_lost&target_picked_up) -> u3\nREWARD_FUNCTION:\n(u0, !door_open&!key_lost&target_picked_up, u1) -> -100.694\n(u0, !door_open&key_lost&!target_picked_up, u0) -> -1\n(u0, !door_open&key_lost&target_picked_up, u1) -> -100.694\n(u0, door_open&!key_lost&!target_picked_up, u2) -> 1\n(u0, door_open&!key_lost&target_picked_up, u3) -> 12\n(u0, door_open&key_lost&target_picked_up, u3) -> 11\n(u2, !key_lost&target_picked_up, u3) -> 11\n(u2, key_lost&!target_picked_up, u2) -> -1\n(u2, key_lost&target_picked_up, u3) -> 10\n"
+}

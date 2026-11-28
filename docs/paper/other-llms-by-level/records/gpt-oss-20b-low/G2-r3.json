@@ -1,0 +1,113 @@
+{
+ "suite": "templates",
+ "name": "tpl-existence-2-goal",
+ "task": "Open the door. Pick up the box in the other room.",
+ "gen": "gpt-oss:20b",
+ "critic": "gpt-oss:20b@critic",
+ "reasoning": "low",
+ "status": "accepted",
+ "error": null,
+ "wall_s": 133.6,
+ "attempts_used": 5,
+ "critic_rejections": 4,
+ "provider_reruns": 0,
+ "calls": 10,
+ "trace": [
+  {
+   "attempt": 1,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Eventual opening of the door\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Eventual pickup of the target box\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Door must be opened before the target box is picked up\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 1,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The clause \"Eventual opening of the door\" (hard Existence(door_open)) is redundant, as door_open is already forced by the hard Existence(target_picked_up) together with the hard Precedence(door_open, target_picked_up). Remove that Existence(door_open) clause and keep the remaining two clauses."
+   }
+  },
+  {
+   "attempt": 2,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Open the door at least once\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the target box at least once\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"The door must be opened before the target box is picked up\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 2,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The clause \"Open the door at least once\" (Existence(door_open)) is redundant because the hard Precedence(door_open, target_picked_up) together with the hard Existence(target_picked_up) already forces door_open to occur before the target box is picked up. Remove the redundant Existence(door_open) clause and keep the other two clauses."
+   }
+  },
+  {
+   "attempt": 3,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"The target box must be picked up at least once\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"The door must be opened before the target box is picked up\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 3,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The task \"Open the door. Pick up the box in the other room.\" explicitly requires that the agent first acquires the matching key, then opens the locked door, and finally picks up the target box. The current clauses only enforce that the box is eventually picked up and that it occurs after the door is open. They omit two essential goals:\n1. **Acquiring the key** \u2013 an Existence(has_door_key) clause is needed to guarantee the key is picked up before any attempt to open the door.\n2. **Opening the door** \u2013 an Existence(door_open) clause is needed to ensure the door is actually opened as a goal. While the Precedence(door_open, target_picked_up) clause enforces ordering, it does not make opening the door a requirement.\nWithout these clauses the agent could succeed by never picking up the key or never opening the door, violating the task specification. Add a hard Existence(has_door_key) and a hard Existence(door_open) (or a suitable rule that makes opening the door obligatory) to match the task description."
+   }
+  },
+  {
+   "attempt": 4,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Acquire the matching key at least once\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Open the locked door at least once\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the target box at least once\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"The key must be acquired before the door is opened\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"The door must be opened before the target box is picked up\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 4,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The clause \"Acquire the matching key at least once\" is not present in the task statement; no sentence requires the agent to obtain the key. Remove this clause. The clause \"The key must be acquired before the door is opened\" is also not stated explicitly in the task and is therefore an added requirement. Remove it as well. Keep the clauses that directly reflect the task: Existence(door_open), Existence(target_picked_up), and Precedence(door_open, target_picked_up)."
+   }
+  },
+  {
+   "attempt": 5,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"The door must be opened at least once\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"The target box must be picked up at least once\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"The door must be opened before the target box is picked up\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 5,
+   "step": "critic",
+   "value": {
+    "accepted": true,
+    "feedback": "NO CHANGES NEEDED"
+   }
+  }
+ ],
+ "sends": [],
+ "clauses": [
+  [
+   "Existence",
+   [
+    "door_open"
+   ],
+   "hard"
+  ],
+  [
+   "Existence",
+   [
+    "target_picked_up"
+   ],
+   "hard"
+  ],
+  [
+   "Precedence",
+   [
+    "door_open",
+    "target_picked_up"
+   ],
+   "hard"
+  ]
+ ],
+ "texts": [
+  "The door must be opened at least once",
+  "The target box must be picked up at least once",
+  "The door must be opened before the target box is picked up"
+ ],
+ "machine": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&target_picked_up) -> u1\n(u0, door_open&!target_picked_up) -> u2\n(u0, door_open&target_picked_up) -> u3\n(u2, target_picked_up) -> u3\nREWARD_FUNCTION:\n(u0, !door_open&target_picked_up, u1) -> -10\n(u0, door_open&!target_picked_up, u2) -> 1\n(u0, door_open&target_picked_up, u3) -> 12\n(u2, target_picked_up, u3) -> 11\n"
+}

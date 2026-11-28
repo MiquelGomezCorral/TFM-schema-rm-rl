@@ -1,0 +1,66 @@
+{
+ "suite": "templates",
+ "name": "tpl-existence-2-goal",
+ "task": "Open the door. Pick up the box in the other room.",
+ "gen": "qwen3.8-27b",
+ "critic": "qwen3.8-27b@critic",
+ "reasoning": "none",
+ "status": "accepted",
+ "error": null,
+ "wall_s": 60.5,
+ "attempts_used": 2,
+ "critic_rejections": 1,
+ "provider_reruns": 0,
+ "calls": 4,
+ "trace": [
+  {
+   "attempt": 1,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Open the door\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the box in the other room\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Opening the door must occur before picking up the target box\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 1,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The hard clause Existence(door_open) is redundant. The task commands the order 'Open the door. Pick up the box', which is correctly captured by the hard Precedence(door_open, target_picked_up) and the hard Existence(target_picked_up). Together, these force door_open to occur before target_picked_up, making an explicit Existence(door_open) unnecessary and repeating what the chain already forces. Remove Existence(door_open); keep Precedence(door_open, target_picked_up) and Existence(target_picked_up)."
+   }
+  },
+  {
+   "attempt": 2,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Pick up the box in the other room\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Open the door before picking up the box\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 2,
+   "step": "critic",
+   "value": {
+    "accepted": true,
+    "feedback": "NO CHANGES NEEDED"
+   }
+  }
+ ],
+ "sends": [],
+ "clauses": [
+  [
+   "Existence",
+   [
+    "target_picked_up"
+   ],
+   "hard"
+  ],
+  [
+   "Precedence",
+   [
+    "door_open",
+    "target_picked_up"
+   ],
+   "hard"
+  ]
+ ],
+ "texts": [
+  "Pick up the box in the other room",
+  "Open the door before picking up the box"
+ ],
+ "machine": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&target_picked_up) -> u1\n(u0, door_open&!target_picked_up) -> u2\n(u0, door_open&target_picked_up) -> u3\n(u2, target_picked_up) -> u3\nREWARD_FUNCTION:\n(u0, !door_open&target_picked_up, u1) -> -10\n(u0, door_open&!target_picked_up, u2) -> 1\n(u0, door_open&target_picked_up, u3) -> 12\n(u2, target_picked_up, u3) -> 11\n"
+}

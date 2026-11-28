@@ -26,6 +26,7 @@ REPO = Path(__file__).resolve().parents[3]
 LEVELS = ("none", "low", "medium", "high", "max")
 LEVEL_RECORDS = REPO / "docs/paper/level-benchmark-freeze/records"
 MODEL_LEVELS = REPO / "docs/paper/other-llms-by-level/data/levels.csv"
+OPEN_MODELS = REPO / "docs/paper/other-llms-by-level/data/open-models.csv"
 SOFT_RECORD = REPO / "docs/paper/soft-breaks-vs-idle/evidence/soft-breaks.json"
 BENCH = REPO / "experiments/benchmark"
 SHOP = ("shop", "shop-reward")
@@ -191,6 +192,19 @@ def final_model_levels():
             for row in csv.DictReader(handle)
             if row["final"] == "true"
         ]
+
+
+def open_model_memory():
+    """{model: (where, weights in GiB)} of the other-llms-by-level entry's open-weight models.
+
+    ``where`` is ``cluster`` or ``local`` (this PC); the weights are as loaded, so a cell left empty
+    stops the figure with a ValueError.
+    """
+    with OPEN_MODELS.open(newline="", encoding="utf-8") as handle:
+        return {
+            row["model"]: (row["where"], float(row["weights_gib"]))
+            for row in csv.DictReader(handle)
+        }
 
 
 # ========= Figure 5: the example machines, one arrow per pair of states =========

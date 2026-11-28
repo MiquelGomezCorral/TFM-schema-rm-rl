@@ -1,0 +1,78 @@
+{
+ "suite": "templates",
+ "name": "tpl-existence-2-goal",
+ "task": "Open the door. Pick up the box in the other room.",
+ "gen": "gpt-oss-120b",
+ "critic": "gpt-oss-120b@critic",
+ "reasoning": "low",
+ "status": "accepted",
+ "error": null,
+ "wall_s": 31.9,
+ "attempts_used": 3,
+ "critic_rejections": 2,
+ "provider_reruns": 0,
+ "calls": 6,
+ "trace": [
+  {
+   "attempt": 1,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Pick up the target box at some point\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"The door must be opened before the target box is picked up\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 1,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The task commands opening the door, which is a hard goal. The clause set lacks a hard Existence(door_open); only a Precedence(door_open, target_picked_up) is present, which does not force the door to be opened. Add a hard Existence clause for door_open (or a hard Precedence chain with a hard Existence on the last step) so that opening the door is required before the episode can finish."
+   }
+  },
+  {
+   "attempt": 2,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Open the door at some point\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the target box at some point\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"The door must be opened before the target box is picked up\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 2,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The clause `Precedence(door_open, target_picked_up)` adds an ordering that the task does not state. The original instruction has two separate sentences, each commanding an action, without saying the door must be opened before the box is picked up. Therefore the task requires only hard `Existence(door_open)` and hard `Existence(target_picked_up)`, with no precedence constraint. Remove the `Precedence` clause (and the redundant `Existence(door_open)` note is fine once the precedence is dropped)."
+   }
+  },
+  {
+   "attempt": 3,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Open the door at some point\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the target box at some point\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 3,
+   "step": "critic",
+   "value": {
+    "accepted": true,
+    "feedback": "NO CHANGES NEEDED"
+   }
+  }
+ ],
+ "sends": [],
+ "clauses": [
+  [
+   "Existence",
+   [
+    "door_open"
+   ],
+   "hard"
+  ],
+  [
+   "Existence",
+   [
+    "target_picked_up"
+   ],
+   "hard"
+  ]
+ ],
+ "texts": [
+  "Open the door at some point",
+  "Pick up the target box at some point"
+ ],
+ "machine": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&target_picked_up) -> u1\n(u0, door_open&!target_picked_up) -> u2\n(u0, door_open&target_picked_up) -> u3\n(u1, door_open) -> u3\n(u2, target_picked_up) -> u3\nREWARD_FUNCTION:\n(u0, !door_open&target_picked_up, u1) -> 1\n(u0, door_open&!target_picked_up, u2) -> 1\n(u0, door_open&target_picked_up, u3) -> 12\n(u1, door_open, u3) -> 11\n(u2, target_picked_up, u3) -> 11\n"
+}

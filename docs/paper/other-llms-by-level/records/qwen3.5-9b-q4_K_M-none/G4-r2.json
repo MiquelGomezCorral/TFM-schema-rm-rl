@@ -1,0 +1,101 @@
+{
+ "suite": "templates",
+ "name": "tpl-existence-two-3-goal",
+ "task": "Be holding the key on at least two different moves, open the door and reach the goal.",
+ "gen": "qwen3.5:9b-q4_K_M",
+ "critic": "qwen3.5:9b-q4_K_M@critic",
+ "reasoning": "none",
+ "status": "accepted",
+ "error": null,
+ "wall_s": 28.7,
+ "attempts_used": 4,
+ "critic_rejections": 3,
+ "provider_reruns": 0,
+ "calls": 8,
+ "trace": [
+  {
+   "attempt": 1,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Hold the key on at least two different moves.\",\n    \"pattern\": \"ExistenceTwo\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_key\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Open the door.\",\n    \"pattern\": \"RespondedExistence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_key\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Reach the goal after opening the door.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"at_goal\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 1,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The second clause uses RespondedExistence(has_key, door_open), which allows door_open before has_key or independently of it. The task requires 'Open the door after acquiring the key', so door_open must only happen after has_key. Use Precedence(has_key, door_open) instead. Also, since has_key is required to unlock the door and at_goal is unreachable without it, has_key is a necessary condition but not a hard goal by itself; however, the task implies you must hold the key to reach the goal, so keep ExistenceTwo(has_key) if holding on at least two moves is required. But primarily, fix the template for the second clause to Precedence with correct argument order (has_key first)."
+   }
+  },
+  {
+   "attempt": 2,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Hold the key on at least two different moves.\",\n    \"pattern\": \"ExistenceTwo\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_key\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Open the door after acquiring the key (never before).\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_key\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Reach the goal after opening the door.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"at_goal\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 2,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The clause 'Reach the goal after opening the door' is interpreted as Precedence(door_open, at_goal), which forbids at_goal before door_open but does not guarantee either event will happen. However, 'at_goal' is the episode's final state; if it never happens, the task fails immediately on step limit without entering a rejecting state. The machine lacks an Existence(at_goal) to force reaching the goal. Add a hard Existence(at_goal) to the clauses."
+   }
+  },
+  {
+   "attempt": 3,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Hold the key on at least two different moves.\",\n    \"pattern\": \"ExistenceTwo\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_key\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Acquire the key (must happen).\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_key\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Open the door after acquiring the key.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_key\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Reach the goal after opening the door.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"at_goal\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 3,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The clause 'Acquire the key (must happen)' adds an unconditional hard Existence(has_key). The task sentence 'Be holding the key on at least two different moves...' does not explicitly command acquiring the key; it commands the state of holding it. While holding implies acquisition, the task only specifies the requirement to hold it for multiple steps and to open the door/reach the goal afterwards. In a 'rule-only' context where the agent must satisfy conditions but isn't explicitly told to acquire anything unconditionally (or if acquisition is implicitly required only as part of satisfying the 'ExistenceTwo'), adding a standalone Existence clause can be redundant or incorrect if the existence is guaranteed by the ExistenceTwo rule and precedence rules. More critically, the compiler correctly identifies R2 as redundant because R1 (ExistenceTwo) already forces has_key to occur at least twice. Therefore, R2 adds nothing new to the acceptance criteria but complicates the machine state. Remove the 'Acquire the key' clause or merge its intent into the ExistenceTwo clause."
+   }
+  },
+  {
+   "attempt": 4,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Hold the key on at least two different moves.\",\n    \"pattern\": \"ExistenceTwo\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_key\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Open the door after acquiring the key.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"has_key\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Reach the goal after opening the door.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"at_goal\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 4,
+   "step": "critic",
+   "value": {
+    "accepted": true,
+    "feedback": "NO CHANGES NEEDED"
+   }
+  }
+ ],
+ "sends": [],
+ "clauses": [
+  [
+   "ExistenceTwo",
+   [
+    "has_key"
+   ],
+   "hard"
+  ],
+  [
+   "Precedence",
+   [
+    "has_key",
+    "door_open"
+   ],
+   "hard"
+  ],
+  [
+   "Precedence",
+   [
+    "door_open",
+    "at_goal"
+   ],
+   "hard"
+  ]
+ ],
+ "texts": [
+  "Hold the key on at least two different moves.",
+  "Open the door after acquiring the key.",
+  "Reach the goal after opening the door."
+ ],
+ "machine": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES: u4\nREJECTING_STATES: u2\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !at_goal&!door_open&has_key) -> u1\n(u0, !at_goal&door_open&!has_key) -> u2\n(u0, !at_goal&door_open&has_key) -> u3\n(u0, at_goal&!door_open&!has_key) -> u2\n(u0, at_goal&!door_open&has_key) -> u2\n(u0, at_goal&door_open&!has_key) -> u2\n(u0, at_goal&door_open&has_key) -> u3\n(u1, !at_goal&!door_open&has_key) -> u4\n(u1, !at_goal&door_open&!has_key) -> u3\n(u1, !at_goal&door_open&has_key) -> u4\n(u1, at_goal&!door_open&!has_key) -> u2\n(u1, at_goal&!door_open&has_key) -> u2\n(u1, at_goal&door_open&!has_key) -> u3\n(u1, at_goal&door_open&has_key) -> u4\n(u3, has_key) -> u4\nREWARD_FUNCTION:\n(u0, !at_goal&!door_open&has_key, u1) -> 1\n(u0, !at_goal&door_open&!has_key, u2) -> -10\n(u0, !at_goal&door_open&has_key, u3) -> 1\n(u0, at_goal&!door_open&!has_key, u2) -> -10\n(u0, at_goal&!door_open&has_key, u2) -> -10\n(u0, at_goal&door_open&!has_key, u2) -> -10\n(u0, at_goal&door_open&has_key, u3) -> 1\n(u1, !at_goal&!door_open&has_key, u4) -> 11\n(u1, !at_goal&door_open&has_key, u4) -> 11\n(u1, at_goal&!door_open&!has_key, u2) -> -11\n(u1, at_goal&!door_open&has_key, u2) -> -11\n(u1, at_goal&door_open&has_key, u4) -> 11\n(u3, has_key, u4) -> 11\n"
+}

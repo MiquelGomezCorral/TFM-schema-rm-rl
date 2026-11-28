@@ -1,0 +1,166 @@
+{
+ "suite": "complex",
+ "name": "cx-rules-only~p1",
+ "task": "Never pick up the box in the other room. Try not to drop the key while the door is still closed, and whenever you hold the key, try to have the door open then or open it later.",
+ "gen": "qwen3.5:9b-q4_K_M",
+ "critic": "qwen3.5:9b-q4_K_M@critic",
+ "reasoning": "none",
+ "status": "accepted",
+ "error": null,
+ "wall_s": 105.2,
+ "attempts_used": 9,
+ "critic_rejections": 8,
+ "provider_reruns": 0,
+ "calls": 18,
+ "trace": [
+  {
+   "attempt": 1,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Never pick up the box.\",\n    \"pattern\": \"Absence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Try not to drop the key while the door is closed.\",\n    \"pattern\": \"RespondedExistence\",\n    \"priority\": \"soft\",\n    \"propositions\": [\n      \"key_lost\",\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Whenever you hold the key, try to have the door open then or open it later.\",\n    \"pattern\": \"RespondedExistence\",\n    \"priority\": \"soft\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 1,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: Clause 2 is wrong. The task requires \"Try not to drop the key while the door is still closed\" (prevent key_lost before door_open). The candidate uses RespondedExistence(key_lost, door_open), which allows key_lost to happen before door_open if it ever happens, violating the prohibition against dropping the key while closed. This should be Precedence(door_open, key_lost) hard. Clause 3 is also wrong. The task requires \"whenever you hold the key, try to have the door open\" (prevent has_door_key without door_open). The candidate uses RespondedExistence(has_door_key, door_open), which allows has_door_key to happen before door_open if it ever happens, violating the preference to keep the door open while holding the key. This should be Precedence(door_open, has_door_key) soft."
+   }
+  },
+  {
+   "attempt": 2,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Never pick up the box.\",\n    \"pattern\": \"Absence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Try not to drop the key while the door is still closed.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"soft\",\n    \"propositions\": [\n      \"door_open\",\n      \"key_lost\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Whenever you hold the key, try to have the door open then or open it later.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"soft\",\n    \"propositions\": [\n      \"door_open\",\n      \"has_door_key\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 2,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The clause 'Try not to drop the key while the door is still closed' uses a soft Precedence(door_open, key_lost). However, under the environment constraints, `key_lost` can only occur if the agent drops the key while the door is closed (`door_open` is false). If the agent picks up the key and tries to pick up the blocker (ball) or the box before dropping the key, `key_lost` is not yet fired. The constraint 'never hold two objects' implies that once the key is picked up (`has_door_key` becomes true), if the agent attempts to pick up another object (blocker or target), it must first drop the key. If they drop the key while the door is still closed, `key_lost` triggers immediately. The task says 'Try not to drop the key...', implying a penalty for this sequence. The machine accepts `target_picked_up` with `!door_open` in `u0`, which violates the implicit logical constraint of the environment (cannot pick up target without opening door) and potentially the clause R1 (Absence). More critically, looking at R2: `Precedence(door_open, key_lost)` allows `key_lost` after `door_open`. But if `door_open` is true, can `key_lost` happen? No. If `door_open` is false, and agent drops key, `key_lost` happens. The clause prevents `key_lost` before `door_open`. This seems correct for the text. However, look at R3: 'Whenever you hold the key, try to have the door open then or open it later.' This translates to `Precedence(door_open, has_door_key)`. In `u0`, `has_door_key` is allowed with `!door_open`. Wait, `Precedence(a,b)` means `b` cannot happen before `a`. If `a`=`door_open` and `b`=`has_door_key`, then `has_door_key` cannot be true while `door_open` is false. The transition `(u0, !door_open&!has_door_key&...) -> u0` and `(u0, !door_open&has_door_key&...) -> u0` (reward -1). The machine allows entering a state where `door_open` is false and `has_door_key` is true. This violates `Precedence(door_open, has_door_key)`. The template `Precedence(a,b)` forbids `b` while `a` is false. Here `a`=door_open, `b`=has_door_key. So `has_door_key` must be true only after `door_open`. The machine allows `has_door_key=true` when `door_open=false`. This is a mismatch for the soft clause. The task requires 'Whenever you hold the key, try to have the door open'. This means if `has_door_key` starts becoming true (or becomes true), it should imply `door_open` eventually? Or `door_open` must be true when `has_door_key` holds? `Precedence(door_open, has_door_key)` says `has_door_key` cannot happen before `door_open`. This matches the intent. However, the machine allows `door_open=false` and `has_door_key=true`. This is forbidden by `Precedence(door_open, has_door_key)`. The template definition: `b` does not happen before `a` has happened. It holds when `a` never happens? No, it holds if `a` never happens OR `b` never happens before first `a`. Wait, `Precedence(a,b)` is `((~b)Ua)|(G(~b))`. This means either `a` happens and then `b` can happen, or `b` is always false. If `a` never happens, then `b` must be always false. So if `door_open` never becomes true, `has_door_key` must be false forever. But the machine allows `door_open=false` (always) and `has_door_key=true`? If `door_open` is always false, `Precedence(door_open, has_door_key)` forces `has_door_key` to be always false. The transition `(u0, !door_open&has_door_key&!key_lost&target_picked_up)` exists. This implies a state where `door_open` is false and `has_door_key` is true. If `door_open` never becomes true, this state is reachable, which violates the hard constraint of `Precedence`. But wait, the machine has `REJECTING_STATES: u1`. If we reach a state where `door_open=false` and `has_door_key=true`, do we get a penalty? Yes `-1`. So it's soft. The issue is whether the *clause* correctly represents the text. The text says"
+   }
+  },
+  {
+   "attempt": 3,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Never pick up the box in the other room.\",\n    \"pattern\": \"Absence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Try not to drop the key while the door is still closed.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"soft\",\n    \"propositions\": [\n      \"door_open\",\n      \"key_lost\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Whenever you hold the key, try to have the door open then or open it later.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"soft\",\n    \"propositions\": [\n      \"door_open\",\n      \"has_door_key\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 3,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The candidate includes a hard Absence(target_picked_up) clause ('Never pick up the box'), but the task explicitly commands 'pick up' via the example trace and objective boundary. The machine's empty FINAL_STATES and the hard rejection of picking up the box contradict the core goal of collecting the target item. The hard Absence clause is an added requirement that invalidates the compilation; it should be removed or changed to a soft preference if intended, but given the task phrasing 'Eventually pick up' is implied by the objective boundary, the hard absence breaks the required goal."
+   }
+  },
+  {
+   "attempt": 4,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Pick up the purple box.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Do not drop the key while the door is closed.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"soft\",\n    \"propositions\": [\n      \"door_open\",\n      \"key_lost\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"While holding the key, ensure the door is open.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"soft\",\n    \"propositions\": [\n      \"door_open\",\n      \"has_door_key\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 4,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The candidate adds a hard Existence(target_picked_up) which contradicts the task's primary objective 'Never pick up the box'. The task requires an Absence(target_picked_up). Additionally, the machine has FINAL_STATES set to u1 (implying target_picked_up is required), while the task forbids it, making the rule-only warning incorrect or the goal definition wrong. Remove the hard Existence(target_picked_up) clause and replace it with a hard Absence(target_picked_up) that matches the task's 'Never' constraint."
+   }
+  },
+  {
+   "attempt": 5,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Never pick up the box in the other room.\",\n    \"pattern\": \"Absence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Try not to drop the key while the door is still closed.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"soft\",\n    \"propositions\": [\n      \"door_open\",\n      \"key_lost\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Whenever you hold the key, try to have the door open then or open it later.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"soft\",\n    \"propositions\": [\n      \"door_open\",\n      \"has_door_key\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 5,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: Clause 2 uses `Precedence(door_open, key_lost)`. The task says \"Try not to drop the key while the door is still closed\", meaning `key_lost` should be forbidden until `door_open`. However, `key_lost` is an event that occurs *on* the step it happens (a one-step event reading in this environment semantics). A `Precedence` formula `(G(!b)U a | G(!b))` requires `a` to happen before any occurrence of `b`, but `key_lost` being true means the key was dropped. The template for \"until\" or \"do not b while a has not happened\" maps to `Precedence(a, b)` where `b` is forbidden until `a`. Here `a` is `door_open`, `b` is `key_lost`. The compiler generated `Precedence(door_open, key_lost)`. This template forbids `key_lost` until `door_open`. However, looking at the environment constraints: \"`key_lost` and `door_open` never hold together\". If `door_open` is true, `key_lost` can happen (if we drop the key after opening the door). The task wants to avoid dropping the key *while* closed. This matches `Precedence(door_open, key_lost)`. BUT: The task also says \"Whenever you hold the key... try to have the door open\". Clause 3 is `Precedence(door_open, has_door_key)`. The template `Precedence(a, b)` means: `b` cannot happen before `a`. If `has_door_key` happens before `door_open`, it violates this. This matches \"hold the key implies door open\". However, check clause 1: \"Never pick up the box\". Task: \"Never pick up the box in the other room.\" -> `Absence(target_picked_up)`. The machine has no `FINAL_STATES` because all clauses are soft or rule-only? Wait, Clause 1 is `hard Absence`. If there is a hard goal to avoid picking up the box, the agent *must* not pick it up. But the task says \"Try not to drop the key... and whenever you hold the key, try to have the door open\". These are soft. But \"Never pick up the box\" is hard. So `FINAL_STATES` should be empty? No, if there is a hard `Absence`, there is no goal to reach, so `FINAL_STATES` is correct (empty). But wait: The task says \"Never pick up the box... Try not to drop...\". All three seem to be negative instructions. Is \"Never pick up\" really `Absence`? Yes. So the machine is rule-only. That is valid.\n\nNow check Clause 2 again: \"Try not to drop the key while the door is still closed.\" -> Soft `Precedence(door_open, key_lost)`. The task uses \"Try not\", which makes it soft. Correct.\nClause 3: \"Whenever you hold the key, try to have the door open\". This means if `has_door_key` then `door_open` should be true (or happen). It says \"try to\", so soft. The template is `Precedence(door_open, has_door_key)`. Wait! The definition of `Precedence(a, b)` is: `b` does not happen before `a`. So if `a=door_open`, `b=has_door_key`, then `has_door_key` cannot happen before `door_open`. This matches \"have the door open then or later\". Correct.\n\nHowever, look at Clause 2 propositions: `[\"door_open\", \"key_lost\"]`. The normalized clause is \"Try not to drop the key...\". The event `key_lost` triggers when the key is dropped. We want to forbid `key_lost` until `door_open`. So `Precedence(door_open, key_lost)` means `key_lost` is forbidden until `door_open`. This is correct.\n\nBut wait! Check the environment constraint: \"`key_lost` and `door_open` never hold together\". If `door_open` becomes true, `key_lost` can still happen later? Yes, after the door is open. The formula `Precedence(door_open, key_lost)` allows `key_lost` once `door_open` happens. Correct.\n\nCheck Clause 3 propositions: `[\"door_open\", \"has_door_key\"]`. Template `Precedence(a, b)` with `a=door_open`, `b=has_door_key`. This forbids `has_door_key` before `door_open`. Meaning: you cannot hold the key if the door is closed (for as long as the condition holds? No, `Precedence` means the first time `b` happens, it must be after `a` has happened). So if `has_door_key` is a condition that lasts (which it is), and we say `door_open` must happen before `has_door_key` ever happens. This implies: you can never pick up the key until the door is open. But wait! The example trace shows: 1. Move ball. 2. Drop ball. 3. Pick up key (door closed). 4. Toggle door. 5. Drop key. 6. Pick up box.\n\nIn this trace, `has_door_key` becomes true while `door_open` is false. This violates Clause 3 if it is `Precedence(door_open, has_door_key)`. But the task says: \"whenever you hold the key, try to have the door open then or open it later\". This phrasing suggests: if you hold the key, the door should be open *later*, not necessarily immediately. It does NOT say \"you cannot pick up the key until the door is open\". The task says \"whenever you hold the key... try to have the door open\". This sounds like a response rule: `Response(has_door_key -> door_open)`. But the compiler chose `Precedence(door_open, has_door_key)`, which means `has_door_key` cannot happen until `door_open`. That is much stricter than \"whenever you hold the key, have the door open (sooner or later)\". If I hold the key at step 10, and open the door at step 20, that satisfies \"whenever you hold the key, try to have the door open then or later\"? Yes, because at step 10 we hold it, and later (step 20) the door opens. The formula `Response(a, b)` is `(G(a->Fb))`. If `a` holds at step 10, then eventually `b` must hold. But `Precedence(a, b)` with `a=door_open`, `b=has_door_key` means `b` (holding key) can only happen *after* `a` (door open). This forbids holding the key before the door opens. That is a different meaning! \n\nThe task says: \"whenever you hold the key, try to have the door open then or open it later\". This implies: if you hold the key, ensure the door becomes open eventually. That is `Response(has_door_key, door_open)`. But the compiler generated `Precedence(door_open, has_door_key)`, which says \"do not hold the key before the door opens\". These are opposite!\n\nIn the standard trace: pick up key (door closed) -> toggle door -> drop key. So `has_door_key` happens while `door_open` is false. This violates `Precedence(door_open, has_door_key)` because `has_door_key` happened before `door_open`. But the task allows this if we \"try to have the door open\" later (which we did). The compiler's choice of template is wrong.\n\nIt should be `Response(has_door_key, door_open)`: every time you hold the key (`has_door_key`), eventually open the door (`door_open`). This allows holding the key before opening the door, but requires that the door opens eventually.\n\nTherefore, Clause 3 has the wrong template. It should use `Response(has_door_key, door_open)` (soft) instead of `Precedence(door_open, has_door_key)`. \n\nAlso check Clause 2: \"Try not to drop the key while the door is still closed\". This means do not trigger `key_lost` while `door_open` is false. So forbid `key_lost` until `door_open`. Template `Precedence(door_open, key_lost)` is correct (forbid `key_lost` until `door_open`). But wait: `key_lost` is an event that happens *once*. The formula `Precedence(a, b)` for `b=KeyLost`, `a=DoorOpen` means: once `DoorOpen` happens, `KeyLost` can happen. Before that, `KeyLost` cannot happen. This matches.\n\nBut there is a subtlety: in the environment, `key_lost` is an event that is true for one step. The formula `(G(!b)Ua | G(!b))` with `b=KeyLost`, `a=DoorOpen`. If `DoorOpen` happens, then `KeyLost` can happen afterwards. If we drop the key at step 10 (door closed), `b` happens while `!a` holds. This violates the formula because before any `a`, `b` happened. So it forbids dropping the key before the door opens. Correct.\n\nSo only Clause 3 is wrong. It should be `Response(has_door_key, door_open)` instead of `Precedence(door_open, has_door_key)`. \n\nAlso check if Clause 3 is `hard` or `soft`. Task says \"try\", so soft. Compiler has `soft`. Correct.\n\nTherefore, rejection reason: Clause 3 uses wrong template. It should be `Response(has_door_key, door_open)`, not `Precedence(door_open, has_door_key)`. The compiler confused the order of arguments and the template type."
+   }
+  },
+  {
+   "attempt": 6,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Never pick up the box in the other room.\",\n    \"pattern\": \"Absence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Try not to drop the key while the door is still closed.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"soft\",\n    \"propositions\": [\n      \"door_open\",\n      \"key_lost\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Whenever you hold the key, try to have the door open then or open it later.\",\n    \"pattern\": \"Response\",\n    \"priority\": \"soft\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 6,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The clause for 'Try not to drop the key while the door is still closed' is incorrect. The task requires that `key_lost` (dropping the key) does NOT happen before `door_open`. This is a ban on an event happening *before* a condition, which corresponds to `Precedence(door_open, key_lost)`. However, in the provided machine and clauses, the propositions for this clause are `[\"door_open\", \"key_lost\"]` but the template used is `Precedence`. Looking at the `Precedence` definition, it takes arguments `(a, b)` meaning `b` does not happen before `a` happens. Here, the event to ban (`key_lost`) should be the second argument `b`, and the enabling event (`door_open`) should be the first argument `a`. The clause uses `Precedence(door_open, key_lost)`, which means `key_lost` does not happen before `door_open`. This matches the task. Wait, let me re-check the definition.\n\nDefinition of `Precedence(a, b)`: `b` does not happen before `a` has happened.\nTask:"
+   }
+  },
+  {
+   "attempt": 7,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Never pick up the box in the other room.\",\n    \"pattern\": \"Absence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Try not to drop the key while the door is still closed.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"soft\",\n    \"propositions\": [\n      \"door_open\",\n      \"key_lost\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Whenever you hold the key, try to have the door open then or open it later.\",\n    \"pattern\": \"Response\",\n    \"priority\": \"soft\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 7,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The first clause is correct (hard Absence on target_picked_up). However, the second clause 'Try not to drop the key while the door is still closed' is modeled as soft Precedence(door_open, key_lost), which means key_lost may occur after door_open. This contradicts the hard requirement of 'Never pick up the box' and potentially allows states where the agent drops the key (failing the implied hard constraint). Furthermore, since the task says 'try not to drop the key while the door is still closed', it should be a soft clause but with the correct ordering logic. The third clause is also soft Response(has_door_key, door_open), which means the goal is only to open the door eventually if holding the key, but does not enforce opening the door immediately. However, given the environment constraints, the most important issue is the second clause: 'Try not to drop the key while the door is still closed' should be a hard Precedence(door_open, key_lost), as dropping the key while the door is closed would break the task's intent (even though it says 'try not to', in this context it's effectively a hard constraint to avoid breaking the episode). Additionally, the machine has no final states, which is acceptable since the episode ends on pickup, but the second clause should be changed from soft to hard."
+   }
+  },
+  {
+   "attempt": 8,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Never pick up the box in the other room.\",\n    \"pattern\": \"Absence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 8,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The task 'Never pick up the box in the other room.' contains two parts: a hard prohibition and a preference. The candidate provides a hard `Absence(target_picked_up)`, which contradicts the environment constraints where the episode *must* end upon picking up the box to be considered complete (as per the 'Objective' section). A task that forbids its own terminal event without providing a goal clause is logically incomplete for the environment, leading to an empty `FINAL_STATES`. The task also includes preferences ('Try not to drop...', 'try to have the door open...') which should be soft clauses. The hard clause fails because it prevents the episode termination condition defined by the environment itself, effectively making the task impossible to complete successfully in the standard sense or misrepresenting the 'Never' instruction as a permanent ban rather than a constraint within a successful run."
+   }
+  },
+  {
+   "attempt": 9,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Never pick up the box in the other room.\",\n    \"pattern\": \"Absence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Try not to drop the key while the door is still closed.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"soft\",\n    \"propositions\": [\n      \"door_open\",\n      \"key_lost\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Whenever you hold the key, try to have the door open then or open it later.\",\n    \"pattern\": \"Response\",\n    \"priority\": \"soft\",\n    \"propositions\": [\n      \"has_door_key\",\n      \"door_open\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 9,
+   "step": "critic",
+   "value": {
+    "accepted": true,
+    "feedback": "NO CHANGES NEEDED: The candidate correctly implements the task 'Never pick up the box' (hard Absence), 'Try not to drop the key while the door is still closed' (soft Precedence(door_open, key_lost)), and 'whenever you hold the key, try to have the door open' (soft Response). No clauses are missing or incorrectly templated."
+   }
+  }
+ ],
+ "sends": [],
+ "clauses": [
+  [
+   "Absence",
+   [
+    "target_picked_up"
+   ],
+   "hard"
+  ],
+  [
+   "Precedence",
+   [
+    "door_open",
+    "key_lost"
+   ],
+   "soft"
+  ],
+  [
+   "Response",
+   [
+    "has_door_key",
+    "door_open"
+   ],
+   "soft"
+  ]
+ ],
+ "texts": [
+  "Never pick up the box in the other room.",
+  "Try not to drop the key while the door is still closed.",
+  "Whenever you hold the key, try to have the door open then or open it later."
+ ],
+ "machine": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3, u4\nINITIAL_STATE: u0\nFINAL_STATES:\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&!has_door_key&!key_lost&target_picked_up) -> u1\n(u0, !door_open&!has_door_key&key_lost&!target_picked_up) -> u0\n(u0, !door_open&!has_door_key&key_lost&target_picked_up) -> u1\n(u0, !door_open&has_door_key&!key_lost&!target_picked_up) -> u2\n(u0, !door_open&has_door_key&!key_lost&target_picked_up) -> u1\n(u0, !door_open&has_door_key&key_lost&!target_picked_up) -> u2\n(u0, !door_open&has_door_key&key_lost&target_picked_up) -> u1\n(u0, door_open&!target_picked_up) -> u3\n(u0, door_open&target_picked_up) -> u1\n(u2, !door_open&!key_lost&target_picked_up) -> u1\n(u2, !door_open&key_lost&!target_picked_up) -> u2\n(u2, !door_open&key_lost&target_picked_up) -> u1\n(u2, door_open&!target_picked_up) -> u3\n(u2, door_open&target_picked_up) -> u1\n(u3, !door_open&!has_door_key&target_picked_up) -> u1\n(u3, !door_open&has_door_key&!target_picked_up) -> u4\n(u3, !door_open&has_door_key&target_picked_up) -> u1\n(u3, door_open&target_picked_up) -> u1\n(u4, !door_open&target_picked_up) -> u1\n(u4, door_open&!target_picked_up) -> u3\n(u4, door_open&target_picked_up) -> u1\nREWARD_FUNCTION:\n(u0, !door_open&!has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, !door_open&!has_door_key&key_lost&!target_picked_up, u0) -> -1\n(u0, !door_open&!has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, !door_open&has_door_key&!key_lost&!target_picked_up, u2) -> -1\n(u0, !door_open&has_door_key&!key_lost&target_picked_up, u1) -> -100.694\n(u0, !door_open&has_door_key&key_lost&!target_picked_up, u2) -> -2\n(u0, !door_open&has_door_key&key_lost&target_picked_up, u1) -> -100.694\n(u0, door_open&target_picked_up, u1) -> -100.694\n(u2, !door_open&!key_lost&target_picked_up, u1) -> -100.694\n(u2, !door_open&key_lost&!target_picked_up, u2) -> -1\n(u2, !door_open&key_lost&target_picked_up, u1) -> -100.694\n(u2, door_open&!target_picked_up, u3) -> 1\n(u2, door_open&target_picked_up, u1) -> -100.694\n(u3, !door_open&!has_door_key&target_picked_up, u1) -> -100.694\n(u3, !door_open&has_door_key&!target_picked_up, u4) -> -1\n(u3, !door_open&has_door_key&target_picked_up, u1) -> -100.694\n(u3, door_open&target_picked_up, u1) -> -100.694\n(u4, !door_open&target_picked_up, u1) -> -100.694\n(u4, door_open&!target_picked_up, u3) -> 1\n(u4, door_open&target_picked_up, u1) -> -100.694\n"
+}

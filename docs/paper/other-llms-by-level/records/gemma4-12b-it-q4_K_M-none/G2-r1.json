@@ -1,0 +1,79 @@
+{
+ "suite": "templates",
+ "name": "tpl-existence-2-goal",
+ "task": "Open the door. Pick up the box in the other room.",
+ "gen": "gemma4:12b-it-q4_K_M",
+ "critic": "gemma4:12b-it-q4_K_M@critic",
+ "reasoning": "none",
+ "status": "accepted",
+ "error": null,
+ "wall_s": 21.9,
+ "attempts_used": 3,
+ "critic_rejections": 2,
+ "provider_reruns": 0,
+ "calls": 6,
+ "trace": [
+  {
+   "attempt": 1,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Open the door.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the box in the other room.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Pick up the box in the other room.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 1,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: Existence(door_open) is redundant because the task commands 'Open the door. Pick up the box' which is an order. A hard Existence(target_picked_up) and a hard Precedence(door_open, target_picked_up) already force door_open to happen. Remove Existence(door_open) to satisfy the compactness requirement; keep the other two clauses."
+   }
+  },
+  {
+   "attempt": 2,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Pick up the box in the other room.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Open the door before picking up the box in the other room.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 2,
+   "step": "critic",
+   "value": {
+    "accepted": false,
+    "feedback": "CHANGES REQUIRED: The task consists of two distinct commanded actions: 'Open the door' and 'Pick up the box in the other room.' The current clauses treat 'Open the door' only as a precedence constraint for 'Pick up the box.' Because 'Open the door' is an independent command, it requires its own hard Existence(door_open) clause. Adding this existence clause will correctly ensure that the machine requires the door to be opened as part of the completion criteria, rather than just as a prerequisite for the box."
+   }
+  },
+  {
+   "attempt": 3,
+   "step": "generate",
+   "value": "[\n  {\n    \"normalized_clause\": \"Open the door. Pick up the box in the other room.\",\n    \"pattern\": \"Existence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"target_picked_up\"\n    ]\n  },\n  {\n    \"normalized_clause\": \"Open the door. Pick up the box in the other room.\",\n    \"pattern\": \"Precedence\",\n    \"priority\": \"hard\",\n    \"propositions\": [\n      \"door_open\",\n      \"target_picked_up\"\n    ]\n  }\n]"
+  },
+  {
+   "attempt": 3,
+   "step": "critic",
+   "value": {
+    "accepted": true,
+    "feedback": "NO CHANGES NEEDED: Existence(target_picked_up) requires the box to be picked up; Precedence(door_open, target_picked_up) ensures the door is opened first. Together, they force the door to be open before the box is picked up, which is the correct interpretation of the command sequence."
+   }
+  }
+ ],
+ "sends": [],
+ "clauses": [
+  [
+   "Existence",
+   [
+    "target_picked_up"
+   ],
+   "hard"
+  ],
+  [
+   "Precedence",
+   [
+    "door_open",
+    "target_picked_up"
+   ],
+   "hard"
+  ]
+ ],
+ "texts": [
+  "Open the door. Pick up the box in the other room.",
+  "Open the door. Pick up the box in the other room."
+ ],
+ "machine": "REWARD_MACHINE:\nSTATES: u0, u1, u2, u3\nINITIAL_STATE: u0\nFINAL_STATES: u3\nREJECTING_STATES: u1\nDEFAULT_REWARD: 0\nTRANSITION_FUNCTION:\n(u0, !door_open&target_picked_up) -> u1\n(u0, door_open&!target_picked_up) -> u2\n(u0, door_open&target_picked_up) -> u3\n(u2, target_picked_up) -> u3\nREWARD_FUNCTION:\n(u0, !door_open&target_picked_up, u1) -> -10\n(u0, door_open&!target_picked_up, u2) -> 1\n(u0, door_open&target_picked_up, u3) -> 12\n(u2, target_picked_up, u3) -> 11\n"
+}
