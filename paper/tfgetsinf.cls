@@ -336,7 +336,7 @@
 \large
 Master Universitario en Inteligencia Artificial, Reconocimiento de Formas e Imagen Digital\\
 
-Universidad Politécnica de Valencia
+Universitat Politècnica de València
 \end{color}
 \vspace{\stretch{1}}
 

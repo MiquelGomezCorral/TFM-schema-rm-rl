@@ -498,22 +498,22 @@ Notice that Steps 2 to 4 form the \textbf{compiler}. They call no language model
 \centering
 \begin{tikzpicture}[farm]
 % Step 1: the language model and IBM's templates
-\node[farm llm, farm step=1.1]  (gen) at (0,0)     {Language model};
+\node[farm llm, farm step=1.1]  (gen) at (0,0)     {Generator};
 \node[farm items]               (cl)  at (0,-1.25) {Clauses};
-\node[farm tool, farm step=1.2] (ibm) at (0,-2.5)  {IBM templates};
+\node[farm tool, farm step=1.2] (ibm) at (0,-2.5)  {IBM templates mapping};
 \node[farm items]               (ltl) at (0,-3.75) {LTLf formulas};
 % Steps 2 and 3: MONA and FL-AT
-\node[farm tool, farm step=2]   (mona) at (5,0)     {MONA};
+\node[farm tool, farm step=2.1]   (mona) at (5,0)     {MONA};
 \node[farm items]               (dfa)  at (5,-1.25) {DFAs};
-\node[farm tool, farm step=3]   (flat) at (5,-2.5)  {FL-AT};
-\node[farm rm]                  (pm)   at (5,-3.75) {Product automaton};
+\node[farm tool, farm step=2.2]   (flat) at (5,-2.5)  {FL-A intersection of DFAs};
+\node[farm rm]                  (pm)   at (5,-3.75) {Intersection automaton};
 % Step 4: the main steps of FARM's post-process
 \node[farm tool] (hard)  at (10,0)     {Final states and the well};
-\node[farm tool] (merge) at (10,-1.25) {Merging the start state};
+\node[farm tool] (merge) at (10,-1.25) {Simplification and merging};
 \node[farm tool] (rew)   at (10,-2.5)  {Reward assignment};
 \node[farm rm]   (rm)    at (10,-3.75) {RM};
 % Step 5: the critic
-\node[farm llm, farm step=5] (crit) at (5,-5.6) {Critic};
+\node[farm llm, farm step=4] (crit) at (5,-5.6) {Critic};
 \node[farm final, text width=3cm] (out) at (5,-6.9) {Final RM};
 % Inputs
 \node[farm text, text width=2.1cm, minimum height=7.5mm] (task) at (-1.25,1.55) {Task};
@@ -525,12 +525,12 @@ Notice that Steps 2 to 4 form the \textbf{compiler}. They call no language model
     \node[farm group, fit=(hard)(rm)]    (g3) {};
 \end{scope}
 \node[farm title, above=0pt of g1.north] {IBM nl2ltl};
-\node[farm title, above=0pt of g2.north] (t2) {MONA and FL-AT};
+\node[farm title, above=0pt of g2.north] (t2) {FL-AT};
 \node[farm title, above=0pt of g3.north] (t3) {FARM post-process};
 % The compiler: Steps 2 to 4
 \node[farm frame, fit=(g2)(g3)(t2)(t3)] (comp) {};
 \node[farm title, above=0pt of comp.north] {Compiler};
-\node[farm number] at (g3.north west) {4};
+\node[farm number] at (g3.north west) {3};
 % Flow
 \draw[farm flow] (task.south) -- (task.south |- gen.north);
 \draw[farm flow] (env.south)  -- (env.south |- gen.north);
@@ -543,14 +543,14 @@ Notice that Steps 2 to 4 form the \textbf{compiler}. They call no language model
 \draw[farm flow] (crit) -- node[right] {Accepted} (out);
 \draw[farm flow, dashed] (crit.west) -- (-2.45,-5.6) node[pos=0.5, above] {Rejected: comments to the generator} |- (gen.west);
 % Legend
-\node[farm llm, text width=1.9cm, minimum height=7mm] at (-1.3,-8.2) {Language model};
+\node[farm llm, text width=1.9cm, minimum height=7mm] at (-1.3,-8.2) {Large Language model};
 \node[farm tool, text width=1.9cm, minimum height=7mm] at (1.2,-8.2) {Deterministic step};
 \node[farm text, text width=1.9cm, minimum height=7mm] at (3.7,-8.2) {Text};
 \node[farm items, text width=1.9cm, minimum height=7mm] at (6.2,-8.2) {Per-clause output};
 \node[farm rm, text width=2.4cm, minimum height=9mm] at (8.7,-8.2) {Intermediate automaton or RM};
 \node[farm final, text width=1.9cm, minimum height=7mm] at (11.2,-8.2) {Final RM};
 \end{tikzpicture}
-\caption[The FARM pipeline]{The FARM pipeline. Rectangles are processes and slanted boxes are data. The colours give the kind of each box as in the legend. A stack stands for one item per clause given at step 1.1.}
+\caption[The FARM pipeline]{The FARM pipeline. Rectangles are processes and slanted boxes are data. The colours give the kind of each box as in the legend and a stack stands for one item per clause given at step 1.1.}
 \label{fig:pipeline}
 \end{figure}
 
@@ -601,7 +601,7 @@ Now, we present all the steps in more detail, and each ends with the part of the
 
 \section{Step 1 · Task interpretation and formalisation}
 \label{sec:step1}
-In the first step a language model, the \textbf{generator}, reads the task and the environment description and writes the task as clauses (Figure~\ref{fig:step1}). A \textbf{clause} names one of eight \textbf{templates}, the \textbf{propositions} it applies to and a \textbf{priority, hard or soft}, and states its part of the task in one plain sentence. The answer is restricted to this form, with at most 25 clauses, and only the template, the propositions and the priority reach the compiler. The template of each clause then writes its LTLf formula.
+In the first step a language model, the \textbf{generator}, is responsible for converting the natural-language task into a form that can be easily processed into a formal representation (Figure~\ref{fig:step1}). As is known in the literature, the more valuable context a model receives and the simpler its output is, the better it does its task. That is where the \textbf{clauses} and the \textbf{environment description} come into play.
 
 \begin{figure}[H]
 \centering
@@ -609,7 +609,7 @@ In the first step a language model, the \textbf{generator}, reads the task and t
     field/.style={shape=farm slant, draw=orange!60!black, fill=orange!40, align=center, text width=1.9cm, minimum height=4mm, inner sep=1pt}]
 \node[farm text, text width=2.1cm, minimum height=7.5mm] (task) at (0,0.55) {Task};
 \node[farm text, text width=2.1cm, minimum height=7.5mm] (env) at (0,-0.55) {Environment description};
-\node[farm llm, farm step=1.1, text width=2cm] (gen) at (3.3,0) {Language model};
+\node[farm llm, farm step=1.1, text width=2cm] (gen) at (3.3,0) {Generator};
 % one clause: a stacked card titled Clause that holds its three fields
 \node[font=\scriptsize\bfseries] (cltitle) at (6.2,0.66) {Clause};
 \node[field] (f1) at (6.2,0.24) {Template};
@@ -618,7 +618,7 @@ In the first step a language model, the \textbf{generator}, reads the task and t
 \begin{scope}[on background layer]
 \node[farm items, shape=rectangle, text width=, fit=(cltitle) (f1) (f2) (f3), inner sep=3pt] (cl) {};
 \end{scope}
-\node[farm tool, farm step=1.2, text width=2cm, right=of cl] (ibm) {IBM templates};
+\node[farm tool, farm step=1.2, text width=2cm, right=of cl] (ibm) {IBM templates mapping};
 \node[farm items, text width=1.8cm, right=of ibm] (ltl) {LTLf formula};
 \draw[farm flow] (task.east) -- (gen.west);
 \draw[farm flow] (env.east) -- (gen.west);
@@ -630,17 +630,48 @@ In the first step a language model, the \textbf{generator}, reads the task and t
 \label{fig:step1}
 \end{figure}
 
-FARM assumes that the task it receives can be done. Everything the task speaks of is a proposition that the environment description declares and that can become true in the environment, and the clauses that state the task do not contradict each other. Section~\ref{sec:lim-anomalies} describes what happens to a task that breaks this assumption, and letting the generator refuse such a task is future work (Section~\ref{sec:fw-refusal}).
-
 \subsection{IBM nl2ltl}
-IBM's nl2ltl \cite{fuggitti2023nl2ltl} goes from natural language to LTLf through templates. A language model chooses which templates to use and which propositions fill them, and each template maps to a fixed LTLf formula in which only the propositions change. 
+Step 1 does not start from zero. It is built on nl2ltl (Natural Languago to LTLf) \cite{fuggitti2023nl2ltl}, a tool by IBM that already does this whole step on its own: it receives a sentence, a language model picks a template with the propositions that fill it, then the template get mapped to the LTLf formula. 
 
-All the work therefore lies in the choice. A template is a fixed pattern with holes, and the model only says \textbf{which pattern to use and what goes in the holes}. The choice is still hard, since the model has to understand the task, its order and the dependencies between its steps, rules and goals. 
+Now, the tool does not include all the elements that are presented in the step 1. It limits the inpup of the model to a single sentence, not giving the model any context about the environment or the task. It also does not separate what parts of the task that hold from those that are only preferred, and it does not give the model all the templates that the very same tool defines.
 
-FARM keeps the template classes of nl2ltl, improves its performance with prompting, and replaces its engine (Appendix~\ref{app:implementation}) so other LLMs can be used. FARM's prompts were tuned on a set of tasks kept apart from the ones the evaluation scores (Chapter~\ref{chap:evaluation}), and Appendix~\ref{app:res-prompts} gives the prompt versions and their scores.
+What these elements are, is presented in the next subsections, but what needs to be known here is that FARM builds on nl2ltl, and to acchive the aims of this thesis, it adds the missing elements to the tool. The rest of nl2ltl is kept, and Appendix~\ref{app:implementation} gives the details of how it is integrated into FARM.
 
-\subsection{Templates}
-Each clause that the generator writes uses one of the templates of nl2ltl, fixed patterns with holes. Table~\ref{tab:templates} lists the eight templates with their LTLf definitions in IBM's library, and its last column gives the kind of each, goal or rule, which the next subsection explains.
+Now we present all the elements that are part of this tool.
+
+\subsection{Clauses} 
+The clause are going to be the outputs of the generator, and as we mentioned, this simplify the task the model has to perform. Each clause is an object made of three fields: one of the eight \textbf{templates} presented below, taken from the \texttt{Declare} language (Section~\ref{sec:sota-ltl}); the \textbf{propositions} it applies to; and a \textbf{priority, hard or soft}. 
+
+The generator then chooses the clauses together with the propositions that describe best the task, and since the templates are fixed, each clause can be translated into an LTLf formula. 
+
+\paragraph{Priority.} The priority field is a label to define if that rule is mandatory (hard) or desirable (soft). This information is used by the post-process ([cite setp 4]), where it helps to assign the rewards on and compact the RM. 
+
+\noindent To show what a clause looks like, consider the following example: for the \runex{careful key}, the generator should write two clauses: 
+\begin{itemize}
+    \item \textbf{Template}: Existence(a), \textbf{Propositions}: [at\_goal], \textbf{Priority}: Hard 
+    $$\texttt{Existence}(\texttt{at\_goal}) \quad \texttt{hard}$$
+    \item \textbf{Template}: Absence(a), \textbf{Propositions}: [key\_lost], \textbf{Priority}: Soft 
+    $$\texttt{Absence}(\texttt{key\_lost}) \quad \texttt{soft}$$
+\end{itemize}
+The first is the mandatory one, and the second is the desirable one because of the word ``ideally'', while the lack of any mattice on the first one keeps it hard.
+
+\subsubsection{Goals and rules}
+To improve the post-processing of the RM, a difference between the types of the clauses is introduced now, \textbf{goal} and \textbf{rule}. 
+
+\begin{itemize}
+    \item \textbf{Goal}: A clause is a goal if it \textbf{asks for something to happen}
+    \item \textbf{Rule}: While a clause is a rule if it \textbf{only limits what may happen}. 
+\end{itemize}
+One test tells them apart. 
+\keyidea{After a step in which \textbf{nothing happens}, that is, no proposition or event holds, a goal is not satisfied yet, while a rule is.} 
+
+For example, two templates Existence and ExistenceTwo, are goals since by doing nothing, they cannot be satisfied. The other six templates are rules, Precedence included. They hold while nothing happens, and a later event may break them or make them wait for an answer. For example, if $b$ happens before $a$, Precedence$(a,b)$ is broken, but if nothing happens, it still holds. While for Existence$(a)$, if nothing happens, it will never be satisfied since it asks for $a$ to be true at least once.
+
+The compiler applies the test to the DFA of each clause, so it needs no list of templates. The difference shapes Step~4. Only a hard goal gives the RM a final state, and the RM pays the agent as it gets closer to that state.
+ 
+\subsubsection{Templates}
+\label{sec:templates}
+A template could be defined as a fixed pattern with holes, and the generator fills the holes with the propositions of the task. Table~\ref{tab:templates} lists the eight templates with what they mean, their LTLf definitions in IBM's library, and its last column gives the kind of each, goal or rule, which the next subsection explains.
 
 \begin{table}[H]
 \centering
@@ -666,15 +697,42 @@ The formulas use four operators (Section~\ref{sec:sota-ltl}): $\textbf{F}\,a$ me
 
 Response and Precedence are easy to confuse, and both allow the same step. Response$(a,b)$ lets $b$ appear without $a$, but \textbf{after} an $a$ a $b$ must follow, at the same step or later. Precedence$(a,b)$ lets $a$ appear without $b$, but a $b$ needs an $a$ \textbf{before} it or at the same step.
 
-\subsection{Goals and rules}
-A clause is a \textbf{goal} if it asks for something to happen, and a \textbf{rule} if it only limits what may happen. One test tells them apart. After a step in which \textbf{nothing happens}, that is, no proposition holds, a goal is not satisfied yet, while a rule is. 
 
-For example, Existence and ExistenceTwo are goals since by doing nothing, they cannot be satisfied. The other six templates are rules, Precedence included. They hold while nothing happens, and a later event may break them or make them wait for an answer. For example, if $b$ happens before $a$, Precedence$(a,b)$ is broken, but if nothing happens, it still holds.
 
-The compiler applies the test to the DFA of each clause, so it needs no list of templates. The difference shapes Step~4. Only a hard goal gives the RM a final state, and the RM pays the agent as it gets closer to that state.
+\subsubsection{Hard and soft clauses}
+Each clause carries a \textbf{priority that the model chooses for that clause alone}. Clauses are hard by default. The model marks a clause soft only when the task uses a preference cue such as ``if possible'', ``ideally'' or ``try to'', and the cue covers the phrase it qualifies, not the whole sentence or the task. 
 
-\subsection{The generator prompt}
-IBM's default prompt is a few-shot list that offers five of the eight templates, with examples from business applications such as Slack or Salesforce, no definitions and no description of the environment. \textbf{FARM's prompt offers all eight}, adding Absence, Precedence and NotCoExistence. It gives the model the catalogue with:
+The priority never changes the formula. A hard clause must hold for the task to be completed. A soft clause is a preference. Breaking it costs reward but never prevents finishing (Step~4). IBM's templates have no such notion, since \textit{never touch the lava} and \textit{if possible, never touch the lava} are the same Absence clause, so the priority has to come from the prompt. For FARM, the first would be a hard Absence and the second a soft one.
+
+
+
+\subsection{Environment description} 
+For the model to understand properly the task, it needs to know the environment in which the task will be executed. For this, the generator gets in its intup a Markdown description of the RL environment in which the tasks will be executed. The file is written once for each environment, in plain words and with no code, so any task can use it at Appendix~\ref{app:env-description} a real one in full. The file is composed of the following parts:
+
+\begin{itemize}
+    \item \textbf{Environment.} What the environment contains, what the agent can do in it (the actions), and how it is structured.
+    \item \textbf{Objective and episode boundary.} The goal of the environment, endings of the episodes (good, bad and neutral), when the environment gives its reward and the how long the agent will be acting (step limit). Note that this 'goal' not be included in the task's or be different because of the user's preferences.
+    \item \textbf{Propositions.} The list of proposition names, with one line of description each. The clauses take their propositions from this list.
+    \item \textbf{Proposition semantics.} For each proposition, the exact condition under which it is true and its kind, that is: whether it holds for a single step, while a state lasts, or from then on until the episode ends.
+    \item \textbf{Proposition constraints.} The facts of the environment that limit what can happen, such as a proposition that cannot become true before another, or two that never hold together.
+    \item \textbf{What the agent can and cannot do.} The actions the agent can take, what each one needs to work, and what the agent can never do, such as walking through a closed door.
+    \item \textbf{Example trace.} One real solved episode, step by step, with the propositions that change at each step.
+    \item \textbf{Example tasks.} A few short tasks in natural language that could be done in the environment.
+\end{itemize}
+
+Note that no RM is mention, nor any code reference or implementation detail. The environment description is a plain-language document that any person can read and understand. These sections are selected with no other criteria of what is usually found on the public RL environments online.
+
+
+\subsection{The generator instructions}
+\label{tab:ibm-prompt}
+
+IT HAS TO UNDERSTAND THE TIME AND ORDER OF THE TASK, THE IMPORTANCE OF EACH CLAUSE, AND THE KIND OF EACH CLAUSE.
+
+The LLM is a general purpose model, so it needs instructions to know what job it has to do. These are two texts, the \textbf{system prompts} and the \textbf{user prompt}. 
+
+The first are the general instructions that tell the model about what its work is, how to do it, what is it going to get on each run, and some examples. Then, the user prompt is the specific instructions for a single run, which include the task and the environment description.
+
+IBM's default prompt is a list with just a few examples that does not offer all we need. The tool also defines parts that it does not use (the templates presented later),but no definitions and no description of the environment. 
 
 \begin{itemize}
     \item The meaning, kind and formula of each template;
@@ -686,7 +744,7 @@ IBM's default prompt is a few-shot list that offers five of the eight templates,
     \item On a retry, the comments of the critic.
 \end{itemize}
 
-The environment description is a Markdown file written once for each environment, in plain words and with no code. It says what the environment contains and what the agent can do in it, what ends an episode and what can and cannot happen, and it lists the propositions with the meaning of each. It also gives one solved episode step by step and a few example tasks. The propositions come from this file, so the same LLM prompt serves any environment.
+The propositions come from the environment description, so the same LLM prompt serves any environment.
     
 Three instructions shape the answer. 
 \begin{enumerate}
@@ -694,11 +752,6 @@ Three instructions shape the answer.
     \item When the task states an order, the order stays as a Precedence even if the environment already forces it, so the RM follows the instruction and not one layout of the environment.
     \item When the task states no order, none is added. Appendix~\ref{app:implementation} gives the prompt text and the form of an ordered task.
 \end{enumerate}
-
-\subsection{Hard and soft clauses}
-Each clause carries a \textbf{priority that the model chooses for that clause alone}. Clauses are hard by default. The model marks a clause soft only when the task uses a preference cue such as ``if possible'', ``ideally'' or ``try to'', and the cue covers the phrase it qualifies, not the whole sentence or the task. 
-
-The priority never changes the formula. A hard clause must hold for the task to be completed. A soft clause is a preference. Breaking it costs reward but never prevents finishing (Step~4). IBM's templates have no such notion, since \textit{never touch the lava} and \textit{if possible, never touch the lava} are the same Absence clause, so the priority has to come from the prompt. For FARM, the first would be a hard Absence and the second a soft one.
 
 \subsection{Task schemas}
 \label{sec:task-schemas}
@@ -1359,7 +1412,13 @@ The task \textit{Try not to let zombies through both the top lane and the side l
 
 \section{Anomalies in the task}
 \label{sec:lim-anomalies}
-An anomaly is a task that breaks the assumption of Section~\ref{sec:step1}, that the task can be done. It is a fault in the task itself, which no choice of clauses can fix. The generator's answer is a list of one to 25 clauses with no field for a refusal, so an anomaly is caught only when a later check rejects the answer, and when every attempt is rejected the task fails with no RM (Section~\ref{sec:step5} and Appendix~\ref{app:implementation}).
+FARM assumes three things about the task it receives. Everything the task speaks of has a proposition in the environment description, each of these propositions can become true in the environment, and the clauses that state the task do not contradict each other.
+
+\keyidea{FARM assumes that the task it receives can be done.}
+
+The list of propositions is not fixed by the environment. Any event that the labelling function can compute from the state of the environment can be added to the description.
+
+An anomaly is a task that breaks this assumption. It is a fault in the task itself, which no choice of clauses can fix. The generator's answer is a list of one to 25 clauses with no field for a refusal, so an anomaly is caught only when a later check rejects the answer, and when every attempt is rejected the task fails with no RM (Section~\ref{sec:step5} and Appendix~\ref{app:implementation}). Letting the generator refuse such a task is future work (Section~\ref{sec:fw-refusal}).
 
 Each of the three kinds of anomaly is caught only in part:
 \begin{itemize}
@@ -2495,6 +2554,35 @@ FARM talks to four model providers, OpenAI, OpenCode, Antigravity and a local se
 
 The template classes of nl2ltl cover all eight Declare templates of Table~\ref{tab:templates}. The GPT prompt of nl2ltl, by contrast, lets the model choose only five: Existence, ExistenceTwo, Response, \mbox{ChainResponse} and RespondedExistence.
 
+That prompt also gives the model little to choose with. It is a list of solved examples from business applications, with no definition of the templates and no description of an environment, so the model has to work out from the examples what each template means. FARM replaces it with a prompt of its own (Section~\ref{app:generator-prompt}), which changes three things:
+\begin{itemize}
+    \item \textbf{All eight templates, each one defined.} The prompt gives the arguments, the meaning in plain words and the formula of every template, with Absence, Precedence and NotCoExistence added to the five.
+    \item \textbf{How to choose among them.} A table maps the typical wordings of a task to templates, a set of rules says how to read an order of steps, and worked examples name the template that looks right and is wrong. For instance, \textit{do $a$, then $b$} is not Precedence$(a,b)$ alone, which asks for nothing to happen. It also needs Existence$(b)$.
+    \item \textbf{A priority for every clause.} The prompt defines hard and soft, lists the words that make a clause soft, and says that such a word covers only the part of the task it qualifies.
+\end{itemize}
+
+The answer changes too. The engine builds a JSON schema for each task from the environment description, and the answer of the model has to follow it. The answer is a list of clauses, and every clause has the same four fields:
+\begin{itemize}
+    \item \texttt{normalized\_clause}. The part of the task that the clause covers, in one plain sentence.
+    \item \texttt{pattern}. The name of the template, one of the eight.
+    \item \texttt{propositions}. The arguments of the template in order, one or two as the template takes. Only the names that the environment description lists are accepted.
+    \item \texttt{priority}. Either \texttt{hard} or \texttt{soft}.
+\end{itemize}
+The schema accepts no other field, so an answer cannot carry a formula, a state or a reward. The compiler reads the last three fields and never the sentence. The priority is the field that the templates of nl2ltl do not have. It is asked for in two places. The prompt says when a clause is soft, and the schema makes it a field that every clause must fill. Listing~\ref{lst:generator-answer} shows the answer for the \runex{careful key} example.
+
+\begin{lstlisting}[language={}, basicstyle=\ttfamily\footnotesize, upquote=true, caption={The answer of the generator for the \runex{careful key} example.}, label={lst:generator-answer}]
+{"clauses": [
+  {"normalized_clause": "Reach the goal at least once.",
+   "pattern": "Existence",
+   "propositions": ["at_goal"],
+   "priority": "hard"},
+  {"normalized_clause": "Ideally, never lose the key.",
+   "pattern": "Absence",
+   "propositions": ["key_lost"],
+   "priority": "soft"}
+]}
+\end{lstlisting}
+
 \section{FL-AT}
 Steps 2 and 3 run on FL-AT. FARM uses it through a fork (\url{https://github.com/MiquelGomezCorral/Flat}) of \url{https://github.com/Jamidd/Flat} \cite{flat_code}, which makes four main changes. The last two are the ones that Section~\ref{sec:step2} presents:
 \begin{itemize}
@@ -2505,6 +2593,7 @@ Steps 2 and 3 run on FL-AT. FARM uses it through a fork (\url{https://github.com
 \end{itemize}
 
 \section{The generator prompt}
+\label{app:generator-prompt}
 The prompt of the generator has three parts: a system message, a user message and a catalogue of the Declare templates. The catalogue gives, for each template, its arguments, its kind (goal or rule), its meaning in English and its LTLf formula in IBM's syntax. It states that only Existence and ExistenceTwo are goals and that every rule holds when nothing happens. Beside the catalogue, a second table maps thirteen typical wordings to templates.
 
 The instructions for the priority list the preference cues that make a clause soft: ``if possible'', ``preferably'', ``ideally'', ``try to'', ``when you can'', ``it would be nice'' and, for a ban, ``try not to''. Every other clause is hard. A cue covers the step it qualifies, not the order word that leads into that step.
@@ -2518,6 +2607,12 @@ A step the task asks for is \textbf{lone} when no hard order puts it before a la
 
 An order is written as a hard Existence of its last step and one Precedence for each pair of consecutive steps. The \runex{sequence} example is built this way: Existence(\texttt{at\_goal}), Precedence(\texttt{has\_key}, \texttt{door\_open}) and Precedence(\texttt{door\_open}, \texttt{at\_goal}), with no \mbox{Precedence}(\texttt{has\_key}, \texttt{at\_goal}) (Table~\ref{tab:running}).
 % NOTE-OPEN: paste the prompt text, or an excerpt, from app/src/prompts/compiler-rm/ (declare-templates.md, reward-ltlf-creator.system.md, reward-ltlf-creator.user.md) at the commit of the frozen run.
+
+\section{An environment description}
+\label{app:env-description}
+Listing~\ref{lst:env-description} reproduces the environment description of \env{DoorKey}, the file that the generator reads for any task in that environment (Section~\ref{sec:step1}). The running examples of Chapter~\ref{chap:farm} were built with it, and its four propositions are the ones their clauses use.
+
+\lstinputlisting[language={}, basicstyle=\ttfamily\footnotesize, breakatwhitespace=true, upquote=true, caption={The environment description of \env{DoorKey}.}, label={lst:env-description}]{images/farm/doorkey-environment.md}
 
 \section{The post-process}
 Two parts of the post-process of Step~4 need more detail than Chapter~\ref{chap:farm} gives: the count of stages and the minimisation of the RM. The order check of Section~\ref{sec:reward-assignment} also needs the step limit, and without one it records the order as not checked.
