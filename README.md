@@ -108,6 +108,20 @@ PYTHONPATH=app python app/app.py
 Then open <http://127.0.0.1:8050>. Paste or upload the environment description, write one or
 more tasks, and the page shows each step of the pipeline, the RM text and its graph.
 
+![The web page after a run, with the RM text on the left and its graph on the right](readme/images/web-result.png)
+
+A finished run for the task above: the RM text and its graph.
+
+### What an RM looks like
+
+<table>
+<tr valign="top">
+<td><img src="readme/images/rm-careful-key.svg" width="160" alt="RM graph with two states, for reaching the goal while trying to keep the key"><br>Reach the goal, ideally without ever losing the key.</td>
+<td><img src="readme/images/rm-key-then-goal.svg" width="276" alt="RM graph with four states, for picking up the key and then reaching the goal"><br>Pick up the key, then reach the goal.</td>
+<td><img src="readme/images/rm-siren-exit.svg" width="300" alt="RM graph with three states, for going to the exit and answering the siren"><br>Go to the exit, and whenever the siren rings, try to turn it off.</td>
+</tr>
+</table>
+
 ### Two of the environments
 
 | Shop | Zombie garden (Lanes) |
